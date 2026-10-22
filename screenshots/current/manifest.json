@@ -1,0 +1,37 @@
+{
+  "capturedOn": "2026-10-22",
+  "release": "0.3.0",
+  "buildVersion": "0.3.0+76cbaa5",
+  "sourceCommit": "76cbaa5bf527277d5cbcd012e0bc535805ffa310",
+  "qtVersion": "6.12.0",
+  "viewport": [
+    1440,
+    1000
+  ],
+  "platform": "offscreen",
+  "data": "isolated test fixture; no live hardware writes",
+  "files": {
+    "dark/about.png": "1dc62e6f591dd2c017202559e68197b8dc18468cf10039923cc7f97cfa82ba16",
+    "dark/battery-processes.png": "0d1b199fe629e2581431b8cea77c6bbac8ccddc7eed23e52775a4a01961e60fa",
+    "dark/cooler-settings.png": "ffcfc6f2f7286baa1574b18d6072224b7b349ffe848e981e4dd09fe7a5dbc1f3",
+    "dark/driver-warning.png": "627619c7e90d288c7470b3518fd7f9e1a3a6ca6954e0264a2149f329f70b901e",
+    "dark/keyboard-hardware.png": "8247f3d692305cb17cf59b4f881ffc2a4b90181d0d930dc0b31a246b6f0f2c74",
+    "dark/lightbar.png": "d3593d93b134751b2f7c1678c151ae4497d477380ee3b9408ba8840a27fa1340",
+    "dark/monitor.png": "a085cc6d240ab29edb62b857bd0cf8032739ca37637dc0a9c8426fcbf49bb438",
+    "dark/overview.png": "66335b151eced439dc1a99c9b28a1cdff41ddc171f88cd31c23bae332e4f5660",
+    "dark/power-devices.png": "83b3d2fb0bbc044618f8ca05856ad8cc80133913c6ceac4b2479c0e2f2c3af12",
+    "dark/profiles.png": "db36dc05d57fc1c07838cd0125db6b7ade51b93f05e167a0fc131d8afd36d3d1",
+    "dark/watercool-settings.png": "a093b928922e407e5a942c07f1cc27094f0e99afae2984c28b7d37bf98280f87",
+    "light/about.png": "fe0a6ca10ad1248c6c338634712b9f727fd0c42687255f9b142bb0bc471e1d59",
+    "light/battery-processes.png": "5d6543145517237d9d0d610fbdbbf7997fb11f93c1910592082d4fa03be2dbd7",
+    "light/cooler-settings.png": "7d730831ae631caa777fec64a66a811cc9086ae1302f6decee4c55ea274848e0",
+    "light/driver-warning.png": "0dee1460438a3da17a859b2921eb90bcb5ad3d6312f3aab2a2ec59c5f42ec7c8",
+    "light/keyboard-hardware.png": "3bd7901482f6c611273bb29cfed1813e3cc4410d000e46ef2c2a65e290cc09e6",
+    "light/lightbar.png": "0da42f0c64ab0bdc486581e93b150a57734f379ae96f4819a7197988229b22b9",
+    "light/monitor.png": "3e2848a4db0013ad41d2f421e7108e2ed204659b217b091eeb3ce00c48dac132",
+    "light/overview.png": "d955f3ae00673f9ccd80bc03bf3970c6dfc07a0dd651959cd5f866d6a0b0f3a4",
+    "light/power-devices.png": "461416521a2e8b8f8a80636396bfbcf0ab89c578149e167a86df50cf13e7866e",
+    "light/profiles.png": "66ee9cb74d769f6a19f3fa0c1e829844161a7e6be823fe72adf0e9fb38b11707",
+    "light/watercool-settings.png": "c4d72aa754cb7b902e13084c0c357a8764d55185fe3f0136252ecf7eaec76ec2"
+  }
+}

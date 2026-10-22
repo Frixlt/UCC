@@ -10,19 +10,23 @@ post_install() {
 # Preserve it while switching to a public package that owns no personal settings.
 ucc_preserve_settings() {
   local package_root="${1:-}"
+  rm -f "$package_root/var/lib/ucc/package-upgrade/pending"
   if [ -f "$package_root/etc/ucc/settings" ] && [ ! -L "$package_root/etc/ucc/settings" ]; then
     install -d -m 0700 "$package_root/var/lib/ucc/package-upgrade"
     install -m 0600 "$package_root/etc/ucc/settings" "$package_root/var/lib/ucc/package-upgrade/settings"
+    touch "$package_root/var/lib/ucc/package-upgrade/pending"
   fi
 }
 
 ucc_restore_settings() {
   local package_root="${1:-}"
   if [ ! -e "$package_root/etc/ucc/settings" ] && [ ! -L "$package_root/etc/ucc/settings" ] &&
-      [ -f "$package_root/var/lib/ucc/package-upgrade/settings" ]; then
+      [ -f "$package_root/var/lib/ucc/package-upgrade/settings" ] &&
+      [ -f "$package_root/var/lib/ucc/package-upgrade/pending" ]; then
     install -d -m 0755 "$package_root/etc/ucc"
     install -m 0600 "$package_root/var/lib/ucc/package-upgrade/settings" "$package_root/etc/ucc/settings"
   fi
+  rm -f "$package_root/var/lib/ucc/package-upgrade/pending"
 }
 
 pre_upgrade() {

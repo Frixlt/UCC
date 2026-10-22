@@ -80,6 +80,11 @@ ucc_restore_settings "$2"
             subprocess.run(['bash', '-c', 'source "$1"; ucc_restore_settings "$2"',
                             'test', str(SOURCE / 'ucc.install'), str(root)], check=True)
             self.assertEqual(settings.read_text(), '{"profiles":{"new":{}}}')
+            # Deleting a configuration intentionally must not resurrect stale data.
+            settings.unlink()
+            subprocess.run(['bash', '-c', 'source "$1"; ucc_preserve_settings "$2"; ucc_restore_settings "$2"',
+                            'test', str(SOURCE / 'ucc.install'), str(root)], check=True)
+            self.assertFalse(settings.exists())
 
 
 if __name__ == '__main__':

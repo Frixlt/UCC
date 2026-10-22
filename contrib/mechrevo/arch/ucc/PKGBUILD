@@ -2,3 +2,4 @@
 # This directory is inside a complete source checkout.
 UCC_SOURCE_DIR=$(cd "$startdir/../../../.." && pwd)
 source "$UCC_SOURCE_DIR/PKGBUILD"
+install=../../../../ucc.install

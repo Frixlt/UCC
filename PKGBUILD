@@ -18,7 +18,7 @@ optdepends=('tuxedo-drivers: hardware interface required by uccd'
 provides=("uniwill-control-center=$pkgver")
 conflicts=('uniwill-control-center' 'uniwill-control-center-mechrevo')
 options=('!debug')
-install=${UCC_SOURCE_DIR:-$startdir}/ucc.install
+install=ucc.install
 # Settings are created/imported locally, never shipped in the public package.
 if [[ -n ${UCC_SOURCE_DIR:-} ]]; then
   source=()
