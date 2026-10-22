@@ -37,6 +37,11 @@ endfunction()
 
 # ---------- tests -----------------------------------------------------------
 
+if(TARGET ucc-desktop-support)
+  ucc_add_test(test_session_telemetry test_session_telemetry.cpp LINK_LIBS ucc-desktop-support)
+  ucc_add_test(test_process_terminator test_process_terminator.cpp LINK_LIBS ucc-desktop-support)
+endif()
+
 ucc_add_test( test_state_utils      test_state_utils.cpp )
 ucc_add_test( test_lightbar test_lightbar.cpp )
 ucc_add_test( test_notification_monitor test_notification_monitor.cpp )
@@ -96,7 +101,7 @@ if(DBUS_RUN_SESSION_EXECUTABLE AND BUILD_GUI)
     ../ucc-gui/src/HardwareTab.cpp ../ucc-gui/inc/HardwareTab.hpp
     ../ucc-gui/src/AssignKeyZones.cpp ../ucc-gui/src/DetectLayout.cpp)
   target_include_directories(test_gui_audit PRIVATE ../ucc-gui/inc ../include)
-  target_link_libraries(test_gui_audit PRIVATE ucc-dbus Qt6::Widgets Qt6::Charts Qt6::Bluetooth Qt6::Test)
+  target_link_libraries(test_gui_audit PRIVATE ucc-desktop-support ucc-dbus Qt6::Widgets Qt6::Charts Qt6::Bluetooth Qt6::Test)
   if(TARGET PkgConfig::UCC_XCB)
     target_link_libraries(test_gui_audit PRIVATE PkgConfig::UCC_XCB)
     target_compile_definitions(test_gui_audit PRIVATE UCC_HAS_X11_BLUR)

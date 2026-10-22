@@ -79,6 +79,11 @@ charge-threshold/type administration retains the separate administrative action.
 
 Optional integrations:
 
+- **Standalone Qt tray:** `ucc-desktop-tray` provides battery watts/percentage,
+  manual power modes and NVIDIA process management without the Plasma applet.
+  It is built with `BUILD_DESKTOP_TRAY=ON`; the GUI also has a Battery & Processes
+  page. See [personal migration details](contrib/frixit/README.md).
+
 - **GNOME Shell extension:** panel controls and telemetry using asynchronous Gio
   D-Bus calls. Closed menus do not keep polling; slider commands use bounded queues.
 - **KDE Plasma applet:** retained upstream integration, built separately with
@@ -180,6 +185,8 @@ are in `build/bin/` and the client library is in `build/lib/`.
 | --- | --- | --- |
 | `BUILD_GUI` | `ON` | Desktop GUI. |
 | `BUILD_CLI` | `ON` | Command-line client. |
+| `BUILD_DESKTOP_TRAY` | `ON` | Standalone Qt tray with battery and GPU process controls. |
+| `BUILD_SESSION_AGENT` | `ON` | Notification relay for the front lightbar. |
 | `BUILD_TRAY` | `ON` | Plasma applet; set **OFF** for a Qt-only/GNOME build. |
 | `BUILD_GNOME` | `ON` | Install GNOME extension files. |
 | `BUILD_TESTS` | `OFF` | Qt, Python and available GNOME tests. |

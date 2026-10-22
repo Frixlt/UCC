@@ -85,6 +85,7 @@ set( CMAKE_AUTOMOC ON )
 # Options
 option( BUILD_GUI "Build the main GUI application" ON )
 option( BUILD_CLI "Build the command-line interface" ON )
+option( BUILD_DESKTOP_TRAY "Build the standalone desktop tray" ON )
 option( BUILD_TRAY "Build the system tray applet" ON )
 option( BUILD_SESSION_AGENT "Build the desktop notification relay" ON )
 option( BUILD_GNOME "Install the GNOME Shell extension" ON )
@@ -120,6 +121,10 @@ if(PkgConfig_FOUND)
 endif()
 
 add_subdirectory( libucc-dbus )
+
+if( BUILD_GUI OR BUILD_DESKTOP_TRAY )
+  add_subdirectory( ucc-desktop )
+endif()
 
 if( BUILD_GUI )
   add_subdirectory( ucc-gui )

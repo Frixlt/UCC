@@ -23,6 +23,8 @@
 #include "PreviewMode.hpp"
 #include "FluentTheme.hpp"
 #include "GuiInstance.hpp"
+#include "DesktopPreferences.hpp"
+#include <QDBusConnectionInterface>
 #include "AppLogging.hpp"
 #include "SystemMonitor.hpp"
 #include "UccdClient.hpp"
@@ -85,6 +87,14 @@ int main( int argc, char *argv[] )
   app.setApplicationName( "ucc-gui" );
   app.setApplicationVersion( UCC_VERSION_FULL );
 
+  const auto arguments=app.arguments();
+  const int importAt=arguments.indexOf("--import-preferences");
+  if(importAt>=0) {
+    QString error;
+    if(importAt+1>=arguments.size() || !ucc::importDesktopPreferences(arguments.value(importAt+1),error)) {QTextStream(stderr)<<"Preference import failed: "<<error<<Qt::endl;return 1;}
+    if(arguments.contains("--preferences-only")) return 0;
+  } else if(arguments.contains("--preferences-only")) {QTextStream(stderr)<<"--preferences-only requires --import-preferences FILE"<<Qt::endl;return 1;}
+
   ucc::GuiInstance instance;
   const auto instanceResult = instance.startOrActivate();
   if (instanceResult != ucc::GuiInstance::Result::Primary)
@@ -113,7 +123,11 @@ int main( int argc, char *argv[] )
 
   ucc::MainWindow window;
   instance.setWindow(&window);
-  window.show();
+  if(arguments.contains("--minimized") || ucc::startMinimizedPreference()) {
+    auto *bus=QDBusConnection::sessionBus().interface();
+    if(bus && bus->isServiceRegistered("com.uniwill.UccDesktopTray").value()) {window.show();app.processEvents();window.hide();}
+    else window.showMinimized();
+  } else window.show();
 
   return app.exec();
 }

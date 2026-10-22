@@ -110,10 +110,21 @@ def convert(data, settings, capabilities, brightness=None):
     result['lightbar'] = copy.deepcopy(data.get('lightbar', {}))
     result['lightbar']['managed'] = True
     pending = {
-        'description': 'Preserved source values for features not implemented yet; not daemon settings.',
+        'description': 'Original GUI values retained for reference. Apply desktop-preferences.json as the desktop user; this file is not daemon settings.',
         'gui': copy.deepcopy(data.get('gui_settings', {})),
     }
     return result, report, pending
+
+
+def desktop_preferences(data):
+    source = data.get('gui_settings', {})
+    if not isinstance(source, dict):
+        raise ValueError('Invalid source GUI preferences')
+    theme = source.get('theme', 'system')
+    minimized = source.get('start_minimized', False)
+    if theme not in ('system', 'auto', 'light', 'dark') or type(minimized) is not bool:
+        raise ValueError('Invalid source GUI preferences')
+    return {'theme': 'auto' if theme == 'system' else theme, 'startMinimized': minimized}
 
 
 def main():
@@ -139,8 +150,9 @@ def main():
         output = convert(data, baseline, read(args.capabilities), args.brightness)
         if tcc_report is not None:
             output[1]['tccImport'] = tcc_report
+        preferences = desktop_preferences(data)
         args.output.mkdir(mode=0o700, parents=False, exist_ok=False)
-        for name, value in zip(('settings', 'report.json', 'pending.json'), output):
+        for name, value in zip(('settings', 'report.json', 'pending.json', 'desktop-preferences.json'), (*output, preferences)):
             path = args.output / name
             with path.open('x', encoding='utf-8') as file:
                 os.chmod(path, 0o600)

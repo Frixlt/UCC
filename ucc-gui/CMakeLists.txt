@@ -73,6 +73,7 @@ set( UCC_GUI_SOURCES
 )
 
 set( UCC_GUI_LIBRARIES
+  ucc-desktop-support
   Qt6::Core
   Qt6::Gui
   Qt6::Widgets

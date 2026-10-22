@@ -61,6 +61,31 @@ apart from their requested baseline commits:
   process on SIGTERM/SIGINT. A desktop autostart entry is installed by packaging.
   The agent exits without monitoring or commands in read-only builds.
 
+- Standalone `ucc-desktop-tray`, independent of the Plasma applet: left-click opens
+  or activates the single GUI instance; the menu shows battery percentage/status,
+  charge/discharge watts, GPU runtime state, active profile and manual power modes.
+  The colored icon retains the source tray's profile symbol, charging badge and
+  dashed/manual-mode indicator. Packaging supplies a desktop autostart entry.
+- Battery and NVIDIA process management in both the tray and **Battery &
+  Processes** GUI page. NVIDIA display controllers are discovered by vendor/class,
+  without fixed PCI addresses. Battery watts use `power_now` or the original
+  `current_now × voltage_now` fallback. The collector reads sysfs/procfs on a
+  worker thread and never calls NVML or `nvidia-smi`.
+- Only the desktop user's visible GPU clients are listed. A confirmation dialog
+  defaults to No. Accepted termination sends SIGTERM, waits three seconds, then
+  sends SIGKILL to survivors. Numeric PID plus start-time checks and Linux pidfds
+  prevent signaling a recycled PID. Termination stays unprivileged; no root D-Bus
+  kill endpoint is added. Results report observed exits and failures separately.
+- The tray samples battery/runtime state every 30 seconds while closed, scans
+  processes on opening, and can refresh its open menu every two seconds. The
+  process dialog/page refreshes every two seconds while visible. Hidden or
+  minimized GUI pages stop their collector. Sleeping GPUs skip the process scan.
+- Source GUI preferences now export to `desktop-preferences.json`: theme
+  system/light/dark maps to Auto/Light/Dark and `start_minimized` is preserved.
+  Explicit GUI preference import runs before any hardware client and can exit
+  immediately. The page also exposes the start-minimized setting. With the tray
+  running, minimized startup hides the GUI; otherwise it minimizes to the taskbar.
+
 Device settings are stored in `/etc/ucc/settings` under `powerDevices`. Their
 paths, services and value ranges are validated in the daemon. The systemd unit
 permits writes to the four explicit module/sysctl files required by the original
@@ -81,8 +106,10 @@ hardware. It produces:
   table, per-mode CPU/ASPM policies and the source lightbar settings.
 - `report.json`: imported key/device counts, excluded temperature limit and any
   unresolved TCC profile IDs.
-- `pending.json`: preserved GUI preferences for the remaining desktop integration.
-  `gpu-run` is listed separately as excluded in the report.
+- `desktop-preferences.json`: source theme and minimized-start preference, applied
+  separately as the desktop user.
+- `pending.json`: original GUI values retained for reference. `gpu-run` is listed
+  separately as excluded in the report.
 
 An exported/converted UCC settings file is optional. A local TCC directory and
 installed `app.asar` can also supply the original profiles (see below). When a
@@ -164,6 +191,35 @@ import explicitly enables it using the user's values. Brightness remains in
 lightbar was read only: one RGB zone, maximum 100, current brightness 0. Tests use
 fake LED nodes and the GUI screenshot uses demonstration data.
 
+## Standalone tray and desktop preferences
+
+`BUILD_DESKTOP_TRAY=ON` is the default. `BUILD_TRAY` still controls the separate
+Plasma applet; a Qt-only build can use `BUILD_TRAY=OFF` with the standalone tray.
+The tray, GUI and notification agent are separate processes, so closing the GUI
+keeps the tray and notification lightbar available. Each uses its own session
+identity; read-only builds use separate preview identities.
+
+After installation, start these as the normal desktop user (or use the packaged
+login entries). None of these entries were activated on the development desktop:
+
+```bash
+ucc-desktop-tray
+ucc-session-agent
+ucc-gui --import-preferences ./new-import/desktop-preferences.json --preferences-only
+ucc-gui
+```
+
+`ucc-gui --minimized` requests minimized startup for one launch. Preference import
+and all process/power controls are blocked in preview builds. Process management
+requires kernel pidfd support; unsupported operations report an error. It cannot
+terminate other users' processes or run as root. No external `gpu-run` command or
+mode selector is included.
+
+The current complete offline output is `artifacts/frixit-import-desktop`, including
+the source preference `theme: auto, startMinimized: false`. Its daemon settings
+are identical to the previously validated TCC import. Files are private (0600)
+and have not been installed.
+
 ## API and CLI
 
 ```bash
@@ -204,7 +260,7 @@ preview write guards and existing upstream screens. Saved screenshots are local
 artifacts, not captures of a running controlling daemon.
 
 Verified locally with Qt 6.12: daemon, CLI and GUI builds succeeded; the normal
-build passed all 24 CTest entries. A separate read-only build passed the focused
+build passed all 27 CTest entries. A separate read-only build passed the focused
 keyboard, sparse LED, device matrix, policy signal, rejected command and preview
 write-guard checks. The lightbar update also passed focused read-only GUI, session
 agent and all-write-guard checks; normal tests include an end-to-end fake-monitor
@@ -213,10 +269,15 @@ additional converter tests cover named/custom fan selection, modifiers, rounding
 missing/malformed presets and read-only archive parsing. The actual offline
 import validated all 57 device entries
 and 101 saved keys. Qt Charts was supplied from an extracted matching package
-under `/tmp`; no system packages, services or live hardware settings were changed.
+under `/tmp`. Desktop tests also cover synthetic battery/GPU trees, real test
+children exiting through SIGTERM/SIGKILL, stale identities, tray command failures,
+confirmation cancellation, minimized polling and preference-only import. The
+read-only build passed both desktop test suites and the focused GUI/guard checks.
+A staged installation under `/tmp` verified the tray/agent executables and their
+autostart entries. No system packages, services or live hardware settings were
+changed.
 
-Remaining migration work: GPU process controls, battery/tray integration, KDE
-refresh-rate notifications, full GUI/tray autostart integration and
-real suspend/resume verification. These are not claimed as implemented by the
-power/device, keyboard and lightbar changes. `gpu-run` is excluded at the user’s
+Remaining migration work: KDE refresh-rate notifications, deployment/in-session
+autostart verification and real suspend/resume verification. These are not claimed
+as completed by the power/device, keyboard, lightbar and desktop changes. `gpu-run` is excluded at the user’s
 request rather than left as an implementation task.

@@ -56,6 +56,13 @@ class MigrationTest(unittest.TestCase):
         self.assertEqual(settings['profiles'], {})
         self.assertEqual(settings['stateMap'], {})
 
+    def test_desktop_preferences_preserve_minimized_and_map_system_theme(self):
+        self.assertEqual(migration.desktop_preferences(self.data), {'theme': 'auto', 'startMinimized': False})
+        self.assertEqual(migration.desktop_preferences({'gui_settings': {'theme': 'dark', 'start_minimized': True}}), {'theme': 'dark', 'startMinimized': True})
+        for source in ({'theme': 'unknown'}, {'start_minimized': 'yes'}):
+            with self.subTest(source=source), self.assertRaises(ValueError):
+                migration.desktop_preferences({'gui_settings': source})
+
     def test_invalid_or_missing_led_is_rejected(self):
         for colors in ({'55': [1, 2, 3]}, {'0': [256, 0, 0]}, {'0': [True, 0, 0]}):
             with self.subTest(colors=colors), self.assertRaises(ValueError):

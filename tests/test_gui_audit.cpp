@@ -25,6 +25,11 @@
 #include <QDesktopServices>
 #include <QTextBrowser>
 #include "MainWindow.hpp"
+#include "SessionProcessesWidget.hpp"
+#include "DesktopTray.hpp"
+#include "DesktopPreferences.hpp"
+#include <QSettings>
+#include <QMessageBox>
 #include "FluentTheme.hpp"
 #include "GuiVisualFixture.hpp"
 #include "DashboardTab.hpp"
@@ -118,6 +123,49 @@ private slots:
     profiles=std::make_unique<ucc::ProfileManager>();
   }
   void init() { control("TestReset"); ucc::FluentTheme::setMode(ucc::FluentTheme::Mode::Light,false); }
+  void desktopPreferenceImportDoesNotContactTheDaemon() {
+    QTemporaryDir root;QFile input(root.path()+"/preferences.json");QVERIFY(input.open(QIODevice::WriteOnly));input.write("{\"theme\":\"dark\",\"startMinimized\":true}");input.close();
+    QSettings desktop("UniwillControlCenter","desktop"),appearance("UniwillControlCenter","appearance");const auto oldMin=desktop.value("startMinimized"),oldTheme=appearance.value("themeMode");
+    const auto restore=qScopeGuard([&]{if(oldMin.isValid()) desktop.setValue("startMinimized",oldMin);else desktop.remove("startMinimized");if(oldTheme.isValid()) appearance.setValue("themeMode",oldTheme);else appearance.remove("themeMode");desktop.sync();appearance.sync();});
+    const auto before=stats();QProcess importer;importer.start(QCoreApplication::applicationDirPath()+"/ucc-gui",{"--import-preferences",input.fileName(),"--preferences-only"});QVERIFY(importer.waitForStarted());QTRY_COMPARE(importer.state(),QProcess::NotRunning);
+#ifdef UCC_READ_ONLY_PREVIEW
+    QCOMPARE(importer.exitCode(),1);desktop.sync();appearance.sync();QCOMPARE(desktop.value("startMinimized"),oldMin);QCOMPARE(appearance.value("themeMode"),oldTheme);
+#else
+    QCOMPARE(importer.exitCode(),0);desktop.sync();appearance.sync();QVERIFY(desktop.value("startMinimized").toBool());QCOMPARE(appearance.value("themeMode").toInt(),1);
+#endif
+    QCOMPARE(stats(),before);
+  }
+  void standaloneTrayShowsModesAndHonorsCommandFailures() {
+    control("TestVisualFixture");QTemporaryDir root;ucc::SessionPaths paths{root.path()+"/sys",root.path()+"/pci",root.path()+"/proc",root.path()+"/nvidia"};ucc::DesktopTray tray(client.get(),paths);
+    QAction *automatic=nullptr,*battery=nullptr;
+    for(auto *action:tray.menu()->findChildren<QAction*>()) {if(action->data()==QString("auto")) automatic=action;if(action->data()==QString("bat")) battery=action;}
+    QVERIFY(automatic);QVERIFY(battery);QTRY_VERIFY(automatic->isChecked());
+#ifdef UCC_READ_ONLY_PREVIEW
+    QVERIFY(!battery->isEnabled());battery->trigger();QVERIFY(stats()["writes"].toArray().isEmpty());
+#else
+    QVERIFY(battery->isEnabled());battery->trigger();QTRY_VERIFY(stats()["writes"].toArray().contains("SetManualPowerMode"));
+    control("TestFailControl",{true});QTRY_VERIFY(battery->isEnabled());battery->trigger();QTRY_VERIFY(automatic->isChecked());
+#endif
+    const auto plain=ucc::DesktopTray::statusIcon({{"current_mode","ac"},{"manual_mode","auto"}},{},"Balanced").pixmap(64,64).toImage();
+    const auto forced=ucc::DesktopTray::statusIcon({{"current_mode","ac"},{"manual_mode","bat"}},{},"Balanced").pixmap(64,64).toImage();QVERIFY(plain!=forced);
+  }
+  void batteryAndProcessPageStaysReadOnlyUntilConfirmed() {
+    control("TestVisualFixture");ucc::MainWindow window;window.resize(1280,900);window.show();auto *nav=window.findChild<QListWidget*>("navigation");QVERIFY(nav);nav->setCurrentRow(9);QTest::qWait(350);
+    QCOMPARE(window.findChild<QLabel*>("pageTitle")->text(),QString("Battery & Processes"));
+    auto *widget=window.findChild<ucc::SessionProcessesWidget*>();QVERIFY(widget);widget->monitor()->setActive(false);QTRY_VERIFY(!widget->monitor()->isBusy());
+    const QJsonObject process{{"pid",424242},{"startTime","123456"},{"name","Example GPU application"}};
+    const QJsonObject snapshot{{"batteries",QJsonArray{QJsonObject{{"name","BAT0"},{"capacity",76},{"status","Discharging"},{"powerWatts",12.5}}}},{"gpuState","active"},{"processesSampled",true},{"processes",QJsonArray{process}}};widget->setSnapshot(snapshot);
+    QVERIFY(window.findChild<QLabel*>("sessionBattery")->text().contains("76%"));QVERIFY(window.findChild<QLabel*>("sessionBattery")->text().contains("12.5 W"));auto *table=window.findChild<QTableWidget*>("sessionGpuProcesses");QVERIFY(table);QCOMPARE(table->rowCount(),1);table->selectRow(0);
+    auto *selected=window.findChild<QPushButton*>("terminateGpuSelected");QVERIFY(selected);
+#ifdef UCC_READ_ONLY_PREVIEW
+    QVERIFY(!selected->isEnabled());QVERIFY(!window.findChild<QPushButton*>("terminateGpuAll")->isEnabled());
+#else
+    QVERIFY(selected->isEnabled());QTimer::singleShot(0,[]{auto *box=qobject_cast<QMessageBox*>(QApplication::activeModalWidget());QVERIFY(box);QCOMPARE(box->defaultButton(),box->button(QMessageBox::No));box->reject();});QTest::mouseClick(selected,Qt::LeftButton);QCOMPARE(table->rowCount(),1);
+#endif
+    const auto output=qEnvironmentVariable("UCC_SCREENSHOT_DIR");if(!output.isEmpty()) {QVERIFY(QDir().mkpath(output));QVERIFY(window.grab().save(output+"/battery-processes.png"));QVERIFY(ucc::DesktopTray::statusIcon({{"current_mode","ac"},{"manual_mode","bat"}},snapshot,"max perfomance").pixmap(64,64).save(output+"/tray-manual.png"));}
+    window.showMinimized();QTest::qWait(50);QVERIFY(!widget->monitor()->isActive());window.hide();QVERIFY(!widget->monitor()->isActive());
+    QVERIFY(stats()["writes"].toArray().isEmpty());
+  }
   void sessionAgentRelaysOnlyNotificationEvents() {
     const auto agentPath=QCoreApplication::applicationDirPath()+"/ucc-session-agent";
     if(!QFile::exists(agentPath)) QSKIP("Session agent not built");
@@ -406,13 +454,13 @@ private slots:
     control("TestVisualFixture");
     ucc::MainWindow window;
     auto *navigation=window.findChild<QListWidget*>("navigation");
-    QVERIFY2(navigation,"Fluent shell must expose all nine sections through sidebar navigation");
-    QCOMPARE(navigation->count(),9);
+    QVERIFY2(navigation,"Fluent shell must expose all ten sections through sidebar navigation");
+    QCOMPARE(navigation->count(),10);
     auto *pages=window.findChild<QTabWidget*>("pages");
     QVERIFY(pages);
     window.show();
-    const int pageIndices[]={0,1,2,2,3,4,5,6,7};
-    for(int index=0;index<9;++index) {
+    const int pageIndices[]={0,1,2,2,3,4,5,6,7,8};
+    for(int index=0;index<10;++index) {
       if (!(navigation->item(index)->flags() & Qt::ItemIsEnabled)) continue;
       navigation->setCurrentRow(index);
       QCOMPARE(pages->currentIndex(),pageIndices[index]);
