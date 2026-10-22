@@ -1,6 +1,6 @@
 [Desktop Entry]
 Type=Application
-Name=UCC desktop tray
+Name=Frixit Control Center tray
 Comment=Battery, power modes and NVIDIA process management
 Exec=ucc-desktop-tray
 TryExec=ucc-desktop-tray

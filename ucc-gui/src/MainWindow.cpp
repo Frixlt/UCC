@@ -144,7 +144,7 @@ MainWindow::MainWindow( QWidget *parent )
   if ( auto gpuDefault = m_UccdClient->getNVIDIAPowerCTRLDefaultPowerLimit() )
     m_gpuDefaultPowerLimit = *gpuDefault;
 
-  setWindowTitle( "Uniwill Control Center" );
+  setWindowTitle( "Frixit Control Center" );
   resize(1280,900);
   if (readOnlyPreview) setWindowTitle("UCC · Read-only preview");
 
@@ -249,7 +249,7 @@ void MainWindow::setupUI()
   auto *sideLayout=new QVBoxLayout(sidebar);sideLayout->setContentsMargins(12,28,12,20);
   auto *brand=new QLabel("UCC",sidebar);brand->setObjectName("brand");
   sideLayout->addWidget(brand);sideLayout->addSpacing(12);
-  auto *device=new QLabel("Uniwill Control Center",sidebar);device->setWordWrap(true);device->setObjectName("muted");
+  auto *device=new QLabel("Frixit Control Center",sidebar);device->setWordWrap(true);device->setObjectName("muted");
   sideLayout->addWidget(device);sideLayout->addSpacing(20);
   auto *navigation=new QListWidget(sidebar);navigation->setObjectName("navigation");
   navigation->setIconSize(QSize(24,24));

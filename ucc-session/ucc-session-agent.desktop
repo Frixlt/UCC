@@ -1,7 +1,7 @@
 [Desktop Entry]
 Type=Application
-Name=UCC session agent
-Comment=Animate the front lightbar for desktop notifications
+Name=Frixit Control Center session agent
+Comment=Lightbar notification animations and KDE refresh suggestions
 Exec=ucc-session-agent
 TryExec=ucc-session-agent
 Icon=ucc-gui

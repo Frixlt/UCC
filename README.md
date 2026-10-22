@@ -1,14 +1,23 @@
-# UCC Revorked
+# Frixit Control Center
 
-The Frixit branch adds personal ControlCenter power/device policies and calibrated
-keyboard migration. See [migration status and instructions](contrib/frixit/README.md).
+[Frixit Control Center](https://github.com/Frixlt/UCC) combines **Frixit's original ControlCenter** with
+**[UCC Revorked](https://github.com/noteMASTER11/UCC-Revorked)** in one native
+Qt 6 / C++20 application suite. The original project's power/device policies,
+calibrated keyboard, lightbar, notifications and desktop behavior are integrated
+with UCC Revorked's interface, profiles, monitoring and cooling backend.
+
+**Personal configurations and LED calibration take priority.** The original CPU
+temperature-limit implementation and `gpu-run` are intentionally excluded.
+See [project origins and source snapshots](PROJECT_ORIGINS.md),
+[migration status](contrib/frixit/README.md) and [installation/recovery](contrib/frixit/DEPLOYMENT.md).
 
 A Fluent-style Linux control center for Uniwill laptops, rebuilt around a native
 **Qt 6 / C++20 interface**. Manage performance profiles, cooling, keyboard lighting
 and hardware settings, with live CPU/GPU monitoring and **Light, Dark and Auto** themes.
 
-This is a fork of [nanomatters/ucc](https://github.com/nanomatters/ucc), with
-hardware integration for **MECHREVO YAOSHI Series-X6AR55xY**. The redesign keeps the
+The UCC Revorked foundation derives from
+[nanomatters/ucc](https://github.com/nanomatters/ucc), with hardware integration for
+**MECHREVO YAOSHI Series-X6AR55xY**. The combined project keeps the
 existing daemon and D-Bus architecture: the desktop application runs as your user,
 while `uccd` performs hardware operations through the kernel driver and Bluetooth.
 
@@ -25,6 +34,9 @@ while `uccd` performs hardware operations through the kernel driver and Bluetoot
 | **Watercool Settings** | Cooler enable toggle, manual fan speed, pump voltage, LED color/effects, water-cooler fan curve and pump-voltage curve. Accessible directly from the sidebar. |
 | **Monitor** | Temperature, fan duty, power, clocks and core-voltage history. Select metrics, use separate or unified graphs, pause, zoom and inspect points with crosshair/sticky markers. Smooth chart presentation is independent of telemetry polling; the power axis tops out at 250 W. |
 | **Keyboard & Hardware** | Keyboard lighting profiles, per-key selection/color, multi-key selection, global color and brightness. Hardware controls include webcam, Fn Lock and display brightness when the device exposes them. |
+| **Power & Devices** | Personal AC / Type-C / Battery policies for CPU governor/EPP/turbo, PCIe ASPM, PCI/USB runtime PM, Wi-Fi, modules and NVIDIA power service; manual overrides and application requests. |
+| **Lightbar** | Original per-mode front lighting, all notification animations, keyboard-derived colors, silent mode and welcome behavior. |
+| **Battery & Processes** | Battery watts/percentage, desktop startup preferences, KDE refresh suggestions and confirmed termination of the user's NVIDIA clients. |
 
 Availability follows the hardware capabilities reported by the daemon. The exact
 Mechrevo DMI match enables the known controller features; generic SKU `0001` is not
@@ -119,6 +131,8 @@ The approved [design references](docs/design/references/fluent-ui/) and detailed
 | `libucc-dbus` | Shared Qt D-Bus client library. |
 | `ucc-gui` | Qt Widgets/Charts desktop application. Plasma is not required. |
 | `ucc-cli` | Command-line client. |
+| `ucc-desktop-tray` | Standalone tray with original power-mode, battery and GPU-process behavior. |
+| `ucc-session-agent` | Desktop notification relay and action-based KDE refresh suggestions. |
 | `ucc-gnome` | GNOME Shell extension. |
 | `ucc-tray` | Optional KDE Plasma applet. |
 

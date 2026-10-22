@@ -1,7 +1,8 @@
 [Desktop Entry]
 Type=Application
-Name=Uniwill Control Center
-Comment=System control application for Uniwill laptops
+Name=Frixit Control Center
+Comment=Frixit's ControlCenter combined with the native UCC Revorked suite
+Comment[ru]=Объединение ControlCenter Frixit и UCC Revorked
 Exec=ucc-gui
 Icon=ucc-gui
 Terminal=false
