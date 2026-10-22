@@ -271,6 +271,7 @@ static std::string buildSettingsJSON( const std::string &keyboardBacklightStates
   oss << "{"
       << "\"fahrenheit\":" << ( settings.fahrenheit ? "true" : "false" ) << ","
       << "\"keyboardLayout\":\"" << jsonEscape(settings.keyboardLayout) << "\","
+      << "\"lightbar\":" << settings.lightbarSettings << ","
       << "\"powerDevices\":" << settings.powerDeviceSettings << ","
       << "\"stateMap\":{";
 
@@ -1232,6 +1233,40 @@ bool UccDBusInterfaceAdaptor::ScanPowerDevices()
   return SetPowerDeviceSettingsJSON(QString::fromStdString(m_service->m_powerDevices.scan().dump()));
 }
 
+QString UccDBusInterfaceAdaptor::GetLightbarSettingsJSON()
+{
+  if (!checkAuth( PolkitAuthority::ACTION_READ ) || !m_service || !m_service->m_lightbar) return "{}";
+  return QString::fromStdString(m_service->m_lightbar->settings().dump());
+}
+
+QString UccDBusInterfaceAdaptor::GetLightbarStatusJSON()
+{
+  if (!checkAuth( PolkitAuthority::ACTION_READ ) || !m_service || !m_service->m_lightbar) return "{}";
+  return QString::fromStdString(m_service->m_lightbar->status().dump());
+}
+
+bool UccDBusInterfaceAdaptor::SetLightbarSettingsJSON(const QString &json)
+{
+  if (!checkAuth( PolkitAuthority::ACTION_CONTROL ) || !m_service || !m_service->m_lightbar) return false;
+  try {
+    nlohmann::json normalized;std::string error;
+    if(!LightbarController::normalize(nlohmann::json::parse(json.toStdString()),normalized,error)) return false;
+    auto updated=m_service->m_settings;updated.lightbarSettings=normalized.dump();
+    if(!m_service->m_settingsManager.writeSettings(updated)) return false;
+    m_service->m_settings.lightbarSettings=updated.lightbarSettings;
+    m_service->m_lightbar->configure(normalized);
+    m_service->updateDBusSettingsData();
+    emit LightbarSettingsChanged(QString::fromStdString(normalized.dump()));
+    return true;
+  } catch(const std::exception &error) {syslog(LOG_ERR,"[Lightbar] %s",error.what());return false;}
+}
+
+bool UccDBusInterfaceAdaptor::TriggerLightbarAnimation(bool force)
+{
+  if (!checkAuth( PolkitAuthority::ACTION_CONTROL ) || !m_service || !m_service->m_lightbar) return false;
+  return m_service->m_lightbar->trigger(force);
+}
+
 bool UccDBusInterfaceAdaptor::SetManualPowerMode(const QString &mode)
 {
   if (!checkAuth( PolkitAuthority::ACTION_CONTROL ) || !m_service) return false;
@@ -1461,6 +1496,7 @@ bool UccDBusInterfaceAdaptor::SetKeyboardBacklightStatesJSON( const QString &key
     return false;
   }
 
+  m_service->refreshLightbarKeyboard();
   const std::string currentStatesJSON =
     m_service->m_keyboardBacklightController.currentStatesJSON();
 
@@ -2916,6 +2952,10 @@ bool UccDBusService::initDBus()
       std::lock_guard lock(m_powerStatusMutex);
       m_powerPolicyJSON = decision.status.dump();
     }
+    m_lightbar=std::make_unique<LightbarController>();
+    m_lightbar->setPowerMode(profileStateToString(determineState()).substr(6));
+    try {m_lightbar->configure(nlohmann::json::parse(m_settings.lightbarSettings));}
+    catch(const std::exception &error) {syslog(LOG_ERR,"[Lightbar] Ignoring invalid settings: %s",error.what());}
     syslog( LOG_INFO, "DBus service registered on %s (Qt D-Bus)", SERVICE_NAME );
     return true;
   }
@@ -2929,6 +2969,7 @@ bool UccDBusService::initDBus()
 void UccDBusService::shutdown()
 {
   syslog( LOG_INFO, "Shutting down workers..." );
+  if(m_lightbar) m_lightbar->shutdown();
 
   // Phase 1: Signal ALL workers to stop (non-blocking).
   // This must happen before waiting, because some onWork() callbacks
@@ -3536,6 +3577,7 @@ bool UccDBusService::applyProfileJSON( const std::string &profileJSON )
         std::cout << "[Profile] Applying keyboard backlight settings from profile" << std::endl;
         if ( m_keyboardBacklightController.applyProfileKeyboardStates( kbStateJSON ) )
         {
+          refreshLightbarKeyboard();
           std::lock_guard< std::mutex > lk( m_dbusData.dataMutex );
           m_dbusData.keyboardBacklightStatesJSON = m_keyboardBacklightController.currentStatesJSON();
         }
@@ -4334,6 +4376,13 @@ void UccDBusService::applyCTGPFromProfile( const UccProfile &profile )
   }
 }
 
+void UccDBusService::refreshLightbarKeyboard()
+{
+  if(m_adaptor) QMetaObject::invokeMethod(m_adaptor.get(),[this] {
+    if(m_lightbar) m_lightbar->keyboardChanged();
+  },Qt::QueuedConnection);
+}
+
 void UccDBusService::updatePowerPolicy()
 {
   const auto decision = m_powerPolicy.evaluate(determineState(), m_previousWaterCoolerConnected.load());
@@ -4362,6 +4411,9 @@ void UccDBusService::updatePowerPolicy()
   const auto deviceRevision=m_powerDevices.revision();
   if(mode!=m_lastDevicesMode || deviceRevision!=m_lastDeviceRevision) {
     m_lastDevicesMode=mode;m_lastDeviceRevision=deviceRevision;
+    if(m_adaptor) QMetaObject::invokeMethod(m_adaptor.get(),[this,mode] {
+      if(m_lightbar) m_lightbar->setPowerMode(mode);
+    },Qt::QueuedConnection);
     const bool enabled=m_powerDevices.settings().value("enabled",false);
     if(enabled || m_deviceCpuPolicyActive) {
       if(!m_profileCpuBase) m_profileCpuBase=m_activeProfile.cpu;

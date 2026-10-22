@@ -15,6 +15,7 @@
 
 #include "MainWindow.hpp"
 #include "PowerDevicesTab.hpp"
+#include "LightbarTab.hpp"
 #include "FluentTheme.hpp"
 #include "NotificationCenter.hpp"
 #include "AboutPage.hpp"
@@ -247,7 +248,7 @@ void MainWindow::setupUI()
   sideLayout->addWidget(device);sideLayout->addSpacing(20);
   auto *navigation=new QListWidget(sidebar);navigation->setObjectName("navigation");
   navigation->setIconSize(QSize(24,24));
-  const QStringList labels={"Overview","Profiles","Cooler Settings","Watercool Settings","Monitor","Keyboard & Hardware","About","Power & Devices"};
+  const QStringList labels={"Overview","Profiles","Cooler Settings","Watercool Settings","Monitor","Keyboard & Hardware","About","Power & Devices","Lightbar"};
   for(const auto &label:labels) new QListWidgetItem(FluentTheme::icon(label),label,navigation);
   sideLayout->addWidget(navigation,1);
   auto *footer=new QWidget(sidebar);footer->setObjectName("sidebarFooter");
@@ -333,12 +334,12 @@ void MainWindow::setupUI()
   auto showNavigationHeading=[heading,subtitle,labels](int row) {
     if(row<0 || row>=labels.size()) return;
     heading->setText(labels[row]);
-    const QStringList descriptions={"Your system at a glance","Power, cooling and lighting in one profile","Shape CPU and GPU cooling for your profile","Water cooling, pump and lighting controls","Live system telemetry","Backlight and device controls","Build information, project origins and open-source acknowledgements","CPU, modules and device policies for every power source"};
+    const QStringList descriptions={"Your system at a glance","Power, cooling and lighting in one profile","Shape CPU and GPU cooling for your profile","Water cooling, pump and lighting controls","Live system telemetry","Backlight and device controls","Build information, project origins and open-source acknowledgements","CPU, modules and device policies for every power source","Front lighting and notification animations"};
     subtitle->setText(descriptions.value(row));
   };
   connect(navigation,&QListWidget::currentRowChanged,this,[this,showNavigationHeading](int row){
-    if(row<0 || row>7) return;
-    const int pages[]={0,1,2,2,3,4,5,6};
+    if(row<0 || row>8) return;
+    const int pages[]={0,1,2,2,3,4,5,6,7};
     if(row==3 && !m_waterCoolerSupported) return;
     if(m_fanControlTab && (row==2 || row==3)) m_fanControlTab->findChild<QTabWidget *>("coolingPages")->setCurrentIndex(row-2);
     const bool samePage=m_tabs->currentIndex()==pages[row];
@@ -346,7 +347,7 @@ void MainWindow::setupUI()
     if(samePage) m_entrance->play();
   });
   connect(m_tabs,&QTabWidget::currentChanged,navigation,[this,navigation,showNavigationHeading](int index){
-    if(index<0 || index>6) return;
+    if(index<0 || index>7) return;
     int row=index<3 ? index : index+1;
     if(index==2 && m_fanControlTab) row=2+m_fanControlTab->findChild<QTabWidget *>("coolingPages")->currentIndex();
     const QSignalBlocker blocked(navigation);navigation->setCurrentRow(row);showNavigationHeading(row);
@@ -390,6 +391,9 @@ void MainWindow::setupUI()
   auto *powerDevices=new PowerDevicesTab(m_UccdClient.get(),this);
   connect(powerDevices,&PowerDevicesTab::message,statusBar(),[this](const QString &text){statusBar()->showMessage(text);});
   m_tabs->addTab(powerDevices,"Power & Devices");
+  auto *lightbar=new LightbarTab(m_UccdClient.get(),this);
+  connect(lightbar,&LightbarTab::message,statusBar(),[this](const QString &text){statusBar()->showMessage(text);});
+  m_tabs->addTab(lightbar,"Lightbar");
   if(!m_waterCoolerSupported) {navigation->item(3)->setFlags(navigation->item(3)->flags() & ~Qt::ItemIsEnabled);navigation->item(3)->setToolTip("Water cooling is not supported by this device.");}
   navigation->setCurrentRow(0);
 }

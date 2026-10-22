@@ -38,6 +38,8 @@ endfunction()
 # ---------- tests -----------------------------------------------------------
 
 ucc_add_test( test_state_utils      test_state_utils.cpp )
+ucc_add_test( test_lightbar test_lightbar.cpp )
+ucc_add_test( test_notification_monitor test_notification_monitor.cpp )
 ucc_add_test( test_power_policy     test_power_policy.cpp )
 ucc_add_test( test_power_devices    test_power_devices.cpp )
 ucc_add_test( test_keyboard_controller test_keyboard_controller.cpp )
@@ -87,6 +89,7 @@ if(DBUS_RUN_SESSION_EXECUTABLE AND BUILD_GUI)
     ../ucc-gui/src/FluentTheme.cpp ../ucc-gui/inc/FluentTheme.hpp
     ../ucc-gui/src/MainWindow.cpp ../ucc-gui/inc/MainWindow.hpp
     ../ucc-gui/src/PowerDevicesTab.cpp ../ucc-gui/inc/PowerDevicesTab.hpp
+    ../ucc-gui/src/LightbarTab.cpp ../ucc-gui/inc/LightbarTab.hpp
     ../ucc-gui/src/KeyboardTab.cpp
     ../ucc-gui/src/KeyboardVisualizerWidget.cpp ../ucc-gui/inc/KeyboardVisualizerWidget.hpp
     ../ucc-gui/src/HardwareTab.cpp ../ucc-gui/inc/HardwareTab.hpp

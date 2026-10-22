@@ -103,9 +103,10 @@ def convert(data, settings, capabilities, brightness=None):
                               for dev in config.get('devices', [])),
         'devices': copy.deepcopy(config.get('devices', [])),
     }
+    result['lightbar'] = copy.deepcopy(data.get('lightbar', {}))
+    result['lightbar']['managed'] = True
     pending = {
         'description': 'Preserved source values for features not implemented yet; not daemon settings.',
-        'lightbar': copy.deepcopy(data.get('lightbar', {})),
         'gui': copy.deepcopy(data.get('gui_settings', {})),
         'gpu_run_mode': data.get('gpu_run_mode', 'auto'),
     }

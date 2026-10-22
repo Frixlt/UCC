@@ -209,6 +209,7 @@ private:
       settings.keyboardLayout = j.value("keyboardLayout", std::string("auto"));
       settings.keyboardBacklightStates = j.value("keyboardBacklightStates", nlohmann::json::array()).dump();
       settings.powerDeviceSettings = j.value("powerDevices", nlohmann::json::object()).dump();
+      settings.lightbarSettings = j.value("lightbar", nlohmann::json::object()).dump();
 
       // Parse profiles map
       if (j.contains("profiles")) {
@@ -267,6 +268,7 @@ private:
 
     json << "{\n";
     json << "  \"keyboardLayout\": " << nlohmann::json(settings.keyboardLayout).dump() << ",\n";
+    json << "  \"lightbar\": " << settings.lightbarSettings << ",\n";
     json << "  \"powerDevices\": " << settings.powerDeviceSettings << ",\n";
     json << "  \"keyboardBacklightStates\": " << settings.keyboardBacklightStates << ",\n";
     json << "  \"fahrenheit\": " << ( settings.fahrenheit ? "true" : "false" ) << ",\n";

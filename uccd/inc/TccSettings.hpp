@@ -60,6 +60,7 @@ struct TccSettings
   std::string keyboardLayout = "auto";
   std::string keyboardBacklightStates = "[]";
   std::string powerDeviceSettings = "{}";
+  std::string lightbarSettings = "{}";
   std::vector< YCbCr420Card > ycbcr420Workaround;  // YUV420 workaround per card/port
   std::optional< std::string > chargingProfile;  // null in TypeScript
   std::optional< std::string > chargingPriority;  // null in TypeScript

@@ -69,6 +69,8 @@ UccdClient::UccdClient( QObject *parent )
 void UccdClient::subscribeDbusSignals()
 {
   auto policyBus = QDBusConnection::systemBus();
+  policyBus.disconnect(DBUS_SERVICE, DBUS_PATH, DBUS_INTERFACE, "LightbarSettingsChanged", this, SIGNAL(lightbarSettingsChanged(QString)));
+  policyBus.connect(DBUS_SERVICE, DBUS_PATH, DBUS_INTERFACE, "LightbarSettingsChanged", this, SIGNAL(lightbarSettingsChanged(QString)));
   policyBus.disconnect(DBUS_SERVICE, DBUS_PATH, DBUS_INTERFACE, "PowerDeviceStatusChanged", this, SIGNAL(powerDeviceStatusChanged(QString)));
   policyBus.connect(DBUS_SERVICE, DBUS_PATH, DBUS_INTERFACE, "PowerDeviceStatusChanged", this, SIGNAL(powerDeviceStatusChanged(QString)));
   policyBus.disconnect(DBUS_SERVICE, DBUS_PATH, DBUS_INTERFACE, "PowerPolicyChanged", this, SIGNAL(powerPolicyChanged(QString)));
@@ -353,6 +355,25 @@ bool UccdClient::setPowerDeviceSettingsJSON(const std::string &json)
 bool UccdClient::scanPowerDevices()
 {
   return callMethod<bool>("ScanPowerDevices").value_or(false);
+}
+
+std::optional<std::string> UccdClient::getLightbarSettingsJSON()
+{
+  if(auto json=callMethod<QString>("GetLightbarSettingsJSON")) return json->toStdString();
+  return std::nullopt;
+}
+std::optional<std::string> UccdClient::getLightbarStatusJSON()
+{
+  if(auto json=callMethod<QString>("GetLightbarStatusJSON")) return json->toStdString();
+  return std::nullopt;
+}
+bool UccdClient::setLightbarSettingsJSON(const std::string &json)
+{
+  return callMethod<bool>("SetLightbarSettingsJSON",QString::fromStdString(json)).value_or(false);
+}
+bool UccdClient::triggerLightbarAnimation(bool force)
+{
+  return callMethod<bool>("TriggerLightbarAnimation",force).value_or(false);
 }
 
 bool UccdClient::setManualPowerMode(const std::string &mode)

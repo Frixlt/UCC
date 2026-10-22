@@ -2,7 +2,8 @@
 
 This branch uses the user's committed ControlCenter working files as the source
 of behavior and configuration. The old CPU temperature-limit/MSR implementation
-is intentionally excluded. Original repositories remain separate and unchanged
+is intentionally excluded. The user also explicitly excluded `gpu-run` from the
+current migration. Original repositories remain separate and unchanged
 apart from their requested baseline commits:
 
 - ControlCenter root: `55a1d5c` (includes SOURCE_SNAPSHOT.json).
@@ -47,6 +48,19 @@ apart from their requested baseline commits:
   keyboard state is restored at daemon startup; live edits of the personal layout
   persist the current colors/brightness and selected keyboard profile.
 
+- Native front lightbar control: independent AC / USB-C / Battery enable,
+  brightness, custom/preset/majority-keyboard color and all five original
+  notification animations. Silent mode suppresses normal notifications; manual
+  Test and the optional one-time welcome animation bypass it. Disabled power
+  modes remain off. Flash finishes off, other animations restore the current
+  color. Changing power mode or settings cancels an old animation immediately.
+- `ucc-session-agent` observes notification method headers in the desktop session
+  using `dbus-monitor` and forwards only an event to the daemon. It never forwards
+  or logs notification contents. It reconnects after monitor/service restarts,
+  coalesces storms, keeps one instance per user session and cleans up its child
+  process on SIGTERM/SIGINT. A desktop autostart entry is installed by packaging.
+  The agent exits without monitoring or commands in read-only builds.
+
 Device settings are stored in `/etc/ucc/settings` under `powerDevices`. Their
 paths, services and value ranges are validated in the daemon. The systemd unit
 permits writes to the four explicit module/sysctl files required by the original
@@ -64,10 +78,10 @@ private directory. It never installs settings, changes a service or contacts
 hardware. It produces:
 
 - `settings`: UCC settings with the user's colors, physical layout, complete device
-  table and per-mode CPU/ASPM policies.
+  table, per-mode CPU/ASPM policies and the source lightbar settings.
 - `report.json`: imported key/device counts, excluded temperature limit and any
   unresolved TCC profile IDs.
-- `pending.json`: preserved lightbar, GUI and gpu-run values for remaining work.
+- `pending.json`: preserved GUI settings and the excluded historical gpu-run value.
 
 An exported/converted UCC settings file is optional. When a referenced TCC profile
 exists in it, the importer creates a separate profile for each mode, preserving
@@ -97,9 +111,28 @@ This session's offline preview uses the actual read-only detected capabilities:
 prepared output are local, ignored artifacts under `artifacts/frixit-import-*`.
 No prepared file has been copied into `/etc/ucc`.
 
+## Lightbar session integration
+
+Build option `BUILD_SESSION_AGENT` defaults to ON. The daemon owns LED access;
+`ucc-session-agent` runs as the desktop user and requires `dbus-monitor` in PATH.
+Session monitoring depends on the session bus allowing monitoring. Run the agent
+manually after a first installation, or log in again to use its autostart entry.
+The GUI does not have to remain open. No agent or autostart entry was activated
+on this machine during development.
+
+Lightbar control defaults to unmanaged for existing UCC installations; the offline
+import explicitly enables it using the user's values. Brightness remains in
+0–255 UI units and is scaled to the detected hardware maximum. The actual local
+lightbar was read only: one RGB zone, maximum 100, current brightness 0. Tests use
+fake LED nodes and the GUI screenshot uses demonstration data.
+
 ## API and CLI
 
 ```bash
+ucc-cli lightbar get
+ucc-cli lightbar status
+ucc-cli lightbar set '<validated JSON object>'
+ucc-cli lightbar test
 ucc-cli power status
 ucc-cli power mode auto
 ucc-cli power mode type_c
@@ -114,7 +147,10 @@ New D-Bus methods on `com.uniwill.uccd`:
 `RegisterPowerRequest(name, reason, mode)`, `UnregisterPowerRequest(name)`,
 `GetPowerDeviceSettingsJSON`, `SetPowerDeviceSettingsJSON`,
 `GetPowerDeviceStatusJSON`, `ScanPowerDevices`.
-Signals: `PowerPolicyChanged`, `PowerDeviceStatusChanged`.
+Lightbar methods: `GetLightbarSettingsJSON`, `GetLightbarStatusJSON`,
+`SetLightbarSettingsJSON`, `TriggerLightbarAnimation(force)`. The session relay
+passes false, manual Test passes true.
+Signals: `PowerPolicyChanged`, `PowerDeviceStatusChanged`, `LightbarSettingsChanged`.
 Control calls use the active-session Polkit control action; previews block writes.
 Keep the registering D-Bus connection open for the lifetime of an application
 request. `ac` and `type_c` request a minimum performance mode; an empty mode only
@@ -130,14 +166,16 @@ preview write guards and existing upstream screens. Saved screenshots are local
 artifacts, not captures of a running controlling daemon.
 
 Verified locally with Qt 6.12: daemon, CLI and GUI builds succeeded; the normal
-build passed all 22 CTest entries. A separate read-only build passed the focused
+build passed all 24 CTest entries. A separate read-only build passed the focused
 keyboard, sparse LED, device matrix, policy signal, rejected command and preview
-write-guard checks. The actual offline import validated all 57 device entries
+write-guard checks. The lightbar update also passed focused read-only GUI, session
+agent and all-write-guard checks; normal tests include an end-to-end fake-monitor
+relay, mode changes during animation and original-source lightbar import. The actual offline import validated all 57 device entries
 and 101 saved keys. Qt Charts was supplied from an extracted matching package
 under `/tmp`; no system packages, services or live hardware settings were changed.
 
-Remaining migration work: notification-driven lightbar and animations, external
-`gpu-run` compatibility, GPU process controls, battery/tray integration, KDE
+Remaining migration work: GPU process controls, battery/tray integration, KDE
 refresh-rate notifications, complete TCC cooling/profile import, autostart and
 real suspend/resume verification. These are not claimed as implemented by the
-initial power/device and keyboard changes.
+power/device, keyboard and lightbar changes. `gpu-run` is excluded at the user’s
+request rather than left as an implementation task.

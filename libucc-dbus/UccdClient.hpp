@@ -67,6 +67,10 @@ public:
   std::optional<std::string> getPowerDeviceStatusJSON();
   bool setPowerDeviceSettingsJSON(const std::string &json);
   bool scanPowerDevices();
+  std::optional<std::string> getLightbarSettingsJSON();
+  std::optional<std::string> getLightbarStatusJSON();
+  bool setLightbarSettingsJSON(const std::string &json);
+  bool triggerLightbarAnimation(bool force=false);
   bool setManualPowerMode(const std::string &mode);
   bool registerPowerRequest(const std::string &name, const std::string &reason, const std::string &mode);
   bool unregisterPowerRequest(const std::string &name);
@@ -236,6 +240,7 @@ signals:
   void powerStateChanged( const QString &state );
   void powerPolicyChanged(const QString &json);
   void powerDeviceStatusChanged(const QString &json);
+  void lightbarSettingsChanged(const QString &json);
   void connectionStatusChanged( bool connected );
 
 private slots:

@@ -86,6 +86,7 @@ set( CMAKE_AUTOMOC ON )
 option( BUILD_GUI "Build the main GUI application" ON )
 option( BUILD_CLI "Build the command-line interface" ON )
 option( BUILD_TRAY "Build the system tray applet" ON )
+option( BUILD_SESSION_AGENT "Build the desktop notification relay" ON )
 option( BUILD_GNOME "Install the GNOME Shell extension" ON )
 option( BUILD_TESTS "Build the unit test suite" OFF )
 option( UCC_READ_ONLY_PREVIEW "Block hardware/settings writes in prototype clients" OFF )
@@ -130,6 +131,10 @@ endif()
 
 if( BUILD_TRAY )
   add_subdirectory( ucc-tray )
+endif()
+
+if( BUILD_SESSION_AGENT )
+  add_subdirectory( ucc-session )
 endif()
 
 if( BUILD_TESTS )

@@ -1552,6 +1552,8 @@ static void printUsage()
     "  monitor [-n COUNT] [-i SECS]  Live monitor (like top). Default: continuous, 2s\n"
     "\n"
     "Per-device policies:\n"
+    "  lightbar get|status|test|notify Read settings/results or trigger animation\n"
+    "  lightbar set <JSON>           Save per-mode lightbar settings\n"
     "  devices get|status|scan       Read settings/results or discover hardware\n"
     "  devices set <JSON>            Save validated per-mode CPU/device policies\n"
     "\n"
@@ -1822,6 +1824,16 @@ int main( int argc, char *argv[] )
   if ( matchArg( cmd, "status" ) )
     return jsonMode ? cmdStatusJSON( client ) : cmdStatus( client );
 
+  if (matchArg(cmd,"lightbar")) {
+    if(args.size()==2 && (matchArg(args[1],"get") || matchArg(args[1],"status"))) {
+      const auto json=matchArg(args[1],"get") ? client.getLightbarSettingsJSON() : client.getLightbarStatusJSON();
+      if(json) {std::puts(json->c_str());return 0;}return 1;
+    }
+    if(args.size()==3 && matchArg(args[1],"set")) return client.setLightbarSettingsJSON(args[2]) ? 0 : 1;
+    if(args.size()==2 && matchArg(args[1],"test")) return client.triggerLightbarAnimation(true) ? 0 : 1;
+    if(args.size()==2 && matchArg(args[1],"notify")) return client.triggerLightbarAnimation(false) ? 0 : 1;
+    std::fputs("Usage: ucc-cli lightbar <get|status|test|notify> | lightbar set <JSON>\n",stderr);return 1;
+  }
   if (matchArg(cmd,"devices")) {
     if (args.size()==2 && (matchArg(args[1],"get") || matchArg(args[1],"status"))) {
       const auto json=matchArg(args[1],"get") ? client.getPowerDeviceSettingsJSON() : client.getPowerDeviceStatusJSON();

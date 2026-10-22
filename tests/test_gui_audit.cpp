@@ -11,6 +11,7 @@
 #include <QJsonArray>
 #include <QTimer>
 #include <QFile>
+#include <QTemporaryDir>
 #include <QDir>
 #include <QVariantAnimation>
 #include <QScrollArea>
@@ -33,7 +34,7 @@
 class AuditDaemon : public QDBusVirtualObject {
   QJsonArray writes;
   QJsonObject reads;
-  QString runtimeProfile,lastAppliedProfile,lastDeviceSettings;
+  QString runtimeProfile,lastAppliedProfile,lastDeviceSettings,lastLightbar;
   bool failReads=false,failControl=false;
   bool visualFixture=false;
   bool coolerAuto=false;
@@ -46,6 +47,7 @@ public:
     const auto method=msg.member(); QVariant result;
     if(method=="TestRuntimeProfile") {runtimeProfile=msg.arguments().value(0).toString();bus.send(msg.createReply(true));return true;}
     if(method=="TestFailControl") {failControl=msg.arguments().value(0).toBool();bus.send(msg.createReply(true));return true;}
+    if(method=="TestLastLightbar") {bus.send(msg.createReply(lastLightbar));return true;}
     if(method=="TestLastPowerDevices") {bus.send(msg.createReply(lastDeviceSettings));return true;}
     if(method=="TestLastAppliedProfile") {bus.send(msg.createReply(lastAppliedProfile));return true;}
     if(method=="GetActiveProfileJSON" && !runtimeProfile.isEmpty()) {bus.send(msg.createReply(runtimeProfile));return true;}
@@ -60,10 +62,11 @@ public:
     else if(method=="IsWaterCoolerAutoControlEnabled") result=coolerAuto;
     else if (method=="TestVisualFixture") {visualFixture=true;result=true;}
     else if (method=="TestStats") result=QString::fromUtf8(QJsonDocument(QJsonObject{{"writes",writes},{"reads",reads}}).toJson());
-    else if (method=="TestReset") { writes={};reads={};runtimeProfile.clear();lastAppliedProfile.clear();lastDeviceSettings.clear();failReads=false;failControl=false;visualFixture=false;coolerAuto=false;coolerEnabled=false;result=true; }
+    else if (method=="TestReset") { writes={};reads={};runtimeProfile.clear();lastAppliedProfile.clear();lastDeviceSettings.clear();lastLightbar.clear();failReads=false;failControl=false;visualFixture=false;coolerAuto=false;coolerEnabled=false;result=true; }
     else if (method=="TestFailReads") { failReads=msg.arguments().value(0).toBool();result=true; }
-    else if (method=="ScanPowerDevices" || method.startsWith("Register") || method.startsWith("Unregister") || method.startsWith("Set") || method.startsWith("TurnOff") || method=="EnableWaterCooler" || method.startsWith("Apply") || method.startsWith("Save") || method.startsWith("Delete") || method.startsWith("Revert")) {
+    else if (method=="TriggerLightbarAnimation" || method=="ScanPowerDevices" || method.startsWith("Register") || method.startsWith("Unregister") || method.startsWith("Set") || method.startsWith("TurnOff") || method=="EnableWaterCooler" || method.startsWith("Apply") || method.startsWith("Save") || method.startsWith("Delete") || method.startsWith("Revert")) {
       if(failControl) {bus.send(msg.createReply(false));return true;}
+      if(method=="SetLightbarSettingsJSON") lastLightbar=msg.arguments().value(0).toString();
       if(method=="SetPowerDeviceSettingsJSON") lastDeviceSettings=msg.arguments().value(0).toString();
       writes.append(method);if(method=="ApplyProfile") lastAppliedProfile=msg.arguments().value(0).toString();result=true;
     } else if (method.endsWith("Supported") || method=="GetWebcamSWStatus" || method=="GetFnLockStatus" || method=="IsDeviceSupported" || method=="IsWaterCoolerEnabled") result=false;
@@ -115,6 +118,41 @@ private slots:
     profiles=std::make_unique<ucc::ProfileManager>();
   }
   void init() { control("TestReset"); ucc::FluentTheme::setMode(ucc::FluentTheme::Mode::Light,false); }
+  void sessionAgentRelaysOnlyNotificationEvents() {
+    const auto agentPath=QCoreApplication::applicationDirPath()+"/ucc-session-agent";
+    if(!QFile::exists(agentPath)) QSKIP("Session agent not built");
+    control("TestVisualFixture");QTemporaryDir root;QVERIFY(root.isValid());
+    QFile monitor(root.path()+"/dbus-monitor");QVERIFY(monitor.open(QIODevice::WriteOnly));
+    monitor.write("#!/bin/sh\nprintf '%s\\n' 'method call time=1 sender=:1.2 -> destination=:1.3 serial=4 path=/org/freedesktop/Notifications; interface=org.freedesktop.Notifications; member=Notify' '   string \"private body\"'\nexec /bin/sleep 5\n");monitor.close();QVERIFY(monitor.setPermissions(QFile::ReadOwner|QFile::WriteOwner|QFile::ExeOwner));
+    QProcess agent;auto environment=QProcessEnvironment::systemEnvironment();environment.insert("PATH",root.path()+":"+environment.value("PATH"));environment.insert("XDG_RUNTIME_DIR",root.path());agent.setProcessEnvironment(environment);agent.start(agentPath,{});QVERIFY(agent.waitForStarted());
+    const auto cleanup=qScopeGuard([&]{if(agent.state()!=QProcess::NotRunning) {agent.terminate();if(!agent.waitForFinished(1500)) {agent.kill();agent.waitForFinished();}}});
+#ifdef UCC_READ_ONLY_PREVIEW
+    QTRY_COMPARE(agent.state(),QProcess::NotRunning);QVERIFY(stats()["writes"].toArray().isEmpty());
+#else
+    QTRY_VERIFY(stats()["writes"].toArray().contains("TriggerLightbarAnimation"));
+    QCOMPARE(stats()["writes"].toArray().size(),1);
+    agent.terminate();QVERIFY(agent.waitForFinished(1500));QCOMPARE(agent.exitStatus(),QProcess::NormalExit);QCOMPARE(agent.exitCode(),0);
+#endif
+  }
+  void lightbarKeepsSourceValuesAndRejectsFailedCommands() {
+    control("TestVisualFixture");ucc::MainWindow window;window.resize(1280,900);window.show();
+    auto *navigation=window.findChild<QListWidget*>("navigation");QVERIFY(navigation);navigation->setCurrentRow(8);QTest::qWait(350);
+    QCOMPARE(window.findChild<QLabel*>("pageTitle")->text(),QString("Lightbar"));
+    QCOMPARE(window.findChild<QTabWidget*>("pages")->currentIndex(),7);
+    auto *ac=window.findChild<QSpinBox*>("lightbarBrightness_ac"),*usb=window.findChild<QSpinBox*>("lightbarBrightness_type_c");QVERIFY(ac);QVERIFY(usb);QCOMPARE(ac->value(),0);QCOMPARE(usb->value(),148);
+    QVERIFY(!window.findChild<QCheckBox*>("lightbarEnabled_bat")->isChecked());
+    auto *save=window.findChild<QPushButton*>("saveLightbar"),*test=window.findChild<QPushButton*>("testLightbar");QVERIFY(save);QVERIFY(test);
+#ifdef UCC_READ_ONLY_PREVIEW
+    QVERIFY(!save->isEnabled());QVERIFY(!test->isEnabled());
+#else
+    usb->setValue(99);QTest::mouseClick(save,Qt::LeftButton);
+    const auto saved=QJsonDocument::fromJson(control("TestLastLightbar").toString().toUtf8()).object()["power_settings"].toObject();
+    QCOMPARE(saved["ac"].toObject()["brightness_val"].toInt(),0);QCOMPARE(saved["type_c"].toObject()["brightness_val"].toInt(),99);QCOMPARE(saved["ac"].toObject()["color_mode"].toArray(),(QJsonArray{43,47,255}));
+    QTest::mouseClick(test,Qt::LeftButton);QVERIFY(stats()["writes"].toArray().contains("TriggerLightbarAnimation"));
+    control("TestFailControl",{true});QVERIFY(!client->setLightbarSettingsJSON("{}"));QVERIFY(!client->triggerLightbarAnimation(true));QVERIFY(!client->triggerLightbarAnimation(false));
+#endif
+    const auto output=qEnvironmentVariable("UCC_SCREENSHOT_DIR");if(!output.isEmpty()) {QVERIFY(QDir().mkpath(output));QVERIFY(window.grab().save(output+"/lightbar.png"));}
+  }
   void calibratedKeyboardKeepsPhysicalLedIdentities() {
     ucc::KeyboardVisualizerWidget keyboard(126,50,nullptr,true);
     const auto buttons = keyboard.findChildren<QPushButton *>();
@@ -368,13 +406,13 @@ private slots:
     control("TestVisualFixture");
     ucc::MainWindow window;
     auto *navigation=window.findChild<QListWidget*>("navigation");
-    QVERIFY2(navigation,"Fluent shell must expose all eight sections through sidebar navigation");
-    QCOMPARE(navigation->count(),8);
+    QVERIFY2(navigation,"Fluent shell must expose all nine sections through sidebar navigation");
+    QCOMPARE(navigation->count(),9);
     auto *pages=window.findChild<QTabWidget*>("pages");
     QVERIFY(pages);
     window.show();
-    const int pageIndices[]={0,1,2,2,3,4,5,6};
-    for(int index=0;index<8;++index) {
+    const int pageIndices[]={0,1,2,2,3,4,5,6,7};
+    for(int index=0;index<9;++index) {
       if (!(navigation->item(index)->flags() & Qt::ItemIsEnabled)) continue;
       navigation->setCurrentRow(index);
       QCOMPARE(pages->currentIndex(),pageIndices[index]);
@@ -726,6 +764,9 @@ private slots:
     client->deleteCustomProfile("preview");
     client->setManualPowerMode("bat");
     client->setPowerDeviceSettingsJSON("{}");
+    client->setLightbarSettingsJSON("{}");
+    client->triggerLightbarAnimation(true);
+    client->triggerLightbarAnimation(false);
     client->scanPowerDevices();
     client->registerPowerRequest("test","Preview guard","ac");
     client->unregisterPowerRequest("test");

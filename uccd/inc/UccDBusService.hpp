@@ -48,6 +48,7 @@
 #include "TccSettings.hpp"
 #include "PowerPolicy.hpp"
 #include "PowerDeviceController.hpp"
+#include "LightbarController.hpp"
 #include <QDBusServiceWatcher>
 #include "MetricsHistoryStore.hpp"
 #include "SystemInfo.hpp"
@@ -302,6 +303,10 @@ public slots:
   QString GetPowerDeviceStatusJSON();
   bool SetPowerDeviceSettingsJSON(const QString &json);
   bool ScanPowerDevices();
+  QString GetLightbarSettingsJSON();
+  QString GetLightbarStatusJSON();
+  bool SetLightbarSettingsJSON(const QString &json);
+  bool TriggerLightbarAnimation(bool force);
   bool SetManualPowerMode(const QString &mode);
   bool RegisterPowerRequest(const QString &name, const QString &reason, const QString &mode);
   bool UnregisterPowerRequest(const QString &name);
@@ -420,6 +425,7 @@ signals:
   void PowerStateChanged( const QString &state );
   void PowerPolicyChanged(const QString &json);
   void PowerDeviceStatusChanged(const QString &json);
+  void LightbarSettingsChanged(const QString &json);
   void WaterCoolerStatusChanged( const QString &status );
 
 public:
@@ -566,6 +572,8 @@ private:
   std::atomic<ProfileState> m_currentState;
   PowerPolicy m_powerPolicy;
   PowerDeviceController m_powerDevices;
+  std::unique_ptr<LightbarController> m_lightbar;
+  void refreshLightbarKeyboard();
   std::optional<UccProfileCpu> m_profileCpuBase;
   std::atomic<ProfileState> m_effectivePowerMode{ProfileState::AC};
   std::string m_lastDevicesMode;

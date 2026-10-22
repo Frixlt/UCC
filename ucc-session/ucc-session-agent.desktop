@@ -1,0 +1,10 @@
+[Desktop Entry]
+Type=Application
+Name=UCC session agent
+Comment=Animate the front lightbar for desktop notifications
+Exec=ucc-session-agent
+TryExec=ucc-session-agent
+Icon=ucc-gui
+Terminal=false
+NoDisplay=true
+X-GNOME-Autostart-enabled=true
