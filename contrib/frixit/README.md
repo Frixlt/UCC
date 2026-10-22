@@ -81,10 +81,13 @@ hardware. It produces:
   table, per-mode CPU/ASPM policies and the source lightbar settings.
 - `report.json`: imported key/device counts, excluded temperature limit and any
   unresolved TCC profile IDs.
-- `pending.json`: preserved GUI settings and the excluded historical gpu-run value.
+- `pending.json`: preserved GUI preferences for the remaining desktop integration.
+  `gpu-run` is listed separately as excluded in the report.
 
-An exported/converted UCC settings file is optional. When a referenced TCC profile
-exists in it, the importer creates a separate profile for each mode, preserving
+An exported/converted UCC settings file is optional. A local TCC directory and
+installed `app.asar` can also supply the original profiles (see below). When a
+referenced TCC profile exists in the baseline, the importer creates a separate
+profile for each mode, preserving
 fan curves, cooling and power-limit data but replacing CPU/key assignments with
 user values. A shared source profile is copied rather than overwritten in place.
 Missing TCC profiles are reported; guessed fan curves or TDP values are never
@@ -110,6 +113,41 @@ This session's offline preview uses the actual read-only detected capabilities:
 126 zones, max brightness 50, current brightness 0. The input capabilities and
 prepared output are local, ignored artifacts under `artifacts/frixit-import-*`.
 No prepared file has been copied into `/etc/ucc`.
+
+### Direct import from the installed TCC
+
+```bash
+python3 contrib/frixit/migrate-controlcenter.py \
+  /path/to/ControlCenter/Data ./new-import \
+  --capabilities capabilities.json \
+  --tcc-dir /etc/tcc \
+  --tcc-archive /opt/tuxedo-control-center/resources/app.asar
+```
+
+The archive is read only. A bounded parser reads the static fan-preset literal;
+no JavaScript from the archive is executed or extracted to the filesystem. The
+converter distinguishes **named** active presets from inactive `customFanCurve`
+values. For named presets, it bakes the source minimum/maximum/offset into full
+one-degree tables. Custom curves use TCC's rounding and ignore those modifiers,
+as TCC does. Missing presets fail rather than falling back to guessed curves.
+UCC's runtime filtering, hysteresis and critical-temperature overrides remain in
+use; importing static tables does not claim identical runtime fan dynamics.
+
+CPU core/frequency limits, ODM power limits, cTGP offsets and charging settings
+are preserved. The old `nvidiaPowerCTRLProfile.cTGPOffset` field is converted to
+`nvidiaCTGPOffset`. Each mode gets its own main profile and the personal keyboard
+reference. Explicit `--settings` UCC profiles take precedence over profiles of the
+same ID from TCC, preserving existing cooler settings.
+
+The actual source installation supplied all three requested IDs. Local output is
+`artifacts/frixit-import-with-tcc-final`. Its report explicitly excludes
+`gpu-run`. AC retains 24 cores, TDP values 210/210/420 and
+cTGP offset 95; USB-C retains 24 cores and 40/40/72; battery retains 8 cores and
+11/20/32. These are the user's source values, not new recommended limits. All
+three have 101 CPU and 101 GPU table points. The actual output was validated by
+UCC's settings and profile parsers, including profile serialization round-trip;
+all CPU/TDP/cTGP/keyboard references and every table point survived. Nothing was
+installed or applied to hardware.
 
 ## Lightbar session integration
 
@@ -170,12 +208,15 @@ build passed all 24 CTest entries. A separate read-only build passed the focused
 keyboard, sparse LED, device matrix, policy signal, rejected command and preview
 write-guard checks. The lightbar update also passed focused read-only GUI, session
 agent and all-write-guard checks; normal tests include an end-to-end fake-monitor
-relay, mode changes during animation and original-source lightbar import. The actual offline import validated all 57 device entries
+relay, mode changes during animation and original-source lightbar import. Five
+additional converter tests cover named/custom fan selection, modifiers, rounding,
+missing/malformed presets and read-only archive parsing. The actual offline
+import validated all 57 device entries
 and 101 saved keys. Qt Charts was supplied from an extracted matching package
 under `/tmp`; no system packages, services or live hardware settings were changed.
 
 Remaining migration work: GPU process controls, battery/tray integration, KDE
-refresh-rate notifications, complete TCC cooling/profile import, autostart and
+refresh-rate notifications, full GUI/tray autostart integration and
 real suspend/resume verification. These are not claimed as implemented by the
 power/device, keyboard and lightbar changes. `gpu-run` is excluded at the user’s
 request rather than left as an implementation task.

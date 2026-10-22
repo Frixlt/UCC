@@ -29,6 +29,8 @@ class MigrationTest(unittest.TestCase):
         self.assertEqual(settings['keyboardLayout'], 'frixit-mechrevo')
         self.assertEqual((self.base, self.data), before)
         self.assertEqual(report['ignored'], ['cpu_temp_limit'])
+        self.assertEqual(report['excludedFeatures'], ['gpu-run'])
+        self.assertNotIn('gpu_run_mode', pending)
         self.assertEqual(settings['lightbar'], {**self.data['lightbar'], 'managed': True})
         self.assertNotIn('lightbar', pending)
         self.assertEqual(settings['powerDevices']['devices'], self.data['config']['devices'])

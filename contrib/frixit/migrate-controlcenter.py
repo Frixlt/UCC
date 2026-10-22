@@ -9,7 +9,11 @@ import argparse
 import copy
 import json
 import os
+import sys
 from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from tcc_import import merge_tcc, read_fan_presets
 
 CPU = {
     'performance': ('performance', 'performance'),
@@ -66,7 +70,7 @@ def convert(data, settings, capabilities, brightness=None):
     mappings = result.setdefault('stateMap', {})
     config = data['config']
     report = {'importedKeys': len(colors), 'importedDevices': len(config.get('devices', [])), 'brightness': brightness,
-              'ignored': ['cpu_temp_limit'], 'profiles': {}, 'unresolvedProfiles': []}
+              'ignored': ['cpu_temp_limit'], 'excludedFeatures': ['gpu-run'], 'profiles': {}, 'unresolvedProfiles': []}
     turbo = next((dev for dev in config.get('devices', [])
                   if dev.get('path') == '/sys/devices/system/cpu/intel_pstate/no_turbo'), {})
     for mode in ('ac', 'type_c', 'bat'):
@@ -108,7 +112,6 @@ def convert(data, settings, capabilities, brightness=None):
     pending = {
         'description': 'Preserved source values for features not implemented yet; not daemon settings.',
         'gui': copy.deepcopy(data.get('gui_settings', {})),
-        'gpu_run_mode': data.get('gpu_run_mode', 'auto'),
     }
     return result, report, pending
 
@@ -119,16 +122,23 @@ def main():
     parser.add_argument('output', type=Path, help='New private directory; existing paths are refused')
     parser.add_argument('--settings', type=Path, help='Exported/converted UCC settings (optional)')
     parser.add_argument('--capabilities', required=True, type=Path, help='Keyboard capabilities JSON including maxBrightness and zones/ledIds')
+    parser.add_argument('--tcc-dir', type=Path, help='Read-only TCC settings/profiles directory, e.g. /etc/tcc')
+    parser.add_argument('--tcc-archive', type=Path, help='Installed app.asar with the actual named TCC fan presets')
     parser.add_argument('--brightness', type=int, help='Hardware brightness; otherwise preserve exported brightness')
     args = parser.parse_args()
     try:
         data = {key: read(args.data / f'{key}.json') for key in
                 ('config', 'keyboard_colors', 'lightbar', 'gui_settings')}
-        mode_file = args.data / 'gpu_run_mode'
-        if mode_file.exists():
-            data['gpu_run_mode'] = mode_file.read_text().strip()
-        output = convert(data, read(args.settings) if args.settings else {},
-                         read(args.capabilities), args.brightness)
+        baseline = read(args.settings) if args.settings else {}
+        tcc_report = None
+        if args.tcc_archive and not args.tcc_dir:
+            raise ValueError('--tcc-archive requires --tcc-dir')
+        if args.tcc_dir:
+            baseline, tcc_report = merge_tcc(baseline, read(args.tcc_dir/'settings'),
+                read(args.tcc_dir/'profiles'), read_fan_presets(args.tcc_archive) if args.tcc_archive else {})
+        output = convert(data, baseline, read(args.capabilities), args.brightness)
+        if tcc_report is not None:
+            output[1]['tccImport'] = tcc_report
         args.output.mkdir(mode=0o700, parents=False, exist_ok=False)
         for name, value in zip(('settings', 'report.json', 'pending.json'), output):
             path = args.output / name
