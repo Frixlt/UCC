@@ -83,6 +83,15 @@ apart from their requested baseline commits:
   modes remain off. Flash stays off between notifications, including immediately
   after Save, daemon startup and power-mode changes; other animations restore the
   current color. Changing power mode or settings cancels an old animation immediately.
+
+- The optional [max performance fan preset](fan-max-performance-85.json) provides
+  monotonic CPU/GPU curves reaching 100% at 85 °C, with no 100% points below that
+  threshold. This sets fan duty, not a CPU temperature limit. The preset contains
+  only CPU/GPU curves; existing water-cooler and power settings are retained.
+  With `sameSpeed` enabled, both fans use the greater calculated duty, so either
+  temperature can increase both fans. Normal smoothing and thermal protection
+  remain active. The JSON can be previewed with `ucc-cli fan apply`; persistent
+  settings also need saving in the custom fan and performance profiles.
 - `ucc-session-agent` observes notification method headers in the desktop session
   using `dbus-monitor` and forwards only an event to the daemon. It never forwards
   or logs notification contents. It reconnects after monitor/service restarts,
