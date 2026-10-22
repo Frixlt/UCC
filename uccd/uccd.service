@@ -3,8 +3,8 @@ Description=Uniwill Control Center Daemon
 Documentation=man:uccd(8)
 After=dbus.service
 Requires=dbus.service
-Conflicts=tccd.service
-Before=tccd.service
+Conflicts=tccd.service tuxedo-power.service
+Before=tccd.service tuxedo-power.service
 
 [Service]
 Type=dbus

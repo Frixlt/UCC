@@ -13,6 +13,25 @@ class TestPowerPolicy : public QObject {
     std::ofstream(path/"online") << online;
   }
 private slots:
+  void exhaustiveSourceOverrideRequestAndCoolerMatrix() {
+    for(auto source:{ProfileState::AC,ProfileState::TYPE_C,ProfileState::BAT})
+      for(const auto *manual:{"auto","ac","type_c","bat"})
+        for(const auto *request:{"","ac","type_c","bat"})
+          for(bool cooler:{false,true}) {
+            PowerPolicy policy;QVERIFY(policy.setManualMode(manual));
+            QVERIFY(policy.registerRequest(":1.23","client","Matrix",request));
+            auto toState=[](const std::string &s){return s=="ac" ? ProfileState::AC : s=="type_c" ? ProfileState::TYPE_C : ProfileState::BAT;};
+            auto rank=[](ProfileState s){return s==ProfileState::AC ? 3 : s==ProfileState::TYPE_C ? 2 : 1;};
+            const bool forced=std::string(manual)!="auto";
+            const bool elevated=!forced && *request && rank(toState(request))>rank(source);
+            const auto effective=forced ? toState(manual) : elevated ? toState(request) : source;
+            const auto decision=policy.evaluate(source,cooler);
+            QCOMPARE(decision.source,source);QCOMPARE(decision.effective,effective);
+            QCOMPARE(decision.profileState,!forced && !elevated && cooler ? ProfileState::WC : effective);
+            policy.removeOwner(":1.23");
+            QCOMPARE(policy.evaluate(source,cooler).effective,forced ? toState(manual) : source);
+          }
+  }
   void allSuppliesAreConsidered() {
     QTemporaryDir root;
     supply(root.path(),"AC0","Mains",0);

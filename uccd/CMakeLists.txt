@@ -33,6 +33,11 @@ if(UCC_READ_ONLY_PREVIEW)
 endif()
 install(TARGETS ucc-sleep RUNTIME DESTINATION lib/ucc)
 
+add_executable(ucc-import-check src/import-check.cpp)
+target_include_directories(ucc-import-check PRIVATE inc)
+target_link_libraries(ucc-import-check PRIVATE Qt6::Core)
+install(TARGETS ucc-import-check RUNTIME DESTINATION lib/ucc)
+
 # Main executable
 add_executable(uccd
   src/uccd.cpp

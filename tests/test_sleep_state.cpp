@@ -6,6 +6,27 @@ class TestSleepState : public QObject
 {
   Q_OBJECT
 private slots:
+  void everyManualModeAndCoolerFlagSurvivesSleep()
+  {
+    for(const auto *mode:{"auto","ac","type_c","bat"}) for(bool cooler:{false,true}) {
+      QTemporaryDir dir;SleepStateStore store(dir.filePath("state"),::getuid());QString error;
+      SleepOperations ops;ops.active=[](bool &value,QString &){value=true;return true;};
+      ops.capture=[&](SleepState &state,QString &){state.manualMode=mode;state.coolerEnabled=cooler;return true;};
+      ops.stop=[](QString &){return true;};
+      ops.start=[&](QString &err){std::optional<SleepState> state;return store.load(state,err) && state && state->manualMode==mode && state->coolerEnabled==cooler;};
+      QVERIFY(prepareSleep(store,ops,error));QVERIFY(resumeSleep(store,ops,error));
+    }
+  }
+  void failedStopKeepsSnapshotForRecovery()
+  {
+    QTemporaryDir dir;SleepStateStore store(dir.filePath("state"),::getuid());QString error;
+    SleepOperations ops;ops.active=[](bool &v,QString &){v=true;return true;};
+    ops.capture=[](SleepState &s,QString &){s.manualMode="bat";return true;};
+    ops.stop=[](QString &e){e="stop failed";return false;};int starts=0;
+    ops.start=[&](QString &){++starts;return true;};
+    QVERIFY(!prepareSleep(store,ops,error));std::optional<SleepState> saved;QVERIFY(store.load(saved,error));QVERIFY(saved);
+    QVERIFY(resumeSleep(store,ops,error));QCOMPARE(starts,1);
+  }
   void runningDaemonKeepsOverridesAndStopsBeforeResume()
   {
     QTemporaryDir dir;
