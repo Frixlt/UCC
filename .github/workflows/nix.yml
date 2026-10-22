@@ -1,9 +1,6 @@
-name: Nix
+name: Nix (experimental, manual)
 
 on:
-  push:
-    branches: [main]
-  pull_request:
   workflow_dispatch:
 
 concurrency:

@@ -18,7 +18,7 @@
   makeWrapper,
   tuxedo-drivers ? null,
   src ? ./., # default to the source tree containing this file
-  version ? "0.0.1",
+  version ? "0.3.0",
 }:
 
 stdenv.mkDerivation {
@@ -47,6 +47,7 @@ stdenv.mkDerivation {
     kdePackages.kcoreaddons
     kdePackages.kpackage
     kdePackages.kwindowsystem
+    kdePackages.kstatusnotifieritem
     kdePackages.libplasma
     nlohmann_json
     libxrandr
@@ -113,7 +114,7 @@ stdenv.mkDerivation {
 
   meta = with lib; {
     description = "Uniwill Control Center - System control application suite (daemon, GUI, CLI, Plasma applet)";
-    homepage = "https://github.com/nanomatters/ucc";
+    homepage = "https://github.com/Frixlt/UCC";
     license = licenses.gpl3Plus;
     platforms = platforms.linux;
     maintainers = [ ];

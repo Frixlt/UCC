@@ -21,8 +21,8 @@ Build-Depends: cmake (>= 3.20),
                libudev-dev,
                pkgconf
 Standards-Version: 4.6.1
-Homepage: https://github.com/tuxedocomputers/uniwill-control-center
-Vcs-Git: https://github.com/tuxedocomputers/uniwill-control-center.git
+Homepage: https://github.com/Frixlt/UCC
+Vcs-Git: https://github.com/Frixlt/UCC.git
 
 Package: ucc
 Architecture: any

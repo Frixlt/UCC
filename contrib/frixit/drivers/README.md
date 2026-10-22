@@ -42,3 +42,15 @@ interfaces on the exact Mechrevo models. The session agent checks after a 15-sec
 login grace period, retries unavailable notification services, coalesces repeated
 identical failures and closes its warning after recovery. Checks are read-only;
 they do not load drivers, restart services or change hardware settings.
+
+## Verified state for release 0.3.0
+
+On 22 October 2026, all 27 modules built and installed for 7.3.0-2-cachyos;
+`/dev/tuxedo_io`, 126 keyboard zones and the Lightbar interface returned. A real
+Flash test ended with RGB 0/0/0, and driver health returned `healthy: true`.
+The update scripts and modules-load configuration were installed locally.
+A subsequent reboot after the final repair is not claimed as separately tested.
+
+This driver patch is distributed as source with the native application's release;
+no private DKMS tree, machine configuration or prebuilt kernel modules are shipped.
+For application installation see [BUILDING.md](../../../docs/BUILDING.md).

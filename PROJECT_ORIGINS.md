@@ -24,9 +24,16 @@ UCC so existing settings and integrations keep working.
 | Original Python GUI | `53a493b` | Personal interface behavior and physical LED calibration |
 | UCC Revorked | `eb98bfa` | Native application/backend foundation before the port |
 
-The original repositories and their committed snapshots are retained separately.
-The integration commits live on `codex/frixit-control-center`. Imported personal
-data and machine-specific deployment bundles are local ignored artifacts.
+The original Python sources are published at
+[Frixlt/ControlCenter-Python](https://github.com/Frixlt/ControlCenter-Python),
+with immutable snapshot tag `python-archive-2026-10-22` and a file-hash manifest.
+That archive joins the original daemon/GUI source snapshots without publishing
+private Data files or their Git history. It carries Apache-2.0 and a Frixit NOTICE.
+The integrated native suite remains GPL-3.0-or-later with existing upstream notices.
+
+The maintained integrated project is published on `main`; development commits also
+remain on `codex/frixit-control-center`. Imported personal data and machine-specific
+deployment bundles are local ignored artifacts.
 
 ## Upstream projects and attribution
 
@@ -50,5 +57,5 @@ defaults; Enter uses physical LED 56, left Shift 21 and left Ctrl 0.
 The combined fork is hosted at [Frixlt/UCC](https://github.com/Frixlt/UCC),
 configured as `origin`. [UCC Revorked](https://github.com/noteMASTER11/UCC-Revorked)
 is retained as `upstream`. Integration build links point to Frixlt/UCC.
-The original ControlCenter repositories remain separate local source snapshots;
-their Git histories have not been merged into the UCC history.
+The original local repositories remain intact; the public Python archive is a
+separate source export. Their Git histories have not been merged into UCC history.

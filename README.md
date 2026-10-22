@@ -1,314 +1,147 @@
 # Frixit Control Center
 
-[Frixit Control Center](https://github.com/Frixlt/UCC) combines **Frixit's original ControlCenter** with
-**[UCC Revorked](https://github.com/noteMASTER11/UCC-Revorked)** in one native
-Qt 6 / C++20 application suite. The original project's power/device policies,
-calibrated keyboard, lightbar, notifications and desktop behavior are integrated
-with UCC Revorked's interface, profiles, monitoring and cooling backend.
+**Наш ControlCenter на Python + UCC Revorked в одном приложении Qt 6 / C++20.**
+Форк сохраняет управление профилями, охлаждением и водянкой из UCC и переносит
+личные политики питания, устройства, калиброванную клавиатуру, Lightbar и трей.
 
-**Personal configurations and LED calibration take priority.** The original CPU
-temperature-limit implementation and `gpu-run` are intentionally excluded.
-See [project origins and source snapshots](PROJECT_ORIGINS.md),
-[migration status](contrib/frixit/README.md) and [installation/recovery](contrib/frixit/DEPLOYMENT.md).
+[English](README.en.md) · [Релизы](https://github.com/Frixlt/UCC/releases) ·
+[Сравнение с оригиналом](docs/COMPARISON.md) · [Сборка](docs/BUILDING.md) ·
+[Проверки](docs/TESTING.md) · [Происхождение](PROJECT_ORIGINS.md) ·
+[Архив Python ControlCenter](https://github.com/Frixlt/ControlCenter-Python)
 
-A Fluent-style Linux control center for Uniwill laptops, rebuilt around a native
-**Qt 6 / C++20 interface**. Manage performance profiles, cooling, keyboard lighting
-and hardware settings, with live CPU/GPU monitoring and **Light, Dark and Auto** themes.
+![Frixit Control Center — Overview, тёмная тема](screenshots/current/dark/overview.png)
 
-The UCC Revorked foundation derives from
-[nanomatters/ucc](https://github.com/nanomatters/ucc), with hardware integration for
-**MECHREVO YAOSHI Series-X6AR55xY**. The combined project keeps the
-existing daemon and D-Bus architecture: the desktop application runs as your user,
-while `uccd` performs hardware operations through the kernel driver and Bluetooth.
+## Чем отличается наш форк
 
-![UCC Revorked — Overview in the light theme](screenshots/fluent/light/overview.png)
-
-## Interface and features
-
-| Section | Functionality |
-| --- | --- |
-| **Overview** | CPU and GPU identification, temperature, fan duty, frequency and power. GPU load, VRAM load, P-state and clock offsets are grouped as secondary details. Connected water-cooler controls include immediate Fan/Pump presets and an enable toggle. |
-| **Profiles** | A compact profile dropdown with Apply, Save, Copy and Remove actions. Configure CPU cores, governor and EPP, frequency settings, supported power limits, charging, display settings, fan and keyboard profile assignments. Assign profiles to AC, battery and water-cooler states. |
-| **Cooler Settings** | Separate CPU/GPU fan curves, shared-speed behavior where supported, fan-profile selection, application, copying, saving and removal. |
-| **About** | Build version/commit, Qt runtime, upstream credits, open-source components and bundled license/attribution texts. |
-| **Watercool Settings** | Cooler enable toggle, manual fan speed, pump voltage, LED color/effects, water-cooler fan curve and pump-voltage curve. Accessible directly from the sidebar. |
-| **Monitor** | Temperature, fan duty, power, clocks and core-voltage history. Select metrics, use separate or unified graphs, pause, zoom and inspect points with crosshair/sticky markers. Smooth chart presentation is independent of telemetry polling; the power axis tops out at 250 W. |
-| **Keyboard & Hardware** | Keyboard lighting profiles, per-key selection/color, multi-key selection, global color and brightness. Hardware controls include webcam, Fn Lock and display brightness when the device exposes them. |
-| **Power & Devices** | Personal AC / Type-C / Battery policies for CPU governor/EPP/turbo, PCIe ASPM, PCI/USB runtime PM, Wi-Fi, modules and NVIDIA power service; manual overrides and application requests. |
-| **Lightbar** | Original per-mode front lighting, all notification animations, keyboard-derived colors, silent mode and welcome behavior. |
-| **Battery & Processes** | Battery watts/percentage, desktop startup preferences, KDE refresh suggestions and confirmed termination of the user's NVIDIA clients. |
-
-Availability follows the hardware capabilities reported by the daemon. The exact
-Mechrevo DMI match enables the known controller features; generic SKU `0001` is not
-whitelisted for unrelated laptops. Other upstream Uniwill devices have not been
-retested with every change in this fork.
-
-### Shared UI behavior
-
-- **Light / Dark / Auto:** the top-right sun/moon button cycles the appearance.
-  Auto follows the color scheme reported by Qt. The selected appearance is saved
-  in ordinary builds; preview builds keep it in memory.
-- **Consistent components:** shared semantic colors for cards, selectors, buttons,
-  toggles, charts, keyboard keys, menus and color dialogs.
-- **Sidebar status:** service, cooler and active profile use the same typography
-  and alignment. Colored dots carry state information.
-- **Notifications:** the bell next to the theme button shows an unread indicator.
-  Its panel keeps the latest 200 events for the current GUI session, with section,
-  message and local date/time. Read individual entries, mark all as read or clear
-  the history. Operation messages appear here instead of crowding the sidebar.
-- **Transitions:** short page/card entrances use the active theme background.
-  Set `UCC_REDUCED_MOTION=1` to turn off those entrances.
-- **Compact layout:** aligned primary metrics, subdued metadata, dropdown profile
-  selection and direct navigation to each cooling section.
-- **Backdrop:** translucent sidebar with a blur request on supported X11
-  compositors. Actual blur depends on compositor support; transparency remains
-  available when the compositor does not implement that protocol.
-- **Single instance:** opening UCC again activates the existing window.
-
-### Fan, Pump and Auto
-
-The Overview Fan presets are **Auto, 20%, 40%, 60%, 70%, 80%, 90%, 100%**.
-Pump presets are **Off, 7 V, 8 V and 11 V**.
-
-Selecting a manual preset sends the command immediately. After a successful write,
-UCC disables the water cooler's shared automatic Fan/Pump mode so the temperature
-curve cannot immediately overwrite the selected value. A failed write preserves
-the previous mode. Selecting **Auto** returns both to their configured curves on
-the next controller cycle. **Save** on a custom system profile persists the manual
-Fan/Pump values along with the automatic/manual mode. Applying that profile or
-restarting the daemon restores the saved values when the cooler connects; a
-reconnection restores them again. Selecting a preset alone changes the running
-state, so save the profile to retain it across daemon restarts. Older profiles
-without manual values remain compatible.
-
-### Permissions and desktop integration
-
-Routine control, including applying/saving system profiles, cooling curves and
-keyboard profiles, is allowed through Polkit for the **active local session**
-without repeated password dialogs. The GUI does not need `sudo`. Installing files
-and administering the system service still requires administrator rights. Explicit
-charge-threshold/type administration retains the separate administrative action.
-
-Optional integrations:
-
-- **Standalone Qt tray:** `ucc-desktop-tray` provides battery watts/percentage,
-  manual power modes and NVIDIA process management without the Plasma applet.
-  It is built with `BUILD_DESKTOP_TRAY=ON`; the GUI also has a Battery & Processes
-  page. See [personal migration details](contrib/frixit/README.md).
-
-- **GNOME Shell extension:** panel controls and telemetry using asynchronous Gio
-  D-Bus calls. Closed menus do not keep polling; slider commands use bounded queues.
-- **KDE Plasma applet:** retained upstream integration, built separately with
-  `BUILD_TRAY=ON` and the required Plasma/KDE development packages.
-- **CLI:** `ucc-cli` provides command-line access to the daemon; use
-  `ucc-cli --help` for the available commands.
-
-## Screenshots
-
-These are captures of the actual Qt application, using deterministic test telemetry
-and sample profiles. They are not generated mockups and their numerical values are
-illustrative. Click an image to see its full size.
-
-| Screen | Light | Dark |
+| Возможность | UCC Revorked `eb98bfa` | Frixit Control Center 0.3.0 |
 | --- | --- | --- |
-| Overview | ![Overview — Light](screenshots/fluent/light/overview.png) | ![Overview — Dark](screenshots/fluent/dark/overview.png) |
-| Profiles | ![Profiles — Light](screenshots/fluent/light/profiles.png) | ![Profiles — Dark](screenshots/fluent/dark/profiles.png) |
-| Cooler Settings | ![Cooler Settings — Light](screenshots/fluent/light/cooler-settings.png) | ![Cooler Settings — Dark](screenshots/fluent/dark/cooler-settings.png) |
-| Watercool Settings | ![Watercool Settings — Light](screenshots/fluent/light/watercool-settings.png) | ![Watercool Settings — Dark](screenshots/fluent/dark/watercool-settings.png) |
-| Monitor | ![Monitor — Light](screenshots/fluent/light/monitor.png) | ![Monitor — Dark](screenshots/fluent/dark/monitor.png) |
-| Keyboard & Hardware | ![Keyboard & Hardware — Light](screenshots/fluent/light/keyboard-hardware.png) | ![Keyboard & Hardware — Dark](screenshots/fluent/dark/keyboard-hardware.png) |
-| About | ![About — Light](screenshots/fluent/light/about.png) | ![About — Dark](screenshots/fluent/dark/about.png) |
-| Notifications | ![Notifications — Light](screenshots/fluent/light/notifications.png) | ![Notifications — Dark](screenshots/fluent/dark/notifications.png) |
+| Qt-интерфейс, мониторинг, профили, CPU/GPU-кривые, водянка | Есть | Сохранены |
+| Независимые AC / USB-C / Battery политики устройств | Нет личной модели ControlCenter | CPU governor/EPP/turbo, ASPM, PCI/USB runtime PM, Wi-Fi, системные параметры и службы |
+| Ручной режим питания | Профили UCC | Auto / AC / Type-C / Battery, физический источник показан отдельно |
+| Клавиатура Mechrevo | Раскладка upstream | Наша физическая калибровка: Enter 56, левый Shift 21, левый Ctrl 0 |
+| Lightbar и уведомления | Нет перенесённого Python-контроллера | Пять анимаций, цвет/яркость по питанию, Silent, Welcome и Test |
+| Самостоятельный трей | Plasma-апплет | Дополнительный Qt-трей: батарея, режимы, процессы NVIDIA; Plasma-апплет сохранён |
+| Ошибки драйверов | Нет новой диагностики | Уведомление при входе и красная плашка на Overview |
+| Миграция личных настроек | Отдельный конвертер TCC | Конвертер ControlCenter с приоритетом пользовательских данных |
 
-The approved [design references](docs/design/references/fluent-ui/) and detailed
-[visual verification](docs/design/verification/) are also stored in the repository.
+Полная таблица, архитектура и ограничения — в [сравнении проектов](docs/COMPARISON.md).
+Исходная реализация лимита температуры CPU и `gpu-run` в форк не перенесены.
+Пресет вентиляторов достигает 100% при 85 °C; он **не ограничивает температуру CPU**.
 
-## Architecture
+## Что доступно в интерфейсе
 
-| Component | Role |
+| Раздел | Назначение |
 | --- | --- |
-| `uccd` | System daemon: hardware access, profiles, metrics history, Bluetooth cooler connection and control. |
-| `libucc-dbus` | Shared Qt D-Bus client library. |
-| `ucc-gui` | Qt Widgets/Charts desktop application. Plasma is not required. |
-| `ucc-cli` | Command-line client. |
-| `ucc-desktop-tray` | Standalone tray with original power-mode, battery and GPU-process behavior. |
-| `ucc-session-agent` | Desktop notification relay and action-based KDE refresh suggestions. |
-| `ucc-gnome` | GNOME Shell extension. |
-| `ucc-tray` | Optional KDE Plasma applet. |
+| Overview | CPU/GPU, датчики, активный профиль, быстрые органы управления водянкой и состояние драйверов |
+| Profiles | CPU, частоты, поддерживаемые лимиты мощности, зарядка, экран, клавиатура и назначение профилей |
+| Cooler Settings | Кривые CPU/GPU, копирование/сохранение, совместная скорость вентиляторов |
+| Watercool Settings | Подключение Bluetooth, вентилятор, помпа, LED и температурные кривые |
+| Monitor | История температуры, мощности, частот, вентиляторов и напряжения; масштабирование и маркеры |
+| Keyboard & Hardware | Поклавишный RGB, яркость, выделение клавиш, webcam/Fn Lock/экран при поддержке оборудования |
+| About | Версия/коммит, Qt, исходники нашего форка, авторы, лицензии и журналы |
+| Power & Devices | Отдельные значения CPU и устройств для AC / Type-C / Battery, повторное обнаружение устройств |
+| Lightbar | Режимы питания, цвет, яркость, анимации уведомлений и тест сохранённых настроек |
+| Battery & Processes | Расход батареи, пользовательские процессы NVIDIA, настройки запуска и предложения частоты экрана KDE |
 
-Main GUI telemetry is polled asynchronously every two seconds. Presentation frames
-interpolate the chart movement independently. Polling/animation is paused when
-appropriate for hidden or minimized views. Bluetooth reconnection uses increasing
-retry delays and recovers when an adapter becomes available after daemon startup.
-Loading a view or refreshing telemetry does not issue implicit pump-off/fan-zero
-commands.
+Темы **Light / Dark / Auto**, история уведомлений и единственный экземпляр окна
+сохранены. В KDE Wayland клик по трею передаёт токен активации: окно получает фокус
+и открывается на своём рабочем столе. Явный клик открывает окно даже при настройке
+«запускать свёрнутым»; автоматический запуск учитывает эту настройку.
 
-## Build from source
+### Поведение питания и подсветки
 
-### Requirements
+Ручной режим имеет приоритет над автоматическим определением питания. Запросы
+приложений могут повысить эффективный режим; исчезновение D-Bus-клиента убирает его
+запрос. Политики устройств и CPU задаются отдельно от выбора профиля водянки.
+Если управление политиками включено, его CPU-настройки имеют приоритет над профилем.
 
-- Linux, CMake **3.20+**, Ninja or Make, Git and a **C++20** compiler.
-- Qt 6 development packages: Core, DBus, Gui, Widgets, QML, Quick,
-  QuickControls2, Bluetooth and Charts. The current interface is validated with
-  **Qt 6.8.2**. Qt Test is needed when `BUILD_TESTS=ON`.
-- `libudev` development files; `pkg-config` and optional XCB development files
-  for the X11 backdrop integration.
-- For hardware control: systemd, D-Bus, Polkit, BlueZ and a compatible
-  `tuxedo-drivers` kernel module. Building UCC does not install that module.
-- For tests: Python 3, a C++ compiler and `dbus-run-session`. GJS and Node.js
-  enable the additional GNOME tests.
-- For the Plasma applet only: ECM, KDE Frameworks 6 Config/CoreAddons and Plasma
-  development files.
+**Flash (stays off)** оставляет Lightbar выключенным между уведомлениями, в том числе
+после Save, смены питания и запуска демона. Test использует сохранённые настройки
+текущего эффективного режима. Silent подавляет обычные анимации; Test его обходит.
+Содержимое уведомлений в демон не передаётся.
 
-On Debian 13, the GUI/CLI build dependencies can be installed with:
+Ручные значения Fan/Pump применяются сразу; сохранение системного профиля сохраняет
+их для повторного применения и переподключения водянки. Auto возвращает управление
+температурным кривым. При `sameSpeed` оба внутренних вентилятора используют большую
+из рассчитанных скоростей CPU/GPU. Третий вентилятор не представлен отдельной
+управляемой кривой в текущем интерфейсе драйвера.
+
+## Скриншоты версии 0.3.0
+
+Это снимки **текущего Qt-приложения**, снятые 22 октября 2026 года в изолированной
+D-Bus-сессии. Значения датчиков, имена процессов и профили демонстрационные.
+Метод воспроизведения и контрольные суммы — в [screenshots/README.md](screenshots/README.md).
+
+| Экран | Тёмная тема | Светлая тема |
+| --- | --- | --- |
+| Overview | ![Overview — Dark](screenshots/current/dark/overview.png) | ![Overview — Light](screenshots/current/light/overview.png) |
+| Profiles | ![Profiles — Dark](screenshots/current/dark/profiles.png) | ![Profiles — Light](screenshots/current/light/profiles.png) |
+| Cooler Settings | ![Cooler Settings — Dark](screenshots/current/dark/cooler-settings.png) | ![Cooler Settings — Light](screenshots/current/light/cooler-settings.png) |
+| Watercool Settings | ![Watercool Settings — Dark](screenshots/current/dark/watercool-settings.png) | ![Watercool Settings — Light](screenshots/current/light/watercool-settings.png) |
+| Monitor | ![Monitor — Dark](screenshots/current/dark/monitor.png) | ![Monitor — Light](screenshots/current/light/monitor.png) |
+| Keyboard & Hardware | ![Keyboard & Hardware — Dark](screenshots/current/dark/keyboard-hardware.png) | ![Keyboard & Hardware — Light](screenshots/current/light/keyboard-hardware.png) |
+| About | ![About — Dark](screenshots/current/dark/about.png) | ![About — Light](screenshots/current/light/about.png) |
+| Power & Devices | ![Power & Devices — Dark](screenshots/current/dark/power-devices.png) | ![Power & Devices — Light](screenshots/current/light/power-devices.png) |
+| Lightbar | ![Lightbar — Dark](screenshots/current/dark/lightbar.png) | ![Lightbar — Light](screenshots/current/light/lightbar.png) |
+| Battery & Processes | ![Battery & Processes — Dark](screenshots/current/dark/battery-processes.png) | ![Battery & Processes — Light](screenshots/current/light/battery-processes.png) |
+| Предупреждение о драйверах | ![Предупреждение о драйверах — Dark](screenshots/current/dark/driver-warning.png) | ![Предупреждение о драйверах — Light](screenshots/current/light/driver-warning.png) |
+
+## Установка и обновление
+
+Основной репозиторий и релизы: **[Frixlt/UCC](https://github.com/Frixlt/UCC)**,
+ветка `main`. Для сборки клонируйте именно его:
 
 ```bash
-sudo apt install \
-  build-essential cmake ninja-build git pkg-config \
-  qt6-base-dev qt6-declarative-dev qt6-connectivity-dev qt6-charts-dev \
-  qt6-svg-dev libudev-dev libxcb1-dev \
-  dbus bluez polkitd python3 gjs nodejs
-```
-
-For native Wayland sessions, also install `qt6-wayland`. Runtime Qt SVG support is
-used for the themed controls. Driver installation is device/distribution specific;
-see the [Mechrevo integration guide](contrib/mechrevo/README.md).
-
-### Configure, build and test
-
-```bash
-git clone https://github.com/noteMASTER11/UCC-Revorked.git
-cd UCC-Revorked
-
+git clone https://github.com/Frixlt/UCC.git
+cd UCC
 cmake -S . -B build -G Ninja \
-  -DCMAKE_BUILD_TYPE=Release \
-  -DCMAKE_INSTALL_PREFIX=/usr \
-  -DCMAKE_INSTALL_LIBDIR=lib \
-  -DBUILD_GUI=ON -DBUILD_CLI=ON \
-  -DBUILD_TRAY=OFF -DBUILD_GNOME=ON \
-  -DBUILD_TESTS=ON -DUCC_READ_ONLY_PREVIEW=OFF
-
+  -DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREFIX=/usr \
+  -DCMAKE_INSTALL_LIBDIR=lib -DBUILD_TRAY=OFF -DBUILD_TESTS=ON
 cmake --build build -j2
-ctest --test-dir build --output-on-failure
 ```
 
-`-j2` is a modest default; increase it to suit the machine. The resulting binaries
-are in `build/bin/` and the client library is in `build/lib/`.
+Зависимости, установка, запуск и read-only preview описаны в
+[руководстве по сборке](docs/BUILDING.md). Для Arch/CachyOS основной `PKGBUILD`
+собирает `frixit-control-center` из релиза; Plasma-апплет отключён, самостоятельный
+трей и агент уведомлений включены. Рецепты DEB/RPM/Nix сохранены, но не являются
+подтверждёнными бинарными релизами нашего форка.
 
-| CMake option | Default | Purpose |
-| --- | --- | --- |
-| `BUILD_GUI` | `ON` | Desktop GUI. |
-| `BUILD_CLI` | `ON` | Command-line client. |
-| `BUILD_DESKTOP_TRAY` | `ON` | Standalone Qt tray with battery and GPU process controls. |
-| `BUILD_SESSION_AGENT` | `ON` | Notification relay for the front lightbar. |
-| `BUILD_TRAY` | `ON` | Plasma applet; set **OFF** for a Qt-only/GNOME build. |
-| `BUILD_GNOME` | `ON` | Install GNOME extension files. |
-| `BUILD_TESTS` | `OFF` | Qt, Python and available GNOME tests. |
-| `UCC_READ_ONLY_PREVIEW` | `OFF` | Build clients that block hardware/settings writes. |
+Для переноса Python/TCC-настроек используйте [инструкцию миграции](contrib/frixit/README.md).
+[DEPLOYMENT.md](contrib/frixit/DEPLOYMENT.md) описывает первоначальный переход,
+резервирование и откат. Личные настройки, Bluetooth-адреса, снимки конфигурации
+и локальные пакеты с импортированными настройками в публичный релиз не входят.
 
-### Install and launch
+### Драйверы и поддерживаемое оборудование
 
-The configured `/usr` prefix and `lib` directory match the supplied systemd service
-paths. Stop an existing `tccd.service` before running `uccd`; use a compatible
-kernel driver for your laptop.
+Основная проверенная машина — **MECHREVO YAOSHI Series-X6AR55xY**,
+Intel Core Ultra 9 275HX / RTX 5080 Laptop, CachyOS, Qt 6.12, KDE Wayland.
+Поддержка остальных устройств upstream сохранена; полного повторного тестирования
+на других моделях не было. Доступность функций определяется драйвером и прошивкой.
 
-```bash
-sudo cmake --install build
-sudo ldconfig
-sudo install -d -m 0755 /etc/ucc
-sudo systemctl daemon-reload
-sudo systemctl reload dbus
-sudo systemctl enable --now uccd.service
-sudo systemctl enable uccd-sleep.service
+Нужны совместимые `tuxedo-drivers`, заголовки текущего ядра и успешная сборка DKMS.
+Установка приложения сама по себе не устанавливает драйвер. Для локального custom
+снимка на Linux 7.3 сохранены [патч и инструкция восстановления](contrib/frixit/drivers/README.md).
+Старый рецепт драйвера 4.23.0 в `contrib/mechrevo` — отдельная историческая база.
 
-# Start the GUI as your normal desktop user:
-ucc-gui
-```
+`uccd` выполняет аппаратные операции от root; GUI, трей и агент работают от
+пользователя. Обычное управление разрешается Polkit активной локальной сессии.
+Одновременно должен работать один контроллер: служба конфликтует с TCC/tuxedo-power.
 
-`uccd-sleep.service` saves the manual power mode and cooler enable state in a
-private root-owned file under `/run/ucc`, then stops the daemon before
-`sleep.target` and NVIDIA's sleep services. On leaving sleep it restarts the daemon
-only if it was running beforehand. Startup uses the saved mode immediately and
-skips replaying the lightbar welcome animation. The snapshot is removed after a
-successful restart and does not survive reboot. `uccd-pre-sleep.service` is a
-compatibility alias to this same unit. The generic and Mechrevo builds install
-the same hook. After upgrading an existing manual installation, replace old
-suspend-target links with `sudo systemctl reenable uccd-sleep.service`.
+## Проверка и известные ограничения
 
-On KDE, `ucc-session-agent` offers a refresh-rate change when physical power
-changes: 60 Hz on battery, up to 240 Hz on external power, or up to 300 Hz when
-the internal panel is connected to NVIDIA. It discovers available mode IDs,
-keeps the current resolution and applies a change only through the notification
-action. Disable these offers on the Battery & Processes page. `kscreen-doctor` (KScreen)
-is optional; if unavailable, the agent skips the offer.
+Для 0.3.0 публикуется [отчёт о проверках](docs/TESTING.md), отдельно от старых
+дизайн-аудитов. Проверены восстановление драйвера/Lightbar на текущем ядре и
+переключение рабочих столов кликом по трею. Настоящий цикл suspend/resume и вся
+матрица оборудования ещё требуют проверки. Полный старый GUI-аудит имел тайм-аут;
+его результат не подменяется результатами отдельных успешных проверок.
 
-For diagnostics:
+## Авторы и лицензия
 
-```bash
-systemctl status uccd.service
-journalctl -u uccd.service -b
-ucc-cli --help
-```
+Личный ControlCenter и объединённый форк — **Frixit**.
+Основа интерфейса и backend — **[noteMASTER11/UCC-Revorked](https://github.com/noteMASTER11/UCC-Revorked)**,
+предыдущая основа — **[nanomatters/ucc](https://github.com/nanomatters/ucc)**.
+Используются TUXEDO IO и отдельные драйверы TUXEDO. История upstream и авторские
+уведомления сохранены: [PROJECT_ORIGINS.md](PROJECT_ORIGINS.md),
+[THIRD_PARTY.md](THIRD_PARTY.md).
 
-### Read-only UI preview
-
-Use a separate build directory for prototyping:
-
-```bash
-./run-preview.sh
-```
-
-This configures `build-preview/`, builds the GUI, and starts it. The preview can read
-current daemon data but blocks hardware commands and profile/settings writes.
-Appearance changes remain in memory. It uses a separately named preview client
-library to avoid resolving the installed write-enabled library.
-
-For a manual preview build, use `-DUCC_READ_ONLY_PREVIEW=ON` and keep it separate
-from the normal installation. Do not install a preview as the controlling package.
-
-## Mechrevo drivers, packaging and migration
-
-See [contrib/mechrevo/README.md](contrib/mechrevo/README.md) for the Arch/CachyOS
-recipes, pinned TUXEDO driver patches, exact-DMI matching, ITE RGB integration,
-NVIDIA diagnostic behavior, migration of TCC profiles/keyboard/cooler identity,
-and service/rollback notes.
-
-UCC does not automatically upgrade the kernel driver. The companion patch set
-keeps NVIDIA EC power writes disabled by default; installing this fork does not
-make an unavailable cTGP interface writable.
-
-Upstream RPM/DEB/Arch targets and the Nix flake are retained, but those packaging
-paths have not been validated for the complete Mechrevo configuration. For NixOS,
-use `ucc.url = "github:noteMASTER11/UCC-Revorked"`, import
-`ucc.nixosModules.default` and enable `services.uccd.enable`; see [nix/](nix/).
-
-## Verification and current constraints
-
-The current local test suite passes **18/18 tests**. It includes device matching,
-Bluetooth selection/startup/retries, profile handling, async D-Bus behavior,
-monitoring/history, preview write guards, theme/animation behavior, GUI singleton,
-authorization classification, manual cooler profile round-trips/reconnection,
-successful/failed manual overrides and notification read/clear behavior.
-Private D-Bus sessions and fake hardware keep these tests separate from the live
-controller. Screenshots cover all six pages in both themes and smaller windows.
-
-Validation is concentrated on the Mechrevo machine described above and the local
-Qt 6.8.2 setup. Compositor blur, automatic appearance reporting, display features
-and optional Plasma integration depend on the desktop/platform. Some initial
-loads and explicit commands remain synchronous; BLE command spacing still includes
-a short wait in the daemon. Wider suspend/resume and cross-device testing remains
-useful before treating every upstream hardware feature as verified.
-
-## Credits and license
-
-Based on [nanomatters/ucc](https://github.com/nanomatters/ucc), starting from
-[`d2987af`](https://github.com/nanomatters/ucc/commit/d2987af6cbaa39a7357dc610d107da269d42b3a0),
-with TUXEDO IO code from [TUXEDO Control Center](https://github.com/tuxedocomputers/tuxedo-control-center),
-[tuxedo-drivers](https://github.com/tuxedocomputers/tuxedo-drivers) hardware integration and research from
-[Mechrevo-Yaoshi-Linux](https://github.com/noteMASTER11/Mechrevo-Yaoshi-Linux).
-
-**GPL-3.0-or-later.** Separate driver sources and patches retain their upstream
-licensing. The project is a community fork; the Fluent-style redesign is not
-an official Microsoft product.
-
-The complete GPL v3 text is in [COPYING](COPYING). See [third-party acknowledgements](THIRD_PARTY.md) for component roles, licenses and retained notices. These documents are also available offline from **About**.
+**GPL-3.0-or-later.** Полный текст — [COPYING](COPYING).

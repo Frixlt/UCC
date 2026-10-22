@@ -1,11 +1,14 @@
 Format: https://www.debian.org/doc/packaging-manuals/copyright-format/1.0/
-Upstream-Name: UCC Revorked
-Upstream-Contact: Erhan Bilgili <erhan.bilgili@gmail.com>
-Source: https://github.com/noteMASTER11/UCC-Revorked
-Comment: Community fork of https://github.com/nanomatters/ucc
+Upstream-Name: Frixit Control Center
+Upstream-Contact: https://github.com/Frixlt/UCC
+Source: https://github.com/Frixlt/UCC
+Comment: Combines Frixit ControlCenter with https://github.com/noteMASTER11/UCC-Revorked,
+ based on https://github.com/nanomatters/ucc
 
 Files: *
 Copyright: 2024 Erhan Bilgili <erhan.bilgili@gmail.com>
+ 2026 noteMASTER11
+ 2026 Frixit
 License: GPL-3.0-or-later
 
 Files: uccd/3rdparty/tuxedo_io_lib/*
@@ -15,6 +18,8 @@ Comment: TUXEDO IO code derived from https://github.com/tuxedocomputers/tuxedo-c
 
 Files: debian/*
 Copyright: 2024 Erhan Bilgili <erhan.bilgili@gmail.com>
+ 2026 noteMASTER11
+ 2026 Frixit
 License: GPL-3.0-or-later
 
 License: GPL-3.0-or-later

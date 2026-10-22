@@ -732,6 +732,36 @@ private slots:
     QCOMPARE(center->eventCount(),200);center->hide();window.hide();
     QVERIFY(stats().value("writes").toArray().isEmpty());
   }
+  void renderReleaseGallery() {
+    const QString output=qEnvironmentVariable("UCC_SCREENSHOT_DIR");
+    if(output.isEmpty()) QSKIP("Set UCC_SCREENSHOT_DIR to capture the release gallery");
+    QVERIFY(QDir().mkpath(output));
+    ucc::FluentTheme::setMode(qEnvironmentVariable("UCC_AUDIT_THEME")=="dark" ? ucc::FluentTheme::Mode::Dark : ucc::FluentTheme::Mode::Light,false);
+    control("TestVisualFixture");
+    ucc::MainWindow window;window.resize(1440,1000);window.show();
+    auto *navigation=window.findChild<QListWidget*>("navigation");QVERIFY(navigation);
+    auto *processes=window.findChild<ucc::SessionProcessesWidget*>();QVERIFY(processes);
+    const QStringList names={"overview","profiles","cooler-settings","watercool-settings","monitor","keyboard-hardware","about","power-devices","lightbar","battery-processes"};
+    QCOMPARE(navigation->count(),names.size());
+    for(int page=0;page<names.size();++page) {
+      navigation->setCurrentRow(page);QTest::qWait(page==0 || page==4 ? 2400 : 450);
+      if(page==9) {
+        processes->monitor()->setActive(false);QTRY_VERIFY(!processes->monitor()->isBusy());
+        processes->setSnapshot({{"batteries",QJsonArray{QJsonObject{{"name","BAT0"},{"capacity",76},{"status","Discharging"},{"powerWatts",12.5}}}},
+          {"gpuState","active"},{"processesSampled",true},{"processes",QJsonArray{QJsonObject{{"pid",424242},{"startTime","123456"},{"name","Example GPU application"}}}}});
+      }
+      QVERIFY(window.grab().save(output+"/"+names[page]+".png"));
+    }
+    navigation->setCurrentRow(0);
+    control("TestDriverHealth",{QString::fromUtf8(R"({"healthy":false,"message":"Проблема с драйверами · демонстрация\nНе загружен аппаратный драйвер TUXEDO. Проверьте сборку DKMS для текущего ядра."})")});
+    auto *dashboard=window.findChild<ucc::DashboardTab*>();QVERIFY(dashboard);
+    dashboard->refreshDriverHealth();
+    auto *banner=window.findChild<QLabel*>("driverHealthBanner");QVERIFY(banner);
+    QTRY_VERIFY(banner->isVisible());QTest::qWait(350);
+    QVERIFY(window.grab().save(output+"/driver-warning.png"));
+    window.hide();
+    QVERIFY2(stats()["writes"].toArray().isEmpty(),"Gallery capture must never write hardware or settings");
+  }
   void renderReferencePages() {
     ucc::FluentTheme::setMode(qEnvironmentVariable("UCC_AUDIT_THEME")=="dark" ? ucc::FluentTheme::Mode::Dark : ucc::FluentTheme::Mode::Light,false);
     control("TestVisualFixture");

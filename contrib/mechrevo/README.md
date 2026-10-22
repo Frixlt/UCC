@@ -1,4 +1,10 @@
-# Mechrevo YAOSHI integration
+# Mechrevo YAOSHI integration — current fork and historical driver recipe
+
+For Frixit Control Center 0.3.0, use the root [build guide](../../docs/BUILDING.md),
+[personal migration](../frixit/README.md) and [Linux 7.3 recovery](../frixit/drivers/README.md).
+The driver 4.23.0 recipe below is retained for its older pinned source; it is not
+the custom driver used for the recovered Linux 7.3 installation. Do not apply the
+7.3 patch to an unrelated snapshot without checking compatibility.
 
 This directory preserves the companion work used with the exact
 `MECHREVO / YAOSHI Series-X6AR55xY / Standard / 0001` DMI tuple. It contains source
@@ -19,19 +25,17 @@ checksums, and packages the patched sources for DKMS. It does not load modules o
 change hardware. Matching kernel headers are needed when DKMS builds the modules
 at package installation.
 
-Build UCC separately:
+Build the current UCC checkout with the root recipe:
 
 ```bash
-cd contrib/mechrevo/arch/ucc
-makepkg -s
+UCC_SOURCE_DIR="$PWD" makepkg -f
 ```
 
-Both `cd` paths above are relative to the repository root. UCC's recipe builds
-the current checkout with `BUILD_TRAY=OFF`, runs CTest and migration-converter
-tests, then packages the result. Its `tuxedo-drivers` dependency must be satisfied
-before building; the companion package provides it. Installing packages and
-enabling services are separate steps and should follow review of the generated
-packages and existing machine configuration.
+The recipe creates `frixit-control-center`, enables the standalone tray/session
+agent, disables the optional Plasma applet and does not package private settings.
+`arch/ucc/PKGBUILD` is a compatibility wrapper for that same recipe.
+The companion driver is built/installed separately; the application package does
+not replace or patch the kernel driver automatically.
 
 The UCC recipe uses the same `uccd-sleep.service` as the generic CMake build.
 Enable it with `sudo systemctl enable uccd-sleep.service`. It stops UCC before

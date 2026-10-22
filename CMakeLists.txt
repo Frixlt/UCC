@@ -3,7 +3,7 @@
 cmake_minimum_required( VERSION 3.20 )
 
 project( ucc
-  VERSION 0.2.0
+  VERSION 0.3.0
   DESCRIPTION "Frixit Control Center - ControlCenter and UCC Revorked integration"
   LANGUAGES CXX
 )
@@ -166,7 +166,8 @@ if( BUILD_TESTS )
   add_subdirectory( tests )
 endif()
 
-install(FILES LICENSE COPYING THIRD_PARTY.md PROJECT_ORIGINS.md DESTINATION share/doc/ucc)
+install(FILES LICENSE COPYING THIRD_PARTY.md PROJECT_ORIGINS.md README.md README.en.md CHANGELOG.md DESTINATION share/doc/ucc)
+install(FILES docs/BUILDING.md docs/COMPARISON.md docs/TESTING.md DESTINATION share/doc/ucc/docs)
 
 # Install GNOME Shell extension
 if( BUILD_GNOME )

@@ -4,6 +4,6 @@
     "description": "Monitor and control Uniwill laptop hardware — fan control, keyboard backlight, display settings, CPU power management, and water cooler control.",
     "shell-version": ["47", "48", "49", "50"],
     "version": 1,
-    "url": "https://github.com/tuxedocomputers/uniwill-control-center",
+    "url": "https://github.com/Frixlt/UCC",
     "settings-schema": "org.gnome.shell.extensions.ucc"
 }

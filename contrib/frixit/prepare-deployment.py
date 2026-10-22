@@ -100,13 +100,14 @@ def main():
     (config / 'settings').chmod(0o600)
     commit = subprocess.check_output(['git', '-C', REPOSITORY, 'rev-parse', 'HEAD'], text=True).strip()
     revision = subprocess.check_output(['git', '-C', REPOSITORY, 'rev-list', '--count', 'HEAD'], text=True).strip()
-    version = '0.2.0.r' + revision + '.g' + commit[:8] + '-1'
+    base_version = re.search(r'VERSION\s+(\d+\.\d+\.\d+)', (REPOSITORY / 'CMakeLists.txt').read_text())[1]
+    version = base_version + '.r' + revision + '.g' + commit[:8] + '-1'
     metadata = ['pkgname = frixit-control-center', 'pkgbase = frixit-control-center', 'pkgver = ' + version,
                 'pkgdesc = Frixit Control Center fork with original personal configuration',
                 'builddate = ' + str(int(time.time())), 'packager = Local Frixit build',
                 'size = ' + str(sum(p.stat().st_size for p in stage.rglob('*') if p.is_file())),
                 'arch = x86_64', 'license = GPL-3.0-or-later', 'backup = etc/ucc/settings',
-                'provides = uniwill-control-center=0.2.0', 'conflict = uniwill-control-center']
+                'provides = uniwill-control-center=' + base_version, 'conflict = uniwill-control-center']
     if any(line.startswith('KF6WindowSystem_DIR:PATH=') and 'NOTFOUND' not in line for line in cache.splitlines()):
         metadata.append('depend = kwindowsystem')
     if any(line.startswith('KF6StatusNotifierItem_DIR:PATH=') and 'NOTFOUND' not in line for line in cache.splitlines()):

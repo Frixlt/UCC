@@ -1,0 +1,82 @@
+name: Release
+
+on:
+  push:
+    tags: ['v*']
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  arch-package:
+    runs-on: ubuntu-24.04
+    container: archlinux:base-devel
+    timeout-minutes: 45
+    steps:
+      - name: Install build and test dependencies
+        run: |
+          pacman -Syu --noconfirm
+          pacman -S --needed --noconfirm git cmake ninja pkgconf nlohmann-json \
+            qt6-base qt6-charts qt6-connectivity qt6-declarative qt6-wayland \
+            systemd-libs dbus polkit hicolor-icon-theme libxcb \
+            kwindowsystem kstatusnotifieritem python gjs nodejs ttf-dejavu
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Check tag matches project version
+        shell: bash
+        run: |
+          test "${GITHUB_REF_TYPE}" = tag
+          python3 - <<'PY'
+          import os, re
+          from pathlib import Path
+          version = re.search(r'VERSION\s+(\d+\.\d+\.\d+)', Path('CMakeLists.txt').read_text())[1]
+          assert os.environ['GITHUB_REF_NAME'] == 'v' + version
+          assert 'pkgver=' + version in Path('PKGBUILD').read_text()
+          PY
+      - name: Build and test public package as unprivileged user
+        shell: bash
+        run: |
+          useradd -m builder
+          chown -R builder:builder "$GITHUB_WORKSPACE"
+          runuser -u builder -- env UCC_SOURCE_DIR="$GITHUB_WORKSPACE" makepkg --nodeps --noconfirm
+      - name: Create source archive, evidence and checksums
+        shell: bash
+        run: |
+          git config --global --add safe.directory "$GITHUB_WORKSPACE"
+          mkdir release-assets
+          version=${GITHUB_REF_NAME#v}
+          git archive --format=tar --prefix="UCC-$version/" "$GITHUB_SHA" | gzip -n > "release-assets/frixit-control-center-$version.tar.gz"
+          cp frixit-control-center-*.pkg.tar.zst release-assets/
+          cp src/build/Testing/Temporary/LastTest.log release-assets/ctest.log
+          cp docs/releases/0.3.0.md release-assets/RELEASE-NOTES.md
+          cd release-assets
+          sha256sum *.pkg.tar.zst *.tar.gz ctest.log RELEASE-NOTES.md > SHA256SUMS
+      - uses: actions/upload-artifact@v4
+        with:
+          name: release-assets
+          path: release-assets/*
+          if-no-files-found: error
+
+  publish:
+    needs: arch-package
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: release-assets
+          path: release-assets
+      - name: Publish tested release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "$GITHUB_REF_NAME" release-assets/* \
+            --verify-tag --title "Frixit Control Center ${GITHUB_REF_NAME#v}" \
+            --notes-file docs/releases/0.3.0.md

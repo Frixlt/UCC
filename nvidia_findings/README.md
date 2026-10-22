@@ -1,6 +1,10 @@
-# NVIDIA Findings - Index
+# NVIDIA Findings — исторические материалы upstream
 
-This directory contains all research files, probes, and outputs from the comprehensive NVIDIA GPU undocumented API investigation.
+Материалы унаследованы от UCC Revorked. Они описывают исследовательскую среду
+RTX 5090 Laptop / NVIDIA 590.48.01 / Fedora 45 автора upstream и не являются
+отчётом проверки нашего RTX 5080 Laptop или обещанием поддерживаемого API.
+Экспериментальные probes не запускаются приложением и не входят в тесты релиза.
+Текущие результаты: [docs/TESTING.md](../docs/TESTING.md).
 
 ## Main Findings Document
 - **nvidia_undocumented_api_findings.md** - Comprehensive findings document with all discovered APIs, struct layouts, and arch limitations

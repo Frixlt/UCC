@@ -156,5 +156,7 @@
       "notes": "Visual implementation target for composition, hierarchy and component appearance. Hardware values are illustrative; Fan Control and Monitor use the light palette from REF-1001 while retaining their composition.",
       "sha256": "9bb623c15d09a68ed9afb2e07f4c2d2881faa31c65f2593ef04be646a949c132"
     }
-  ]
+  ],
+  "status": "historical-design-concepts-not-release-screenshots",
+  "supersededBy": "screenshots/current"
 }

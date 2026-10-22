@@ -45,6 +45,11 @@ jobs:
             libplasma-dev \
             libgl1-mesa-dev \
             libudev-dev \
+            libxcb1-dev \
+            libkf6windowsystem-dev \
+            libkf6statusnotifieritem-dev \
+            qt6-svg-dev \
+            dbus gjs nodejs python3 fonts-dejavu-core \
             nlohmann-json3-dev \
             libsystemd-dev \
             libxrandr-dev
@@ -65,11 +70,22 @@ jobs:
             -DCMAKE_EXPORT_COMPILE_COMMANDS=ON
 
       - name: Build
-        run: cmake --build build --parallel
+        run: cmake --build build --parallel 2
 
       - name: Run tests
         working-directory: build
-        run: ctest --output-on-failure --parallel $(nproc)
+        run: ctest --output-on-failure --parallel 1 -E '^test_gui_audit$'
+
+      - name: Run focused GUI checks
+        run: |
+          dbus-run-session -- bash tests/run_gui_audit_test.sh \
+            "$PWD/build/bin/test_gui_audit" \
+            dashboardShowsDriverFailureAndClearsAfterRecovery \
+            aboutBuildCreditsAndBundledLicense calibratedKeyboardKeepsPhysicalLedIdentities \
+            lightbarKeepsSourceValuesAndRejectsFailedCommands deviceMatrixKeepsThreeIndependentModes
+
+      - name: Capture current GUI pages on an isolated bus
+        run: python3 contrib/frixit/capture-gallery.py --build build --output artifacts/ci-gallery
 
       - name: Upload compile_commands.json
         if: matrix.build_type == 'RelWithDebInfo'

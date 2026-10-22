@@ -1,28 +1,32 @@
 ## arg 1: new package version
 
 post_install() {
-  echo ":: Reloading systemd manager configuration..."
   systemctl daemon-reload
+  echo ":: Enable uccd.service and uccd-sleep.service after installing the hardware driver."
+  echo ":: Read /usr/share/doc/ucc/PROJECT_ORIGINS.md before replacing an existing controller."
+}
 
-  echo ":: Enabling uccd daemon..."
-  systemctl enable uccd.service
-  systemctl enable uccd-sleep.service
+# Older local packages owned a private backup-marked /etc/ucc/settings.
+# Preserve it while switching to a public package that owns no personal settings.
+ucc_preserve_settings() {
+  local package_root="${1:-}"
+  if [ -f "$package_root/etc/ucc/settings" ] && [ ! -L "$package_root/etc/ucc/settings" ]; then
+    install -d -m 0700 "$package_root/var/lib/ucc/package-upgrade"
+    install -m 0600 "$package_root/etc/ucc/settings" "$package_root/var/lib/ucc/package-upgrade/settings"
+  fi
+}
 
-  echo ":: Starting uccd daemon..."
-  systemctl start uccd.service
-
-  echo ":: Updating icon caches..."
-  gtk-update-icon-cache -q -t -f usr/share/icons/hicolor 2>/dev/null || true
-  update-desktop-database -q usr/share/applications 2>/dev/null || true
-
-  echo ""
-  echo "==> NOTE: uccd requires tuxedo-drivers kernel module."
-  echo "==>       Install 'tuxedo-drivers' from AUR if not already present."
-  echo ""
+ucc_restore_settings() {
+  local package_root="${1:-}"
+  if [ ! -e "$package_root/etc/ucc/settings" ] && [ ! -L "$package_root/etc/ucc/settings" ] &&
+      [ -f "$package_root/var/lib/ucc/package-upgrade/settings" ]; then
+    install -d -m 0755 "$package_root/etc/ucc"
+    install -m 0600 "$package_root/var/lib/ucc/package-upgrade/settings" "$package_root/etc/ucc/settings"
+  fi
 }
 
 pre_upgrade() {
-  :
+  ucc_preserve_settings
 }
 
 # Optional root prefix lets packaging tests inspect a staged unit tree.
@@ -47,6 +51,7 @@ ucc_sleep_hook_enabled() {
 }
 
 post_upgrade() {
+  ucc_restore_settings
   systemctl daemon-reload
   # Replace old suspend-target links while preserving an explicitly disabled hook.
   if ucc_sleep_hook_enabled; then
@@ -54,8 +59,7 @@ post_upgrade() {
     systemctl enable uccd-sleep.service
   fi
 
-  echo ":: Restarting uccd daemon..."
-  systemctl try-restart uccd.service
+  echo ":: Restart uccd and desktop clients when ready to use the upgraded version."
 
   gtk-update-icon-cache -q -t -f usr/share/icons/hicolor 2>/dev/null || true
   update-desktop-database -q usr/share/applications 2>/dev/null || true

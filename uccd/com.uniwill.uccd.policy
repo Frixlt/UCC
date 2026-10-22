@@ -4,8 +4,8 @@
  "http://www.freedesktop.org/standards/PolicyKit/1/policyconfig.dtd">
 <policyconfig>
 
-  <vendor>Uniwill Control Center</vendor>
-  <vendor_url>https://github.com/nanomatters/ucc</vendor_url>
+  <vendor>Frixit Control Center</vendor>
+  <vendor_url>https://github.com/Frixlt/UCC</vendor_url>
 
   <!--
     Read-only queries: any active session may call these without authentication.

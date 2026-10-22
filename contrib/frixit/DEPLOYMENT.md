@@ -1,4 +1,9 @@
-# Local first installation
+# Первоначальный переход с Python/TCC на UCC
+
+Состояние процедуры: переход уже выполнен на основной машине. Эта инструкция
+описывает специальный first-install bundle с личными данными. Публичный релиз
+0.3.0 собирается без этих данных; обновление UCC описано в
+[BUILDING.md](../../docs/BUILDING.md). Не публикуйте private deployment bundle.
 
 This procedure replaces the running Python ControlCenter and TCC controllers with
 the fork. The kernel driver and original repositories are retained. It is for a
@@ -61,14 +66,15 @@ ucc-cli --json status
 ucc-cli power status
 ucc-cli devices status
 ucc-cli lightbar status
-systemctl --user status ucc-desktop-tray ucc-session-agent ucc-gui
+pgrep -af '/usr/bin/ucc-(desktop-tray|session-agent|gui)'
 journalctl -u uccd.service -b
 ```
 
 Compare live keyboard colors and the device/lightbar settings with the prepared
 import. Missing disconnected devices remain listed and are reported separately.
-Physical AC/USB-C changes, an actual system sleep cycle and external cooler
-reconnection still require observations on this laptop. The installer never
+The installed desktop autostart entries are in `/etc/xdg/autostart`; current
+transient user-unit names can vary. A real hardware sleep cycle and long-duration
+external cooler reconnection still require observations on this laptop. The installer never
 automatically suspends, changes display resolution or sends termination signals
 to GPU applications.
 

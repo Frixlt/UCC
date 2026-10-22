@@ -58,5 +58,29 @@ ucc_sleep_hook_enabled "$UCC_SLEEP_TEST_ROOT"
         self.assertFalse(self.enabled())
 
 
+class PackageSettingsUpgradeTest(unittest.TestCase):
+    def test_upgrade_from_private_package_retains_live_configuration(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            settings = root / 'etc/ucc/settings'
+            settings.parent.mkdir(parents=True)
+            original = '{"profiles":{"personal":{"name":"My profile"}}}\n'
+            settings.write_text(original)
+            script = r'''source "$1"
+ucc_preserve_settings "$2"
+# Simulate pacman's retirement of the old backup-marked package file.
+mv "$2/etc/ucc/settings" "$2/etc/ucc/settings.pacsave"
+ucc_restore_settings "$2"
+'''
+            subprocess.run(['bash', '-c', script, 'test', str(SOURCE / 'ucc.install'), str(root)], check=True)
+            self.assertEqual(settings.read_text(), original)
+            self.assertEqual(settings.stat().st_mode & 0o777, 0o600)
+            # A later daemon write must not be replaced with the old saved copy.
+            settings.write_text('{"profiles":{"new":{}}}')
+            subprocess.run(['bash', '-c', 'source "$1"; ucc_restore_settings "$2"',
+                            'test', str(SOURCE / 'ucc.install'), str(root)], check=True)
+            self.assertEqual(settings.read_text(), '{"profiles":{"new":{}}}')
+
+
 if __name__ == '__main__':
     unittest.main()

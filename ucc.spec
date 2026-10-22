@@ -1,13 +1,13 @@
 %global _hardened_build 1
 
 Name:           ucc
-Version:        0.2.0
+Version:        0.3.0
 Release:        1%{?dist}
 Summary:        Uniwill Control Center - System control application suite
 License:        GPL-3.0-or-later
 
-URL:            https://github.com/tuxedocomputers/uniwill-control-center
-Source0:        %{name}-%{version}.tar.gz
+URL:            https://github.com/Frixlt/UCC
+Source0:        https://github.com/Frixlt/UCC/releases/download/v%{version}/frixit-control-center-%{version}.tar.gz
 
 BuildRequires:  cmake >= 3.20
 BuildRequires:  extra-cmake-modules
@@ -50,7 +50,7 @@ Features include fan control, keyboard backlight management, display settings,
 CPU power management, and water cooler control for supported systems.
 
 %prep
-%autosetup
+%autosetup -n UCC-%{version}
 
 %build
 %cmake \

@@ -26,6 +26,7 @@ These projects are dependencies or system services, rather than code authored by
 | [BlueZ](https://github.com/bluez/bluez) | System Bluetooth service used for the water cooler | GPL-2.0-or-later; library portions LGPL-2.1-or-later |
 | [systemd / libudev](https://github.com/systemd/systemd) | Service lifecycle and device discovery | libudev LGPL-2.1-or-later; other components retain their own notices |
 | [Polkit](https://gitlab.freedesktop.org/polkit/polkit) | Authorization for daemon operations | LGPL-2.0-or-later; individual files may have additional notices |
+| [nlohmann/json](https://github.com/nlohmann/json) | C++ JSON handling | MIT |
 | [XCB](https://xcb.freedesktop.org/) | Optional X11 window integration and blur request | MIT/X11 |
 | [KDE Frameworks / Plasma](https://kde.org/) | Optional separately built desktop applet | Licenses vary by component; upstream notices apply |
 
@@ -36,3 +37,16 @@ The [UCC Revorked upstream](https://github.com/noteMASTER11/UCC-Revorked) provid
 the native foundation. Source code for the combined fork is hosted at
 [Frixlt/UCC](https://github.com/Frixlt/UCC). The About page links to its build
 commit and includes the bundled project-origins document.
+
+## Separate Python source archive
+
+[Frixlt/ControlCenter-Python](https://github.com/Frixlt/ControlCenter-Python)
+publishes Frixit's original Python sources under Apache-2.0 with a Frixit NOTICE.
+It is a separate archive, not a license change to this GPL-3.0-or-later suite.
+The integration commits ported that behavior under this project's GPL terms before
+the separate archive was published. Keep upstream copyright/license headers and
+Frixit's attribution when redistributing this combined source.
+
+The optional native tray and GUI activation also link KDE KStatusNotifierItem and
+KWindowSystem. Their source/package copyright and license notices apply alongside
+the other KDE Frameworks dependencies; these libraries are not authored by Frixit.
