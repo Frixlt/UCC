@@ -23,6 +23,11 @@ package and its SHA-256 manifest. It does not change the running system. Review
 `import/report.json`, `deployment.json` and `package-info.txt` in that bundle.
 Missing original profiles or failing test reports prevent preparation.
 
+An explicit `--allow-gui-audit-failure` option permits a user-requested launch
+when `test_gui_audit` is the only failing CTest entry. The failing reports and
+exception remain recorded in `deployment.json`; this does not mark the audit as
+passing. Other failing tests and empty reports still prevent preparation.
+
 ```sh
 python3 contrib/frixit/desktop-transition.py quiesce ./artifacts/desktop-backup \
   --source /path/to/ControlCenter

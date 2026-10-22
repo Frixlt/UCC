@@ -23,10 +23,11 @@ def sha(path):
         return hashlib.file_digest(file, 'sha256').hexdigest()
 
 
-def test_report(path):
+def test_report(path, allow_gui_failure=False):
     root = ET.parse(path).getroot()
     cases = list(root.iter('testcase'))
-    if not cases or any(list(case.iter('failure')) or list(case.iter('error')) for case in cases):
+    failed = [case.get('name') for case in cases if list(case.iter('failure')) or list(case.iter('error'))]
+    if not cases or (failed and not (allow_gui_failure and failed == ['test_gui_audit'])):
         raise ValueError('Missing or failing test results: ' + str(path))
     return len(cases)
 
@@ -39,11 +40,14 @@ def main():
     parser.add_argument('--tcc-archive', type=Path, default=Path('/opt/tuxedo-control-center/resources/app.asar'))
     parser.add_argument('--normal-tests', required=True, type=Path)
     parser.add_argument('--preview-tests', required=True, type=Path)
+    parser.add_argument('--allow-gui-audit-failure', action='store_true',
+                        help='Explicitly launch despite the known GUI audit failure; retain failing reports in the manifest')
     parser.add_argument('output', type=Path)
     args = parser.parse_args()
     if os.geteuid() == 0:
         parser.error('Prepare the bundle as the desktop user')
-    counts = [test_report(args.normal_tests), test_report(args.preview_tests)]
+    counts = [test_report(args.normal_tests, args.allow_gui_audit_failure),
+              test_report(args.preview_tests, args.allow_gui_audit_failure)]
     cache = (args.build / 'CMakeCache.txt').read_text()
     for required in ('UCC_READ_ONLY_PREVIEW:BOOL=OFF', 'CMAKE_INSTALL_PREFIX:PATH=/usr',
                      'BUILD_GUI:BOOL=ON', 'BUILD_CLI:BOOL=ON', 'BUILD_DESKTOP_TRAY:BOOL=ON',
@@ -108,7 +112,7 @@ def main():
     (stage / '.PKGINFO').write_text('\n'.join(metadata) + '\n')
     package = bundle / ('frixit-control-center-' + version + '-x86_64.pkg.tar.zst')
     run(['bsdtar', '--create', '--zstd', '--uid', '0', '--gid', '0', '--uname', 'root', '--gname', 'root',
-         '--file', package, '-C', stage, '.'])
+         '--file', package, '-C', stage, *sorted(p.name for p in stage.iterdir())])
     package.chmod(0o600)
     run(['pacman', '-Qip', package], stdout=(bundle / 'package-info.txt').open('w'))
     for name, origin in (('normal-tests.xml', args.normal_tests), ('preview-tests.xml', args.preview_tests)):
@@ -116,6 +120,10 @@ def main():
     manifest = {'commit': commit, 'version': version, 'package': package.name, 'packageSha256': sha(package),
                 'inputs': fingerprints, 'tests': {'normal': counts[0], 'preview': counts[1]},
                 'migration': report}
+    manifest['testFailures'] = {name: [case.get('name') for case in ET.parse(path).getroot().iter('testcase')
+                                     if list(case.iter('failure')) or list(case.iter('error'))]
+                                for name, path in [('normal', args.normal_tests), ('preview', args.preview_tests)]}
+    manifest['guiAuditFailureAcceptedForLaunch'] = args.allow_gui_audit_failure
     (bundle / 'deployment.json').write_text(json.dumps(manifest, indent=2) + '\n')
     shutil.copyfile(REPOSITORY / 'contrib/frixit/deploy-system.py', bundle / 'deploy-system.py')
     print(json.dumps({'bundle': str(bundle), 'package': package.name, 'tests': counts}))

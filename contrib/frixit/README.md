@@ -1,5 +1,33 @@
 # Frixit Control Center migration
 
+## Current local launch (22 October 2026)
+
+At the user's explicit request, the fork was installed through pacman as
+`frixit-control-center 0.2.0.r153.g46cd81f4-1`. The running system daemon is UCC;
+TCC and the Python power daemon are stopped and disabled, with TCC temporarily
+masked against activation. Original source files remain intact. The old desktop
+launcher is overridden with a Hidden entry; the new GUI, tray and notification
+agent run as the desktop user and have login integration.
+
+The selected import contains all 57 device policies, 126 physical keyboard zones
+and three resolved profiles. Live verification found matching RGB/brightness,
+device policy and lightbar settings. The daemon recognized the actual laptop,
+applied the source CPU/TDP/cTGP values and completed a real prepare/resume daemon
+lifecycle without suspending the machine. An actual hardware sleep cycle remains
+unverified. A separate pre-existing NVIDIA Dynamic Boost service start-limit error
+was cleared during launch; the service is running, and reapplying the unchanged
+device policy reports zero failures across all 57 entries.
+
+The final complete GUI audit timed out. It remains an explicitly recorded known
+failure; installation was requested after that result was disclosed. The earlier
+successful full runs and the later interrupted/timed-out runs are retained as
+separate reports. The deployment manifest records the launch exception rather
+than claiming a clean final audit. See [DEPLOYMENT.md](DEPLOYMENT.md) for recovery.
+
+Earlier sections below describe implementation and offline-development checks;
+their statements that no files had yet been installed refer to those earlier
+stages.
+
 This branch uses the user's committed ControlCenter working files as the source
 of behavior and configuration. The old CPU temperature-limit/MSR implementation
 is intentionally excluded. The user also explicitly excluded `gpu-run` from the
