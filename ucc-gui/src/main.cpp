@@ -124,7 +124,7 @@ int main( int argc, char *argv[] )
 
   ucc::MainWindow window;
   instance.setWindow(&window);
-  if(arguments.contains("--minimized") || ucc::startMinimizedPreference()) {
+  if(!arguments.contains("--show") && (arguments.contains("--minimized") || ucc::startMinimizedPreference())) {
     auto *bus=QDBusConnection::sessionBus().interface();
     if(bus && bus->isServiceRegistered("com.uniwill.UccDesktopTray").value()) {window.show();app.processEvents();window.hide();}
     else window.showMinimized();

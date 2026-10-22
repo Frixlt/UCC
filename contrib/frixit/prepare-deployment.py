@@ -107,6 +107,10 @@ def main():
                 'size = ' + str(sum(p.stat().st_size for p in stage.rglob('*') if p.is_file())),
                 'arch = x86_64', 'license = GPL-3.0-or-later', 'backup = etc/ucc/settings',
                 'provides = uniwill-control-center=0.2.0', 'conflict = uniwill-control-center']
+    if any(line.startswith('KF6WindowSystem_DIR:PATH=') and 'NOTFOUND' not in line for line in cache.splitlines()):
+        metadata.append('depend = kwindowsystem')
+    if any(line.startswith('KF6StatusNotifierItem_DIR:PATH=') and 'NOTFOUND' not in line for line in cache.splitlines()):
+        metadata.append('depend = kstatusnotifieritem')
     metadata += ['depend = ' + p for p in ('qt6-base', 'qt6-charts', 'qt6-connectivity', 'qt6-declarative',
                                          'dbus', 'polkit', 'systemd-libs', 'hicolor-icon-theme')]
     (stage / '.PKGINFO').write_text('\n'.join(metadata) + '\n')

@@ -39,7 +39,7 @@
 class AuditDaemon : public QDBusVirtualObject {
   QJsonArray writes;
   QJsonObject reads;
-  QString runtimeProfile,lastAppliedProfile,lastDeviceSettings,lastLightbar;
+  QString runtimeProfile,lastAppliedProfile,lastDeviceSettings,lastLightbar,driverHealth;
   bool failReads=false,failControl=false;
   bool visualFixture=false;
   bool coolerAuto=false;
@@ -50,6 +50,8 @@ public:
   }
   bool handleMessage(const QDBusMessage &msg,const QDBusConnection &bus) override {
     const auto method=msg.member(); QVariant result;
+    if(method=="TestDriverHealth") {driverHealth=msg.arguments().value(0).toString();bus.send(msg.createReply(true));return true;}
+    if(method=="GetDriverHealthJSON") {bus.send(msg.createReply(driverHealth.isEmpty() ? QString("{\"healthy\":true}") : driverHealth));return true;}
     if(method=="TestRuntimeProfile") {runtimeProfile=msg.arguments().value(0).toString();bus.send(msg.createReply(true));return true;}
     if(method=="TestFailControl") {failControl=msg.arguments().value(0).toBool();bus.send(msg.createReply(true));return true;}
     if(method=="TestLastLightbar") {bus.send(msg.createReply(lastLightbar));return true;}
@@ -67,7 +69,7 @@ public:
     else if(method=="IsWaterCoolerAutoControlEnabled") result=coolerAuto;
     else if (method=="TestVisualFixture") {visualFixture=true;result=true;}
     else if (method=="TestStats") result=QString::fromUtf8(QJsonDocument(QJsonObject{{"writes",writes},{"reads",reads}}).toJson());
-    else if (method=="TestReset") { writes={};reads={};runtimeProfile.clear();lastAppliedProfile.clear();lastDeviceSettings.clear();lastLightbar.clear();failReads=false;failControl=false;visualFixture=false;coolerAuto=false;coolerEnabled=false;result=true; }
+    else if (method=="TestReset") { writes={};reads={};runtimeProfile.clear();driverHealth.clear();lastAppliedProfile.clear();lastDeviceSettings.clear();lastLightbar.clear();failReads=false;failControl=false;visualFixture=false;coolerAuto=false;coolerEnabled=false;result=true; }
     else if (method=="TestFailReads") { failReads=msg.arguments().value(0).toBool();result=true; }
     else if (method=="TriggerLightbarAnimation" || method=="ScanPowerDevices" || method.startsWith("Register") || method.startsWith("Unregister") || method.startsWith("Set") || method.startsWith("TurnOff") || method=="EnableWaterCooler" || method.startsWith("Apply") || method.startsWith("Save") || method.startsWith("Delete") || method.startsWith("Revert")) {
       if(failControl) {bus.send(msg.createReply(false));return true;}
@@ -651,6 +653,17 @@ private slots:
     QTest::mouseClick(open,Qt::LeftButton);QCOMPARE(openedLogDirectory,QUrl::fromLocalFile(ucc::AppLogging::directory()));
 #endif
     window.hide();QVERIFY(stats().value("writes").toArray().isEmpty());
+  }
+  void dashboardShowsDriverFailureAndClearsAfterRecovery() {
+    control("TestVisualFixture");
+    control("TestDriverHealth",{QString(R"({"healthy":false,"message":"Driver missing for current kernel"})")});
+    ucc::MainWindow window;window.show();
+    auto *banner=window.findChild<QLabel*>("driverHealthBanner");QVERIFY(banner);
+    QTRY_VERIFY(!banner->isHidden());QVERIFY(banner->text().contains("Driver missing"));
+    control("TestDriverHealth",{QString(R"({"healthy":true,"message":""})")});
+    window.findChild<ucc::DashboardTab*>()->refreshDriverHealth();
+    QTRY_VERIFY(banner->isHidden());
+    QVERIFY(stats()["writes"].toArray().isEmpty());
   }
   void aboutBuildCreditsAndBundledLicense() {
     control("TestVisualFixture");ucc::MainWindow window;window.resize(1024,768);window.show();

@@ -40,6 +40,8 @@
 #include <QColor>
 #include "CommonTypes.hpp"
 #include "AsyncRead.hpp"
+#include "DriverHealth.hpp"
+#include <QJsonDocument>
 
 namespace
 {
@@ -98,6 +100,10 @@ DashboardTab::DashboardTab( SystemMonitor *systemMonitor, ProfileManager *profil
 {
   setupUI();
   connectSignals();
+  auto *driverTimer=new QTimer(this);
+  connect(driverTimer,&QTimer::timeout,this,&DashboardTab::refreshDriverHealth);
+  driverTimer->start(5000);
+  QTimer::singleShot(0,this,&DashboardTab::refreshDriverHealth);
 
   // m_activeProfileLabel is created but hidden; it's only for internal use
 
@@ -114,12 +120,33 @@ DashboardTab::DashboardTab( SystemMonitor *systemMonitor, ProfileManager *profil
   }
 }
 
+void DashboardTab::refreshDriverHealth()
+{
+  if(m_driverHealthPending) return;
+  m_driverHealthPending=true;
+  readUccdAsync(this,"GetDriverHealthJSON",{},[this](std::optional<QVariant> value){
+    m_driverHealthPending=false;
+    const auto status=value ? QJsonDocument::fromJson(value->toString().toUtf8()).object() : QJsonObject{};
+    setDriverHealth(status.contains("healthy") ? status : unavailableDriverHealth());
+  });
+}
+void DashboardTab::setDriverHealth(const QJsonObject &status)
+{
+  m_driverHealthBanner->setText(status.value("message").toString());
+  m_driverHealthBanner->setVisible(!status.value("healthy").toBool());
+}
+
 void DashboardTab::setupUI()
 {
   auto *outer=new QVBoxLayout(this);outer->setContentsMargins(0,0,0,0);
   auto *scroll=new QScrollArea(this);scroll->setWidgetResizable(true);outer->addWidget(scroll);
   auto *body=new QWidget;scroll->setWidget(body);
   auto *layout=new QVBoxLayout(body);layout->setContentsMargins(0,0,0,0);layout->setSpacing(16);
+  m_driverHealthBanner=new QLabel(body);m_driverHealthBanner->setObjectName("driverHealthBanner");
+  m_driverHealthBanner->setWordWrap(true);m_driverHealthBanner->setTextFormat(Qt::PlainText);
+  m_driverHealthBanner->setTextInteractionFlags(Qt::TextSelectableByMouse);m_driverHealthBanner->setMargin(16);
+  m_driverHealthBanner->setStyleSheet("QLabel#driverHealthBanner { background: #511f26; color: #fff0f0; border: 1px solid #ef5b66; border-radius: 8px; }");
+  m_driverHealthBanner->hide();layout->addWidget(m_driverHealthBanner);
   auto title=[](const QString &text){auto *label=new QLabel(text);label->setObjectName("cardTitle");return label;};
   auto muted=[](const QString &text){auto *label=new QLabel(text);label->setObjectName("muted");label->setWordWrap(true);return label;};
   auto value=[](QLabel *&label,const QString &unit,bool large){

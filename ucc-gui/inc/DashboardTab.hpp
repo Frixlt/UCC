@@ -26,6 +26,7 @@
 #include <QDBusInterface>
 #include <QTimer>
 #include <QComboBox>
+#include <QJsonObject>
 
 namespace ucc
 {
@@ -54,6 +55,8 @@ namespace ucc
 
     /** Trigger an immediate water-cooler status query and emit waterCoolerStatusChanged. */
     void refreshWaterCoolerStatus();
+    void refreshDriverHealth();
+    void setDriverHealth(const QJsonObject &status);
 
   signals:
     void waterCoolerManualChanged(bool automatic, const QString &message);
@@ -95,6 +98,9 @@ namespace ucc
     // DBus interface for water cooler status
     bool m_waterCoolerReadPending = false;
     QTimer *m_waterCoolerPollTimer = nullptr;
+
+    bool m_driverHealthPending = false;
+    QLabel *m_driverHealthBanner = nullptr;
 
     // Dashboard widgets
     QLabel *m_activeProfileLabel = nullptr;

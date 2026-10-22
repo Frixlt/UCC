@@ -305,6 +305,7 @@ public slots:
   bool ScanPowerDevices();
   QString GetLightbarSettingsJSON();
   QString GetLightbarStatusJSON();
+  QString GetDriverHealthJSON();
   bool SetLightbarSettingsJSON(const QString &json);
   bool TriggerLightbarAnimation(bool force);
   bool SetManualPowerMode(const QString &mode);

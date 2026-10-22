@@ -1,4 +1,5 @@
 #include "GuiInstance.hpp"
+#include "WindowActivation.hpp"
 #include <QDBusConnection>
 #include <QDBusMessage>
 #include <QDBusError>
@@ -27,6 +28,7 @@ GuiInstance::~GuiInstance() {
 
 GuiInstance::Result GuiInstance::startOrActivate() {
   if (m_primary) return Result::Primary;
+  const auto token=takeActivationToken();
   auto bus = QDBusConnection::sessionBus();
   if (!bus.isConnected() ||
       !bus.registerObject(path, this, QDBusConnection::ExportAllSlots)) {
@@ -37,11 +39,17 @@ GuiInstance::Result GuiInstance::startOrActivate() {
   // constructing MainWindow or any hardware client.
   if (bus.registerService(service)) {
     m_primary = true;
+    m_activationToken=token;m_activationPending=!token.isEmpty();
     return Result::Primary;
   }
   bus.unregisterObject(path);
-  const auto request = QDBusMessage::createMethodCall(service, path, interfaceName, "Activate");
-  const auto reply = bus.call(request, QDBus::Block, 3000);
+  auto request = QDBusMessage::createMethodCall(service, path, interfaceName, token.isEmpty() ? "Activate" : "ActivateWithToken");
+  if(!token.isEmpty()) request.setArguments({token});
+  auto reply = bus.call(request, QDBus::Block, 3000);
+  if(reply.type()==QDBusMessage::ErrorMessage && reply.errorName()=="org.freedesktop.DBus.Error.UnknownMethod" && !token.isEmpty()) {
+    request=QDBusMessage::createMethodCall(service,path,interfaceName,"Activate");
+    reply=bus.call(request,QDBus::Block,3000);
+  }
   if (reply.type() == QDBusMessage::ErrorMessage) {
     qWarning() << "Could not activate the existing GUI:" << reply.errorMessage();
     return Result::Error;
@@ -51,16 +59,15 @@ GuiInstance::Result GuiInstance::startOrActivate() {
 
 void GuiInstance::setWindow(QWidget *window) {
   m_window = window;
-  if (m_activationPending) Activate();
+  if (m_activationPending) ActivateWithToken(m_activationToken);
 }
 
-void GuiInstance::Activate() {
+void GuiInstance::Activate() { ActivateWithToken({}); }
+void GuiInstance::ActivateWithToken(const QString &token) {
   m_activationPending = !m_window;
+  m_activationToken=token;
   if (!m_window) return;
-  m_window->setWindowState(m_window->windowState() & ~Qt::WindowMinimized);
-  m_window->show();
-  m_window->raise();
-  m_window->activateWindow();
-  if (auto *handle = m_window->windowHandle()) handle->requestActivate();
+  activateGuiWindow(m_window,token);
+  m_activationToken.clear();
 }
 }

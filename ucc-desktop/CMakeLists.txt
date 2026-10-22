@@ -5,7 +5,7 @@ add_library(ucc-desktop-support STATIC
   SessionProcessesWidget.cpp SessionProcessesWidget.hpp
   DesktopTray.cpp DesktopTray.hpp)
 target_include_directories(ucc-desktop-support PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
-target_link_libraries(ucc-desktop-support PUBLIC ucc-dbus Qt6::Core Qt6::Widgets Qt6::DBus)
+target_link_libraries(ucc-desktop-support PUBLIC ucc-dbus Qt6::Core Qt6::Widgets Qt6::DBus ucc-native-tray)
 if(BUILD_DESKTOP_TRAY)
   add_executable(ucc-desktop-tray main.cpp)
   target_link_libraries(ucc-desktop-tray PRIVATE ucc-desktop-support)

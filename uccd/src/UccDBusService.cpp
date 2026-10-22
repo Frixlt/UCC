@@ -15,6 +15,8 @@
 
 #include "UccDBusService.hpp"
 #include "SleepState.hpp"
+#include "DriverHealth.hpp"
+#include <QJsonDocument>
 #include "PowerSupplyController.hpp"
 #include <QProcess>
 #include "CommonTypes.hpp"
@@ -1239,6 +1241,14 @@ QString UccDBusInterfaceAdaptor::GetLightbarSettingsJSON()
 {
   if (!checkAuth( PolkitAuthority::ACTION_READ ) || !m_service || !m_service->m_lightbar) return "{}";
   return QString::fromStdString(m_service->m_lightbar->settings().dump());
+}
+
+QString UccDBusInterfaceAdaptor::GetDriverHealthJSON()
+{
+  if (!checkAuth( PolkitAuthority::ACTION_READ ) || !m_service) return "{}";
+  bool identified=false;
+  const bool ready=m_service->m_io.wmiAvailable() && m_service->m_io.identify(identified) && identified;
+  return QString::fromUtf8(QJsonDocument(ucc::inspectDriverHealth("/",ready)).toJson(QJsonDocument::Compact));
 }
 
 QString UccDBusInterfaceAdaptor::GetLightbarStatusJSON()

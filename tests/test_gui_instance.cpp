@@ -13,11 +13,17 @@ class InstanceTest : public QObject {
     process.start(QCoreApplication::applicationFilePath(), {"--instance"});
   }
 private slots:
-  void initTestCase() {
+  void init() {
     launch(primary);
     QVERIFY(primary.waitForStarted());
     QVERIFY(primary.waitForReadyRead());
     QVERIFY(primary.readAllStandardOutput().contains("READY"));
+  }
+  void launchTokenIsForwardedToTheExistingWindow() {
+    QProcess second;auto env=QProcessEnvironment::systemEnvironment();env.insert("XDG_ACTIVATION_TOKEN","unit-test-token");second.setProcessEnvironment(env);
+    launch(second);QVERIFY(second.waitForStarted());QVERIFY(second.waitForFinished(4000));QCOMPARE(second.exitCode(),0);
+    QVERIFY(second.readAllStandardOutput().contains("FORWARDED"));
+    QVERIFY(primary.waitForReadyRead());QVERIFY(primary.readAllStandardOutput().contains("RESTORED"));
   }
   void repeatedLaunchRestoresTheExistingWindow() {
     QProcess second;
@@ -60,7 +66,7 @@ private slots:
     QVERIFY(primary.waitForReadyRead());
     QVERIFY(primary.readAllStandardOutput().contains("READY"));
   }
-  void cleanupTestCase() { primary.terminate(); primary.waitForFinished(); }
+  void cleanup() { primary.terminate(); primary.waitForFinished(); }
 };
 
 int main(int argc,char **argv) {

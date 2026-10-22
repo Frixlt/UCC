@@ -1,0 +1,83 @@
+--- a/update-tuxedo-worker.sh
++++ b/update-tuxedo-worker.sh
+@@ -14,6 +14,7 @@
+ SCRIPT_DIR="/home/frixit/.customconfigs/hooks/tuxedo"
+ PATCH_EXACT_1="$SCRIPT_DIR/0001-exact-mechrevo-profile.patch"
+ PATCH_EXACT_2="$SCRIPT_DIR/0002-linux-7-rgb-max-intensity.patch"
++PATCH_EXACT_3="$SCRIPT_DIR/0003-linux-7.3-acpi-lightbar.patch"
+ PATCH_SCRIPT="$SCRIPT_DIR/apply_mechrevo_patches.sh"
+ PATCH_PATH="$SCRIPT_DIR/mechrevo_clean.patch"
+ REPO_URL="https://github.com/tuxedocomputers/tuxedo-drivers/archive/0b2f8c6ab7ef709343ae74b3de51dcae45357641.tar.gz"
+@@ -168,6 +169,18 @@
+         rm -rf "$BUILD_DIR"
+         exit 1
+     fi
++fi
++
++# Linux 7.3 removed struct acpi_driver; preserve all modules via platform drivers.
++if [ ! -f "$PATCH_EXACT_3" ]; then
++    echo "[ERROR] Missing Linux 7.3 compatibility patch: $PATCH_EXACT_3"
++    exit 1
++fi
++if patch --dry-run -p1 < "$PATCH_EXACT_3" >/dev/null 2>&1; then
++    patch -p1 < "$PATCH_EXACT_3" || exit 1
++elif ! patch --dry-run -R -p1 < "$PATCH_EXACT_3" >/dev/null 2>&1; then
++    echo "[ERROR] Linux 7.3 patch no longer matches upstream; retaining installed custom drivers."
++    exit 1
+ fi
+ 
+ # --- 3. ГЕНЕРАЦИЯ DKMS.CONF ИЗ KBUILD (без тестовой компиляции) ---
+@@ -280,6 +293,7 @@
+ # --- 5. СБОРКА И УСТАНОВКА ДЛЯ ВСЕХ ЯДЕР ---
+ BUILT_ANY=0
+ BUILT_KERNELS=""
++FAILED_KERNELS=""
+ for kernel_dir in /lib/modules/*/build; do
+     if [ ! -f "$kernel_dir/Makefile" ]; then
+         continue
+@@ -287,16 +301,18 @@
+ 
+     kernelver=$(basename "$(dirname "$kernel_dir")")
+     echo "-> Сборка для ядра: $kernelver"
+-    if dkms build -m "$DKMS_MOD_NAME" -v "$DKMS_MOD_VERSION" -k "$kernelver"; then
++    if dkms build -j 1 -m "$DKMS_MOD_NAME" -v "$DKMS_MOD_VERSION" -k "$kernelver"; then
+         if dkms install --no-depmod -m "$DKMS_MOD_NAME" -v "$DKMS_MOD_VERSION" -k "$kernelver" --force; then
+             echo "   [OK] Установлено для $kernelver"
+             BUILT_ANY=1
+             BUILT_KERNELS="$BUILT_KERNELS $kernelver"
+         else
+             echo "   [WARN] dkms install провалился для $kernelver"
++            FAILED_KERNELS="$FAILED_KERNELS $kernelver"
+         fi
+     else
+         echo "   [WARN] Не удалось собрать для $kernelver"
++        FAILED_KERNELS="$FAILED_KERNELS $kernelver"
+         echo "   Лог: /var/lib/dkms/$DKMS_MOD_NAME/$DKMS_MOD_VERSION/$kernelver/x86_64/log/make.log"
+     fi
+ done
+@@ -309,6 +325,11 @@
+ 
+ # Сохраняем версию
+ echo "$UPSTREAM_HASH" > "$SCRIPT_DIR/.installed_version"
++
++if [ -n "$FAILED_KERNELS" ]; then
++    echo "[FAIL] Drivers missing for installed kernels:$FAILED_KERNELS"
++    exit 1
++fi
+ 
+ if [ "$BUILT_ANY" -eq 1 ]; then
+     echo ""
+--- a/update-tuxedo-hook.sh
++++ b/update-tuxedo-hook.sh
+@@ -25,7 +25,10 @@
+ # --no-block — не ждём завершения (pacman не висит)
+ # Сеть (VPN) уже доступна к моменту запуска, т.к. это отдельная транзакция.
+ systemd-run \
+-    --no-block \
++    --no-block --collect \
++    --property=CPUQuota=50% \
++    --property=CPUWeight=1 \
++    --property=MemoryMax=1536M \
+     --unit=tuxedo-drivers-update \
+     --description="Tuxedo drivers build & install" \
+     --setenv=PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin \

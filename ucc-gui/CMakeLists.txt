@@ -122,3 +122,5 @@ add_custom_target( run
   DEPENDS ucc-gui
   COMMENT "Running UCC GUI application..."
 )
+
+target_link_libraries(ucc-gui PRIVATE ucc-window-activation)

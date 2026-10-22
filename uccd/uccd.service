@@ -1,7 +1,7 @@
 [Unit]
 Description=Uniwill Control Center Daemon
 Documentation=man:uccd(8)
-After=dbus.service
+After=dbus.service systemd-modules-load.service
 Requires=dbus.service
 Conflicts=tccd.service tuxedo-power.service
 Before=tccd.service tuxedo-power.service

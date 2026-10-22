@@ -8,6 +8,11 @@
 #include <QVBoxLayout>
 #include <QPainter>
 #include <QProcess>
+#include <QProcessEnvironment>
+#include "WindowActivation.hpp"
+#ifdef UCC_HAVE_KSTATUSNOTIFIERITEM
+#include <KStatusNotifierItem>
+#endif
 #include <QDBusMessage>
 #include <QDBusConnection>
 #include <QDBusPendingCallWatcher>
@@ -34,7 +39,7 @@ DesktopTray::DesktopTray(UccdClient *client,SessionPaths paths,QObject *parent)
     m_modes->setEnabled(false);
     readUccdAsync(this,"SetManualPowerMode",{action->data().toString()},[this](std::optional<QVariant> result){
       m_modes->setEnabled(m_client->isConnected() && !readOnlyPreview);
-      if(!result || !result->toBool()) {m_icon.showMessage("UCC","Could not change power mode");loadPolicy();}
+      if(!result || !result->toBool()) {showMessage("UCC","Could not change power mode");loadPolicy();}
     });
   });
   m_menu->addSeparator();auto *quit=m_menu->addAction("Quit tray");connect(quit,&QAction::triggered,qApp,&QCoreApplication::quit);
@@ -44,10 +49,36 @@ DesktopTray::DesktopTray(UccdClient *client,SessionPaths paths,QObject *parent)
   connect(m_client,&UccdClient::powerPolicyChanged,this,&DesktopTray::setPolicy);
   connect(m_client,&UccdClient::profileChanged,this,[this](const QString &,const QString &,const QString &){loadPolicy();});
   connect(m_client,&UccdClient::connectionStatusChanged,this,[this](bool connected){if(connected) loadPolicy();else {++m_policyGeneration;m_policy={};m_status->setText("Service unavailable");m_modes->setEnabled(false);updateIcon();}});
-  m_icon.setContextMenu(m_menu);connect(&m_icon,&QSystemTrayIcon::activated,this,[this](QSystemTrayIcon::ActivationReason reason){if(reason==QSystemTrayIcon::Trigger || reason==QSystemTrayIcon::DoubleClick) openControlCenter();});
-  loadPolicy();updateIcon();m_icon.show();
+#ifdef UCC_HAVE_KSTATUSNOTIFIERITEM
+  if(QGuiApplication::platformName().startsWith("wayland") && qEnvironmentVariable("XDG_CURRENT_DESKTOP").contains("KDE",Qt::CaseInsensitive)) {
+    // Plasma's Qt platform-theme tray discards KStatusNotifierItem's token.
+    // Own the native item so the user gesture can reach our separate GUI process.
+    m_nativeIcon=new KStatusNotifierItem("ucc-desktop-tray",this);
+    m_nativeIcon->setStandardActionsEnabled(false);m_nativeIcon->setTitle("Frixit Control Center");
+    m_nativeIcon->setCategory(KStatusNotifierItem::Hardware);m_nativeIcon->setContextMenu(m_menu);
+    connect(m_nativeIcon,&KStatusNotifierItem::activateRequested,this,[this](bool,const QPoint &){openControlCenter();});
+    m_nativeIcon->setStatus(KStatusNotifierItem::Active);
+  }
+#endif
+  if(!m_nativeIcon) {
+    m_icon.setContextMenu(m_menu);connect(&m_icon,&QSystemTrayIcon::activated,this,[this](QSystemTrayIcon::ActivationReason reason){if(reason==QSystemTrayIcon::Trigger || reason==QSystemTrayIcon::DoubleClick) openControlCenter();});
+    m_icon.show();
+  }
+  loadPolicy();updateIcon();
 }
-DesktopTray::~DesktopTray() {m_icon.hide();if(m_dialog) delete m_dialog.data();delete m_menu;}
+DesktopTray::~DesktopTray() {
+  m_icon.hide();if(m_dialog) delete m_dialog.data();
+#ifdef UCC_HAVE_KSTATUSNOTIFIERITEM
+  if(m_nativeIcon) {delete m_nativeIcon;m_menu=nullptr;}
+#endif
+  delete m_menu;
+}
+void DesktopTray::showMessage(const QString &title,const QString &message) {
+#ifdef UCC_HAVE_KSTATUSNOTIFIERITEM
+  if(m_nativeIcon) {m_nativeIcon->showMessage(title,message,"ucc-gui");return;}
+#endif
+  m_icon.showMessage(title,message);
+}
 void DesktopTray::loadPolicy() {
   if(!m_client->isConnected()) return;
   if(m_policyLoading) {m_policyAgain=true;return;}
@@ -81,7 +112,7 @@ void DesktopTray::showProcesses() {
     m_dialog=new QDialog;m_dialog->setWindowTitle("UCC · Battery and GPU processes");m_dialog->resize(720,520);auto *layout=new QVBoxLayout(m_dialog);
     m_processWidget=new SessionProcessesWidget(m_paths,&m_monitor,m_dialog);layout->addWidget(m_processWidget);
     connect(m_processWidget,&SessionProcessesWidget::activityChanged,this,[this](bool visible){m_dialogVisible=visible;updatePolling();});
-    connect(m_processWidget,&SessionProcessesWidget::message,this,[this](const QString &message){m_icon.showMessage("UCC",message);});
+    connect(m_processWidget,&SessionProcessesWidget::message,this,[this](const QString &message){showMessage("UCC",message);});
   }
   m_dialog->show();m_dialog->raise();m_dialog->activateWindow();
 }
@@ -91,8 +122,26 @@ void DesktopTray::openControlCenter() {
 #else
   constexpr auto service="com.uniwill.UccGui";constexpr auto path="/com/uniwill/UccGui";
 #endif
-  auto call=QDBusMessage::createMethodCall(service,path,"com.uniwill.UccGui","Activate");auto *watcher=new QDBusPendingCallWatcher(QDBusConnection::sessionBus().asyncCall(call,3000),this);
-  connect(watcher,&QDBusPendingCallWatcher::finished,this,[this,watcher] {const QDBusPendingReply<> reply=*watcher;watcher->deleteLater();if(reply.isError()) {const auto executable=QCoreApplication::applicationDirPath()+"/ucc-gui";if(!QProcess::startDetached(executable,{})) m_icon.showMessage("UCC","Could not launch Control Center");}});
+  auto token=takeActivationToken();
+#ifdef UCC_HAVE_KSTATUSNOTIFIERITEM
+  if(m_nativeIcon) {
+    const auto nativeToken=m_nativeIcon->providedToken();
+    if(!nativeToken.isEmpty() && nativeToken!=m_usedNativeToken) {token=nativeToken;m_usedNativeToken=nativeToken;}
+  }
+#endif
+  auto call=QDBusMessage::createMethodCall(service,path,"com.uniwill.UccGui",token.isEmpty() ? "Activate" : "ActivateWithToken");
+  if(!token.isEmpty()) call.setArguments({token});
+  auto *watcher=new QDBusPendingCallWatcher(QDBusConnection::sessionBus().asyncCall(call,3000),this);
+  connect(watcher,&QDBusPendingCallWatcher::finished,this,[this,watcher,token] {
+    const QDBusPendingReply<> reply=*watcher;watcher->deleteLater();
+    if(reply.isError()) {
+      QProcess process;process.setProgram(QCoreApplication::applicationDirPath()+"/ucc-gui");process.setArguments({"--show"});
+      auto environment=QProcessEnvironment::systemEnvironment();
+      if(!token.isEmpty()) environment.insert("XDG_ACTIVATION_TOKEN",token);
+      process.setProcessEnvironment(environment);
+      if(!process.startDetached()) showMessage("UCC","Could not launch Control Center");
+    }
+  });
 }
 QIcon DesktopTray::statusIcon(const QJsonObject &policy,const QJsonObject &snapshot,const QString &profile) {
   QPixmap pixmap(64,64);pixmap.fill(Qt::transparent);QPainter painter(&pixmap);painter.setRenderHint(QPainter::Antialiasing);
@@ -107,5 +156,12 @@ QIcon DesktopTray::statusIcon(const QJsonObject &policy,const QJsonObject &snaps
   if(forced) {painter.setPen(Qt::NoPen);painter.setBrush(QColor("#111111"));painter.drawEllipse(QPointF(51,51),10,10);painter.setPen(modeColor(manual));auto font=painter.font();font.setPixelSize(14);font.setBold(true);painter.setFont(font);painter.drawText(QRect(42,41,18,20),Qt::AlignCenter,"M");}
   return QIcon(pixmap);
 }
-void DesktopTray::updateIcon() {m_icon.setIcon(statusIcon(m_policy,m_snapshot,m_profile));m_icon.setToolTip(QString("UCC · %1\n%2\n%3\ndGPU: %4").arg(m_policy["current_mode"].toString("unknown"),m_profile,batterySummary(m_snapshot),m_snapshot["gpuState"].toString("unknown")));}
+void DesktopTray::updateIcon() {
+  const auto icon=statusIcon(m_policy,m_snapshot,m_profile);
+  const auto tooltip=QString("UCC · %1\n%2\n%3\ndGPU: %4").arg(m_policy["current_mode"].toString("unknown"),m_profile,batterySummary(m_snapshot),m_snapshot["gpuState"].toString("unknown"));
+#ifdef UCC_HAVE_KSTATUSNOTIFIERITEM
+  if(m_nativeIcon) {m_nativeIcon->setIconByPixmap(icon);m_nativeIcon->setToolTip("ucc-gui","Frixit Control Center",tooltip);return;}
+#endif
+  m_icon.setIcon(icon);m_icon.setToolTip(tooltip);
+}
 }

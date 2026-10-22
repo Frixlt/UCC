@@ -347,3 +347,16 @@ Remaining deployment work: in-session autostart verification and real hardware
 suspend/resume verification. No live hardware sleep cycle or system installation
 has been performed. `gpu-run` and the original CPU thermal limit are excluded at
 the user's request.
+
+## Driver failures and tray activation
+
+See [Linux 7.3 driver recovery](drivers/README.md) for the Mechrevo DKMS fix and
+persistent update-hook changes. A red dashboard banner distinguishes an available
+UCC service from working hardware drivers; the session agent also warns after
+login if the problem persists.
+
+On Plasma Wayland, tray clicks forward the compositor-provided activation token
+to the existing GUI. With KWindowSystem available at build time, activation uses
+that token to focus the window and let the compositor switch to its workspace.
+Fresh tray launches use `--show`, overriding the saved start-minimized preference
+for that explicit click. Automatic startup still honors that preference.

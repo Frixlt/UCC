@@ -7,6 +7,7 @@
 #include <QDialog>
 #include <QActionGroup>
 #include <QPointer>
+class KStatusNotifierItem;
 namespace ucc {
 class DesktopTray:public QObject {
   Q_OBJECT
@@ -22,12 +23,15 @@ public slots:
   void showProcesses();
 private:
   void updateIcon();
+  void showMessage(const QString &title,const QString &message);
   void updatePolling();
   void loadPolicy();
   UccdClient *m_client;
   SessionPaths m_paths;
   DesktopMonitor m_monitor;
   QSystemTrayIcon m_icon;
+  KStatusNotifierItem *m_nativeIcon=nullptr;
+  QString m_usedNativeToken;
   QMenu *m_menu,*m_gpuMenu;
   QAction *m_battery,*m_status,*m_monitorAction,*m_killAll;
   QActionGroup *m_modes;

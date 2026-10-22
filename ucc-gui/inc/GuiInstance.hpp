@@ -16,8 +16,10 @@ public:
   void setWindow(QWidget *window);
 public slots:
   void Activate();
+  void ActivateWithToken(const QString &token);
 private:
   QPointer<QWidget> m_window;
+  QString m_activationToken;
   bool m_activationPending = false;
   bool m_primary = false;
 };

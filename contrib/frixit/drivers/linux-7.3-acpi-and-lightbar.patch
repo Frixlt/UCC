@@ -1,0 +1,234 @@
+--- a/src/clevo_acpi.c
++++ b/src/clevo_acpi.c
+@@ -23,6 +23,9 @@
+ #include <linux/module.h>
+ #include <linux/acpi.h>
+ #include <linux/version.h>
++#if LINUX_VERSION_CODE >= KERNEL_VERSION(7, 3, 0)
++#include <linux/platform_device.h>
++#endif
+ #include "clevo_interfaces.h"
+ 
+ #define DRIVER_NAME			"clevo_acpi"
+@@ -247,6 +250,50 @@
+ 	{"", 0}
+ };
+ 
++#if LINUX_VERSION_CODE >= KERNEL_VERSION(7, 3, 0)
++static void clevo_acpi_platform_notify(acpi_handle handle, u32 event, void *data)
++{
++	clevo_acpi_notify(data, event);
++}
++
++static int clevo_acpi_platform_probe(struct platform_device *pdev)
++{
++	struct acpi_device *adev = ACPI_COMPANION(&pdev->dev);
++	int err;
++
++	if (!adev)
++		return -ENODEV;
++	err = clevo_acpi_add(adev);
++	if (err)
++		return err;
++	err = acpi_dev_install_notify_handler(adev, ACPI_ALL_NOTIFY,
++					     clevo_acpi_platform_notify, adev);
++	if (err)
++		clevo_acpi_remove(adev);
++	return err;
++}
++
++static void clevo_acpi_platform_remove(struct platform_device *pdev)
++{
++	struct acpi_device *adev = ACPI_COMPANION(&pdev->dev);
++
++	acpi_dev_remove_notify_handler(adev, ACPI_ALL_NOTIFY, clevo_acpi_platform_notify);
++	clevo_acpi_remove(adev);
++}
++
++static struct platform_driver clevo_acpi_driver = {
++	.probe = clevo_acpi_platform_probe,
++	.remove = clevo_acpi_platform_remove,
++	.driver = {
++		.name = DRIVER_NAME,
++		.acpi_match_table = clevo_acpi_device_ids,
++#ifdef CONFIG_PM
++		.pm = &clevo_driver_pm_ops,
++#endif
++	},
++};
++module_platform_driver(clevo_acpi_driver);
++#else
+ static struct acpi_driver clevo_acpi_driver = {
+ 	.name = DRIVER_NAME,
+ 	.class = DRIVER_NAME,
+@@ -266,6 +313,7 @@
+ };
+ 
+ module_acpi_driver(clevo_acpi_driver);
++#endif
+ 
+ MODULE_AUTHOR("TUXEDO Computers GmbH <tux@tuxedocomputers.com>");
+ MODULE_DESCRIPTION("Driver for Clevo ACPI interface");
+--- a/src/tuxedo_tuxi/tuxi_acpi.c
++++ b/src/tuxedo_tuxi/tuxi_acpi.c
+@@ -23,6 +23,9 @@
+ #include <linux/module.h>
+ #include <linux/acpi.h>
+ #include <linux/version.h>
++#if LINUX_VERSION_CODE >= KERNEL_VERSION(7, 3, 0)
++#include <linux/platform_device.h>
++#endif
+ #include "tuxi_acpi.h"
+ 
+ #define DRIVER_NAME "tuxi_acpi"
+@@ -351,6 +354,50 @@
+ 	{ "", 0 }
+ };
+ 
++#if LINUX_VERSION_CODE >= KERNEL_VERSION(7, 3, 0)
++static void tuxi_acpi_platform_notify(acpi_handle handle, u32 event, void *data)
++{
++	tuxi_acpi_notify(data, event);
++}
++
++static int tuxi_acpi_platform_probe(struct platform_device *pdev)
++{
++	struct acpi_device *adev = ACPI_COMPANION(&pdev->dev);
++	int err;
++
++	if (!adev)
++		return -ENODEV;
++	err = tuxi_acpi_add(adev);
++	if (err)
++		return err;
++	err = acpi_dev_install_notify_handler(adev, ACPI_ALL_NOTIFY,
++					     tuxi_acpi_platform_notify, adev);
++	if (err)
++		tuxi_acpi_remove(adev);
++	return err;
++}
++
++static void tuxi_acpi_platform_remove(struct platform_device *pdev)
++{
++	struct acpi_device *adev = ACPI_COMPANION(&pdev->dev);
++
++	acpi_dev_remove_notify_handler(adev, ACPI_ALL_NOTIFY, tuxi_acpi_platform_notify);
++	tuxi_acpi_remove(adev);
++}
++
++static struct platform_driver tuxi_acpi_driver = {
++	.probe = tuxi_acpi_platform_probe,
++	.remove = tuxi_acpi_platform_remove,
++	.driver = {
++		.name = DRIVER_NAME,
++		.acpi_match_table = tuxi_acpi_device_ids,
++#ifdef CONFIG_PM
++		.pm = &tuxi_driver_pm_ops,
++#endif
++	},
++};
++module_platform_driver(tuxi_acpi_driver);
++#else
+ static struct acpi_driver tuxi_acpi_driver = {
+ 	.name = DRIVER_NAME,
+ 	.class = DRIVER_NAME,
+@@ -370,6 +417,7 @@
+ };
+ 
+ module_acpi_driver(tuxi_acpi_driver);
++#endif
+ 
+ MODULE_AUTHOR("TUXEDO Computers GmbH <tux@tuxedocomputers.com>");
+ MODULE_DESCRIPTION("Driver for TUXEDO ACPI interface");
+--- a/src/gxtp7380/gxtp7380.c
++++ b/src/gxtp7380/gxtp7380.c
+@@ -23,6 +23,9 @@
+ #include <linux/module.h>
+ #include <linux/acpi.h>
+ #include <linux/version.h>
++#if LINUX_VERSION_CODE >= KERNEL_VERSION(7, 3, 0)
++#include <linux/platform_device.h>
++#endif
+ 
+ #define DRIVER_NAME "gxtp7380"
+ 
+@@ -54,6 +57,47 @@
+ 	{ "", 0 }
+ };
+ 
++#if LINUX_VERSION_CODE >= KERNEL_VERSION(7, 3, 0)
++static void gxtp7380_platform_notify(acpi_handle handle, u32 event, void *data)
++{
++	gxtp7380_notify(data, event);
++}
++
++static int gxtp7380_platform_probe(struct platform_device *pdev)
++{
++	struct acpi_device *adev = ACPI_COMPANION(&pdev->dev);
++	int err;
++
++	if (!adev)
++		return -ENODEV;
++	err = gxtp7380_add(adev);
++	if (err)
++		return err;
++	err = acpi_dev_install_notify_handler(adev, ACPI_ALL_NOTIFY,
++					     gxtp7380_platform_notify, adev);
++	if (err)
++		gxtp7380_remove(adev);
++	return err;
++}
++
++static void gxtp7380_platform_remove(struct platform_device *pdev)
++{
++	struct acpi_device *adev = ACPI_COMPANION(&pdev->dev);
++
++	acpi_dev_remove_notify_handler(adev, ACPI_ALL_NOTIFY, gxtp7380_platform_notify);
++	gxtp7380_remove(adev);
++}
++
++static struct platform_driver gxtp7380_driver = {
++	.probe = gxtp7380_platform_probe,
++	.remove = gxtp7380_platform_remove,
++	.driver = {
++		.name = DRIVER_NAME,
++		.acpi_match_table = gxtp7380_device_ids,
++	},
++};
++module_platform_driver(gxtp7380_driver);
++#else
+ static struct acpi_driver gxtp7380_driver = {
+ 	.name = DRIVER_NAME,
+ 	.class = DRIVER_NAME,
+@@ -67,6 +111,7 @@
+ };
+ 
+ module_acpi_driver(gxtp7380_driver);
++#endif
+ 
+ MODULE_AUTHOR("TUXEDO Computers GmbH <tux@tuxedocomputers.com>");
+ MODULE_DESCRIPTION("Touch panel disable, notify driver");
+--- a/src/ite_8291_lb/ite_8291_lb.c
++++ b/src/ite_8291_lb/ite_8291_lb.c
+@@ -477,12 +477,21 @@
+ 	ite8291_driver_data->mcled_cdev_lightbar.subled_info = ite8291_driver_data->mcled_cdev_subleds_lightbar;
+ 	ite8291_driver_data->mcled_cdev_lightbar.subled_info[0].color_index = LED_COLOR_ID_RED;
+ 	ite8291_driver_data->mcled_cdev_lightbar.subled_info[0].intensity = LIGHTBAR_DEFAULT_COLOR_RED;
++#if LINUX_VERSION_CODE >= KERNEL_VERSION(7, 2, 0)
++	ite8291_driver_data->mcled_cdev_lightbar.subled_info[0].max_intensity = 0xff;
++#endif
+ 	ite8291_driver_data->mcled_cdev_lightbar.subled_info[0].channel = 0;
+ 	ite8291_driver_data->mcled_cdev_lightbar.subled_info[1].color_index = LED_COLOR_ID_GREEN;
+ 	ite8291_driver_data->mcled_cdev_lightbar.subled_info[1].intensity = LIGHTBAR_DEFAULT_COLOR_GREEN;
++#if LINUX_VERSION_CODE >= KERNEL_VERSION(7, 2, 0)
++	ite8291_driver_data->mcled_cdev_lightbar.subled_info[1].max_intensity = 0xff;
++#endif
+ 	ite8291_driver_data->mcled_cdev_lightbar.subled_info[1].channel = 0;
+ 	ite8291_driver_data->mcled_cdev_lightbar.subled_info[2].color_index = LED_COLOR_ID_BLUE;
+ 	ite8291_driver_data->mcled_cdev_lightbar.subled_info[2].intensity = LIGHTBAR_DEFAULT_COLOR_BLUE;
++#if LINUX_VERSION_CODE >= KERNEL_VERSION(7, 2, 0)
++	ite8291_driver_data->mcled_cdev_lightbar.subled_info[2].max_intensity = 0xff;
++#endif
+ 	ite8291_driver_data->mcled_cdev_lightbar.subled_info[2].channel = 0;
+ 
+ 	retval = devm_led_classdev_multicolor_register(&hdev->dev, &ite8291_driver_data->mcled_cdev_lightbar);

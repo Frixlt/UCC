@@ -11,6 +11,9 @@
 #include "NotificationMonitor.hpp"
 #include "SessionSignals.hpp"
 #include "RefreshAdvisor.hpp"
+#include "DriverAlert.hpp"
+#include "DriverHealth.hpp"
+#include "AsyncRead.hpp"
 
 int main(int argc,char **argv) {
   QCoreApplication app(argc,argv);app.setApplicationName("ucc-session-agent");
@@ -32,6 +35,19 @@ int main(int argc,char **argv) {
   QObject::connect(&client,&ucc::UccdClient::lightbarSettingsChanged,&app,[&](const QString &json){settings=QJsonDocument::fromJson(json.toUtf8()).object();});
   QObject::connect(&client,&ucc::UccdClient::powerPolicyChanged,&app,[&](const QString &json){policy=QJsonDocument::fromJson(json.toUtf8()).object();refresh.policyChanged(json);});
   load();
+  ucc::DriverAlert driverAlert;
+  QTimer driverPoll;driverPoll.setInterval(10000);bool driverPending=false;
+  QObject::connect(&driverPoll,&QTimer::timeout,&app,[&] {
+    if(driverPending) return;
+    driverPending=true;
+    ucc::readUccdAsync(&app,"GetDriverHealthJSON",{},[&](std::optional<QVariant> value){
+      driverPending=false;
+      const auto health=value ? QJsonDocument::fromJson(value->toString().toUtf8()).object() : QJsonObject{};
+      driverAlert.update(health.contains("healthy") ? health : ucc::unavailableDriverHealth());
+    });
+  });
+  // Let the user session, notifications service and kernel device probes settle.
+  QTimer::singleShot(15000,&app,[&]{driverPoll.start();QMetaObject::invokeMethod(&driverPoll,"timeout");});
   NotificationMonitor monitor([&] {
     const auto mode=policy["current_mode"].toString();
     if(settings["managed"].toBool() && !settings["silent_mode"].toBool() && settings["power_settings"].toObject()[mode].toObject()["enabled"].toBool())

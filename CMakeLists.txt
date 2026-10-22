@@ -113,6 +113,25 @@ include_directories( ${CMAKE_SOURCE_DIR}/include ${CMAKE_BINARY_DIR}/include )
 
 
 # Subdirectories
+# User-initiated tray activation on Wayland needs the compositor's token.
+add_library(ucc-window-activation INTERFACE)
+if(BUILD_GUI)
+  find_package(KF6WindowSystem QUIET)
+  if(TARGET KF6::WindowSystem)
+    target_link_libraries(ucc-window-activation INTERFACE KF6::WindowSystem)
+    target_compile_definitions(ucc-window-activation INTERFACE UCC_HAVE_KWINDOWSYSTEM)
+  endif()
+endif()
+
+add_library(ucc-native-tray INTERFACE)
+if(BUILD_GUI OR BUILD_DESKTOP_TRAY)
+  find_package(KF6StatusNotifierItem QUIET)
+  if(TARGET KF6::StatusNotifierItem)
+    target_link_libraries(ucc-native-tray INTERFACE KF6::StatusNotifierItem)
+    target_compile_definitions(ucc-native-tray INTERFACE UCC_HAVE_KSTATUSNOTIFIERITEM)
+  endif()
+endif()
+
 add_subdirectory( uccd )
 # Optional native backdrop blur on X11 compositors that implement the blur protocol.
 find_package(PkgConfig QUIET)
