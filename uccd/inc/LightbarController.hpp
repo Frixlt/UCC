@@ -177,11 +177,13 @@ private:
     return write(m_path+"/brightness",QByteArray::number(static_cast<int>(std::lround(profile()["brightness_val"].get<int>()*m_maxBrightness/255.0))));
   }
   void applyIdle() {
-    m_flashOff=false;m_lastOk=true;m_error.clear();
+    m_flashOff=profile()["mode"]==animations[1];m_lastOk=true;m_error.clear();
     if(m_path.isEmpty()) discover();
     if(m_path.isEmpty()) {m_lastOk=false;m_error="Lightbar hardware unavailable";return;}
-    if(!writeBrightness()) return;
-    writeColor(profile()["enabled"].get<bool>() ? color() : Color{0,0,0});
+    // Clear Flash's idle color before restoring brightness, including on save,
+    // startup and power-source changes; no notification needs to run first.
+    if(!writeColor(profile()["enabled"].get<bool>() && !m_flashOff ? color() : Color{0,0,0})) return;
+    writeBrightness();
   }
   static Color hue(double h) {
     const double v=(h-std::floor(h))*6.0;const int sector=static_cast<int>(v);

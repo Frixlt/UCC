@@ -80,8 +80,9 @@ apart from their requested baseline commits:
   brightness, custom/preset/majority-keyboard color and all five original
   notification animations. Silent mode suppresses normal notifications; manual
   Test and the optional one-time welcome animation bypass it. Disabled power
-  modes remain off. Flash finishes off, other animations restore the current
-  color. Changing power mode or settings cancels an old animation immediately.
+  modes remain off. Flash stays off between notifications, including immediately
+  after Save, daemon startup and power-mode changes; other animations restore the
+  current color. Changing power mode or settings cancels an old animation immediately.
 - `ucc-session-agent` observes notification method headers in the desktop session
   using `dbus-monitor` and forwards only an event to the daemon. It never forwards
   or logs notification contents. It reconnects after monitor/service restarts,

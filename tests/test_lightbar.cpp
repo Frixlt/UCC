@@ -11,6 +11,40 @@ class TestLightbar:public QObject {
   QByteArray read(const QString &root,const QString &name) {QFile f(root+"/"+name);if(!f.open(QIODevice::ReadOnly)) return {};return f.readAll();}
   void hardware(const QString &root) {file(root,"rgb:lightbar/multi_intensity","1 2 3 1 2 3");file(root,"rgb:lightbar/brightness","0");file(root,"rgb:lightbar/max_brightness","50");}
 private slots:
+  void flashStaysOffAfterSaveAndPowerChanges_data() {
+    QTest::addColumn<QString>("powerMode");
+    QTest::addColumn<bool>("autoColor");
+    for(const auto *mode:{"ac","type_c","bat"})
+      for(bool automatic:{false,true})
+        QTest::newRow(qPrintable(QString("%1-%2").arg(mode,automatic ? "auto" : "custom"))) << QString(mode) << automatic;
+  }
+  void flashStaysOffAfterSaveAndPowerChanges() {
+    QFETCH(QString,powerMode);QFETCH(bool,autoColor);
+    QTemporaryDir root;hardware(root.path());
+    file(root.path(),"rgb:kbd_backlight/multi_intensity","20 40 60");
+    Controller c(root.path());auto config=Controller::defaults();config["managed"]=true;
+    const auto mode=powerMode.toStdString();
+    auto &saved=config["power_settings"][mode];
+    saved["enabled"]=true;saved["mode"]="Flash (stays off)";
+    saved["color_mode"]=autoColor ? Json("Auto") : Json::array({20,40,60});
+    c.setPowerMode(mode);QVERIFY(c.configure(config));
+    const QByteArray off="0 0 0 0 0 0",on="20 40 60 20 40 60";
+    QCOMPARE(read(root.path(),"rgb:lightbar/multi_intensity"),off);
+    QVERIFY(!c.status()["animating"].get<bool>());
+    c.keyboardChanged();QCOMPARE(read(root.path(),"rgb:lightbar/multi_intensity"),off);
+    QVERIFY(c.trigger());c.advance(820);
+    QCOMPARE(read(root.path(),"rgb:lightbar/multi_intensity"),on);
+    c.advance(Controller::duration("Flash (stays off)"));
+    QCOMPARE(read(root.path(),"rgb:lightbar/multi_intensity"),off);
+    // Saving again must retain the idle state without pressing Test first.
+    saved["brightness_val"]=100;QVERIFY(c.configure(config));
+    QCOMPARE(read(root.path(),"rgb:lightbar/multi_intensity"),off);
+    // Returning from a continuously lit mode must restore Flash's off state.
+    c.setPowerMode(mode=="ac" ? "type_c" : "ac");
+    QCOMPARE(read(root.path(),"rgb:lightbar/multi_intensity"),on);
+    c.setPowerMode(mode);QCOMPARE(read(root.path(),"rgb:lightbar/multi_intensity"),off);
+    c.keyboardChanged();QCOMPARE(read(root.path(),"rgb:lightbar/multi_intensity"),off);
+  }
   void resumeKeepsWelcomeSettingWithoutReplayingIt() {
     QTemporaryDir root;hardware(root.path());Controller c(root.path());auto config=Controller::defaults();
     config["managed"]=true;config["welcome_anim"]=true;c.skipWelcome();QVERIFY(c.configure(config));
