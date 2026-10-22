@@ -493,7 +493,8 @@ void TrayBackend::pollSlowState()
   {
     auto raw = QString::fromStdString( *ps );
     using namespace Qt::StringLiterals;
-    auto s = raw == "power_ac"_L1  ? u"AC"_s
+    auto s = raw == "power_type_c"_L1 ? u"Type-C"_s
+           : raw == "power_ac"_L1  ? u"AC"_s
            : raw == "power_bat"_L1 ? u"Battery"_s
            : raw == "power_wc"_L1  ? u"AC w/ Water Cooler"_s
            : raw;

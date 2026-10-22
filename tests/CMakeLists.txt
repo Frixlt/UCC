@@ -38,6 +38,9 @@ endfunction()
 # ---------- tests -----------------------------------------------------------
 
 ucc_add_test( test_state_utils      test_state_utils.cpp )
+ucc_add_test( test_power_policy     test_power_policy.cpp )
+ucc_add_test( test_power_devices    test_power_devices.cpp )
+ucc_add_test( test_keyboard_controller test_keyboard_controller.cpp )
 ucc_add_test( test_fan_profile      test_fan_profile.cpp )
 ucc_add_test( test_profile_manager  test_profile_manager.cpp )
 ucc_add_test( test_settings_manager test_settings_manager.cpp )
@@ -45,6 +48,7 @@ ucc_add_test( test_metrics_history  test_metrics_history.cpp )
 ucc_add_test( test_aquaris_selection test_aquaris_selection.cpp )
 target_compile_options(test_aquaris_selection PRIVATE -UNDEBUG)
 find_package(Python3 REQUIRED COMPONENTS Interpreter)
+add_test(NAME test_controlcenter_migration COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/test_controlcenter_migration.py)
 add_test(NAME test_control_authorization COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/test_control_authorization.py)
 add_test(NAME test_watercooler_override COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/test_watercooler_override.py)
 add_test(NAME test_device_identification COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/test_device_identification.py)
@@ -82,6 +86,7 @@ if(DBUS_RUN_SESSION_EXECUTABLE AND BUILD_GUI)
     ../ucc-gui/src/FluentSidebar.cpp
     ../ucc-gui/src/FluentTheme.cpp ../ucc-gui/inc/FluentTheme.hpp
     ../ucc-gui/src/MainWindow.cpp ../ucc-gui/inc/MainWindow.hpp
+    ../ucc-gui/src/PowerDevicesTab.cpp ../ucc-gui/inc/PowerDevicesTab.hpp
     ../ucc-gui/src/KeyboardTab.cpp
     ../ucc-gui/src/KeyboardVisualizerWidget.cpp ../ucc-gui/inc/KeyboardVisualizerWidget.hpp
     ../ucc-gui/src/HardwareTab.cpp ../ucc-gui/inc/HardwareTab.hpp

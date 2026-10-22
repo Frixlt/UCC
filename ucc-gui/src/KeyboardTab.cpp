@@ -40,6 +40,8 @@ void MainWindow::connectKeyboardBacklightPageWidgets()
 {
   if(m_keyboardBrightnessSlider) connect( m_keyboardBrightnessSlider, &QSlider::valueChanged,
            this, &MainWindow::onKeyboardBrightnessChanged );
+  if (m_keyboardBrightnessSlider) connect(m_keyboardBrightnessSlider, &QSlider::sliderReleased,
+    this, [this] { onKeyboardBrightnessChanged(m_keyboardBrightnessSlider->value()); });
 
   if(m_keyboardColorButton) connect( m_keyboardColorButton, &QPushButton::clicked,
            this, &MainWindow::onKeyboardColorClicked );
@@ -157,7 +159,16 @@ void MainWindow::setupKeyboardBacklightPage()
         // Keyboard visualizer
         if ( zones > 1 )
         {
-          m_keyboardVisualizer = new KeyboardVisualizerWidget( zones, maxBrightness, keyboardWidget );
+          bool calibrated = false;
+          if (auto settings = m_UccdClient->getSettingsJSON())
+            calibrated = QJsonDocument::fromJson(QByteArray::fromStdString(*settings)).object()["keyboardLayout"].toString() == "frixit-mechrevo";
+          if (auto system = m_UccdClient->getSystemInfoJSON()) {
+            const auto model = QJsonDocument::fromJson(QByteArray::fromStdString(*system)).object();
+            calibrated |= model["boardName"].toString() == "YAOSHI Series-X6AR55xY" ||
+                          model["laptopModel"].toString().contains("MECHREVO YAOSHI Series-X6AR55xY");
+          }
+          m_keyboardVisualizer = new KeyboardVisualizerWidget( zones, maxBrightness, keyboardWidget,
+                                                               calibrated, caps["ledIds"].toArray() );
           lightingLayout->addWidget(m_keyboardVisualizer);
           m_keyboardVisualizer->setMinimumHeight(300);m_keyboardVisualizer->setMaximumHeight(380);
         }
@@ -261,7 +272,10 @@ void MainWindow::onKeyboardBrightnessChanged( int value )
     m_keyboardVisualizer->setGlobalBrightness( value );
     m_keyboardVisualizer->blockSignals( false );
 
-    // Apply to hardware immediately (same as color changes)
+    // Preview during dragging; send one hardware update after release.
+    if (m_keyboardBrightnessSlider && m_keyboardBrightnessSlider->isSliderDown()) return;
+
+    // Apply the final brightness together with the current colors.
     QJsonArray statesArray = m_keyboardVisualizer->getJSONState();
     if ( !statesArray.empty() )
     {

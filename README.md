@@ -1,5 +1,8 @@
 # UCC Revorked
 
+The Frixit branch adds personal ControlCenter power/device policies and calibrated
+keyboard migration. See [migration status and instructions](contrib/frixit/README.md).
+
 A Fluent-style Linux control center for Uniwill laptops, rebuilt around a native
 **Qt 6 / C++20 interface**. Manage performance profiles, cooling, keyboard lighting
 and hardware settings, with live CPU/GPU monitoring and **Light, Dark and Auto** themes.

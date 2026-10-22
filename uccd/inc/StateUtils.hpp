@@ -1,104 +1,48 @@
-/*
- * This program is free software: you can redistribute it and/or modify
- * it under the terms of the GNU General Public License as published by
- * the Free Software Foundation, either version 3 of the License, or
- * (at your option) any later version.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
- *
- * You should have received a copy of the GNU General Public License
- * along with this program.  If not, see <https://www.gnu.org/licenses/>.
- */
-
+// SPDX-License-Identifier: GPL-3.0-or-later
 #pragma once
 
 #include "TccSettings.hpp"
-#include "PowerSupplyController.hpp"
 #include <filesystem>
-#include <iostream>
-#include <syslog.h>
+#include <fstream>
+#include <string>
 
-inline ProfileState determineState() noexcept
+// Inspect all supplies: firmware may report both USB-C and Mains online.
+// USB-C takes precedence, matching the user's existing ControlCenter.
+inline ProfileState determineState(
+  const std::filesystem::path &root = "/sys/class/power_supply" ) noexcept
 {
-  ProfileState state = ProfileState::AC; // Default to AC
-
-  try
-  {
-    namespace fs = std::filesystem;
-    const fs::path pathPowerSupplies = "/sys/class/power_supply";
-
-    if ( !fs::exists( pathPowerSupplies ) )
-    {
-      return state;
+  try {
+    if (!std::filesystem::exists(root)) return ProfileState::AC;
+    bool mains = false, usb = false, knownSupply = false;
+    for (const auto &entry : std::filesystem::directory_iterator(root)) {
+      if (!entry.is_directory()) continue;
+      std::string type, online;
+      std::ifstream(entry.path()/"type") >> type;
+      std::ifstream(entry.path()/"online") >> online;
+      const auto name = entry.path().filename().string();
+      const bool isUsb = type.starts_with("USB") || name.starts_with("ucsi") ||
+                         name.starts_with("USB");
+      const bool isMains = type == "Mains";
+      knownSupply |= isUsb || isMains || type == "Battery";
+      if (online != "1") continue;
+      usb |= isUsb;
+      mains |= isMains;
     }
-
-    // Find a 'Mains' type power supply
-    for ( const auto &entry : fs::directory_iterator( pathPowerSupplies ) )
-    {
-      if ( !entry.is_directory() )
-        continue;
-
-      fs::path typePath = entry.path() / "type";
-      if ( !fs::exists( typePath ) )
-        continue;
-
-      // Read type
-      std::ifstream typeFile( typePath );
-      if ( !typeFile )
-        continue;
-
-      std::string type;
-      std::getline( typeFile, type );
-
-      if ( type == "Mains" )
-      {
-        // Found AC power supply, check if it's online
-        fs::path onlinePath = entry.path() / "online";
-        if ( !fs::exists( onlinePath ) )
-          continue;
-
-        std::ifstream onlineFile( onlinePath );
-        if ( !onlineFile )
-          continue;
-
-        std::string online;
-        std::getline( onlineFile, online );
-
-        if ( online == "1" )
-        {
-          state = ProfileState::AC;
-        }
-        else
-        {
-          state = ProfileState::BAT;
-        }
-
-        break; // Found what we need
-      }
-    }
+    if (usb) return ProfileState::TYPE_C;
+    if (mains) return ProfileState::AC;
+    return knownSupply ? ProfileState::BAT : ProfileState::AC;
+  } catch (...) {
+    return ProfileState::AC;
   }
-  catch ( const std::exception &e )
-  {
-    syslog( LOG_ERR, "[State] Exception determining power state: %s", e.what() );
-  }
-
-  return state;
 }
 
 inline std::string profileStateToString( ProfileState state ) noexcept
 {
-  switch ( state )
-  {
-    case ProfileState::AC:
-      return "power_ac";
-    case ProfileState::BAT:
-      return "power_bat";
-    case ProfileState::WC:
-      return "power_wc";
-    default:
-      return "power_ac";
+  switch (state) {
+    case ProfileState::AC: return "power_ac";
+    case ProfileState::BAT: return "power_bat";
+    case ProfileState::WC: return "power_wc";
+    case ProfileState::TYPE_C: return "power_type_c";
+    default: return "power_ac";
   }
 }

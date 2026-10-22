@@ -1,0 +1,1042 @@
+{
+  "id": "frixit-mechrevo",
+  "schemaVersion": 1,
+  "source": "ControlCenter/gui 53a493b: ui/tabs/keyboard_tab.py and kbd_control.py",
+  "keys": [
+    {
+      "label": "Esc",
+      "led": 105,
+      "x": 0.0,
+      "y": 0.0,
+      "width": 0.95,
+      "height": 0.65,
+      "tooltip": "Esc"
+    },
+    {
+      "label": "F1",
+      "led": 106,
+      "x": 0.95,
+      "y": 0.0,
+      "width": 0.95,
+      "height": 0.65,
+      "tooltip": "F1"
+    },
+    {
+      "label": "F2",
+      "led": 107,
+      "x": 1.9,
+      "y": 0.0,
+      "width": 0.95,
+      "height": 0.65,
+      "tooltip": "F2"
+    },
+    {
+      "label": "F3",
+      "led": 108,
+      "x": 2.85,
+      "y": 0.0,
+      "width": 0.95,
+      "height": 0.65,
+      "tooltip": "F3"
+    },
+    {
+      "label": "F4",
+      "led": 109,
+      "x": 3.8,
+      "y": 0.0,
+      "width": 0.95,
+      "height": 0.65,
+      "tooltip": "F4"
+    },
+    {
+      "label": "F5",
+      "led": 110,
+      "x": 4.75,
+      "y": 0.0,
+      "width": 0.95,
+      "height": 0.65,
+      "tooltip": "F5"
+    },
+    {
+      "label": "F6",
+      "led": 111,
+      "x": 5.7,
+      "y": 0.0,
+      "width": 0.95,
+      "height": 0.65,
+      "tooltip": "F6"
+    },
+    {
+      "label": "F7",
+      "led": 112,
+      "x": 6.65,
+      "y": 0.0,
+      "width": 0.95,
+      "height": 0.65,
+      "tooltip": "F7"
+    },
+    {
+      "label": "F8",
+      "led": 113,
+      "x": 7.6,
+      "y": 0.0,
+      "width": 0.95,
+      "height": 0.65,
+      "tooltip": "F8"
+    },
+    {
+      "label": "F9",
+      "led": 114,
+      "x": 8.55,
+      "y": 0.0,
+      "width": 0.95,
+      "height": 0.65,
+      "tooltip": "F9"
+    },
+    {
+      "label": "F10",
+      "led": 115,
+      "x": 9.5,
+      "y": 0.0,
+      "width": 0.95,
+      "height": 0.65,
+      "tooltip": "F10"
+    },
+    {
+      "label": "F11",
+      "led": 116,
+      "x": 10.45,
+      "y": 0.0,
+      "width": 0.95,
+      "height": 0.65,
+      "tooltip": "F11"
+    },
+    {
+      "label": "F12",
+      "led": 117,
+      "x": 11.4,
+      "y": 0.0,
+      "width": 0.95,
+      "height": 0.65,
+      "tooltip": "F12"
+    },
+    {
+      "label": "SC",
+      "led": 118,
+      "x": 12.35,
+      "y": 0.0,
+      "width": 0.95,
+      "height": 0.65,
+      "tooltip": "SC"
+    },
+    {
+      "label": "PrtSc",
+      "led": 119,
+      "x": 13.3,
+      "y": 0.0,
+      "width": 0.95,
+      "height": 0.65,
+      "tooltip": "PrtSc"
+    },
+    {
+      "label": "Del",
+      "led": 120,
+      "x": 14.25,
+      "y": 0.0,
+      "width": 0.95,
+      "height": 0.65,
+      "tooltip": "Del"
+    },
+    {
+      "label": "Home",
+      "led": 121,
+      "x": 15.2,
+      "y": 0.0,
+      "width": 0.95,
+      "height": 0.65,
+      "tooltip": "Home"
+    },
+    {
+      "label": "Pgup",
+      "led": 122,
+      "x": 16.15,
+      "y": 0.0,
+      "width": 0.95,
+      "height": 0.65,
+      "tooltip": "Pgup"
+    },
+    {
+      "label": "Pgdn",
+      "led": 123,
+      "x": 17.1,
+      "y": 0.0,
+      "width": 0.95,
+      "height": 0.65,
+      "tooltip": "Pgdn"
+    },
+    {
+      "label": "End",
+      "led": 124,
+      "x": 18.05,
+      "y": 0.0,
+      "width": 0.95,
+      "height": 0.65,
+      "tooltip": "End"
+    },
+    {
+      "label": "`",
+      "led": 84,
+      "x": 0.0,
+      "y": 1.0,
+      "width": 1.0,
+      "height": 1.0,
+      "tooltip": "`"
+    },
+    {
+      "label": "1",
+      "led": 85,
+      "x": 1.0,
+      "y": 1.0,
+      "width": 1.0,
+      "height": 1.0,
+      "tooltip": "1"
+    },
+    {
+      "label": "2",
+      "led": 86,
+      "x": 2.0,
+      "y": 1.0,
+      "width": 1.0,
+      "height": 1.0,
+      "tooltip": "2"
+    },
+    {
+      "label": "3",
+      "led": 87,
+      "x": 3.0,
+      "y": 1.0,
+      "width": 1.0,
+      "height": 1.0,
+      "tooltip": "3"
+    },
+    {
+      "label": "4",
+      "led": 88,
+      "x": 4.0,
+      "y": 1.0,
+      "width": 1.0,
+      "height": 1.0,
+      "tooltip": "4"
+    },
+    {
+      "label": "5",
+      "led": 89,
+      "x": 5.0,
+      "y": 1.0,
+      "width": 1.0,
+      "height": 1.0,
+      "tooltip": "5"
+    },
+    {
+      "label": "6",
+      "led": 90,
+      "x": 6.0,
+      "y": 1.0,
+      "width": 1.0,
+      "height": 1.0,
+      "tooltip": "6"
+    },
+    {
+      "label": "7",
+      "led": 91,
+      "x": 7.0,
+      "y": 1.0,
+      "width": 1.0,
+      "height": 1.0,
+      "tooltip": "7"
+    },
+    {
+      "label": "8",
+      "led": 92,
+      "x": 8.0,
+      "y": 1.0,
+      "width": 1.0,
+      "height": 1.0,
+      "tooltip": "8"
+    },
+    {
+      "label": "9",
+      "led": 93,
+      "x": 9.0,
+      "y": 1.0,
+      "width": 1.0,
+      "height": 1.0,
+      "tooltip": "9"
+    },
+    {
+      "label": "0",
+      "led": 94,
+      "x": 10.0,
+      "y": 1.0,
+      "width": 1.0,
+      "height": 1.0,
+      "tooltip": "0"
+    },
+    {
+      "label": "-",
+      "led": 95,
+      "x": 11.0,
+      "y": 1.0,
+      "width": 1.0,
+      "height": 1.0,
+      "tooltip": "-"
+    },
+    {
+      "label": "=",
+      "led": 96,
+      "x": 12.0,
+      "y": 1.0,
+      "width": 1.0,
+      "height": 1.0,
+      "tooltip": "="
+    },
+    {
+      "label": "BkSp",
+      "led": 98,
+      "x": 13.0,
+      "y": 1.0,
+      "width": 2.0,
+      "height": 1.0,
+      "tooltip": "BkSp"
+    },
+    {
+      "label": "Num",
+      "led": 99,
+      "x": 15.0,
+      "y": 1.0,
+      "width": 1.0,
+      "height": 1.0,
+      "tooltip": "Num"
+    },
+    {
+      "label": "/",
+      "led": 100,
+      "x": 16.0,
+      "y": 1.0,
+      "width": 1.0,
+      "height": 1.0,
+      "tooltip": "/"
+    },
+    {
+      "label": "*",
+      "led": 101,
+      "x": 17.0,
+      "y": 1.0,
+      "width": 1.0,
+      "height": 1.0,
+      "tooltip": "*"
+    },
+    {
+      "label": "-",
+      "led": 102,
+      "x": 18.0,
+      "y": 1.0,
+      "width": 1.0,
+      "height": 1.0,
+      "tooltip": "-"
+    },
+    {
+      "label": "Tab",
+      "led": 63,
+      "x": 0.0,
+      "y": 2.0,
+      "width": 1.5,
+      "height": 1.0,
+      "tooltip": "Tab"
+    },
+    {
+      "label": "Q",
+      "led": 65,
+      "x": 1.5,
+      "y": 2.0,
+      "width": 1.0,
+      "height": 1.0,
+      "tooltip": "Q"
+    },
+    {
+      "label": "W",
+      "led": 66,
+      "x": 2.5,
+      "y": 2.0,
+      "width": 1.0,
+      "height": 1.0,
+      "tooltip": "W"
+    },
+    {
+      "label": "E",
+      "led": 67,
+      "x": 3.5,
+      "y": 2.0,
+      "width": 1.0,
+      "height": 1.0,
+      "tooltip": "E"
+    },
+    {
+      "label": "R",
+      "led": 68,
+      "x": 4.5,
+      "y": 2.0,
+      "width": 1.0,
+      "height": 1.0,
+      "tooltip": "R"
+    },
+    {
+      "label": "T",
+      "led": 69,
+      "x": 5.5,
+      "y": 2.0,
+      "width": 1.0,
+      "height": 1.0,
+      "tooltip": "T"
+    },
+    {
+      "label": "Y",
+      "led": 70,
+      "x": 6.5,
+      "y": 2.0,
+      "width": 1.0,
+      "height": 1.0,
+      "tooltip": "Y"
+    },
+    {
+      "label": "U",
+      "led": 71,
+      "x": 7.5,
+      "y": 2.0,
+      "width": 1.0,
+      "height": 1.0,
+      "tooltip": "U"
+    },
+    {
+      "label": "I",
+      "led": 72,
+      "x": 8.5,
+      "y": 2.0,
+      "width": 1.0,
+      "height": 1.0,
+      "tooltip": "I"
+    },
+    {
+      "label": "O",
+      "led": 73,
+      "x": 9.5,
+      "y": 2.0,
+      "width": 1.0,
+      "height": 1.0,
+      "tooltip": "O"
+    },
+    {
+      "label": "P",
+      "led": 74,
+      "x": 10.5,
+      "y": 2.0,
+      "width": 1.0,
+      "height": 1.0,
+      "tooltip": "P"
+    },
+    {
+      "label": "[",
+      "led": 75,
+      "x": 11.5,
+      "y": 2.0,
+      "width": 1.0,
+      "height": 1.0,
+      "tooltip": "["
+    },
+    {
+      "label": "]",
+      "led": 76,
+      "x": 12.5,
+      "y": 2.0,
+      "width": 1.0,
+      "height": 1.0,
+      "tooltip": "]"
+    },
+    {
+      "label": "\\",
+      "led": 77,
+      "x": 13.5,
+      "y": 2.0,
+      "width": 1.5,
+      "height": 1.0,
+      "tooltip": "\\"
+    },
+    {
+      "label": "7",
+      "led": 78,
+      "x": 15.0,
+      "y": 2.0,
+      "width": 1.0,
+      "height": 1.0,
+      "tooltip": "7"
+    },
+    {
+      "label": "8",
+      "led": 79,
+      "x": 16.0,
+      "y": 2.0,
+      "width": 1.0,
+      "height": 1.0,
+      "tooltip": "8"
+    },
+    {
+      "label": "9",
+      "led": 80,
+      "x": 17.0,
+      "y": 2.0,
+      "width": 1.0,
+      "height": 1.0,
+      "tooltip": "9"
+    },
+    {
+      "label": "+",
+      "led": 81,
+      "x": 18.0,
+      "y": 2.0,
+      "width": 1.0,
+      "height": 2.0,
+      "tooltip": "+"
+    },
+    {
+      "label": "Caps",
+      "led": 42,
+      "x": 0.0,
+      "y": 3.0,
+      "width": 1.75,
+      "height": 1.0,
+      "tooltip": "Caps"
+    },
+    {
+      "label": "A",
+      "led": 44,
+      "x": 1.75,
+      "y": 3.0,
+      "width": 1.0,
+      "height": 1.0,
+      "tooltip": "A"
+    },
+    {
+      "label": "S",
+      "led": 45,
+      "x": 2.75,
+      "y": 3.0,
+      "width": 1.0,
+      "height": 1.0,
+      "tooltip": "S"
+    },
+    {
+      "label": "D",
+      "led": 46,
+      "x": 3.75,
+      "y": 3.0,
+      "width": 1.0,
+      "height": 1.0,
+      "tooltip": "D"
+    },
+    {
+      "label": "F",
+      "led": 47,
+      "x": 4.75,
+      "y": 3.0,
+      "width": 1.0,
+      "height": 1.0,
+      "tooltip": "F"
+    },
+    {
+      "label": "G",
+      "led": 48,
+      "x": 5.75,
+      "y": 3.0,
+      "width": 1.0,
+      "height": 1.0,
+      "tooltip": "G"
+    },
+    {
+      "label": "H",
+      "led": 49,
+      "x": 6.75,
+      "y": 3.0,
+      "width": 1.0,
+      "height": 1.0,
+      "tooltip": "H"
+    },
+    {
+      "label": "J",
+      "led": 50,
+      "x": 7.75,
+      "y": 3.0,
+      "width": 1.0,
+      "height": 1.0,
+      "tooltip": "J"
+    },
+    {
+      "label": "K",
+      "led": 51,
+      "x": 8.75,
+      "y": 3.0,
+      "width": 1.0,
+      "height": 1.0,
+      "tooltip": "K"
+    },
+    {
+      "label": "L",
+      "led": 52,
+      "x": 9.75,
+      "y": 3.0,
+      "width": 1.0,
+      "height": 1.0,
+      "tooltip": "L"
+    },
+    {
+      "label": ";",
+      "led": 53,
+      "x": 10.75,
+      "y": 3.0,
+      "width": 1.0,
+      "height": 1.0,
+      "tooltip": ";"
+    },
+    {
+      "label": "'",
+      "led": 54,
+      "x": 11.75,
+      "y": 3.0,
+      "width": 1.0,
+      "height": 1.0,
+      "tooltip": "'"
+    },
+    {
+      "label": "Enter",
+      "led": 56,
+      "x": 12.75,
+      "y": 3.0,
+      "width": 2.25,
+      "height": 1.0,
+      "tooltip": "Enter"
+    },
+    {
+      "label": "4",
+      "led": 57,
+      "x": 15.0,
+      "y": 3.0,
+      "width": 1.0,
+      "height": 1.0,
+      "tooltip": "4"
+    },
+    {
+      "label": "5",
+      "led": 58,
+      "x": 16.0,
+      "y": 3.0,
+      "width": 1.0,
+      "height": 1.0,
+      "tooltip": "5"
+    },
+    {
+      "label": "6",
+      "led": 59,
+      "x": 17.0,
+      "y": 3.0,
+      "width": 1.0,
+      "height": 1.0,
+      "tooltip": "6"
+    },
+    {
+      "label": "LShift",
+      "led": 21,
+      "x": 0.0,
+      "y": 4.0,
+      "width": 2.25,
+      "height": 1.0,
+      "tooltip": "LShift"
+    },
+    {
+      "label": "Z",
+      "led": 24,
+      "x": 2.25,
+      "y": 4.0,
+      "width": 1.0,
+      "height": 1.0,
+      "tooltip": "Z"
+    },
+    {
+      "label": "X",
+      "led": 25,
+      "x": 3.25,
+      "y": 4.0,
+      "width": 1.0,
+      "height": 1.0,
+      "tooltip": "X"
+    },
+    {
+      "label": "C",
+      "led": 26,
+      "x": 4.25,
+      "y": 4.0,
+      "width": 1.0,
+      "height": 1.0,
+      "tooltip": "C"
+    },
+    {
+      "label": "V",
+      "led": 27,
+      "x": 5.25,
+      "y": 4.0,
+      "width": 1.0,
+      "height": 1.0,
+      "tooltip": "V"
+    },
+    {
+      "label": "B",
+      "led": 28,
+      "x": 6.25,
+      "y": 4.0,
+      "width": 1.0,
+      "height": 1.0,
+      "tooltip": "B"
+    },
+    {
+      "label": "N",
+      "led": 29,
+      "x": 7.25,
+      "y": 4.0,
+      "width": 1.0,
+      "height": 1.0,
+      "tooltip": "N"
+    },
+    {
+      "label": "M",
+      "led": 30,
+      "x": 8.25,
+      "y": 4.0,
+      "width": 1.0,
+      "height": 1.0,
+      "tooltip": "M"
+    },
+    {
+      "label": ",",
+      "led": 31,
+      "x": 9.25,
+      "y": 4.0,
+      "width": 1.0,
+      "height": 1.0,
+      "tooltip": ","
+    },
+    {
+      "label": ".",
+      "led": 32,
+      "x": 10.25,
+      "y": 4.0,
+      "width": 1.0,
+      "height": 1.0,
+      "tooltip": "."
+    },
+    {
+      "label": "/",
+      "led": 33,
+      "x": 11.25,
+      "y": 4.0,
+      "width": 1.0,
+      "height": 1.0,
+      "tooltip": "/"
+    },
+    {
+      "label": "RShift",
+      "led": 35,
+      "x": 12.25,
+      "y": 4.0,
+      "width": 1.75,
+      "height": 1.0,
+      "tooltip": "RShift"
+    },
+    {
+      "label": "↑",
+      "led": 14,
+      "x": 14.0,
+      "y": 4.0,
+      "width": 1.0,
+      "height": 1.0,
+      "tooltip": "↑"
+    },
+    {
+      "label": "1",
+      "led": 36,
+      "x": 15.0,
+      "y": 4.0,
+      "width": 1.0,
+      "height": 1.0,
+      "tooltip": "1"
+    },
+    {
+      "label": "2",
+      "led": 37,
+      "x": 16.0,
+      "y": 4.0,
+      "width": 1.0,
+      "height": 1.0,
+      "tooltip": "2"
+    },
+    {
+      "label": "3",
+      "led": 38,
+      "x": 17.0,
+      "y": 4.0,
+      "width": 1.0,
+      "height": 1.0,
+      "tooltip": "3"
+    },
+    {
+      "label": "Enter",
+      "led": 39,
+      "x": 18.0,
+      "y": 4.0,
+      "width": 1.0,
+      "height": 2.0,
+      "tooltip": "Enter"
+    },
+    {
+      "label": "LCtrl",
+      "led": 0,
+      "x": 0.0,
+      "y": 5.0,
+      "width": 1.25,
+      "height": 1.0,
+      "tooltip": "LCtrl"
+    },
+    {
+      "label": "Fn",
+      "led": 2,
+      "x": 1.25,
+      "y": 5.0,
+      "width": 1.0,
+      "height": 1.0,
+      "tooltip": "Fn"
+    },
+    {
+      "label": "Win",
+      "led": 3,
+      "x": 2.25,
+      "y": 5.0,
+      "width": 1.0,
+      "height": 1.0,
+      "tooltip": "Win"
+    },
+    {
+      "label": "LAlt",
+      "led": 4,
+      "x": 3.25,
+      "y": 5.0,
+      "width": 1.25,
+      "height": 1.0,
+      "tooltip": "LAlt"
+    },
+    {
+      "label": "Space",
+      "led": 7,
+      "x": 4.5,
+      "y": 5.0,
+      "width": 6.5,
+      "height": 1.0,
+      "tooltip": "Space"
+    },
+    {
+      "label": "RAlt",
+      "led": 10,
+      "x": 11.0,
+      "y": 5.0,
+      "width": 1.0,
+      "height": 1.0,
+      "tooltip": "RAlt"
+    },
+    {
+      "label": "Menu",
+      "led": 12,
+      "x": 12.0,
+      "y": 5.0,
+      "width": 1.0,
+      "height": 1.0,
+      "tooltip": "Menu"
+    },
+    {
+      "label": "←",
+      "led": 13,
+      "x": 13.0,
+      "y": 5.0,
+      "width": 1.0,
+      "height": 1.0,
+      "tooltip": "←"
+    },
+    {
+      "label": "↓",
+      "led": 18,
+      "x": 14.0,
+      "y": 5.0,
+      "width": 1.0,
+      "height": 1.0,
+      "tooltip": "↓"
+    },
+    {
+      "label": "→",
+      "led": 15,
+      "x": 15.0,
+      "y": 5.0,
+      "width": 1.0,
+      "height": 1.0,
+      "tooltip": "→"
+    },
+    {
+      "label": "0",
+      "led": 16,
+      "x": 16.0,
+      "y": 5.0,
+      "width": 1.0,
+      "height": 1.0,
+      "tooltip": "0"
+    },
+    {
+      "label": ".",
+      "led": 17,
+      "x": 17.0,
+      "y": 5.0,
+      "width": 1.0,
+      "height": 1.0,
+      "tooltip": "."
+    }
+  ],
+  "aliases": {
+    "esc": 105,
+    "escape": 105,
+    "f1": 106,
+    "f2": 107,
+    "f3": 108,
+    "f4": 109,
+    "f5": 110,
+    "f6": 111,
+    "f7": 112,
+    "f8": 113,
+    "f9": 114,
+    "f10": 115,
+    "f11": 116,
+    "f12": 117,
+    "sc": 118,
+    "prtsc": 119,
+    "print": 119,
+    "del": 120,
+    "delete": 120,
+    "home": 121,
+    "pgup": 122,
+    "pgdn": 123,
+    "end": 124,
+    "`": 84,
+    "~": 84,
+    "1": 85,
+    "2": 86,
+    "3": 87,
+    "4": 88,
+    "5": 89,
+    "6": 90,
+    "7": 91,
+    "8": 92,
+    "9": 93,
+    "0": 94,
+    "-": 95,
+    "=": 96,
+    "bksp": 98,
+    "backspace": 98,
+    "num": 99,
+    "numlk": 99,
+    "numlock": 99,
+    "num/": 100,
+    "num*": 101,
+    "num-": 102,
+    "tab": 63,
+    "q": 65,
+    "w": 66,
+    "e": 67,
+    "r": 68,
+    "t": 69,
+    "y": 70,
+    "u": 71,
+    "i": 72,
+    "o": 73,
+    "p": 74,
+    "[": 75,
+    "]": 76,
+    "\\": 77,
+    "num7": 78,
+    "num8": 79,
+    "num9": 80,
+    "num+": 81,
+    "caps": 42,
+    "capslock": 42,
+    "a": 44,
+    "s": 45,
+    "d": 46,
+    "f": 47,
+    "g": 48,
+    "h": 49,
+    "j": 50,
+    "k": 51,
+    "l": 52,
+    ";": 53,
+    "'": 54,
+    "enter": 56,
+    "return": 56,
+    "num4": 57,
+    "num5": 58,
+    "num6": 59,
+    "lshift": 21,
+    "leftshift": 21,
+    "z": 24,
+    "x": 25,
+    "c": 26,
+    "v": 27,
+    "b": 28,
+    "n": 29,
+    "m": 30,
+    ",": 31,
+    ".": 32,
+    "/": 33,
+    "rshift": 35,
+    "rightshift": 35,
+    "up": 14,
+    "↑": 14,
+    "num1": 36,
+    "num2": 37,
+    "num3": 38,
+    "numpad_enter": 39,
+    "nument": 39,
+    "lctrl": 0,
+    "leftctrl": 0,
+    "fn": 2,
+    "win": 3,
+    "super": 3,
+    "meta": 3,
+    "lalt": 4,
+    "leftalt": 4,
+    "space": 7,
+    "spacebar": 7,
+    "ralt": 10,
+    "rightalt": 10,
+    "menu": 12,
+    "copilot": 12,
+    "left": 13,
+    "←": 13,
+    "down": 18,
+    "↓": 18,
+    "right": 15,
+    "→": 15,
+    "num0": 16,
+    "num.": 17
+  }
+}

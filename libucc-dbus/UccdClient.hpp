@@ -62,6 +62,14 @@ public:
   std::optional< std::string > getActiveProfileJSON();
   std::optional< std::string > getSettingsJSON();
   std::optional< std::string > getPowerState();
+  std::optional<std::string> getPowerPolicyJSON();
+  std::optional<std::string> getPowerDeviceSettingsJSON();
+  std::optional<std::string> getPowerDeviceStatusJSON();
+  bool setPowerDeviceSettingsJSON(const std::string &json);
+  bool scanPowerDevices();
+  bool setManualPowerMode(const std::string &mode);
+  bool registerPowerRequest(const std::string &name, const std::string &reason, const std::string &mode);
+  bool unregisterPowerRequest(const std::string &name);
   bool setStateMap( const std::string &state, const std::string &profileId );
   bool setBatchStateMap( const std::map< std::string, std::string > &entries );
   bool setActiveProfile( const std::string &profileId );
@@ -226,6 +234,8 @@ signals:
                        const QString &keyboardProfileId,
                        const QString &fanProfileId );
   void powerStateChanged( const QString &state );
+  void powerPolicyChanged(const QString &json);
+  void powerDeviceStatusChanged(const QString &json);
   void connectionStatusChanged( bool connected );
 
 private slots:

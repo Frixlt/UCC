@@ -51,6 +51,7 @@ set( UCC_GUI_SOURCES
   inc/HardwareTab.hpp
   src/LCTWaterCoolerController.cpp
   inc/LCTWaterCoolerController.hpp
+  src/PowerDevicesTab.cpp inc/PowerDevicesTab.hpp
   src/KeyboardTab.cpp
   src/ProfileManager.cpp
   inc/ProfileManager.hpp

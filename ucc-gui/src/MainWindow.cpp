@@ -14,6 +14,7 @@
  */
 
 #include "MainWindow.hpp"
+#include "PowerDevicesTab.hpp"
 #include "FluentTheme.hpp"
 #include "NotificationCenter.hpp"
 #include "AboutPage.hpp"
@@ -246,7 +247,7 @@ void MainWindow::setupUI()
   sideLayout->addWidget(device);sideLayout->addSpacing(20);
   auto *navigation=new QListWidget(sidebar);navigation->setObjectName("navigation");
   navigation->setIconSize(QSize(24,24));
-  const QStringList labels={"Overview","Profiles","Cooler Settings","Watercool Settings","Monitor","Keyboard & Hardware","About"};
+  const QStringList labels={"Overview","Profiles","Cooler Settings","Watercool Settings","Monitor","Keyboard & Hardware","About","Power & Devices"};
   for(const auto &label:labels) new QListWidgetItem(FluentTheme::icon(label),label,navigation);
   sideLayout->addWidget(navigation,1);
   auto *footer=new QWidget(sidebar);footer->setObjectName("sidebarFooter");
@@ -266,6 +267,40 @@ void MainWindow::setupUI()
   contentLayout->setContentsMargins(24,24,24,16);contentLayout->setSpacing(16);
   auto *heading=new QLabel("Overview",content);heading->setObjectName("pageTitle");
   auto *headerRow=new QHBoxLayout;headerRow->addWidget(heading,1);
+  auto *powerMode = new QComboBox(content);
+  powerMode->setObjectName("powerModeSelector");
+  powerMode->setAccessibleName("Power mode");
+  powerMode->addItem("Auto", "auto");
+  powerMode->addItem("AC", "ac");
+  powerMode->addItem("Type-C", "type_c");
+  powerMode->addItem("Battery", "bat");
+  powerMode->setEnabled(!readOnlyPreview && m_UccdClient->isConnected());
+  auto showPowerPolicy = [powerMode](const QString &json) {
+    const auto policy = QJsonDocument::fromJson(json.toUtf8()).object();
+    if (policy.isEmpty()) return;
+    const QSignalBlocker blocker(powerMode);
+    powerMode->setCurrentIndex(qMax(0,powerMode->findData(policy["manual_mode"].toString("auto"))));
+    powerMode->setToolTip(QString("Source: %1 · Effective mode: %2 · Profile state: %3")
+      .arg(policy["real_power_source"].toString(),policy["current_mode"].toString(),policy["profile_state"].toString()));
+  };
+  auto refreshPowerPolicy = [this,showPowerPolicy] {
+    if (auto policy = m_UccdClient->getPowerPolicyJSON()) showPowerPolicy(QString::fromStdString(*policy));
+  };
+  connect(m_UccdClient.get(), &UccdClient::powerPolicyChanged, this, showPowerPolicy);
+  connect(m_UccdClient.get(), &UccdClient::connectionStatusChanged, this,
+    [powerMode,refreshPowerPolicy](bool connected) {
+      powerMode->setEnabled(connected && !readOnlyPreview);
+      if (connected) refreshPowerPolicy();
+    });
+  connect(powerMode, QOverload<int>::of(&QComboBox::activated), this,
+    [this,powerMode,refreshPowerPolicy](int index) {
+      if (!m_UccdClient->setManualPowerMode(powerMode->itemData(index).toString().toStdString())) {
+        statusBar()->showMessage("Could not change power mode");
+        refreshPowerPolicy();
+      }
+    });
+  refreshPowerPolicy();
+  headerRow->addWidget(powerMode);
   auto *themeToggle=new QPushButton(content);themeToggle->setObjectName("themeToggle");themeToggle->setFixedSize(36,34);themeToggle->setIconSize(QSize(22,22));themeToggle->setStyleSheet("padding: 5px;");
   themeToggle->setAccessibleName("Interface theme");
   auto *notificationBell=new QPushButton(content);notificationBell->setObjectName("notificationBell");
@@ -298,12 +333,12 @@ void MainWindow::setupUI()
   auto showNavigationHeading=[heading,subtitle,labels](int row) {
     if(row<0 || row>=labels.size()) return;
     heading->setText(labels[row]);
-    const QStringList descriptions={"Your system at a glance","Power, cooling and lighting in one profile","Shape CPU and GPU cooling for your profile","Water cooling, pump and lighting controls","Live system telemetry","Backlight and device controls","Build information, project origins and open-source acknowledgements"};
-    subtitle->setText(descriptions[row]);
+    const QStringList descriptions={"Your system at a glance","Power, cooling and lighting in one profile","Shape CPU and GPU cooling for your profile","Water cooling, pump and lighting controls","Live system telemetry","Backlight and device controls","Build information, project origins and open-source acknowledgements","CPU, modules and device policies for every power source"};
+    subtitle->setText(descriptions.value(row));
   };
   connect(navigation,&QListWidget::currentRowChanged,this,[this,showNavigationHeading](int row){
-    if(row<0 || row>6) return;
-    const int pages[]={0,1,2,2,3,4,5};
+    if(row<0 || row>7) return;
+    const int pages[]={0,1,2,2,3,4,5,6};
     if(row==3 && !m_waterCoolerSupported) return;
     if(m_fanControlTab && (row==2 || row==3)) m_fanControlTab->findChild<QTabWidget *>("coolingPages")->setCurrentIndex(row-2);
     const bool samePage=m_tabs->currentIndex()==pages[row];
@@ -311,7 +346,7 @@ void MainWindow::setupUI()
     if(samePage) m_entrance->play();
   });
   connect(m_tabs,&QTabWidget::currentChanged,navigation,[this,navigation,showNavigationHeading](int index){
-    if(index<0 || index>5) return;
+    if(index<0 || index>6) return;
     int row=index<3 ? index : index+1;
     if(index==2 && m_fanControlTab) row=2+m_fanControlTab->findChild<QTabWidget *>("coolingPages")->currentIndex();
     const QSignalBlocker blocked(navigation);navigation->setCurrentRow(row);showNavigationHeading(row);
@@ -352,6 +387,9 @@ void MainWindow::setupUI()
   setupKeyboardBacklightPage();
   setupHardwarePage();
   m_tabs->addTab(createAboutPage(this),"About");
+  auto *powerDevices=new PowerDevicesTab(m_UccdClient.get(),this);
+  connect(powerDevices,&PowerDevicesTab::message,statusBar(),[this](const QString &text){statusBar()->showMessage(text);});
+  m_tabs->addTab(powerDevices,"Power & Devices");
   if(!m_waterCoolerSupported) {navigation->item(3)->setFlags(navigation->item(3)->flags() & ~Qt::ItemIsEnabled);navigation->item(3)->setToolTip("Water cooling is not supported by this device.");}
   navigation->setCurrentRow(0);
 }
@@ -495,6 +533,9 @@ void MainWindow::setupProfilesPage()
   QHBoxLayout *buttonLayout = new QHBoxLayout();
   m_mainsButton = new QPushButton( "Mains" );
   m_mainsButton->setCheckable( true );
+  m_typeCButton = new QPushButton("Type-C");
+  m_typeCButton->setCheckable(true);
+  m_typeCButton->setObjectName("typeCProfileAssignment");
   m_batteryButton = new QPushButton( "Battery" );
   m_batteryButton->setCheckable( true );
   m_waterCoolerButton = new QPushButton( "Water Cooler" );
@@ -504,6 +545,7 @@ void MainWindow::setupProfilesPage()
   m_batteryButton->setMaximumWidth( 100 );
   m_waterCoolerButton->setMinimumWidth(120);
   buttonLayout->addWidget( m_mainsButton );
+  buttonLayout->addWidget(m_typeCButton);
   buttonLayout->addWidget( m_batteryButton );
   buttonLayout->addWidget( m_waterCoolerButton );
   buttonLayout->addStretch();
@@ -1199,6 +1241,7 @@ void MainWindow::connectSignals()
   }
 
   // Mains/Battery/Water Cooler activation buttons
+  connect(m_typeCButton, &QPushButton::toggled, this, &MainWindow::markChanged);
   connect( m_mainsButton, &QPushButton::toggled,
            this, &MainWindow::markChanged );
 
@@ -1787,6 +1830,7 @@ void MainWindow::loadProfileDetails( const QString &profileId )
   if ( m_profileChargingPriorityCombo ) m_profileChargingPriorityCombo->blockSignals( true );
   if ( m_profileChargeLimitCombo ) m_profileChargeLimitCombo->blockSignals( true );
   m_mainsButton->blockSignals( true );
+  m_typeCButton->blockSignals(true);
   m_batteryButton->blockSignals( true );
   m_waterCoolerButton->blockSignals( true );
   if ( m_descriptionEdit ) m_descriptionEdit->blockSignals( true );
@@ -2115,6 +2159,7 @@ void MainWindow::loadProfileDetails( const QString &profileId )
         QJsonObject stateMap = settingsObj["stateMap"].toObject();
         QString mainsProfile = stateMap["power_ac"].toString();
         QString batteryProfile = stateMap["power_bat"].toString();
+        m_typeCButton->setChecked(stateMap["power_type_c"].toString() == profileId);
         QString wcProfile = stateMap["power_wc"].toString();
 
         m_mainsButton->setChecked( mainsProfile == profileId );
@@ -2152,6 +2197,7 @@ void MainWindow::loadProfileDetails( const QString &profileId )
   if ( m_profileChargingPriorityCombo ) m_profileChargingPriorityCombo->blockSignals( false );
   if ( m_profileChargeLimitCombo ) m_profileChargeLimitCombo->blockSignals( false );
   m_mainsButton->blockSignals( false );
+  m_typeCButton->blockSignals(false);
   m_batteryButton->blockSignals( false );
   m_waterCoolerButton->blockSignals( false );
   if ( m_descriptionEdit ) m_descriptionEdit->blockSignals( false );
@@ -2443,6 +2489,8 @@ void MainWindow::onSaveClicked()
   std::map< QString, QString > stateMapUpdates;
   if ( m_mainsButton->isChecked() )
     stateMapUpdates["power_ac"] = profileId;
+  if (m_typeCButton->isChecked())
+    stateMapUpdates["power_type_c"] = profileId;
   if ( m_batteryButton->isChecked() )
     stateMapUpdates["power_bat"] = profileId;
   if ( m_waterCoolerButton->isChecked() )

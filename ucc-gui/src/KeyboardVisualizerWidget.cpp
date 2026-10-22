@@ -21,6 +21,8 @@
 #include <QLabel>
 #include <QColorDialog>
 #include <QApplication>
+#include <QFile>
+#include <QMouseEvent>
 #include <QProcess>
 #include <QDBusInterface>
 #include <QDBusReply>
@@ -31,13 +33,16 @@
 namespace ucc
 {
 
-KeyboardVisualizerWidget::KeyboardVisualizerWidget( int zones, int maxBrightness, QWidget *parent )
+KeyboardVisualizerWidget::KeyboardVisualizerWidget( int zones, int maxBrightness, QWidget *parent,
+                                                    bool calibratedLayout, const QJsonArray &ledIds )
   : QWidget( parent )
   , m_zones( zones )
   , m_maxBrightness( maxBrightness )
+  , m_calibratedLayout( calibratedLayout )
+  , m_ledIds( ledIds )
 {
   // Detect keyboard layout
-  QString layout = detectKeyboardLayout();
+  QString layout = calibratedLayout ? QStringLiteral("us") : detectKeyboardLayout();
 
   // Load appropriate zone mappings
   m_zoneMappings = assignKeyZones(layout);
@@ -83,6 +88,43 @@ void KeyboardVisualizerWidget::setupKeyboardLayout()
   m_layout = new QGridLayout( m_keyboardWidget );
   m_layout->setSpacing(4);
   m_layout->setContentsMargins(0,0,0,0);
+
+  if ( m_calibratedLayout )
+  {
+    QFile file(":/keyboard/frixit-layout.json");
+    if (file.open(QIODevice::ReadOnly)) {
+      const auto keys = QJsonDocument::fromJson(file.readAll()).object()["keys"].toArray();
+      for (const auto &value : keys) {
+        const auto key = value.toObject();
+        const int led = key["led"].toInt();
+        int zone = led;
+        if (!m_ledIds.isEmpty()) {
+          zone = -1;
+          for (qsizetype i = 0; i < m_ledIds.size(); ++i)
+            if (m_ledIds[i].toInt() == led) { zone = static_cast<int>(i); break; }
+        }
+        if (zone < 0 || zone >= m_zones) continue;
+        const auto label = key["label"].toString();
+        m_zoneMappings[zone] = label;
+        createKeyButton(zone, label, qRound(key["y"].toDouble()*4),
+                        qRound(key["x"].toDouble()*4), qMax(1,qRound(key["width"].toDouble()*4)),
+                        qMax(1,qRound(key["height"].toDouble()*4)));
+        auto *button = qobject_cast<QPushButton *>(m_layout->itemAt(m_layout->count()-1)->widget());
+        button->setProperty("ledId", led);
+        button->setProperty("physicalLabel", key["tooltip"].toString(label));
+        button->setToolTip(QString("LED #%1 — %2").arg(led).arg(key["tooltip"].toString(label)));
+      }
+      for (int column = 0; column < m_layout->columnCount(); ++column)
+        m_layout->setColumnStretch(column, 1);
+      m_scrollArea->setWidget(m_keyboardWidget);
+      mainLayout->addWidget(m_scrollArea);
+      auto *instructions = new QLabel("Click a key to choose its color. Hold Shift and drag to select several keys; Ctrl-click also selects multiple keys.");
+      instructions->setObjectName("muted");
+      instructions->setWordWrap(true);
+      mainLayout->addWidget(instructions);
+      return;
+    }
+  }
 
   // Create a realistic German QWERTZ keyboard layout
   // Row 0: Esc + F1-F12 + PrintScreen + Insert + Delete
@@ -204,9 +246,12 @@ void KeyboardVisualizerWidget::setupKeyboardLayout()
 void ucc::KeyboardVisualizerWidget::createKeyButton( int zoneId, const QString &label, int row, int col, int width, int height )
 {
   QPushButton *button = new QPushButton( label );
-  button->setMinimumSize( 25 * width, 25 * height );  // Smaller keys: 25x25 instead of 40x40
+  const double cellSize = m_calibratedLayout ? 6.25 : 25.0;
+  button->setMinimumSize(qRound(cellSize * width), qRound(cellSize * height));
   button->setSizePolicy( QSizePolicy::Expanding, QSizePolicy::Expanding );
   button->setProperty( "zoneId", zoneId );
+  button->installEventFilter(this);
+  button->setMouseTracking(true);
 
   // Default white color with full brightness
   updateKeyAppearance( button, Qt::white, m_maxBrightness );
@@ -224,36 +269,66 @@ void ucc::KeyboardVisualizerWidget::createKeyButton( int zoneId, const QString &
   m_layout->addWidget( button, row, col, height, width );
 }
 
-void ucc::KeyboardVisualizerWidget::onKeyClicked()
+void KeyboardVisualizerWidget::selectButton(QPushButton *button, bool toggle)
 {
-  QPushButton *button = qobject_cast< QPushButton * >( sender() );
-  if ( !button )
-    return;
-
-  int zoneId = button->property( "zoneId" ).toInt();
-
-  // Check if Ctrl is pressed for multi-select
-  bool isMultiSelect = QApplication::keyboardModifiers() & Qt::ControlModifier;
-
-  if(!isMultiSelect){m_selectedZoneIds.clear();m_selectedButtons.clear();}
-  if(m_selectedButtons.contains(button)){m_selectedZoneIds.remove(zoneId);m_selectedButtons.remove(button);}
-  else{m_selectedZoneIds.insert(zoneId);m_selectedButtons.insert(button);}
-  for(auto *key:m_keyboardWidget->findChildren<QPushButton*>()) {
-    const int zone=key->property("zoneId").toInt();
-    if(zone>=0 && zone<static_cast<int>(m_keys.size())) updateKeyAppearance(key,m_keys[zone].color,m_keys[zone].brightness);
+  const int zoneId = button->property("zoneId").toInt();
+  if (toggle && m_selectedButtons.contains(button)) {
+    m_selectedZoneIds.remove(zoneId); m_selectedButtons.remove(button);
+  } else {
+    m_selectedZoneIds.insert(zoneId); m_selectedButtons.insert(button);
   }
+  for (auto *key : m_keyboardWidget->findChildren<QPushButton *>()) {
+    const int zone = key->property("zoneId").toInt();
+    if (zone >= 0 && zone < static_cast<int>(m_keys.size()))
+      updateKeyAppearance(key, m_keys[zone].color, m_keys[zone].brightness);
+  }
+  emit keySelected(zoneId);
+}
 
-  // Show color dialog for selected keys
-  if ( !m_selectedZoneIds.isEmpty() )
-  {
-    // Use the color of the first selected key as initial color
-    int firstZoneId = *m_selectedZoneIds.begin();
-    if ( firstZoneId >= 0 && firstZoneId < static_cast< int >( m_keys.size() ) )
-    {
-      m_colorDialog->setCurrentColor( m_keys[firstZoneId].color );
-      m_colorDialog->show();
+void KeyboardVisualizerWidget::showSelectionColorDialog()
+{
+  if (m_selectedZoneIds.isEmpty()) return;
+  const int first = *m_selectedZoneIds.begin();
+  if (first < 0 || first >= static_cast<int>(m_keys.size())) return;
+  m_colorDialog->setCurrentColor(m_keys[first].color);
+  m_colorDialog->show();
+}
+
+bool KeyboardVisualizerWidget::eventFilter(QObject *object, QEvent *event)
+{
+  auto *button = qobject_cast<QPushButton *>(object);
+  if (!button) return QWidget::eventFilter(object,event);
+  if (event->type() == QEvent::MouseButtonPress) {
+    auto *mouse = static_cast<QMouseEvent *>(event);
+    if (mouse->button() == Qt::LeftButton && (mouse->modifiers() & Qt::ShiftModifier)) {
+      m_shiftSelecting = true;
+      selectButton(button,true);
+      button->grabMouse();
+      return true;
     }
+  } else if (event->type() == QEvent::MouseMove && m_shiftSelecting) {
+    auto *mouse = static_cast<QMouseEvent *>(event);
+    if (auto *hovered = qobject_cast<QPushButton *>(m_keyboardWidget->childAt(
+          m_keyboardWidget->mapFromGlobal(mouse->globalPosition().toPoint()))))
+      selectButton(hovered,false);
+    return true;
+  } else if (event->type() == QEvent::MouseButtonRelease && m_shiftSelecting) {
+    m_shiftSelecting = false;
+    button->releaseMouse();
+    showSelectionColorDialog();
+    return true;
   }
+  return QWidget::eventFilter(object,event);
+}
+
+void KeyboardVisualizerWidget::onKeyClicked()
+{
+  auto *button = qobject_cast<QPushButton *>(sender());
+  if (!button) return;
+  const bool multiple = QApplication::keyboardModifiers() & (Qt::ControlModifier | Qt::ShiftModifier);
+  if (!multiple) { m_selectedZoneIds.clear(); m_selectedButtons.clear(); }
+  selectButton(button,true);
+  showSelectionColorDialog();
 }
 
 void ucc::KeyboardVisualizerWidget::onColorChanged( const QColor &color )
@@ -287,7 +362,10 @@ void ucc::KeyboardVisualizerWidget::updateKeyAppearance( QPushButton *button, co
   const QColor edge=blend(c.border,0.25);
   const QString border=m_selectedButtons.contains(button) ? "2px solid "+c.accent.name() : "1px solid "+edge.name();
   const QString style=QString("QPushButton {background-color: %1; color: %2; border: %3; border-radius: 4px; padding: 2px;} QPushButton:hover {background-color: %4;}").arg(tint.name(),c.text.name(),border,FluentTheme::isDark() ? tint.lighter(120).name() : tint.darker(104).name());
-  button->setToolTip(QString("%1 · %2").arg(button->text(),adjustedColor.name()));
+  if (button->property("ledId").isValid())
+    button->setToolTip(QString("LED #%1 — %2 · %3").arg(button->property("ledId").toInt())
+      .arg(button->property("physicalLabel").toString(), adjustedColor.name()));
+  else button->setToolTip(QString("%1 · %2").arg(button->text(),adjustedColor.name()));
   button->setStyleSheet( style );
 }
 

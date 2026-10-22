@@ -26,6 +26,8 @@ ProtectSystem=strict
 ProtectHome=yes
 NoNewPrivileges=true
 ReadWritePaths=/etc/ucc /run /sys/devices
+ReadWritePaths=-/proc/sys/kernel/nmi_watchdog -/proc/sys/vm/dirty_writeback_centisecs
+ReadWritePaths=-/sys/module/snd_hda_intel/parameters/power_save -/sys/module/pcie_aspm/parameters/policy
 # Hardware controls use writable device sysfs (CPU, LEDs and charging).
 ProtectKernelTunables=no
 ReadOnlyPaths=/proc/sys /proc/sysrq-trigger /sys/firmware

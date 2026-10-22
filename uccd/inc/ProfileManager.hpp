@@ -401,6 +401,8 @@ public:
     syslog( LOG_INFO, "[ProfileManager] Current power state: %s", stateKey.c_str() );
 
     auto stateMapIt = stateMap.find( stateKey );
+    if (stateMapIt == stateMap.end() && currentState == ProfileState::TYPE_C)
+      stateMapIt = stateMap.find("power_ac");
     if ( stateMapIt == stateMap.end() )
     {
       syslog( LOG_INFO, "[ProfileManager] No profile assigned to state: %s", stateKey.c_str() );

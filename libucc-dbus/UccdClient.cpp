@@ -68,6 +68,11 @@ UccdClient::UccdClient( QObject *parent )
 
 void UccdClient::subscribeDbusSignals()
 {
+  auto policyBus = QDBusConnection::systemBus();
+  policyBus.disconnect(DBUS_SERVICE, DBUS_PATH, DBUS_INTERFACE, "PowerDeviceStatusChanged", this, SIGNAL(powerDeviceStatusChanged(QString)));
+  policyBus.connect(DBUS_SERVICE, DBUS_PATH, DBUS_INTERFACE, "PowerDeviceStatusChanged", this, SIGNAL(powerDeviceStatusChanged(QString)));
+  policyBus.disconnect(DBUS_SERVICE, DBUS_PATH, DBUS_INTERFACE, "PowerPolicyChanged", this, SIGNAL(powerPolicyChanged(QString)));
+  policyBus.connect(DBUS_SERVICE, DBUS_PATH, DBUS_INTERFACE, "PowerPolicyChanged", this, SIGNAL(powerPolicyChanged(QString)));
   // Disconnect first so we never accumulate duplicate connections across
   // multiple reconnect cycles.
   QDBusConnection::systemBus().disconnect( DBUS_SERVICE, DBUS_PATH, DBUS_INTERFACE,
@@ -323,6 +328,48 @@ std::optional< std::string > UccdClient::getPowerState()
     return result->toStdString();
   }
   return std::nullopt;
+}
+
+std::optional<std::string> UccdClient::getPowerPolicyJSON()
+{
+  if (auto json = callMethod<QString>("GetPowerPolicyJSON")) return json->toStdString();
+  return std::nullopt;
+}
+
+std::optional<std::string> UccdClient::getPowerDeviceSettingsJSON()
+{
+  if(auto json=callMethod<QString>("GetPowerDeviceSettingsJSON")) return json->toStdString();
+  return std::nullopt;
+}
+std::optional<std::string> UccdClient::getPowerDeviceStatusJSON()
+{
+  if(auto json=callMethod<QString>("GetPowerDeviceStatusJSON")) return json->toStdString();
+  return std::nullopt;
+}
+bool UccdClient::setPowerDeviceSettingsJSON(const std::string &json)
+{
+  return callMethod<bool>("SetPowerDeviceSettingsJSON",QString::fromStdString(json)).value_or(false);
+}
+bool UccdClient::scanPowerDevices()
+{
+  return callMethod<bool>("ScanPowerDevices").value_or(false);
+}
+
+bool UccdClient::setManualPowerMode(const std::string &mode)
+{
+  return callMethod<bool>("SetManualPowerMode", QString::fromStdString(mode)).value_or(false);
+}
+
+bool UccdClient::registerPowerRequest(const std::string &name, const std::string &reason,
+                                     const std::string &mode)
+{
+  return callMethod<bool>("RegisterPowerRequest", QString::fromStdString(name),
+                        QString::fromStdString(reason), QString::fromStdString(mode)).value_or(false);
+}
+
+bool UccdClient::unregisterPowerRequest(const std::string &name)
+{
+  return callMethod<bool>("UnregisterPowerRequest", QString::fromStdString(name)).value_or(false);
 }
 
 bool UccdClient::setStateMap( const std::string &state, const std::string &profileId )

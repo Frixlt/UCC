@@ -33,8 +33,8 @@
 class AuditDaemon : public QDBusVirtualObject {
   QJsonArray writes;
   QJsonObject reads;
-  QString runtimeProfile,lastAppliedProfile;
-  bool failReads=false;
+  QString runtimeProfile,lastAppliedProfile,lastDeviceSettings;
+  bool failReads=false,failControl=false;
   bool visualFixture=false;
   bool coolerAuto=false;
   bool coolerEnabled=false;
@@ -45,18 +45,26 @@ public:
   bool handleMessage(const QDBusMessage &msg,const QDBusConnection &bus) override {
     const auto method=msg.member(); QVariant result;
     if(method=="TestRuntimeProfile") {runtimeProfile=msg.arguments().value(0).toString();bus.send(msg.createReply(true));return true;}
+    if(method=="TestFailControl") {failControl=msg.arguments().value(0).toBool();bus.send(msg.createReply(true));return true;}
+    if(method=="TestLastPowerDevices") {bus.send(msg.createReply(lastDeviceSettings));return true;}
     if(method=="TestLastAppliedProfile") {bus.send(msg.createReply(lastAppliedProfile));return true;}
     if(method=="GetActiveProfileJSON" && !runtimeProfile.isEmpty()) {bus.send(msg.createReply(runtimeProfile));return true;}
     if(visualFixture) if(auto reply=visualFixtureReply(method)){bus.send(msg.createReply(*reply));return true;}
-    if (method=="TestCoolerAuto") {coolerAuto=msg.arguments().value(0).toBool();result=true;}
+    if (method=="TestEmitPowerPolicy") {
+      auto signal=QDBusMessage::createSignal("/com/uniwill/uccd","com.uniwill.uccd","PowerPolicyChanged");
+      signal.setArguments({msg.arguments().value(0)});bus.send(signal);result=true;
+    }
+    else if (method=="TestCoolerAuto") {coolerAuto=msg.arguments().value(0).toBool();result=true;}
     else if(method=="TestCoolerEnabled") {coolerEnabled=msg.arguments().value(0).toBool();result=true;}
     else if(method=="IsWaterCoolerEnabled") result=coolerEnabled;
     else if(method=="IsWaterCoolerAutoControlEnabled") result=coolerAuto;
     else if (method=="TestVisualFixture") {visualFixture=true;result=true;}
     else if (method=="TestStats") result=QString::fromUtf8(QJsonDocument(QJsonObject{{"writes",writes},{"reads",reads}}).toJson());
-    else if (method=="TestReset") { writes={};reads={};runtimeProfile.clear();lastAppliedProfile.clear();failReads=false;visualFixture=false;coolerAuto=false;coolerEnabled=false;result=true; }
+    else if (method=="TestReset") { writes={};reads={};runtimeProfile.clear();lastAppliedProfile.clear();lastDeviceSettings.clear();failReads=false;failControl=false;visualFixture=false;coolerAuto=false;coolerEnabled=false;result=true; }
     else if (method=="TestFailReads") { failReads=msg.arguments().value(0).toBool();result=true; }
-    else if (method.startsWith("Set") || method.startsWith("TurnOff") || method=="EnableWaterCooler" || method.startsWith("Apply") || method.startsWith("Save") || method.startsWith("Delete") || method.startsWith("Revert")) {
+    else if (method=="ScanPowerDevices" || method.startsWith("Register") || method.startsWith("Unregister") || method.startsWith("Set") || method.startsWith("TurnOff") || method=="EnableWaterCooler" || method.startsWith("Apply") || method.startsWith("Save") || method.startsWith("Delete") || method.startsWith("Revert")) {
+      if(failControl) {bus.send(msg.createReply(false));return true;}
+      if(method=="SetPowerDeviceSettingsJSON") lastDeviceSettings=msg.arguments().value(0).toString();
       writes.append(method);if(method=="ApplyProfile") lastAppliedProfile=msg.arguments().value(0).toString();result=true;
     } else if (method.endsWith("Supported") || method=="GetWebcamSWStatus" || method=="GetFnLockStatus" || method=="IsDeviceSupported" || method=="IsWaterCoolerEnabled") result=false;
     else if (method=="GetAvailableGovernors" || method=="GetAvailableEPPs") result=QString("[]");
@@ -107,6 +115,82 @@ private slots:
     profiles=std::make_unique<ucc::ProfileManager>();
   }
   void init() { control("TestReset"); ucc::FluentTheme::setMode(ucc::FluentTheme::Mode::Light,false); }
+  void calibratedKeyboardKeepsPhysicalLedIdentities() {
+    ucc::KeyboardVisualizerWidget keyboard(126,50,nullptr,true);
+    const auto buttons = keyboard.findChildren<QPushButton *>();
+    QMap<int,QPushButton *> leds;
+    for (auto *button : buttons) if(button->property("ledId").isValid()) leds[button->property("ledId").toInt()] = button;
+    QCOMPARE(leds.size(),101);
+    QCOMPARE(leds[0]->text(),QString("LCtrl"));
+    QCOMPARE(leds[21]->text(),QString("LShift"));
+    QCOMPARE(leds[56]->text(),QString("Enter"));
+    QCOMPARE(leds[118]->text(),QString("SC"));
+    QCOMPARE(leds[119]->text(),QString("PrtSc"));
+    keyboard.resize(1200,360);keyboard.show();QTest::qWait(20);
+    QCOMPARE(keyboard.findChild<QScrollArea *>()->horizontalScrollBar()->maximum(),0);
+    QTest::mouseClick(leds[21],Qt::LeftButton,Qt::ShiftModifier);
+    QTest::mouseClick(leds[56],Qt::LeftButton,Qt::ShiftModifier);
+    QVERIFY(QMetaObject::invokeMethod(&keyboard,"onColorChanged",Qt::DirectConnection,Q_ARG(QColor,QColor(1,2,3))));
+    const auto states=keyboard.getJSONState();
+    QCOMPARE(states[21].toObject()["red"].toInt(),1);
+    QCOMPARE(states[56].toObject()["blue"].toInt(),3);
+    QCOMPARE(states[77].toObject()["red"].toInt(),255);
+    QVERIFY(leds[21]->toolTip().contains("LED #21"));
+    const QString output=qEnvironmentVariable("UCC_SCREENSHOT_DIR");
+    if(!output.isEmpty()) QVERIFY(keyboard.grab().save(output+"/personal-keyboard.png"));
+  }
+  void sparseKeyboardZonesKeepSavedPhysicalIndices() {
+    ucc::KeyboardVisualizerWidget keyboard(4,50,nullptr,true,QJsonArray{0,21,56,66});
+    const auto buttons=keyboard.findChildren<QPushButton *>();
+    int count=0;for(auto *button:buttons) count+=button->property("ledId").isValid();
+    QCOMPARE(count,4);
+    for(auto *button:buttons) if(button->property("ledId").toInt()==56) {
+      QCOMPARE(button->property("zoneId").toInt(),2);
+      QCOMPARE(button->text(),QString("Enter"));
+    }
+  }
+  void deviceMatrixKeepsThreeIndependentModes() {
+    control("TestVisualFixture");ucc::MainWindow window;window.resize(1280,900);window.show();
+    auto *navigation=window.findChild<QListWidget *>("navigation");navigation->setCurrentRow(7);
+    QCOMPARE(window.findChild<QLabel *>("pageTitle")->text(),QString("Power & Devices"));
+    QVERIFY(window.findChild<QLabel *>("subtitle")->text().contains("modules"));
+    auto *table=window.findChild<QTableWidget *>("powerDeviceTable");QVERIFY(table);QCOMPARE(table->rowCount(),4);
+    auto *cpu=window.findChild<QTableWidget *>("cpuPowerPolicyTable");QVERIFY(cpu);QCOMPARE(cpu->rowCount(),3);
+    auto *battery=qobject_cast<QComboBox *>(table->cellWidget(0,3));QVERIFY(battery);
+    QCOMPARE(battery->currentData().toString(),QString("auto"));
+    battery->setCurrentIndex(battery->findData("on"));
+    auto *save=window.findChild<QPushButton *>("savePowerDevices");QVERIFY(save);
+#ifdef UCC_READ_ONLY_PREVIEW
+    QVERIFY(!save->isEnabled());
+    QVERIFY(stats()["writes"].toArray().isEmpty());
+#else
+    QVERIFY(save->isEnabled());save->click();
+    const auto payload=QJsonDocument::fromJson(control("TestLastPowerDevices").toString().toUtf8()).object();
+    const auto entry=payload["devices"].toArray()[0].toObject();
+    QCOMPARE(entry["ac_val"].toString(),QString("on"));
+    QCOMPARE(entry["type_c_val"].toString(),QString("auto"));
+    QCOMPARE(entry["bat_val"].toString(),QString("on"));
+#endif
+    QTest::qWait(80);
+    const QString output=qEnvironmentVariable("UCC_SCREENSHOT_DIR");
+    if(!output.isEmpty()) QVERIFY(window.grab().save(output+"/power-devices.png"));
+  }
+  void rejectedPolicyCommandsAreNotReportedAsSuccessful() {
+    control("TestFailControl",{true});
+    QVERIFY(!client->setManualPowerMode("bat"));
+    QVERIFY(!client->setPowerDeviceSettingsJSON("{}"));
+    QVERIFY(!client->scanPowerDevices());
+    QVERIFY(!client->registerPowerRequest("render","test","ac"));
+    QVERIFY(!client->unregisterPowerRequest("render"));
+    QVERIFY(!client->setKeyboardBacklight("[]"));
+  }
+  void powerPolicySignalReachesClientWithoutPolling() {
+    QSignalSpy spy(client.get(), &ucc::UccdClient::powerPolicyChanged);
+    const QString json=R"({"real_power_source":"ac","current_mode":"bat","manual_mode":"bat"})";
+    control("TestEmitPowerPolicy",{json});
+    QTRY_COMPARE(spy.count(),1);
+    QCOMPARE(spy.takeFirst().at(0).toString(),json);
+  }
   void themeCycleAndAutomaticScheme() {
     using namespace ucc::FluentTheme;
     control("TestVisualFixture");
@@ -284,13 +368,13 @@ private slots:
     control("TestVisualFixture");
     ucc::MainWindow window;
     auto *navigation=window.findChild<QListWidget*>("navigation");
-    QVERIFY2(navigation,"Fluent shell must expose all seven sections through sidebar navigation");
-    QCOMPARE(navigation->count(),7);
+    QVERIFY2(navigation,"Fluent shell must expose all eight sections through sidebar navigation");
+    QCOMPARE(navigation->count(),8);
     auto *pages=window.findChild<QTabWidget*>("pages");
     QVERIFY(pages);
     window.show();
-    const int pageIndices[]={0,1,2,2,3,4,5};
-    for(int index=0;index<7;++index) {
+    const int pageIndices[]={0,1,2,2,3,4,5,6};
+    for(int index=0;index<8;++index) {
       if (!(navigation->item(index)->flags() & Qt::ItemIsEnabled)) continue;
       navigation->setCurrentRow(index);
       QCOMPARE(pages->currentIndex(),pageIndices[index]);
@@ -640,6 +724,11 @@ private slots:
     client->applyProfile("{}");
     client->saveCustomProfile("{}");
     client->deleteCustomProfile("preview");
+    client->setManualPowerMode("bat");
+    client->setPowerDeviceSettingsJSON("{}");
+    client->scanPowerDevices();
+    client->registerPowerRequest("test","Preview guard","ac");
+    client->unregisterPowerRequest("test");
     client->setWaterCoolerFanSpeed(40);
     client->setWaterCoolerPumpVoltage(1);
     client->setWaterCoolerLEDColor(1,2,3,0);

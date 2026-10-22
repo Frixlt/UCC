@@ -52,6 +52,7 @@ function labelRow(labelText) {
 
 /** Map raw power state string to display string. */
 function mapPowerState(raw) {
+    if (raw === 'power_type_c') return 'Type-C';
     if (raw === 'power_ac')  return 'AC';
     if (raw === 'power_bat') return 'Battery';
     if (raw === 'power_wc')  return 'AC w/ Water Cooler';

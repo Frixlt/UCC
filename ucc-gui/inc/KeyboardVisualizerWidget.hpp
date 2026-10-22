@@ -53,7 +53,8 @@ class KeyboardVisualizerWidget : public QWidget
   Q_OBJECT
 
 public:
-  explicit KeyboardVisualizerWidget( int zones, int maxBrightness = 255, QWidget *parent = nullptr );
+  explicit KeyboardVisualizerWidget( int zones, int maxBrightness = 255, QWidget *parent = nullptr,
+                                     bool calibratedLayout = false, const QJsonArray &ledIds = {} );
   ~KeyboardVisualizerWidget() override = default;
 
   /**
@@ -106,6 +107,9 @@ private slots:
   void onColorChanged( const QColor &color );
 
 private:
+  bool eventFilter( QObject *object, QEvent *event ) override;
+  void selectButton( QPushButton *button, bool toggle );
+  void showSelectionColorDialog();
   void setupKeyboardLayout();
   void loadZoneMappings( const QString &layout );
   void createKeyButton( int zoneId, const QString &label, int row, int col, int width = 1, int height = 1 );
@@ -114,6 +118,9 @@ private:
 
   int m_zones;
   int m_maxBrightness = 255;
+  bool m_calibratedLayout = false;
+  bool m_shiftSelecting = false;
+  QJsonArray m_ledIds;
   std::vector< KeyboardKey > m_keys;
   QGridLayout *m_layout = nullptr;
   QScrollArea *m_scrollArea = nullptr;

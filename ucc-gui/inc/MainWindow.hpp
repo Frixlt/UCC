@@ -178,6 +178,7 @@ namespace ucc
     QPushButton *m_removeProfileButton = nullptr;
     QTextEdit *m_descriptionEdit = nullptr;
     QPushButton *m_mainsButton = nullptr;
+    QPushButton *m_typeCButton = nullptr;
     QPushButton *m_batteryButton = nullptr;
     QPushButton *m_waterCoolerButton = nullptr;
 

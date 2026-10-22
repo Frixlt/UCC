@@ -24,7 +24,8 @@ enum class ProfileState
 {
   AC,  // power_ac - plugged in
   BAT, // power_bat - on battery
-  WC   // power_wc - water cooler connected
+  WC,  // power_wc - water cooler connected
+  TYPE_C // power_type_c - USB-C power delivery
 };
 
 /**
@@ -56,10 +57,12 @@ struct TccSettings
   bool cpuSettingsEnabled = true;
   bool fanControlEnabled = true;
   bool keyboardBacklightControlSupported = true;
+  std::string keyboardLayout = "auto";
+  std::string keyboardBacklightStates = "[]";
+  std::string powerDeviceSettings = "{}";
   std::vector< YCbCr420Card > ycbcr420Workaround;  // YUV420 workaround per card/port
   std::optional< std::string > chargingProfile;  // null in TypeScript
   std::optional< std::string > chargingPriority;  // null in TypeScript
-  // keyboardBacklightStates omitted for now - complex nested structure
 
   // Default constructor - stateMap starts empty.
   // uccd must not auto-assign profiles; it waits for ucc-gui to assign them.

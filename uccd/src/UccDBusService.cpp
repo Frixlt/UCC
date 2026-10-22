@@ -14,6 +14,8 @@
  */
 
 #include "UccDBusService.hpp"
+#include "PowerSupplyController.hpp"
+#include <QProcess>
 #include "CommonTypes.hpp"
 #include "NvmlWrapper.hpp"
 #include "profiles/DefaultProfiles.hpp"
@@ -268,6 +270,8 @@ static std::string buildSettingsJSON( const std::string &keyboardBacklightStates
   std::ostringstream oss;
   oss << "{"
       << "\"fahrenheit\":" << ( settings.fahrenheit ? "true" : "false" ) << ","
+      << "\"keyboardLayout\":\"" << jsonEscape(settings.keyboardLayout) << "\","
+      << "\"powerDevices\":" << settings.powerDeviceSettings << ","
       << "\"stateMap\":{";
 
   // Serialize stateMap
@@ -1185,6 +1189,73 @@ QString UccDBusInterfaceAdaptor::GetPowerState()
   return QString("power_ac");
 }
 
+QString UccDBusInterfaceAdaptor::GetPowerPolicyJSON()
+{
+  if (!checkAuth( PolkitAuthority::ACTION_READ ) || !m_service) return "{}";
+  std::lock_guard lock(m_service->m_powerStatusMutex);
+  return QString::fromStdString(m_service->m_powerPolicyJSON);
+}
+
+QString UccDBusInterfaceAdaptor::GetPowerDeviceSettingsJSON()
+{
+  if (!checkAuth( PolkitAuthority::ACTION_READ ) || !m_service) return "{}";
+  return QString::fromStdString(m_service->m_powerDevices.settings().dump());
+}
+
+QString UccDBusInterfaceAdaptor::GetPowerDeviceStatusJSON()
+{
+  if (!checkAuth( PolkitAuthority::ACTION_READ ) || !m_service) return "{}";
+  return QString::fromStdString(m_service->m_powerDevices.status().dump());
+}
+
+bool UccDBusInterfaceAdaptor::SetPowerDeviceSettingsJSON(const QString &json)
+{
+  if (!checkAuth( PolkitAuthority::ACTION_CONTROL ) || !m_service) return false;
+  try {
+    const auto settings=nlohmann::json::parse(json.toStdString());
+    std::string error;
+    if(!PowerDeviceController::validate(settings,error)) {syslog(LOG_ERR,"[PowerDevices] %s",error.c_str());return false;}
+    auto updated=m_service->m_settings;
+    updated.powerDeviceSettings=settings.dump();
+    if(!m_service->m_settingsManager.writeSettings(updated)) return false;
+    m_service->m_settings.powerDeviceSettings=updated.powerDeviceSettings;
+    m_service->m_powerDevices.setSettings(settings,error);
+    m_service->updateDBusSettingsData();
+    return true;
+  } catch(const std::exception &error) {syslog(LOG_ERR,"[PowerDevices] %s",error.what());return false;}
+}
+
+bool UccDBusInterfaceAdaptor::ScanPowerDevices()
+{
+  if (!checkAuth( PolkitAuthority::ACTION_CONTROL ) || !m_service) return false;
+  // Reuse the validated save path; double authorization is harmless and cached.
+  return SetPowerDeviceSettingsJSON(QString::fromStdString(m_service->m_powerDevices.scan().dump()));
+}
+
+bool UccDBusInterfaceAdaptor::SetManualPowerMode(const QString &mode)
+{
+  if (!checkAuth( PolkitAuthority::ACTION_CONTROL ) || !m_service) return false;
+  return m_service->m_powerPolicy.setManualMode(mode.toStdString());
+}
+
+bool UccDBusInterfaceAdaptor::RegisterPowerRequest(const QString &name, const QString &reason,
+                                                 const QString &mode)
+{
+  if (!checkAuth( PolkitAuthority::ACTION_CONTROL ) || !m_service) return false;
+  const auto owner = qobject_cast<UccDBusObject *>(parent())->message().service();
+  if (!m_service->m_powerPolicy.registerRequest(owner.toStdString(), name.toStdString(),
+                                               reason.toStdString(), mode.toStdString())) return false;
+  m_service->m_powerRequestWatcher->addWatchedService(owner);
+  return true;
+}
+
+bool UccDBusInterfaceAdaptor::UnregisterPowerRequest(const QString &name)
+{
+  if (!checkAuth( PolkitAuthority::ACTION_CONTROL ) || !m_service) return false;
+  const auto owner = qobject_cast<UccDBusObject *>(parent())->message().service();
+  return m_service->m_powerPolicy.unregisterRequest(owner.toStdString(),name.toStdString());
+}
+
 bool UccDBusInterfaceAdaptor::SetStateMap( const QString &state, const QString &profileId )
 {
   if ( !checkAuth( PolkitAuthority::ACTION_CONTROL ) ) return false;
@@ -1198,7 +1269,7 @@ bool UccDBusInterfaceAdaptor::SetStateMap( const QString &state, const QString &
   std::cout << "[DBus] SetStateMap: " << stateStr << " -> " << profileIdStr << std::endl;
 
   // Verify the profile exists before updating stateMap
-  if ( stateStr == "power_ac" || stateStr == "power_bat" || stateStr == "power_wc" )
+  if ( stateStr == "power_ac" || stateStr == "power_bat" || stateStr == "power_wc" || stateStr == "power_type_c" )
   {
     // Check if profile exists in:
     // 1. m_customProfiles (parsed objects)
@@ -1264,7 +1335,7 @@ bool UccDBusInterfaceAdaptor::SetBatchStateMap( const QString &stateMapJSON )
   }
 
   QJsonObject map = doc.object();
-  static const QStringList validStates = { "power_ac", "power_bat", "power_wc" };
+  static const QStringList validStates = { "power_ac", "power_bat", "power_wc", "power_type_c" };
   bool anyChanged = false;
 
   for ( auto it = map.constBegin(); it != map.constEnd(); ++it )
@@ -1435,16 +1506,32 @@ bool UccDBusInterfaceAdaptor::SetKeyboardBacklightStatesJSON( const QString &key
     m_service->m_activeProfile.keyboard.keyboardProfileId = keyboardProfileId;
   }
 
-  // Keep the assigned custom profile in sync silently so startup replays the current color
-  // without requiring an explicit SaveCustomProfile.
-  if ( auto it = std::ranges::find_if( m_service->m_customProfiles,
-                         [ & ]( const UccProfile &p ) { return p.id == m_service->m_activeProfile.id; } );
-       it != m_service->m_customProfiles.end() )
-  {
-    it->keyboard = m_service->m_activeProfile.keyboard;
-    m_service->m_settings.profiles[ it->id ] = ProfileManager::profileToJSON( *it );
-    (void)m_service->m_settingsManager.writeSettings( m_service->m_settings );
+  bool savePersonalColors=m_service->m_settings.keyboardLayout=="frixit-mechrevo";
+  if(savePersonalColors) {
+    m_service->m_settings.keyboardBacklightStates=currentStatesJSON;
+    const auto id=!m_service->m_activeProfile.keyboard.keyboardProfileId.empty()
+      ? m_service->m_activeProfile.keyboard.keyboardProfileId : std::string("frixit-keyboard");
+    if(auto keyboard=m_service->m_settings.customKeyboardProfiles.find(id);
+       keyboard!=m_service->m_settings.customKeyboardProfiles.end()) {
+      try {
+        auto stored=nlohmann::json::parse(keyboard->second);
+        stored["json"]["states"]=nlohmann::json::parse(currentStatesJSON);
+        stored["json"]["brightness"]=extractFirstBrightness(currentStatesJSON);
+        keyboard->second=stored.dump();
+      } catch(const std::exception &error) {
+        syslog(LOG_WARNING,"[Keyboard] Could not update saved profile: %s",error.what());
+      }
+    }
   }
+  if (auto it=std::ranges::find_if(m_service->m_customProfiles,
+        [&](const UccProfile &profile){return profile.id==m_service->m_activeProfile.id;});
+      it!=m_service->m_customProfiles.end()) {
+    it->keyboard=m_service->m_activeProfile.keyboard;
+    m_service->m_settings.profiles[it->id]=ProfileManager::profileToJSON(*it);
+    savePersonalColors=true;
+  }
+  if(savePersonalColors && !m_service->m_settingsManager.writeSettings(m_service->m_settings)) return false;
+  m_service->updateDBusSettingsData();
 
   m_service->updateDBusActiveProfileData();
   if ( m_service->m_adaptor )
@@ -2124,6 +2211,20 @@ UccDBusService::UccDBusService()
 
   // Load settings (creates defaults if needed)
   loadSettings();
+  m_powerDevices.setRunner([](const std::string &program,const std::vector<std::string> &args) {
+    QStringList arguments;for(const auto &arg:args) arguments << QString::fromStdString(arg);
+    QProcess process;process.start(QString::fromStdString(program),arguments);
+    if(!process.waitForStarted(2000)) return false;
+    if(!process.waitForFinished(3000)) {process.kill();process.waitForFinished(1000);return false;}
+    return process.exitStatus()==QProcess::NormalExit && process.exitCode()==0;
+  });
+  std::string deviceError;
+  try {
+    if(!m_powerDevices.setSettings(nlohmann::json::parse(m_settings.powerDeviceSettings),deviceError))
+      syslog(LOG_ERR,"[PowerDevices] Ignoring invalid settings: %s",deviceError.c_str());
+  } catch(const std::exception &error) {
+    syslog(LOG_ERR,"[PowerDevices] Invalid configuration: %s",error.what());
+  }
 
   // Now build settings JSON with actual stateMap
   m_dbusData.settingsJSON = buildSettingsJSON( m_dbusData.keyboardBacklightStatesJSON,
@@ -2387,13 +2488,19 @@ UccDBusService::UccDBusService()
 
     if ( m_keyboardBacklightController.isAvailable() )
     {
-      std::string defaultStates = m_keyboardBacklightController.buildDefaultStatesJSON();
-      m_dbusData.keyboardBacklightStatesJSON = defaultStates;
-
-      if ( m_settings.keyboardBacklightControlSupported )
-        m_keyboardBacklightController.applyStatesFromJSON( defaultStates );
+      std::string initialStates = m_keyboardBacklightController.buildDefaultStatesJSON();
+      try {
+        const auto saved=nlohmann::json::parse(m_settings.keyboardBacklightStates);
+        if(saved.is_array() && saved.size()==static_cast<size_t>(m_keyboardBacklightController.capabilities().zones))
+          initialStates=saved.dump();
+      } catch(...) {syslog(LOG_WARNING,"[Keyboard] Invalid saved colors; using device defaults");}
+      m_dbusData.keyboardBacklightStatesJSON = initialStates;
+      if (m_settings.keyboardBacklightControlSupported)
+        m_keyboardBacklightController.applyStatesFromJSON(initialStates);
     }
   }
+
+  updateDBusSettingsData();
 
   // then setup gpu callback before worker starts processing
   setupGpuDataCallback();
@@ -2797,6 +2904,18 @@ bool UccDBusService::initDBus()
       return false;
     }
 
+    m_powerRequestWatcher = new QDBusServiceWatcher(QString(), bus,
+      QDBusServiceWatcher::WatchForUnregistration, m_dbusObject.get());
+    QObject::connect(m_powerRequestWatcher, &QDBusServiceWatcher::serviceUnregistered,
+      m_dbusObject.get(), [this](const QString &owner) {
+        m_powerPolicy.removeOwner(owner.toStdString());
+        m_powerRequestWatcher->removeWatchedService(owner);
+      });
+    {
+      const auto decision = m_powerPolicy.evaluate(determineState(), false);
+      std::lock_guard lock(m_powerStatusMutex);
+      m_powerPolicyJSON = decision.status.dump();
+    }
     syslog( LOG_INFO, "DBus service registered on %s (Qt D-Bus)", SERVICE_NAME );
     return true;
   }
@@ -2913,35 +3032,7 @@ void UccDBusService::onWork()
       m_dbusData.sensorDataCollectionStatus = false;
   }
 
-  // STATE-BASED PROFILE SWITCHING (like TypeScript StateSwitcherWorker)
-  // Disabled: uccd no longer saves or monitors settings file
-  // UCC handles all profile decisions
-
-  // Monitor power state and emit signals for UCC to handle
-  // Skip AC/BAT changes when water cooler is connected (power_wc takes priority)
-  if ( m_currentState != ProfileState::WC )
-  {
-    const ProfileState newState = determineState();
-    const std::string stateKey = profileStateToString( newState );
-
-    if ( newState != m_currentState )
-    {
-      m_currentState = newState;
-
-      // Update m_currentStateProfileId only if the state is mapped
-      auto it = m_settings.stateMap.find( stateKey );
-      m_currentStateProfileId = ( it != m_settings.stateMap.end() ) ? it->second : std::string();
-
-      std::cout << "[State] Power state changed to " << stateKey << std::endl;
-
-      // Emit signal for UCC to handle profile switching
-      m_adaptor->emitPowerStateChanged( stateKey );
-
-      // Apply the profile mapped to the new power state immediately.
-      // This internally calls emitProfileChanged so all D-Bus clients
-      // (tray, GNOME extension, CLI) are pushed the update.
-      applyProfileForCurrentState();    }
-  }
+  updatePowerPolicy();
 
   // Check for temp profile requests
   const std::string oldActiveProfileId = m_activeProfile.id;
@@ -3048,30 +3139,13 @@ void UccDBusService::onWork()
         // Emit signal for applications to handle water cooler status changes
         m_adaptor->emitWaterCoolerStatusChanged( status );
 
-        // Switch power state based on water cooler connection and apply the
-        // corresponding profile so the system actually transitions.
-        if ( wcConnected )
-        {
-          m_currentState = ProfileState::WC;
-          const std::string stateKey = "power_wc";
-          std::cout << "[State] Water cooler connected, switching to " << stateKey << std::endl;
-          m_adaptor->emitPowerStateChanged( stateKey );
-        }
-        else
-        {
-          m_currentState = determineState();
-          const std::string stateKey = profileStateToString( m_currentState );
-          std::cout << "[State] Water cooler disconnected, reverting to " << stateKey << std::endl;
-          m_adaptor->emitPowerStateChanged( stateKey );
-        }
-
         // Reset pump hysteresis so the auto-control loop picks up the correct
         // level for the new profile from a clean state.
         m_pumpHysSpeedIdx = 0;
         m_pumpHysThreshold = 0;
         m_wcTempFiltered = -1.0;  // reset EWMA so next sample seeds immediately
 
-        applyProfileForCurrentState();
+        updatePowerPolicy();
       }
     }
   }
@@ -3293,6 +3367,9 @@ bool UccDBusService::applyProfileJSON( const std::string &profileJSON )
   {
     // Parse the profile JSON
     auto profile = m_profileManager.parseProfileJSON( profileJSON );
+    m_profileCpuBase=profile.cpu;
+    const auto mode=profileStateToString(m_effectivePowerMode.load()).substr(6);
+    m_powerDevices.overlayCpu(profile,mode);
 
     std::cout << "[Profile] Applying profile: " << profile.name << std::endl;
 
@@ -4037,7 +4114,7 @@ void UccDBusService::loadSettings()
   auto allProfiles = getAllProfiles();
   bool settingsChanged = false;
 
-  for ( const auto &stateKey : { "power_ac", "power_bat", "power_wc" } )
+  for ( const auto &stateKey : { "power_ac", "power_bat", "power_wc", "power_type_c" } )
   {
     // check if state key exists in map - if not, leave it unassigned
     if ( m_settings.stateMap.find( stateKey ) == m_settings.stateMap.end() )
@@ -4117,6 +4194,7 @@ void UccDBusService::loadSettings()
 
 void UccDBusService::initializeStartupProfile()
 {
+  m_effectivePowerMode=determineState();
   // Skip on unsupported devices - no workers are running
   if ( !m_dbusData.deviceSupported.load() )
     return;
@@ -4256,10 +4334,59 @@ void UccDBusService::applyCTGPFromProfile( const UccProfile &profile )
   }
 }
 
+void UccDBusService::updatePowerPolicy()
+{
+  const auto decision = m_powerPolicy.evaluate(determineState(), m_previousWaterCoolerConnected.load());
+  m_effectivePowerMode=decision.effective;
+  const std::string mode=decision.status["current_mode"];
+  const std::string json = decision.status.dump();
+  bool changed = false;
+  {
+    std::lock_guard lock(m_powerStatusMutex);
+    changed = json != m_powerPolicyJSON;
+    m_powerPolicyJSON = json;
+  }
+  if (changed && m_adaptor) {
+    auto *adaptor = m_adaptor.get();
+    QMetaObject::invokeMethod(adaptor, [adaptor,json] {
+      emit adaptor->PowerPolicyChanged(QString::fromStdString(json));
+    }, Qt::QueuedConnection);
+  }
+  const auto revision = decision.status["revision"].get<uint64_t>();
+  if (decision.profileState != m_currentState.load() || revision != m_lastPowerPolicyRevision) {
+    m_lastPowerPolicyRevision = revision;
+    m_currentState = decision.profileState;
+    if (m_adaptor) m_adaptor->emitPowerStateChanged(profileStateToString(decision.profileState));
+    applyProfileForCurrentState();
+  }
+  const auto deviceRevision=m_powerDevices.revision();
+  if(mode!=m_lastDevicesMode || deviceRevision!=m_lastDeviceRevision) {
+    m_lastDevicesMode=mode;m_lastDeviceRevision=deviceRevision;
+    const bool enabled=m_powerDevices.settings().value("enabled",false);
+    if(enabled || m_deviceCpuPolicyActive) {
+      if(!m_profileCpuBase) m_profileCpuBase=m_activeProfile.cpu;
+      m_activeProfile.cpu=*m_profileCpuBase;
+      m_powerDevices.overlayCpu(m_activeProfile,mode);
+      if(m_cpuWorker) m_cpuWorker->reapplyProfile();
+    }
+    m_deviceCpuPolicyActive=enabled;
+    m_powerDevices.apply(mode);
+    updateDBusActiveProfileData();
+    if(m_adaptor) {
+      auto *adaptor=m_adaptor.get();const auto status=m_powerDevices.status().dump();
+      QMetaObject::invokeMethod(adaptor,[adaptor,status] {
+        emit adaptor->PowerDeviceStatusChanged(QString::fromStdString(status));
+      },Qt::QueuedConnection);
+    }
+  }
+}
+
 void UccDBusService::applyProfileForCurrentState()
 {
   const std::string stateKey = profileStateToString( m_currentState );
   auto stateMapIt = m_settings.stateMap.find( stateKey );
+  if (stateMapIt == m_settings.stateMap.end() && m_currentState == ProfileState::TYPE_C)
+    stateMapIt = m_settings.stateMap.find("power_ac");
   if ( stateMapIt == m_settings.stateMap.end() )
   {
     std::cerr << "[State] No profile assigned to state '" << stateKey << "'" << std::endl;

@@ -203,7 +203,12 @@ private:
         if (stateMap.contains("power_ac")) settings.stateMap["power_ac"] = stateMap["power_ac"];
         if (stateMap.contains("power_bat")) settings.stateMap["power_bat"] = stateMap["power_bat"];
         if (stateMap.contains("power_wc")) settings.stateMap["power_wc"] = stateMap["power_wc"];
+        if (stateMap.contains("power_type_c")) settings.stateMap["power_type_c"] = stateMap["power_type_c"];
       }
+
+      settings.keyboardLayout = j.value("keyboardLayout", std::string("auto"));
+      settings.keyboardBacklightStates = j.value("keyboardBacklightStates", nlohmann::json::array()).dump();
+      settings.powerDeviceSettings = j.value("powerDevices", nlohmann::json::object()).dump();
 
       // Parse profiles map
       if (j.contains("profiles")) {
@@ -261,6 +266,9 @@ private:
     std::ostringstream json;
 
     json << "{\n";
+    json << "  \"keyboardLayout\": " << nlohmann::json(settings.keyboardLayout).dump() << ",\n";
+    json << "  \"powerDevices\": " << settings.powerDeviceSettings << ",\n";
+    json << "  \"keyboardBacklightStates\": " << settings.keyboardBacklightStates << ",\n";
     json << "  \"fahrenheit\": " << ( settings.fahrenheit ? "true" : "false" ) << ",\n";
     json << "  \"stateMap\": {\n";
     {

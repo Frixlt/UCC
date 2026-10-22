@@ -46,6 +46,9 @@
 #include "SettingsManager.hpp"
 #include "AutosaveManager.hpp"
 #include "TccSettings.hpp"
+#include "PowerPolicy.hpp"
+#include "PowerDeviceController.hpp"
+#include <QDBusServiceWatcher>
 #include "MetricsHistoryStore.hpp"
 #include "SystemInfo.hpp"
 #include "tuxedo_io_lib/tuxedo_io_api.hh"
@@ -294,6 +297,14 @@ public slots:
   // profile methods
   QString GetActiveProfileJSON();
   QString GetPowerState();
+  QString GetPowerPolicyJSON();
+  QString GetPowerDeviceSettingsJSON();
+  QString GetPowerDeviceStatusJSON();
+  bool SetPowerDeviceSettingsJSON(const QString &json);
+  bool ScanPowerDevices();
+  bool SetManualPowerMode(const QString &mode);
+  bool RegisterPowerRequest(const QString &name, const QString &reason, const QString &mode);
+  bool UnregisterPowerRequest(const QString &name);
   bool SetTempProfile( const QString &profileName );
   bool SetActiveProfile( const QString &id );
   bool ApplyProfile( const QString &profileJSON );
@@ -407,6 +418,8 @@ signals:
                        const QString &fanProfileId );
   void ModeReapplyPendingChanged( bool pending );
   void PowerStateChanged( const QString &state );
+  void PowerPolicyChanged(const QString &json);
+  void PowerDeviceStatusChanged(const QString &json);
   void WaterCoolerStatusChanged( const QString &status );
 
 public:
@@ -550,11 +563,23 @@ private:
   std::vector< UccProfile > m_customProfiles;
 
   // state switching
-  ProfileState m_currentState;
+  std::atomic<ProfileState> m_currentState;
+  PowerPolicy m_powerPolicy;
+  PowerDeviceController m_powerDevices;
+  std::optional<UccProfileCpu> m_profileCpuBase;
+  std::atomic<ProfileState> m_effectivePowerMode{ProfileState::AC};
+  std::string m_lastDevicesMode;
+  uint64_t m_lastDeviceRevision = 0;
+  bool m_deviceCpuPolicyActive = false;
+  QDBusServiceWatcher *m_powerRequestWatcher = nullptr;
+  std::string m_powerPolicyJSON;
+  std::mutex m_powerStatusMutex;
+  void updatePowerPolicy();
+  uint64_t m_lastPowerPolicyRevision = 0;
   std::string m_currentStateProfileId;
 
   // water cooler state tracking
-  bool m_previousWaterCoolerConnected;
+  std::atomic<bool> m_previousWaterCoolerConnected;
   std::atomic< int32_t > m_waterCoolerLedMode{ 0 };  // Tracks the GUI-requested LED mode (may be Temperature)
 
   // Pump hysteresis: on the way up the table threshold is used directly;

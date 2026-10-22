@@ -112,6 +112,7 @@ static const char *tdpLabel( int idx )
 /// Human-readable power state label.
 static std::string powerStateLabel( const std::string &raw )
 {
+  if ( raw == "power_type_c" ) return "Type-C";
   if ( raw == "power_ac" )  return "AC";
   if ( raw == "power_bat" ) return "Battery";
   if ( raw == "power_wc" )  return "AC w/ Water Cooler";
@@ -1550,6 +1551,14 @@ static void printUsage()
     "  status                        Show full system status (dashboard)\n"
     "  monitor [-n COUNT] [-i SECS]  Live monitor (like top). Default: continuous, 2s\n"
     "\n"
+    "Per-device policies:\n"
+    "  devices get|status|scan       Read settings/results or discover hardware\n"
+    "  devices set <JSON>            Save validated per-mode CPU/device policies\n"
+    "\n"
+    "Power policy:\n"
+    "  power status                  Show physical source, effective mode and requests\n"
+    "  power mode <auto|ac|type_c|bat> Select automatic or manual power policy\n"
+    "\n"
     "Profile management:\n"
     "  profile list                  List all profiles (built-in + custom)\n"
     "  profile get                   Show active profile (JSON)\n"
@@ -1563,7 +1572,7 @@ static void printUsage()
     "State map (auto-switch on power state change):\n"
     "  statemap get                  Show current settings/state map\n"
     "  statemap set <STATE> <ID>     Set profile for power state\n"
-    "                                States: power_ac, power_bat, power_wc\n"
+    "                                States: power_ac, power_type_c, power_bat, power_wc\n"
     "\n"
     "Fan control:\n"
     "  fan list                      List fan profiles\n"
@@ -1659,6 +1668,9 @@ static int cmdStatusJSON( ucc::UccdClient &c )
     if ( pd.isObject() )
       root["activeProfile"] = pd.object();
   }
+
+  if (auto policy = c.getPowerPolicyJSON())
+    root["powerPolicy"] = QJsonDocument::fromJson(QByteArray::fromStdString(*policy)).object();
 
   // CPU
   QJsonObject cpu;
@@ -1810,6 +1822,26 @@ int main( int argc, char *argv[] )
   if ( matchArg( cmd, "status" ) )
     return jsonMode ? cmdStatusJSON( client ) : cmdStatus( client );
 
+  if (matchArg(cmd,"devices")) {
+    if (args.size()==2 && (matchArg(args[1],"get") || matchArg(args[1],"status"))) {
+      const auto json=matchArg(args[1],"get") ? client.getPowerDeviceSettingsJSON() : client.getPowerDeviceStatusJSON();
+      if(json) {std::puts(json->c_str());return 0;}return 1;
+    }
+    if(args.size()==2 && matchArg(args[1],"scan")) return client.scanPowerDevices() ? 0 : 1;
+    if(args.size()==3 && matchArg(args[1],"set")) return client.setPowerDeviceSettingsJSON(args[2]) ? 0 : 1;
+    std::fputs("Usage: ucc-cli devices <get|status|scan> | devices set <JSON>\n",stderr);return 1;
+  }
+  if (matchArg(cmd,"power")) {
+    if (args.size() == 2 && matchArg(args[1],"status")) {
+      if (auto policy = client.getPowerPolicyJSON()) { std::puts(policy->c_str()); return 0; }
+      return 1;
+    }
+    if (args.size() == 3 && matchArg(args[1],"mode"))
+      return client.setManualPowerMode(args[2]) ? 0 : 1;
+    std::fputs("Usage: ucc-cli power status | power mode <auto|ac|type_c|bat>\n",stderr);
+    return 1;
+  }
+
   // monitor [-n COUNT] [-i INTERVAL]
   if ( matchArg( cmd, "monitor" ) || matchArg( cmd, "mon" ) )
   {
@@ -1875,8 +1907,11 @@ int main( int argc, char *argv[] )
       return 1;
     }
     const char *sub = args[1];
-    if ( matchArg( sub, "get" ) || matchArg( sub, "show" ) )
-      return cmdStateMapGet( client );
+    if ( matchArg( sub, "get" ) || matchArg( sub, "show" ) ) {
+      if (!jsonMode) return cmdStateMapGet(client);
+      if (auto settings=client.getSettingsJSON()) {std::puts(settings->c_str());return 0;}
+      return 1;
+    }
     if ( matchArg( sub, "set" ) )
     {
       if ( args.size() < 4 ) { std::fputs( "Usage: ucc-cli statemap set <STATE> <PROFILE_ID>\n", stderr ); return 1; }

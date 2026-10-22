@@ -6,6 +6,7 @@ import xml.etree.ElementTree as ET
 
 ROOT = pathlib.Path(__file__).resolve().parents[1]
 ROUTINE = (
+    'SetPowerDeviceSettingsJSON', 'ScanPowerDevices', 'SetManualPowerMode', 'RegisterPowerRequest', 'UnregisterPowerRequest',
     'ApplyProfile', 'SaveCustomProfile', 'SetBatchStateMap', 'SetWaterCoolerAutoControl',
     'SetFanProfileCPU', 'SetFanProfileDGPU', 'ApplyFanProfiles', 'RevertFanProfiles',
     'SaveCustomFanProfile', 'DeleteCustomFanProfile',

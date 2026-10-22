@@ -66,6 +66,8 @@ class KeyboardBacklightController
 {
 public:
   KeyboardBacklightController() = default;
+  KeyboardBacklightController(std::vector<std::string> paths, KeyboardBacklightCapabilities capabilities)
+    : m_capabilities(capabilities), m_ledPaths(std::move(paths)) {}
   ~KeyboardBacklightController() = default;
 
   // non-copyable, non-movable
@@ -156,7 +158,7 @@ public:
 
       if ( !newStates.empty() )
       {
-        applyStates( newStates );
+        if (!applyStates(newStates)) return false;
         m_currentStates = newStates;
         return true;
       }
@@ -376,7 +378,17 @@ private:
       oss << ",\"maxBlue\":" << m_capabilities.maxBlue;
     }
 
-    oss << "}";
+    oss << ",\"ledIds\":[";
+    for (size_t i=0; i<m_ledPaths.size(); ++i) {
+      if (i) oss << ",";
+      const auto name = fs::path(m_ledPaths[i]).filename().string();
+      int id = 0;
+      if (name.starts_with("rgb:kbd_backlight_")) {
+        try { id = std::stoi(name.substr(name.find_last_of('_')+1)); } catch (...) { id = static_cast<int>(i); }
+      } else if (name != "rgb:kbd_backlight") id = static_cast<int>(i);
+      oss << id;
+    }
+    oss << "]}";
     return oss.str();
   }
 
@@ -454,46 +466,47 @@ private:
 
   // hardware sysfs writes
 
-  void applyStates( const std::vector< KeyboardBacklightState > &states )
+  bool applyStates( const std::vector< KeyboardBacklightState > &states )
   {
     if ( states.empty() || m_ledPaths.empty() )
-      return;
+      return false;
 
     std::cout << "[KeyboardBacklight] applyStates length: " << states.size() << " | r=" << states[0].red << " g=" << states[0].green << " b=" << states[0].blue << " bright=" << states[0].brightness << std::endl;
-    std::cout << "[KeyboardBacklight] applyStates length: " << states.size() << " | r=" << states[0].red << " g=" << states[0].green << " b=" << states[0].blue << " bright=" << states[0].brightness << std::endl;
-    setBrightness( states[0].brightness );
+    setBufferInput(true);
+    bool success = setBrightness(states[0].brightness);
 
     if ( m_capabilities.maxRed > 0 )
     {
-      setBufferInput( true );
-
       for ( size_t i = 0; i < m_ledPaths.size() && i < states.size(); ++i )
-        setMultiIntensity( i, states[i].red, states[i].green, states[i].blue );
+        success = setMultiIntensity(i, states[i].red, states[i].green, states[i].blue) && success;
 
-      setBufferInput( false );
     }
+    setBufferInput(false);
+    return success;
   }
 
-  void setBrightness( int brightness )
+  bool setBrightness( int brightness )
   {
-    if ( m_ledPaths.empty() )
-      return;
-
-    SysfsNode< int > brightnessNode( m_ledPaths[0] + "/brightness" );
-    if ( !brightnessNode.write( brightness ) )
-      std::cerr << "[KeyboardBacklight] Failed to set brightness to " << brightness << std::endl;
+    bool success = !m_ledPaths.empty();
+    for (const auto &path : m_ledPaths) {
+      if (!SysfsNode<int>(path + "/brightness").write(brightness)) {
+        std::cerr << "[KeyboardBacklight] Failed to set brightness on " << path << std::endl;
+        success = false;
+      }
+    }
+    return success;
   }
 
-  void setMultiIntensity( size_t zoneIndex, int red, int green, int blue )
+  bool setMultiIntensity( size_t zoneIndex, int red, int green, int blue )
   {
     if ( zoneIndex >= m_ledPaths.size() )
-      return;
+      return false;
 
     std::string multiIntensityPath = m_ledPaths[zoneIndex] + "/multi_intensity";
     std::error_code ec;
 
     if ( !fs::exists( multiIntensityPath, ec ) )
-      return;
+      return false;
 
     std::string value = std::to_string( red ) + " " +
                        std::to_string( green ) + " " +
@@ -503,8 +516,12 @@ private:
     if ( file.is_open() )
     {
       file << value;
+      file.flush();
+      const bool success = file.good();
       file.close();
+      return success;
     }
+    return false;
   }
 
   void setBufferInput( bool bufferOn )
