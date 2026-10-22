@@ -6,7 +6,6 @@ post_install() {
 
   echo ":: Enabling uccd daemon..."
   systemctl enable uccd.service
-  systemctl enable uccd-pre-sleep.service
   systemctl enable uccd-sleep.service
 
   echo ":: Starting uccd daemon..."
@@ -26,8 +25,34 @@ pre_upgrade() {
   :
 }
 
+# Optional root prefix lets packaging tests inspect a staged unit tree.
+ucc_sleep_hook_enabled() {
+  local sleep_state sleep_root sleep_target
+  sleep_state=$(systemctl is-enabled uccd-sleep.service 2>/dev/null || true)
+  case "$sleep_state" in
+    enabled|enabled-runtime) return 0 ;;
+    masked|masked-runtime) return 1 ;;
+    *)
+      # is-enabled on an alias succeeds even when its target is disabled.
+      for sleep_root in "${1:-}/etc/systemd/system" "${1:-}/run/systemd/system"; do
+        for sleep_target in suspend hibernate hybrid-sleep suspend-then-hibernate; do
+          if [ -L "$sleep_root/$sleep_target.target.wants/uccd-pre-sleep.service" ]; then
+            return 0
+          fi
+        done
+      done
+      ;;
+  esac
+  return 1
+}
+
 post_upgrade() {
   systemctl daemon-reload
+  # Replace old suspend-target links while preserving an explicitly disabled hook.
+  if ucc_sleep_hook_enabled; then
+    systemctl disable uccd-pre-sleep.service uccd-sleep.service 2>/dev/null || true
+    systemctl enable uccd-sleep.service
+  fi
 
   echo ":: Restarting uccd daemon..."
   systemctl try-restart uccd.service
@@ -38,14 +63,12 @@ post_upgrade() {
 
 pre_remove() {
   echo ":: Stopping uccd daemon..."
-  systemctl stop uccd.service 2>/dev/null || true
-  systemctl stop uccd-pre-sleep.service 2>/dev/null || true
   systemctl stop uccd-sleep.service 2>/dev/null || true
+  systemctl stop uccd.service 2>/dev/null || true
 
   echo ":: Disabling uccd services..."
   systemctl disable uccd.service 2>/dev/null || true
-  systemctl disable uccd-pre-sleep.service 2>/dev/null || true
-  systemctl disable uccd-sleep.service 2>/dev/null || true
+  systemctl disable uccd-pre-sleep.service uccd-sleep.service 2>/dev/null || true
 }
 
 post_remove() {

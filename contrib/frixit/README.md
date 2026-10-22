@@ -260,7 +260,7 @@ preview write guards and existing upstream screens. Saved screenshots are local
 artifacts, not captures of a running controlling daemon.
 
 Verified locally with Qt 6.12: daemon, CLI and GUI builds succeeded; the normal
-build passed all 27 CTest entries. A separate read-only build passed the focused
+build passed all 30 CTest entries. A separate read-only build passed the focused
 keyboard, sparse LED, device matrix, policy signal, rejected command and preview
 write-guard checks. The lightbar update also passed focused read-only GUI, session
 agent and all-write-guard checks; normal tests include an end-to-end fake-monitor
@@ -277,7 +277,35 @@ A staged installation under `/tmp` verified the tray/agent executables and their
 autostart entries. No system packages, services or live hardware settings were
 changed.
 
-Remaining migration work: KDE refresh-rate notifications, deployment/in-session
-autostart verification and real suspend/resume verification. These are not claimed
-as completed by the power/device, keyboard, lightbar and desktop changes. `gpu-run` is excluded at the user’s
-request rather than left as an implementation task.
+KDE refresh suggestions are now handled by `ucc-session-agent`, independently of
+the tray/GUI. The agent watches physical AC/type-C/battery transitions, skips its
+initial observation and ignores manual power-mode changes. It proposes 60 Hz on
+battery, up to 240 Hz on external power, or up to 300 Hz for an internal panel
+routed through NVIDIA. It reads KScreen's actual mode IDs and preserves resolution
+(the original fixed mode IDs would select a different resolution on this machine).
+Only the notification action applies a change; a fresh query rejects stale
+offers, and a final query verifies the result. External displays are not changed.
+Battery & Processes → “Offer display refresh changes on KDE” controls the offers.
+The feature pauses on login1 sleep signals and stays disabled in preview builds.
+
+The unified sleep hook saves the manual mode and cooler enable state in a private
+root-owned `/run/ucc/sleep-state.json`, stops UCC before sleep/NVIDIA suspend and
+restarts it after resume only if previously running. The daemon reads that state
+before applying its startup profile, preserving the mode and skipping the welcome
+animation. State is removed after a successful restart; failed starts retain it
+for recovery. Old pre-sleep unit names resolve to the same hook. Generic CMake and
+Mechrevo packages now share this implementation.
+
+New tests use fake KScreen executables and a private notification/login1 bus to
+cover action-only mode changes, stale offers, command verification failures,
+sleep cancellation, disabled offers and preview guards. Temporary snapshots cover
+capture/stop/start ordering, already stopped daemons, retries, invalid owners,
+permissions and symlinks. A staged `/usr` installation also verified the unit
+alias, migration of old enabled links and `systemd-analyze verify`; no host units
+were enabled or started. Upgrade tests cover disabled, masked and legacy-only
+sleep hooks using `systemctl --root` in temporary directories.
+
+Remaining deployment work: in-session autostart verification and real hardware
+suspend/resume verification. No live hardware sleep cycle or system installation
+has been performed. `gpu-run` and the original CPU thermal limit are excluded at
+the user's request.

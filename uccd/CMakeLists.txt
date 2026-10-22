@@ -25,6 +25,14 @@ find_package(Qt6 REQUIRED COMPONENTS Core Bluetooth DBus)
 
 set(CMAKE_AUTOMOC ON)
 
+add_executable(ucc-sleep src/sleep-helper.cpp)
+target_include_directories(ucc-sleep PRIVATE inc)
+target_link_libraries(ucc-sleep PRIVATE Qt6::Core Qt6::DBus)
+if(UCC_READ_ONLY_PREVIEW)
+  target_compile_definitions(ucc-sleep PRIVATE UCC_READ_ONLY_PREVIEW)
+endif()
+install(TARGETS ucc-sleep RUNTIME DESTINATION lib/ucc)
+
 # Main executable
 add_executable(uccd
   src/uccd.cpp

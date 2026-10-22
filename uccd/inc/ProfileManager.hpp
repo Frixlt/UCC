@@ -393,9 +393,10 @@ public:
   [[nodiscard]] UccProfile resolveStartupProfile(
     std::optional< UniwillDeviceID > deviceId,
     const std::map< std::string, std::string > &stateMap,
-    const std::map< std::string, std::string > &savedProfiles ) noexcept
+    const std::map< std::string, std::string > &savedProfiles,
+    std::optional<ProfileState> selectedState = std::nullopt ) noexcept
   {
-    ProfileState currentState = determineState();
+    ProfileState currentState = selectedState ? *selectedState : determineState();
     std::string stateKey = profileStateToString( currentState );
 
     syslog( LOG_INFO, "[ProfileManager] Current power state: %s", stateKey.c_str() );

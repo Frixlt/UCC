@@ -52,6 +52,7 @@ makedepends=(
 # tuxedo-drivers provides the /dev/tuxedo_io kernel interface uccd talks to
 optdepends=(
   'tuxedo-drivers: kernel module providing /dev/tuxedo_io hardware interface (required for daemon)'
+  'kscreen: refresh-rate suggestions in KDE sessions'
 )
 
 # Preserve user-modified configuration across upgrades

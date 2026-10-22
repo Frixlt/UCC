@@ -1,12 +1,13 @@
 # Build the current checkout, including its Mechrevo changes.
 pkgname=uniwill-control-center-mechrevo
 pkgver=0.2.0.r20260920
-pkgrel=9
+pkgrel=10
 pkgdesc='Uniwill Control Center for Mechrevo YAOSHI X6AR55xY with Qt6 and GNOME integration'
 arch=('x86_64')
 url='https://github.com/noteMASTER11/UCC-Revorked'
 license=('GPL-3.0-or-later')
 depends=('qt6-base' 'qt6-charts' 'qt6-connectivity' 'qt6-declarative' 'systemd-libs' 'dbus' 'polkit' 'hicolor-icon-theme' 'tuxedo-drivers')
+optdepends=('kscreen: refresh-rate suggestions in KDE sessions')
 makedepends=('cmake' 'ninja' 'git' 'nlohmann-json' 'python' 'gjs' 'nodejs')
 provides=('uniwill-control-center=0.2.0')
 conflicts=('uniwill-control-center')
@@ -28,6 +29,4 @@ check() {
 package() {
   DESTDIR="$pkgdir" cmake --install "$srcdir/build"
   install -dm755 "$pkgdir/etc/ucc"
-  install -Dm644 "$startdir/uccd-sleep.service" "$pkgdir/usr/lib/systemd/system/uccd-sleep.service"
-  rm "$pkgdir/usr/lib/systemd/system/uccd-pre-sleep.service"
 }

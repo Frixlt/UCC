@@ -11,6 +11,12 @@ class TestLightbar:public QObject {
   QByteArray read(const QString &root,const QString &name) {QFile f(root+"/"+name);if(!f.open(QIODevice::ReadOnly)) return {};return f.readAll();}
   void hardware(const QString &root) {file(root,"rgb:lightbar/multi_intensity","1 2 3 1 2 3");file(root,"rgb:lightbar/brightness","0");file(root,"rgb:lightbar/max_brightness","50");}
 private slots:
+  void resumeKeepsWelcomeSettingWithoutReplayingIt() {
+    QTemporaryDir root;hardware(root.path());Controller c(root.path());auto config=Controller::defaults();
+    config["managed"]=true;config["welcome_anim"]=true;c.skipWelcome();QVERIFY(c.configure(config));
+    QVERIFY(c.settings()["welcome_anim"].get<bool>());QVERIFY(!c.status()["animating"].get<bool>());
+    QVERIFY(c.trigger(true));
+  }
   void disabledByDefaultAndSettingsParse() {
     QTemporaryDir root;hardware(root.path());Controller c(root.path());QVERIFY(c.configure(Json::object()));
     QCOMPARE(read(root.path(),"rgb:lightbar/multi_intensity"),QByteArray("1 2 3 1 2 3"));QVERIFY(!c.trigger(true));

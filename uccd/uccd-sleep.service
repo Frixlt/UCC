@@ -1,11 +1,20 @@
 [Unit]
-Description=Start UCCD after system resume
+Description=Preserve UCCD runtime settings across system sleep
 Documentation=man:uccd(8)
-After=suspend.target hibernate.target hybrid-sleep.target suspend-then-hibernate.target
+DefaultDependencies=no
+Before=sleep.target nvidia-suspend.service nvidia-hibernate.service
+StopWhenUnneeded=yes
 
 [Service]
 Type=oneshot
-ExecStart=/usr/bin/systemctl start uccd.service
+RemainAfterExit=yes
+ExecStart=/usr/lib/ucc/ucc-sleep prepare
+# Also recover when preparing sleep failed after the daemon was stopped.
+ExecStopPost=/usr/lib/ucc/ucc-sleep resume
+TimeoutStartSec=60s
+TimeoutStopSec=30s
+User=root
+UMask=0077
 
 [Install]
-WantedBy=suspend.target hibernate.target hybrid-sleep.target suspend-then-hibernate.target
+RequiredBy=sleep.target

@@ -152,6 +152,15 @@ private slots:
   void batteryAndProcessPageStaysReadOnlyUntilConfirmed() {
     control("TestVisualFixture");ucc::MainWindow window;window.resize(1280,900);window.show();auto *nav=window.findChild<QListWidget*>("navigation");QVERIFY(nav);nav->setCurrentRow(9);QTest::qWait(350);
     QCOMPARE(window.findChild<QLabel*>("pageTitle")->text(),QString("Battery & Processes"));
+    auto *refresh=window.findChild<QCheckBox*>("refreshRateNotifications");QVERIFY(refresh);
+    QSettings preferences("UniwillControlCenter","desktop");const auto previous=preferences.value("refreshRateNotifications");
+    const auto restorePreference=qScopeGuard([&]{if(previous.isValid()) preferences.setValue("refreshRateNotifications",previous);else preferences.remove("refreshRateNotifications");preferences.sync();});
+    const bool requested=!refresh->isChecked();refresh->setChecked(requested);preferences.sync();
+#ifdef UCC_READ_ONLY_PREVIEW
+    QVERIFY(!refresh->isEnabled());QCOMPARE(preferences.value("refreshRateNotifications"),previous);
+#else
+    QVERIFY(refresh->isEnabled());QCOMPARE(preferences.value("refreshRateNotifications").toBool(),requested);
+#endif
     auto *widget=window.findChild<ucc::SessionProcessesWidget*>();QVERIFY(widget);widget->monitor()->setActive(false);QTRY_VERIFY(!widget->monitor()->isBusy());
     const QJsonObject process{{"pid",424242},{"startTime","123456"},{"name","Example GPU application"}};
     const QJsonObject snapshot{{"batteries",QJsonArray{QJsonObject{{"name","BAT0"},{"capacity",76},{"status","Discharging"},{"powerWatts",12.5}}}},{"gpuState","active"},{"processesSampled",true},{"processes",QJsonArray{process}}};widget->setSnapshot(snapshot);

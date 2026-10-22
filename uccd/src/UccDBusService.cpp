@@ -14,6 +14,7 @@
  */
 
 #include "UccDBusService.hpp"
+#include "SleepState.hpp"
 #include "PowerSupplyController.hpp"
 #include <QProcess>
 #include "CommonTypes.hpp"
@@ -1193,8 +1194,9 @@ QString UccDBusInterfaceAdaptor::GetPowerState()
 QString UccDBusInterfaceAdaptor::GetPowerPolicyJSON()
 {
   if (!checkAuth( PolkitAuthority::ACTION_READ ) || !m_service) return "{}";
-  std::lock_guard lock(m_service->m_powerStatusMutex);
-  return QString::fromStdString(m_service->m_powerPolicyJSON);
+  // Capture the latest manual override even before the next worker tick.
+  return QString::fromStdString(m_service->m_powerPolicy.evaluate(
+    determineState(),m_service->m_previousWaterCoolerConnected.load()).status.dump());
 }
 
 QString UccDBusInterfaceAdaptor::GetPowerDeviceSettingsJSON()
@@ -2247,6 +2249,15 @@ UccDBusService::UccDBusService()
 
   // Load settings (creates defaults if needed)
   loadSettings();
+  {
+    std::optional<ucc::SleepState> resume;QString error;
+    if(!ucc::SleepStateStore().load(resume,error))
+      syslog(LOG_WARNING,"[Resume] Ignoring sleep snapshot: %s",qPrintable(error));
+    else if(resume && resume->wasActive) {
+      m_powerPolicy.setManualMode(resume->manualMode.toStdString());
+      m_resumeCoolerEnabled=resume->coolerEnabled;
+    }
+  }
   m_powerDevices.setRunner([](const std::string &program,const std::vector<std::string> &args) {
     QStringList arguments;for(const auto &arg:args) arguments << QString::fromStdString(arg);
     QProcess process;process.start(QString::fromStdString(program),arguments);
@@ -2953,7 +2964,8 @@ bool UccDBusService::initDBus()
       m_powerPolicyJSON = decision.status.dump();
     }
     m_lightbar=std::make_unique<LightbarController>();
-    m_lightbar->setPowerMode(profileStateToString(determineState()).substr(6));
+    if(m_resumeCoolerEnabled.has_value()) m_lightbar->skipWelcome();
+    m_lightbar->setPowerMode(profileStateToString(m_powerPolicy.evaluate(determineState(),false).effective).substr(6));
     try {m_lightbar->configure(nlohmann::json::parse(m_settings.lightbarSettings));}
     catch(const std::exception &error) {syslog(LOG_ERR,"[Lightbar] Ignoring invalid settings: %s",error.what());}
     syslog( LOG_INFO, "DBus service registered on %s (Qt D-Bus)", SERVICE_NAME );
@@ -4236,7 +4248,9 @@ void UccDBusService::loadSettings()
 
 void UccDBusService::initializeStartupProfile()
 {
-  m_effectivePowerMode=determineState();
+  const auto decision=m_powerPolicy.evaluate(determineState(),false);
+  m_effectivePowerMode=decision.effective;
+  m_lastPowerPolicyRevision=decision.status["revision"].get<uint64_t>();
   // Skip on unsupported devices - no workers are running
   if ( !m_dbusData.deviceSupported.load() )
     return;
@@ -4244,7 +4258,8 @@ void UccDBusService::initializeStartupProfile()
   UccProfile resolved = m_profileManager.resolveStartupProfile(
     m_deviceId,
     m_settings.stateMap,
-    m_settings.profiles
+    m_settings.profiles,
+    decision.profileState
   );
 
   if ( resolved.id.empty() )
@@ -4254,7 +4269,7 @@ void UccDBusService::initializeStartupProfile()
   }
 
   m_activeProfile = resolved;
-  m_currentState = determineState();
+  m_currentState = decision.profileState;
   m_currentStateProfileId = resolved.id;
 
   snapProfileFrequencies( m_activeProfile );
@@ -4269,7 +4284,7 @@ void UccDBusService::applyStartupProfile()
   if ( m_activeProfile.id.empty() )
     return;
 
-  const bool startupWaterCoolerEnable = m_activeProfile.fan.enableWaterCooler;
+  const bool startupWaterCoolerEnable = m_resumeCoolerEnabled.value_or(m_activeProfile.fan.enableWaterCooler);
   const std::string startupProfileJSON = buildApplyProfileJSON( m_activeProfile );
 
   if ( !applyProfileJSON( startupProfileJSON ) )

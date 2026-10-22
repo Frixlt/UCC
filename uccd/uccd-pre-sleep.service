@@ -1,11 +1,1 @@
-[Unit]
-Description=Stop UCCD before system sleep
-Documentation=man:uccd(8)
-Before=systemd-suspend.service systemd-hibernate.service systemd-hybrid-sleep.service systemd-suspend-then-hibernate.service nvidia-suspend.service nvidia-hibernate.service
-
-[Service]
-Type=oneshot
-ExecStart=/usr/bin/systemctl stop uccd.service
-
-[Install]
-WantedBy=suspend.target hibernate.target hybrid-sleep.target suspend-then-hibernate.target
+uccd-sleep.service

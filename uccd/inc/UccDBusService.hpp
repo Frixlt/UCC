@@ -571,6 +571,7 @@ private:
   // state switching
   std::atomic<ProfileState> m_currentState;
   PowerPolicy m_powerPolicy;
+  std::optional<bool> m_resumeCoolerEnabled;
   PowerDeviceController m_powerDevices;
   std::unique_ptr<LightbarController> m_lightbar;
   void refreshLightbarKeyboard();

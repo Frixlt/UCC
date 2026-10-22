@@ -59,6 +59,15 @@ private:
   }
 
 private slots:
+  void startupHonorsRestoredManualMode() {
+    ProfileManager manager;
+    const std::map<std::string,std::string> profiles={{"test-profile-42",minimalJSON()}};
+    const std::map<std::string,std::string> states={{"power_bat","test-profile-42"}};
+    QCOMPARE(manager.resolveStartupProfile(std::nullopt,states,profiles,ProfileState::BAT).id,std::string("test-profile-42"));
+    QVERIFY(manager.resolveStartupProfile(std::nullopt,states,profiles,ProfileState::AC).id.empty());
+    const std::map<std::string,std::string> ac={{"power_ac","test-profile-42"}};
+    QCOMPARE(manager.resolveStartupProfile(std::nullopt,ac,profiles,ProfileState::TYPE_C).id,std::string("test-profile-42"));
+  }
   void manualWaterCoolerRoundTrip() {
     auto legacy = ProfileManager::parseProfileJSON(minimalJSON());
     QCOMPARE(legacy.fan.manualFanSpeed,-1);QCOMPARE(legacy.fan.manualPumpVoltage,-1);

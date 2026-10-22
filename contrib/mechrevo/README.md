@@ -33,10 +33,13 @@ before building; the companion package provides it. Installing packages and
 enabling services are separate steps and should follow review of the generated
 packages and existing machine configuration.
 
-The UCC recipe replaces upstream's two sleep handlers with the included
-`uccd-sleep.service`: it stops UCC before `sleep.target` and the NVIDIA sleep
-services, then starts UCC when the sleep target is left. Do not enable the old
-`uccd-pre-sleep.service` alongside this override.
+The UCC recipe uses the same `uccd-sleep.service` as the generic CMake build.
+Enable it with `sudo systemctl enable uccd-sleep.service`. It stops UCC before
+`sleep.target` and the NVIDIA sleep services, then restores the previous manual
+power mode and cooler enable state on resume if UCC was running before sleep.
+The old `uccd-pre-sleep.service` name is an alias. After upgrading an installation
+with the old hook enabled, run `sudo systemctl reenable uccd-sleep.service` to
+replace old suspend-target links.
 
 ## Driver changes
 

@@ -10,23 +10,27 @@
 #include "PreviewMode.hpp"
 #include "NotificationMonitor.hpp"
 #include "SessionSignals.hpp"
+#include "RefreshAdvisor.hpp"
 
 int main(int argc,char **argv) {
   QCoreApplication app(argc,argv);app.setApplicationName("ucc-session-agent");
-  if(app.arguments().contains("--help")) {qInfo("Relays session notification events to the UCC lightbar; no notification content is retained.");return 0;}
+  if(app.arguments().contains("--help")) {qInfo("UCC desktop notification relay and KDE display-refresh suggestions. No notification content is retained.");return 0;}
   if(ucc::readOnlyPreview) {qInfo("Session relay disabled in read-only preview.");return 0;}
   const auto runtime=QStandardPaths::writableLocation(QStandardPaths::RuntimeLocation);
   if(runtime.isEmpty()) {qCritical("No user runtime directory available");return 1;}
   QLockFile lock(runtime+"/ucc-session-agent.lock");if(!lock.tryLock(0)) return 0;
   SessionSignals shutdownSignals;
   ucc::UccdClient client;QJsonObject settings,policy;
+  ucc::RefreshAdvisor refresh(qEnvironmentVariable("XDG_CURRENT_DESKTOP").split(':').contains("KDE",Qt::CaseInsensitive));
+  ucc::SessionSleepMonitor sleepMonitor;
+  QObject::connect(&sleepMonitor,&ucc::SessionSleepMonitor::sleeping,&refresh,&ucc::RefreshAdvisor::sleeping);
   auto load=[&] {
     if(auto json=client.getLightbarSettingsJSON()) settings=QJsonDocument::fromJson(QByteArray::fromStdString(*json)).object();else settings={};
-    if(auto json=client.getPowerPolicyJSON()) policy=QJsonDocument::fromJson(QByteArray::fromStdString(*json)).object();else policy={};
+    if(auto json=client.getPowerPolicyJSON()) {policy=QJsonDocument::fromJson(QByteArray::fromStdString(*json)).object();refresh.policyChanged(QString::fromStdString(*json));}else policy={};
   };
   QObject::connect(&client,&ucc::UccdClient::connectionStatusChanged,&app,[&](bool connected){if(connected) load();else {settings={};policy={};}});
   QObject::connect(&client,&ucc::UccdClient::lightbarSettingsChanged,&app,[&](const QString &json){settings=QJsonDocument::fromJson(json.toUtf8()).object();});
-  QObject::connect(&client,&ucc::UccdClient::powerPolicyChanged,&app,[&](const QString &json){policy=QJsonDocument::fromJson(json.toUtf8()).object();});
+  QObject::connect(&client,&ucc::UccdClient::powerPolicyChanged,&app,[&](const QString &json){policy=QJsonDocument::fromJson(json.toUtf8()).object();refresh.policyChanged(json);});
   load();
   NotificationMonitor monitor([&] {
     const auto mode=policy["current_mode"].toString();

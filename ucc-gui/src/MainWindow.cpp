@@ -402,6 +402,8 @@ void MainWindow::setupUI()
   auto *desktopPage=new QWidget;auto *desktopLayout=new QVBoxLayout(desktopPage);desktopLayout->setContentsMargins(0,0,0,0);
   auto *minimized=new QCheckBox("Start Control Center minimized");minimized->setObjectName("startMinimized");minimized->setChecked(startMinimizedPreference());minimized->setEnabled(!readOnlyPreview);desktopLayout->addWidget(minimized);
   connect(minimized,&QCheckBox::toggled,this,[](bool value){if(!readOnlyPreview) QSettings("UniwillControlCenter","desktop").setValue("startMinimized",value);});
+  auto *refreshHints=new QCheckBox("Offer display refresh changes on KDE");refreshHints->setObjectName("refreshRateNotifications");refreshHints->setChecked(readOnlyPreview || QSettings("UniwillControlCenter","desktop").value("refreshRateNotifications",true).toBool());refreshHints->setEnabled(!readOnlyPreview);desktopLayout->addWidget(refreshHints);
+  connect(refreshHints,&QCheckBox::toggled,this,[](bool value){if(!readOnlyPreview) QSettings("UniwillControlCenter","desktop").setValue("refreshRateNotifications",value);});
   auto *processes=new SessionProcessesWidget({},nullptr,desktopPage);desktopLayout->addWidget(processes,1);
   connect(processes,&SessionProcessesWidget::message,statusBar(),[this](const QString &text){statusBar()->showMessage(text);});
   m_tabs->addTab(desktopPage,"Battery & Processes");

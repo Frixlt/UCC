@@ -205,14 +205,28 @@ sudo install -d -m 0755 /etc/ucc
 sudo systemctl daemon-reload
 sudo systemctl reload dbus
 sudo systemctl enable --now uccd.service
+sudo systemctl enable uccd-sleep.service
 
 # Start the GUI as your normal desktop user:
 ucc-gui
 ```
 
-Review `uccd-pre-sleep.service` and `uccd-sleep.service` for your desktop's suspend
-integration. The Mechrevo distribution recipe has its own suspend-unit override;
-a generic CMake installation is not identical to that package.
+`uccd-sleep.service` saves the manual power mode and cooler enable state in a
+private root-owned file under `/run/ucc`, then stops the daemon before
+`sleep.target` and NVIDIA's sleep services. On leaving sleep it restarts the daemon
+only if it was running beforehand. Startup uses the saved mode immediately and
+skips replaying the lightbar welcome animation. The snapshot is removed after a
+successful restart and does not survive reboot. `uccd-pre-sleep.service` is a
+compatibility alias to this same unit. The generic and Mechrevo builds install
+the same hook. After upgrading an existing manual installation, replace old
+suspend-target links with `sudo systemctl reenable uccd-sleep.service`.
+
+On KDE, `ucc-session-agent` offers a refresh-rate change when physical power
+changes: 60 Hz on battery, up to 240 Hz on external power, or up to 300 Hz when
+the internal panel is connected to NVIDIA. It discovers available mode IDs,
+keeps the current resolution and applies a change only through the notification
+action. Disable these offers on the Battery & Processes page. `kscreen-doctor` (KScreen)
+is optional; if unavailable, the agent skips the offer.
 
 For diagnostics:
 

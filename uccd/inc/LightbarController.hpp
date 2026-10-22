@@ -83,6 +83,7 @@ public:
     return true;
   }
   void shutdown() {auto config=m_config;config["managed"]=false;configure(config);}
+  void skipWelcome() {m_welcomeDone=true;}
   Json settings() const {return m_config;}
   Json status() const {return {{"available",!m_path.isEmpty()},{"managed",m_config["managed"]},
     {"mode",m_powerMode},{"animating",m_animating},{"zones",m_zones},
