@@ -47,7 +47,7 @@ jobs:
             libudev-dev \
             libxcb1-dev \
             libkf6windowsystem-dev \
-            libkf6statusnotifieritem-dev \
+            kf6-kstatusnotifieritem-dev \
             qt6-svg-dev \
             dbus gjs nodejs python3 fonts-dejavu-core \
             nlohmann-json3-dev \
@@ -80,6 +80,7 @@ jobs:
         run: |
           dbus-run-session -- bash tests/run_gui_audit_test.sh \
             "$PWD/build/bin/test_gui_audit" \
+            displayBrightnessCommitsOnReleaseAndIgnoresMonitorDuringDrag \
             dashboardShowsDriverFailureAndClearsAfterRecovery \
             aboutBuildCreditsAndBundledLicense calibratedKeyboardKeepsPhysicalLedIdentities \
             lightbarKeepsSourceValuesAndRejectsFailedCommands deviceMatrixKeepsThreeIndependentModes
