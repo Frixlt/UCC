@@ -9,6 +9,8 @@
 
 class FakeDaemon : public QDBusVirtualObject {
   int gpuReads = 0;
+  int brightnessWrites = 0;
+  int brightness = 70;
 public:
   QString introspect(const QString &) const override {
     QString xml = "<interface name=\"com.uniwill.uccd\">";
@@ -20,7 +22,18 @@ public:
   bool handleMessage(const QDBusMessage &msg, const QDBusConnection &bus) override {
     const QString name = msg.member();
     QVariant value;
-    if (name == "GetTestGpuReads") value = gpuReads;
+    if (name == "GetTestBrightnessWrites") value = brightnessWrites;
+    else if (name == "SetDisplayBrightness") {
+      ++brightnessWrites;
+      const int target = msg.arguments().value(0).toInt();
+      QTimer::singleShot(300, this, [this,msg,bus,target] {
+        const bool success = target != 13;
+        if (success) brightness = target;
+        bus.send(msg.createReply(success));
+      });
+      return true;
+    }
+    else if (name == "GetTestGpuReads") value = gpuReads;
     else if (name == "GetDGpuInfoValuesJSON") {
       ++gpuReads;
       QTimer::singleShot(300, this, [msg,bus] {
@@ -35,7 +48,7 @@ public:
     } else if (name == "GetCpuFrequencyMHz") value = 2400;
     else if (name == "GetWaterCoolerFanSpeed") value = 100;
     else if (name == "GetWaterCoolerPumpLevel") value = 3;
-    else if (name == "GetDisplayBrightness") value = 70;
+    else if (name == "GetDisplayBrightness") value = brightness;
     else if (name == "GetWebcamSWStatus" || name == "GetFnLockStatus") value = true;
     else {
       bus.send(msg.createErrorReply(QDBusError::UnknownMethod,"Unused test method"));
@@ -78,6 +91,29 @@ private slots:
     const int reads = gpuReads();
     QTest::qWait(2100);
     QCOMPARE(gpuReads(),reads);
+  }
+  void brightnessWritesAreAsyncCoalescedAndRecoverFromFailure() {
+    ucc::SystemMonitor monitor;
+    int beats = 0; QTimer heartbeat;
+    connect(&heartbeat,&QTimer::timeout,this,[&]{++beats;}); heartbeat.start(10);
+    QElapsedTimer elapsed; elapsed.start();
+    monitor.setDisplayBrightness(30);
+    for (int value = 31; value <= 80; ++value) monitor.setDisplayBrightness(value);
+    QVERIFY(elapsed.elapsed() < 100);
+    QTRY_COMPARE_WITH_TIMEOUT(monitor.displayBrightness(),80,2000);
+    const auto reply = QDBusConnection::systemBus().call(QDBusMessage::createMethodCall(
+      "com.uniwill.uccd","/com/uniwill/uccd","com.uniwill.uccd","GetTestBrightnessWrites"));
+    QCOMPARE(reply.arguments().value(0).toInt(),2);
+    QVERIFY(beats > 25);
+    monitor.setDisplayBrightness(13);
+    QTest::qWait(450);
+    QCOMPARE(monitor.displayBrightness(),80);
+    monitor.setDisplayBrightness(60);
+    QTRY_COMPARE_WITH_TIMEOUT(monitor.displayBrightness(),60,1500);
+  }
+  void synchronousBrightnessSetterHonorsDaemonFailure() {
+    ucc::UccdClient client;
+    QVERIFY(!client.setDisplayBrightness(13));
   }
   void displayModeWaitsForTheAsynchronousSnapshot() {
     QProcess display;

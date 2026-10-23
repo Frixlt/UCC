@@ -62,3 +62,26 @@ CI также разделяет эти наборы, чтобы результ�
 но повторная перезагрузка после последнего восстановления отдельно не заявляется.
 Сборка пакета и синтетические тесты не доказывают работоспособность отсутствующего
 или заблокированного драйвером аппаратного интерфейса.
+
+### Brightness regressions
+
+`test_display_backlight` uses a fake sysfs tree with Intel and NVIDIA internal
+connectors. It covers active-panel selection, a MUX topology change, disconnected
+panels, generic backlights, raw-driver preference, percentage rounding, legacy
+AMD inversion and failed writes (including deferred flush errors).
+
+`test_system_monitor` delays brightness replies by 300 ms and checks that the UI
+event loop stays responsive, intermediate requests coalesce, failures do not
+replace the confirmed value and the synchronous client honors daemon rejection.
+The focused GUI case `displayBrightnessCommitsOnReleaseAndIgnoresMonitorDuringDrag`
+checks that dragging previews the value without hardware writes and commits once
+on release, even if monitoring sends an update during the drag.
+
+The optional ITE callback regression and live driver verification are described in
+[the driver notes](../contrib/frixit/drivers/README.md#keyboard-brightness-with-kde--upower).
+
+On 23 October 2026, the brightness fix passed 36/36 non-GUI CTest entries,
+the six focused GUI scenarios (8 QtTest cases including setup/cleanup), the
+ITE callback regression and four Python migration tests. The historical full
+GUI audit was not rerun. The patched driver was also rebuilt for both installed
+kernels and tested live; see the driver notes for the spot timing measurements.

@@ -16,6 +16,8 @@
 #pragma once
 
 #include "DaemonWorker.hpp"
+#include "DisplayBacklight.hpp"
+#include <mutex>
 #include "SysfsNode.hpp"
 #include "Utils.hpp"
 #include "../profiles/UccProfile.hpp"
@@ -53,28 +55,6 @@ struct DisplayInfo
 };
 
 /**
- * @brief Controller for display backlight brightness via sysfs
- *
- * Reads and writes brightness through sysfs LED interface.
- * Includes workaround for amdgpu_bl driver brightness inversion.
- */
-class DisplayBacklightController
-{
-public:
-  explicit DisplayBacklightController( const std::string &basePath, int maxBrightness, bool isAmdgpuBl );
-
-  [[nodiscard]] int getBrightness() const noexcept;
-  bool setBrightness( int brightness ) noexcept;
-  [[nodiscard]] const std::string &getDriverName() const noexcept { return m_driverName; }
-
-private:
-  std::string m_basePath;
-  std::string m_driverName;
-  int m_maxBrightness;
-  bool m_isAmdgpuBl;
-};
-
-/**
  * @brief DisplayWorker - Unified display hardware management
  *
  * Combines display backlight brightness control and display refresh rate management
@@ -83,7 +63,7 @@ private:
  * Backlight features:
  * - Detects backlight hardware via sysfs (/sys/class/backlight)
  * - Applies brightness from active profile on start
- * - Periodically persists brightness to autosave
+ * - Reports live brightness and redetects the active panel after GPU changes
  * - Works with Intel, AMD and amdgpu_bl backlight drivers
  *
  * Refresh rate features (X11 only):
@@ -118,6 +98,7 @@ public:
    * @return true if successful
    */
   bool setBrightness( int32_t brightness ) noexcept;
+  int getBrightness() noexcept;
 
   /**
    * @brief Get current active display mode
@@ -147,6 +128,7 @@ private:
   std::function< int32_t() > m_getAutosaveBrightness;
   std::function< void( int32_t ) > m_setAutosaveBrightness;
   std::unique_ptr< DisplayBacklightController > m_backlightController;
+  std::mutex m_backlightMutex;
 
   void initBacklight();
   void applyBacklightFromProfile();

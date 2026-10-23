@@ -16,6 +16,7 @@
 #include <QVariantAnimation>
 #include <QScrollArea>
 #include <QScrollBar>
+#include <QSlider>
 #include <QColorDialog>
 #include <QScopeGuard>
 #include "FanControlTab.hpp"
@@ -653,6 +654,28 @@ private slots:
     QTest::mouseClick(open,Qt::LeftButton);QCOMPARE(openedLogDirectory,QUrl::fromLocalFile(ucc::AppLogging::directory()));
 #endif
     window.hide();QVERIFY(stats().value("writes").toArray().isEmpty());
+  }
+  void displayBrightnessCommitsOnReleaseAndIgnoresMonitorDuringDrag() {
+#ifdef UCC_READ_ONLY_PREVIEW
+    QSKIP("Hardware writes are disabled in preview");
+#else
+    control("TestVisualFixture");
+    ucc::MainWindow window; window.resize(1280,900); window.show();
+    auto *slider = window.findChild<QSlider*>("displayBrightnessSlider"); QVERIFY(slider);
+    auto *monitor = window.findChild<ucc::SystemMonitor*>(); QVERIFY(monitor);
+    QTRY_VERIFY(monitor->displayBrightness() >= 0);
+    QVERIFY(!slider->hasTracking());
+    QCOMPARE(stats()["writes"].toArray().size(),0);
+    slider->setSliderDown(true);
+    for (int value = 30; value <= 80; ++value) slider->setSliderPosition(value);
+    monitor->displayBrightnessChanged();
+    QCOMPARE(slider->sliderPosition(),80);
+    QCOMPARE(stats()["writes"].toArray().size(),0);
+    slider->setSliderDown(false);
+    QTRY_COMPARE(stats()["writes"].toArray(),QJsonArray({"SetDisplayBrightness"}));
+    QTRY_COMPARE(monitor->displayBrightness(),80);
+    window.hide();
+#endif
   }
   void dashboardShowsDriverFailureAndClearsAfterRecovery() {
     control("TestVisualFixture");

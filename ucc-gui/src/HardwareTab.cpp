@@ -51,7 +51,7 @@ void HardwareTab::setupUI( QWidget *parent )
   controlsLayout->addWidget(m_webcamCheckBox);controlsLayout->addWidget(m_fnLockCheckBox);
   auto *brightness=new QHBoxLayout;brightness->setSpacing(24);
   auto *brightnessLabel=new QLabel("Display brightness");brightnessLabel->setMinimumWidth(140);brightness->addWidget(brightnessLabel);
-  m_displayBrightnessSlider=new QSlider(Qt::Horizontal);m_displayBrightnessSlider->setRange(0,100);m_displayBrightnessSlider->setValue(50);
+  m_displayBrightnessSlider=new QSlider(Qt::Horizontal);m_displayBrightnessSlider->setObjectName("displayBrightnessSlider");m_displayBrightnessSlider->setTracking(false);m_displayBrightnessSlider->setRange(0,100);m_displayBrightnessSlider->setValue(50);
   m_displayBrightnessValueLabel=new QLabel("—");m_displayBrightnessValueLabel->setMinimumWidth(40);
   brightness->addWidget(m_displayBrightnessSlider,1);brightness->addWidget(m_displayBrightnessValueLabel);FluentTheme::styleSliderRow(brightness,m_displayBrightnessValueLabel);controlsLayout->addLayout(brightness);
   if(auto *parentLayout=qobject_cast<QVBoxLayout*>(parent->layout())) parentLayout->addWidget(quickControlsGroup);
@@ -60,6 +60,9 @@ void HardwareTab::setupUI( QWidget *parent )
 
 void HardwareTab::connectSignals()
 {
+  connect(m_displayBrightnessSlider, &QSlider::sliderMoved, this, [this](int value) {
+    m_displayBrightnessValueLabel->setText(QString::number(value) + "%");
+  });
   // Outbound: user changes -> daemon
   connect( m_displayBrightnessSlider, &QSlider::valueChanged,
            this, &HardwareTab::onDisplayBrightnessSliderChanged );
@@ -138,13 +141,13 @@ void HardwareTab::onFnLockToggled( bool checked )
 
 void HardwareTab::onDisplayBrightnessUpdated()
 {
-  if ( not m_systemMonitor )
-    return;
+  if (not m_systemMonitor || m_displayBrightnessSlider->isSliderDown()) return;
 
   m_updatingFromMonitor = true;
   int brightness = m_systemMonitor->displayBrightness();
-  m_displayBrightnessSlider->setValue( brightness );
-  m_displayBrightnessValueLabel->setText( QString::number( brightness ) + "%" );
+  m_displayBrightnessSlider->setEnabled(brightness >= 0);
+  if (brightness >= 0) m_displayBrightnessSlider->setValue(brightness);
+  m_displayBrightnessValueLabel->setText(brightness >= 0 ? QString::number(brightness) + "%" : "—");
   m_updatingFromMonitor = false;
 }
 

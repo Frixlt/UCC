@@ -70,7 +70,8 @@ void SystemMonitor::updateMetrics()
   const auto generation = m_monitorGeneration;
   const bool controls = !m_controlsAge.isValid() || m_controlsAge.elapsed() >= 10000;
   if (controls) m_controlsAge.restart();
-  m_client->requestMonitoringSnapshot(controls, [this, generation](const QVariantMap &snapshot) {
+  const auto brightnessRevision = m_brightnessRevision;
+  m_client->requestMonitoringSnapshot(controls, [this, generation, brightnessRevision](const QVariantMap &snapshot) {
     m_metricsPending = false;
     if (!m_monitoringActive || generation != m_monitorGeneration || snapshot.isEmpty()) return;
     const auto json = [&snapshot](const QString &method) {
@@ -117,7 +118,7 @@ void SystemMonitor::updateMetrics()
     const int pump = snapshot.value("GetWaterCoolerPumpLevel",-1).toInt();
     const QStringList levels = {"High", "Max", "Low", "Med", "Off"};
     setText(m_waterCoolerPumpLevel, levels.value(pump,"--"), &SystemMonitor::waterCoolerPumpLevelChanged);
-    if (snapshot.contains("GetDisplayBrightness"))
+    if (!m_brightnessPending && brightnessRevision == m_brightnessRevision && snapshot.contains("GetDisplayBrightness"))
       setInt(m_displayBrightness, snapshot.value("GetDisplayBrightness").toInt(), &SystemMonitor::displayBrightnessChanged);
     if (snapshot.contains("GetWebcamSWStatus")) {
       const bool value = snapshot.value("GetWebcamSWStatus").toBool();
@@ -133,11 +134,22 @@ void SystemMonitor::updateMetrics()
 
 void SystemMonitor::setDisplayBrightness( int brightness )
 {
-  if ( m_client->setDisplayBrightness( brightness ) )
-  {
-    m_displayBrightness = brightness;
+  m_queuedBrightness = std::clamp(brightness, 0, 100);
+  if (m_brightnessPending) return;
+  const int target = m_queuedBrightness;
+  m_queuedBrightness = -1;
+  m_brightnessPending = true;
+  ++m_brightnessRevision;
+  m_client->setDisplayBrightnessAsync(target, [this, target](bool success) {
+    m_brightnessPending = false;
+    if (success) m_displayBrightness = target;
+    if (m_queuedBrightness >= 0 && m_queuedBrightness != target) {
+      setDisplayBrightness(m_queuedBrightness);
+      return;
+    }
+    m_queuedBrightness = -1;
     emit displayBrightnessChanged();
-  }
+  });
 }
 
 void SystemMonitor::setWebcamEnabled( bool enabled )

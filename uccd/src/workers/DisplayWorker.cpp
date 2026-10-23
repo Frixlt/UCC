@@ -28,57 +28,6 @@
 namespace fs = std::filesystem;
 
 // ============================================================================
-// DisplayBacklightController
-// ============================================================================
-
-DisplayBacklightController::DisplayBacklightController( const std::string &basePath,
-                                                        int maxBrightness,
-                                                        bool isAmdgpuBl )
-  : m_basePath( basePath ), m_maxBrightness( maxBrightness ), m_isAmdgpuBl( isAmdgpuBl )
-{
-  // Extract driver name from path
-  m_driverName = fs::path( basePath ).filename().string();
-}
-
-int DisplayBacklightController::getBrightness() const noexcept
-{
-  SysfsNode< int > brightnessNode( m_basePath + "/brightness" );
-  auto value = brightnessNode.read();
-
-  if ( not value.has_value() )
-    return -1;
-
-  int rawBrightness = value.value();
-
-  // amdgpu_bl has inverted brightness: 0 = max, max = off
-  if ( m_isAmdgpuBl )
-    rawBrightness = m_maxBrightness - rawBrightness;
-
-  // Convert to percentage
-  if ( m_maxBrightness <= 0 )
-    return -1;
-
-  return static_cast< int >( ( static_cast< double >( rawBrightness ) / m_maxBrightness ) * 100.0 );
-}
-
-bool DisplayBacklightController::setBrightness( int brightness ) noexcept
-{
-  if ( m_maxBrightness <= 0 )
-    return false;
-
-  // Convert percentage to raw value
-  int rawBrightness = static_cast< int >( ( static_cast< double >( brightness ) / 100.0 ) * m_maxBrightness );
-  rawBrightness = std::clamp( rawBrightness, 0, m_maxBrightness );
-
-  // amdgpu_bl: 0 = max, max = off (inverted)
-  if ( m_isAmdgpuBl )
-    rawBrightness = m_maxBrightness - rawBrightness;
-
-  SysfsNode< int > brightnessNode( m_basePath + "/brightness" );
-  return brightnessNode.write( rawBrightness );
-}
-
-// ============================================================================
 // DisplayWorker
 // ============================================================================
 
@@ -112,10 +61,17 @@ DisplayWorker::DisplayWorker(
 
 bool DisplayWorker::setBrightness( int32_t brightness ) noexcept
 {
+  std::lock_guard lock(m_backlightMutex);
   if ( not m_backlightController )
     return false;
 
   return m_backlightController->setBrightness( brightness );
+}
+
+int DisplayWorker::getBrightness() noexcept
+{
+  std::lock_guard lock(m_backlightMutex);
+  return m_backlightController ? m_backlightController->getBrightness() : -1;
 }
 
 std::optional< DisplayMode > DisplayWorker::getActiveDisplayMode() noexcept
@@ -189,38 +145,14 @@ void DisplayWorker::initBacklight()
 {
   try
   {
-    const std::string backlightBase = "/sys/class/backlight";
-    std::error_code ec;
-
-    if ( not fs::exists( backlightBase, ec ) )
-      return;
-
-    for ( const auto &entry : fs::directory_iterator( backlightBase, ec ) )
-    {
-      if ( not entry.is_directory( ec ) )
-        continue;
-
-      std::string driverPath = entry.path().string();
-      std::string maxBrightnessPath = driverPath + "/max_brightness";
-
-      if ( not fs::exists( maxBrightnessPath, ec ) )
-        continue;
-
-      SysfsNode< int > maxBrightness( maxBrightnessPath );
-      auto maxVal = maxBrightness.read();
-      if ( not maxVal.has_value() or maxVal.value() <= 0 )
-        continue;
-
-      std::string driverName = entry.path().filename().string();
-      bool isAmdgpuBl = ( driverName == "amdgpu_bl0" or driverName == "amdgpu_bl1" );
-
-      m_backlightController = std::make_unique< DisplayBacklightController >(
-        driverPath, maxVal.value(), isAmdgpuBl );
-
-      syslog( LOG_INFO, "DisplayWorker: Backlight driver '%s' (max=%d, amdgpu_bl=%d)",
-              driverName.c_str(), maxVal.value(), isAmdgpuBl ? 1 : 0 );
-      break; // Use first available driver
-    }
+    const auto selected = display_backlight::select();
+    std::lock_guard lock(m_backlightMutex);
+    if (!selected) { m_backlightController.reset(); return; }
+    const auto name = fs::path(selected->path).filename().string();
+    if (m_backlightController && m_backlightController->getDriverName() == name) return;
+    const bool inverted = name == "amdgpu_bl0" || name == "amdgpu_bl1";
+    m_backlightController = std::make_unique<DisplayBacklightController>(selected->path, selected->maximum, inverted);
+    syslog(LOG_INFO, "DisplayWorker: Active panel backlight '%s' (max=%d)", name.c_str(), selected->maximum);
   }
   catch ( const std::exception &e )
   {
@@ -230,15 +162,12 @@ void DisplayWorker::initBacklight()
 
 void DisplayWorker::applyBacklightFromProfile()
 {
-  if ( not m_backlightController )
-    return;
-
   const UccProfile activeProfile = m_getActiveProfile();
 
   // Only apply brightness if the profile explicitly enables it
   if ( activeProfile.display.useBrightness and activeProfile.display.brightness >= 0 )
   {
-    m_backlightController->setBrightness( activeProfile.display.brightness );
+    setBrightness( activeProfile.display.brightness );
     syslog( LOG_INFO, "DisplayWorker: Applied profile brightness %d%%",
             activeProfile.display.brightness );
   }
@@ -246,12 +175,7 @@ void DisplayWorker::applyBacklightFromProfile()
 
 void DisplayWorker::reenumerateBacklightDrivers()
 {
-  // Re-check if backlight controller is still valid
-  // If it was lost (e.g., driver reload), try to reinitialize
-  if ( not m_backlightController )
-  {
-    initBacklight();
-  }
+  initBacklight();
 }
 
 // ============================================================================

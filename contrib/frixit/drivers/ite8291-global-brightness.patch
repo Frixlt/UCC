@@ -1,0 +1,55 @@
+--- a/src/ite_8291/ite_8291.c
++++ b/src/ite_8291/ite_8291.c
+@@ -140,6 +140,7 @@
+ struct ite8291_driver_data_perkey_t {
+ 	row_data_t row_data;
+ 	u8 brightness;
++	bool state_dirty;
+ 	struct led_classdev_mc mcled_cdevs[ITE8291_NR_ROWS][ITE8291_LEDS_PER_ROW_MAX];
+ 	struct mc_subled mcled_cdevs_subleds[ITE8291_NR_ROWS][ITE8291_LEDS_PER_ROW_MAX][3];
+ };
+@@ -465,7 +466,8 @@
+ */
+ 
+ static void leds_set_brightness_mc (struct led_classdev *led_cdev, enum led_brightness brightness) {
+-	int i, j;
++	int i, j, row;
++	u8 previous_row[ITE8291_ROW_DATA_LENGTH];
+ 	struct led_classdev_mc *mcled_cdev = lcdev_to_mccdev(led_cdev);
+ 	struct device *dev = led_cdev->dev->parent;
+ 	struct hid_device *hdev = to_hid_device(dev);
+@@ -476,6 +478,13 @@
+ 		 mcled_cdev->subled_info[0].channel, brightness, device_data->brightness, mcled_cdev->subled_info[0].intensity,
+ 		 mcled_cdev->subled_info[1].intensity, mcled_cdev->subled_info[2].intensity);
+ 
++	/* All 126 LED devices share one hardware brightness. UPower writes each
++	 * device in turn; only the first change needs a complete RGB transfer.
++	 * Compare scaled row bytes as color-only writes must still be sent.
++	 */
++	row = mcled_cdev->subled_info[0].channel / ITE8291_LEDS_PER_ROW_MAX;
++	memcpy(previous_row, device_data->row_data[row], sizeof(previous_row));
++	device_data->state_dirty |= device_data->brightness != brightness;
+ 	device_data->brightness = brightness;
+ 
+ 	for (i = 0; i < ITE8291_NR_ROWS; ++i) {
+@@ -489,7 +498,8 @@
+ 		     mcled_cdev->subled_info[0].intensity, mcled_cdev->subled_info[1].intensity,
+ 		     mcled_cdev->subled_info[2].intensity);
+ 
+-	if (!ite8291_driver_data->device_buffer_input)
++	device_data->state_dirty |= memcmp(previous_row, device_data->row_data[row], sizeof(previous_row)) != 0;
++	if (!ite8291_driver_data->device_buffer_input && device_data->state_dirty)
+ 		ite8291_perkey_write_state(hdev);
+ }
+ 
+@@ -615,7 +625,9 @@
+ {
+ 	struct ite8291_driver_data_t *driver_data = hid_get_drvdata(hdev);
+ 	struct ite8291_driver_data_perkey_t *device_data = driver_data->device_data;
+-	return ite8291_write_rows(hdev, device_data->row_data, device_data->brightness);
++	int result = ite8291_write_rows(hdev, device_data->row_data, device_data->brightness);
++	device_data->state_dirty = result < 0;
++	return result;
+ }
+ 
+ static void leds_zones_set_brightness_mc(struct led_classdev *led_cdev, enum led_brightness brightness) {

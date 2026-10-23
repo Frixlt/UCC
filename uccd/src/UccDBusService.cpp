@@ -480,36 +480,16 @@ bool UccDBusInterfaceAdaptor::GetKeyboardBacklightControlSupported()
 
 int UccDBusInterfaceAdaptor::GetDisplayBrightness()
 {
-  if ( m_service )
-  {
-    // return autosave-stored brightness (percent)
-    return m_service->m_autosave.displayBrightness;
-  }
-  return -1;
+  return m_service && m_service->m_displayWorker ? m_service->m_displayWorker->getBrightness() : -1;
 }
 
 bool UccDBusInterfaceAdaptor::SetDisplayBrightness( int brightness )
 {
-  if ( !checkAuth( PolkitAuthority::ACTION_CONTROL ) ) return false;
-  if ( m_service )
-  {
-    // clamp
-    if ( brightness < 0 ) brightness = 0;
-    if ( brightness > 100 ) brightness = 100;
-
-    // update autosave
-    m_service->m_autosave.displayBrightness = brightness;
-
-    // try to apply immediately via DisplayWorker if available
-    if ( m_service->m_displayWorker )
-    {
-      return m_service->m_displayWorker->setBrightness( brightness );
-    }
-
-    // if no worker, still return true (autosave updated)
-    return true;
-  }
-  return false;
+  if (!checkAuth(PolkitAuthority::ACTION_CONTROL)) return false;
+  brightness = std::clamp(brightness, 0, 100);
+  if (!m_service || !m_service->m_displayWorker || !m_service->m_displayWorker->setBrightness(brightness)) return false;
+  m_service->m_autosave.displayBrightness = m_service->m_displayWorker->getBrightness();
+  return true;
 }
 
 // gpu information methods

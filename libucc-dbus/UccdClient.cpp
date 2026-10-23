@@ -17,6 +17,8 @@
 #include "UccdClient.hpp"
 #include <QDBusMessage>
 #include <QDBusError>
+#include <QDBusPendingCallWatcher>
+#include <QDBusPendingReply>
 #include <QDBusArgument>
 #include <QDBusConnectionInterface>
 #include <QDebug>
@@ -37,10 +39,21 @@ void UccdClient::requestMonitoringSnapshot(bool includeControls, std::function<v
   if (!m_connected) { ready({}); return; }
   QStringList methods = {"GetFanDataCPU", "GetFanDataGPU1", "GetFanDataGPU2",
     "GetCpuFrequencyMHz", "GetCpuPowerValuesJSON", "GetDGpuInfoValuesJSON",
-    "GetIGpuInfoValuesJSON", "GetWaterCoolerFanSpeed", "GetWaterCoolerPumpLevel"};
+    "GetIGpuInfoValuesJSON", "GetWaterCoolerFanSpeed", "GetWaterCoolerPumpLevel", "GetDisplayBrightness"};
   if (includeControls)
-    methods << "GetDisplayBrightness" << "GetWebcamSWStatus" << "GetFnLockStatus";
+    methods << "GetWebcamSWStatus" << "GetFnLockStatus";
   readUccdBatch(this, methods, std::move(ready));
+}
+
+void UccdClient::setDisplayBrightnessAsync(int brightness, std::function<void(bool)> ready)
+{
+  if (!mayDispatchUccdMethod("SetDisplayBrightness") || !isConnected()) { ready(false); return; }
+  auto *watcher = new QDBusPendingCallWatcher(m_interface->asyncCall("SetDisplayBrightness", brightness), this);
+  connect(watcher, &QDBusPendingCallWatcher::finished, this, [watcher, ready = std::move(ready)] {
+    const QDBusPendingReply<bool> reply = *watcher;
+    ready(!reply.isError() && reply.value());
+    watcher->deleteLater();
+  });
 }
 
 UccdClient::UccdClient( QObject *parent )
@@ -452,7 +465,7 @@ std::optional< bool > UccdClient::setFanProfile( const std::string &fanProfileId
 { return callMethod< bool >( "SetFanProfile", QString::fromStdString( fanProfileId ), QString::fromStdString( json ) ); }
 
 bool UccdClient::setDisplayBrightness( int brightness )
-{ return callVoidMethod( "SetDisplayBrightness", brightness ); }
+{ return callMethod<bool>("SetDisplayBrightness", brightness).value_or(false); }
 
 std::optional< int > UccdClient::getDisplayBrightness()
 {

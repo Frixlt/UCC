@@ -86,6 +86,7 @@ public:
 
   // Display Control
   bool setDisplayBrightness( int brightness );
+  void setDisplayBrightnessAsync(int brightness, std::function<void(bool)> ready);
   std::optional< int > getDisplayBrightness();
   bool setYCbCr420Workaround( bool enabled );
   std::optional< bool > getYCbCr420Workaround();

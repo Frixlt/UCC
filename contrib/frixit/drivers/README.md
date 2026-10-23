@@ -54,3 +54,37 @@ A subsequent reboot after the final repair is not claimed as separately tested.
 This driver patch is distributed as source with the native application's release;
 no private DKMS tree, machine configuration or prebuilt kernel modules are shipped.
 For application installation see [BUILDING.md](../../../docs/BUILDING.md).
+
+## Keyboard brightness with KDE / UPower
+
+`ite8291-global-brightness.patch` fixes redundant RGB transfers when UPower
+sets brightness on all 126 per-key LED devices. These devices share a single
+hardware brightness. The driver now sends a frame only when brightness or the
+scaled RGB row changes. Color changes at unchanged brightness still work;
+buffered edits still flush together, and a failed USB flush remains dirty.
+This patch changes the GPL-2.0 TUXEDO driver; it retains the driver's license.
+
+Copy it next to the existing updater as
+`0004-ite8291-global-brightness.patch`. The updated `update-hook.patch` requires
+both patches 0003 and 0004 before replacing the installed DKMS source. Rebuild
+and install for every installed kernel with matching headers. Reloading the
+keyboard LED module resets live colors, so save and restore the current RGB
+values and brightness or reboot after installing.
+
+To exercise the actual patched callbacks with a mocked USB/LED device:
+
+```sh
+python3 tests/test_ite8291_brightness.py /path/to/patched/tuxedo-drivers
+```
+
+The test checks a 126-zone brightness update, unchanged scaled colors, color-only
+writes, failed transfer retries, buffering and zero/maximum brightness. A full
+kernel-module build and a live brightness timing check provide separate hardware
+validation.
+
+On 23 October 2026, the patched 27-module bundle built and installed for both
+7.3.0-2-cachyos and 6.18.55-2-cachyos-lts. Reloading only `ite_8291` on the running
+7.3 kernel preserved all 126 RGB values and restored the original brightness.
+A UPower brightness call measured about 966 ms before the patch; the first two
+calls after reloading measured 62 ms and 9 ms. These are spot measurements on
+this laptop, not latency guarantees for other keyboards or desktop sessions.

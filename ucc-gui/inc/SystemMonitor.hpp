@@ -190,7 +190,10 @@ private:
   int m_dGpuMemClockOffset = -999;
   QString m_waterCoolerFanSpeed = "--";
   QString m_waterCoolerPumpLevel = "--";
-  int m_displayBrightness = 50;
+  int m_displayBrightness = -1;
+  bool m_brightnessPending = false;
+  int m_queuedBrightness = -1;
+  unsigned m_brightnessRevision = 0;
   bool m_webcamEnabled = true;
   bool m_fnLock = false;
   bool m_monitoringActive = false;
