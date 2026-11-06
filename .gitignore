@@ -1,7 +1,6 @@
 build
-build-test
-build-tests
-build-verify
+build-*
+build/*
 dist
 Testing
 .cache

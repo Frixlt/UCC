@@ -1,233 +1,264 @@
 {
-  "schema_version": 1,
-  "total_pages": 10,
-  "reference_gallery_total_images": 22,
-  "light_gallery_images": 11,
-  "dark_gallery_images": 11,
-  "driver_warning_verified": true,
+  "schema_version": 2,
+  "total_sections": 10,
+  "reference_gallery": {
+    "total_images": 22,
+    "light_images": 11,
+    "dark_images": 11,
+    "driver_warning_captured": true
+  },
   "pages": {
     "Overview": {
-      "title": "Overview (DashboardTab)",
-      "class": "ucc::DashboardTab",
-      "controls": [
-        "powerModeSelector",
-        "profileQuickSwitch",
-        "fanPresetSummary",
-        "coolerStatusBadge",
-        "driverHealthBanner",
-        "telemetryOverviewCards"
-      ],
-      "actions": [
-        "quickProfileApply",
-        "dismissDriverBanner",
-        "openCoolerSettings"
-      ],
-      "visual_tested": true,
-      "input_tested": true,
-      "themes_verified": true,
+      "title": "Overview",
+      "subtitle": "Your system at a glance",
+      "widget_class": "ucc::DashboardTab",
+      "sidebar_row": 0,
       "light_image": "artifacts/rust-migration/gallery-reference/light/overview.png",
-      "dark_image": "artifacts/rust-migration/gallery-reference/dark/overview.png"
+      "dark_image": "artifacts/rust-migration/gallery-reference/dark/overview.png",
+      "controls": {
+        "driverHealthBanner": {
+          "tested_in_gui_audit": true,
+          "test_case": "dashboardShowsDriverFailureAndClearsAfterRecovery"
+        },
+        "profileNameCombo": {
+          "tested_in_gui_audit": true,
+          "test_case": "profilesUseOneCompactSelector"
+        },
+        "coolerStatusLabel": {
+          "tested_in_gui_audit": true,
+          "test_case": "renderReferencePages"
+        },
+        "telemetryCards": {
+          "tested_in_gui_audit": true,
+          "test_case": "overviewRowsAlignWithExtraGpuMetadata"
+        }
+      }
     },
     "Profiles": {
-      "title": "Profiles (ProfileManager / ProfilesTab)",
-      "class": "ucc::ProfileManager",
-      "controls": [
-        "profileNameCombo",
-        "btnNewProfile",
-        "btnDeleteProfile",
-        "btnSaveProfile",
-        "btnApplyProfile",
-        "btnRevertProfile",
-        "tdpSliders",
-        "odmProfileSelector"
-      ],
-      "actions": [
-        "SaveCustomProfile",
-        "ApplyProfile",
-        "DeleteCustomProfile",
-        "AddCustomProfile",
-        "SetTempProfile"
-      ],
-      "visual_tested": true,
-      "input_tested": true,
-      "themes_verified": true,
+      "title": "Profiles",
+      "subtitle": "Power, cooling and lighting in one profile",
+      "widget_class": "ucc::ProfileManager",
+      "sidebar_row": 1,
       "light_image": "artifacts/rust-migration/gallery-reference/light/profiles.png",
-      "dark_image": "artifacts/rust-migration/gallery-reference/dark/profiles.png"
+      "dark_image": "artifacts/rust-migration/gallery-reference/dark/profiles.png",
+      "controls": {
+        "profileNameCombo": {
+          "tested_in_gui_audit": true,
+          "test_case": "profilesUseOneCompactSelector"
+        },
+        "btnSaveProfile": {
+          "tested_in_gui_audit": false,
+          "status": "planned"
+        },
+        "btnApplyProfile": {
+          "tested_in_gui_audit": false,
+          "status": "planned"
+        },
+        "btnRevertProfile": {
+          "tested_in_gui_audit": false,
+          "status": "planned"
+        },
+        "btnDeleteProfile": {
+          "tested_in_gui_audit": false,
+          "status": "planned"
+        },
+        "btnNewProfile": {
+          "tested_in_gui_audit": false,
+          "status": "planned"
+        }
+      }
     },
-    "CPU": {
-      "title": "CPU (CpuTab / PowerDevicesTab)",
-      "class": "ucc::PowerDevicesTab",
-      "controls": [
-        "enabledCoresCheckboxes",
-        "governorSelector",
-        "eppSelector",
-        "turboBoostSwitch",
-        "freqLimitsSliders"
-      ],
-      "actions": [
-        "applyCoreSelection",
-        "setGovernor",
-        "setEpp",
-        "toggleTurbo"
-      ],
-      "visual_tested": true,
-      "input_tested": true,
-      "themes_verified": true,
-      "light_image": "artifacts/rust-migration/gallery-reference/light/power-devices.png",
-      "dark_image": "artifacts/rust-migration/gallery-reference/dark/power-devices.png"
-    },
-    "Cooling": {
-      "title": "Cooling (FanControlTab)",
-      "class": "ucc::FanControlTab",
-      "controls": [
-        "cpuFanCurveEditor",
-        "dgpuFanCurveEditor",
-        "sameSpeedCheckbox",
-        "btnApplyFan",
-        "btnRevertFan",
-        "hysteresisSpinBox"
-      ],
-      "actions": [
-        "ApplyFanProfiles",
-        "RevertFanProfiles",
-        "SetFanProfileCPU",
-        "SetFanProfileDGPU"
-      ],
-      "visual_tested": true,
-      "input_tested": true,
-      "themes_verified": true,
+    "Cooler Settings": {
+      "title": "Cooler Settings",
+      "subtitle": "Shape CPU and GPU cooling for your profile",
+      "widget_class": "ucc::FanControlTab (page 0)",
+      "sidebar_row": 2,
       "light_image": "artifacts/rust-migration/gallery-reference/light/cooler-settings.png",
-      "dark_image": "artifacts/rust-migration/gallery-reference/dark/cooler-settings.png"
+      "dark_image": "artifacts/rust-migration/gallery-reference/dark/cooler-settings.png",
+      "controls": {
+        "cpuCurveEditor": {
+          "tested_in_gui_audit": true,
+          "test_case": "test_fan_curve_editor"
+        },
+        "gpuCurveEditor": {
+          "tested_in_gui_audit": true,
+          "test_case": "test_fan_curve_editor"
+        },
+        "sameSpeedCheckbox": {
+          "tested_in_gui_audit": false,
+          "status": "planned"
+        }
+      }
     },
-    "WaterCooling": {
-      "title": "Water Cooling (LCTWaterCoolerController)",
-      "class": "ucc::LCTWaterCoolerController",
-      "controls": [
-        "wcFanSpeedSlider",
-        "wcPumpVoltageCombo",
-        "wcLedColorPicker",
-        "wcAutoControlToggle",
-        "wcStatusIndicator"
-      ],
-      "actions": [
-        "setWaterCoolerFan",
-        "setWaterCoolerPump",
-        "setWaterCoolerLed",
-        "setWaterCoolerAuto"
-      ],
-      "visual_tested": true,
-      "input_tested": true,
-      "themes_verified": true,
+    "Watercool Settings": {
+      "title": "Watercool Settings",
+      "subtitle": "Water cooling, pump and lighting controls",
+      "widget_class": "ucc::FanControlTab (page 1) / LCTWaterCoolerController",
+      "sidebar_row": 3,
       "light_image": "artifacts/rust-migration/gallery-reference/light/watercool-settings.png",
-      "dark_image": "artifacts/rust-migration/gallery-reference/dark/watercool-settings.png"
+      "dark_image": "artifacts/rust-migration/gallery-reference/dark/watercool-settings.png",
+      "controls": {
+        "wcAutoControlToggle": {
+          "tested_in_gui_audit": true,
+          "test_case": "dashboardSelectionsApplyImmediatelyFromAuto"
+        },
+        "wcPumpVoltageCombo": {
+          "tested_in_gui_audit": true,
+          "test_case": "dashboardWaterCoolerSelectors"
+        },
+        "wcFanSpeedSlider": {
+          "tested_in_gui_audit": true,
+          "test_case": "dashboardWaterCoolerSelectors"
+        },
+        "wcStatusIndicator": {
+          "tested_in_gui_audit": true,
+          "test_case": "waterPollingIsAsyncAndPreservesValuesOnFailure"
+        }
+      }
     },
     "Monitor": {
-      "title": "Monitor (MonitorTab / SystemMonitor)",
-      "class": "ucc::MonitorTab",
-      "controls": [
-        "liveTelemetryChart",
-        "pauseResumeButton",
-        "historyHorizonCombo",
-        "sensorLegendToggles",
-        "metricsTable"
-      ],
-      "actions": [
-        "toggleMonitoring",
-        "scrollHistory",
-        "pauseMonitoring",
-        "resumeMonitoring"
-      ],
-      "visual_tested": true,
-      "input_tested": true,
-      "themes_verified": true,
+      "title": "Monitor",
+      "subtitle": "Live system telemetry",
+      "widget_class": "ucc::MonitorTab",
+      "sidebar_row": 4,
       "light_image": "artifacts/rust-migration/gallery-reference/light/monitor.png",
-      "dark_image": "artifacts/rust-migration/gallery-reference/dark/monitor.png"
+      "dark_image": "artifacts/rust-migration/gallery-reference/dark/monitor.png",
+      "controls": {
+        "telemetryChart": {
+          "tested_in_gui_audit": true,
+          "test_case": "chartBoundsOverlappingReadsAndHonorsPause"
+        },
+        "pauseResumeButton": {
+          "tested_in_gui_audit": true,
+          "test_case": "monitorScrollsBetweenFetchesAndFreezesOnPause"
+        },
+        "powerAxis": {
+          "tested_in_gui_audit": true,
+          "test_case": "monitorPowerAxisUsesLaptopRange"
+        }
+      }
     },
-    "Keyboard": {
-      "title": "Keyboard (KeyboardTab / KeyboardVisualizerWidget)",
-      "class": "ucc::KeyboardTab",
-      "controls": [
-        "brightnessSlider",
-        "colorPicker",
-        "perKeyCanvas",
-        "zoneSelector",
-        "effectSelector",
-        "btnSaveKbdProfile"
-      ],
-      "actions": [
-        "SetKeyboardBacklightStatesJSON",
-        "SaveCustomKeyboardProfile",
-        "DeleteCustomKeyboardProfile"
-      ],
-      "visual_tested": true,
-      "input_tested": true,
-      "themes_verified": true,
+    "Keyboard & Hardware": {
+      "title": "Keyboard & Hardware",
+      "subtitle": "Backlight and device controls",
+      "widget_class": "ucc::KeyboardTab / KeyboardVisualizerWidget",
+      "sidebar_row": 5,
       "light_image": "artifacts/rust-migration/gallery-reference/light/keyboard-hardware.png",
-      "dark_image": "artifacts/rust-migration/gallery-reference/dark/keyboard-hardware.png"
-    },
-    "Lightbar": {
-      "title": "Lightbar (LightbarTab)",
-      "class": "ucc::LightbarTab",
-      "controls": [
-        "lightbarModeCombo",
-        "brightnessSlider",
-        "colorPicker",
-        "speedSlider",
-        "powerModeProfiles"
-      ],
-      "actions": [
-        "SetLightbarSettingsJSON",
-        "TriggerLightbarAnimation"
-      ],
-      "visual_tested": true,
-      "input_tested": true,
-      "themes_verified": true,
-      "light_image": "artifacts/rust-migration/gallery-reference/light/lightbar.png",
-      "dark_image": "artifacts/rust-migration/gallery-reference/dark/lightbar.png"
-    },
-    "PowerDevices": {
-      "title": "Power Devices (PowerDevicesTab / SessionProcessesWidget)",
-      "class": "ucc::PowerDevicesTab",
-      "controls": [
-        "chargingThresholdSlider",
-        "chargingProfileCombo",
-        "batteryHealthGauge",
-        "gpuProcessesList",
-        "btnTerminateProcess"
-      ],
-      "actions": [
-        "SetPowerDeviceSettingsJSON",
-        "SetDisplayRefreshRate",
-        "terminateGpuProcess"
-      ],
-      "visual_tested": true,
-      "input_tested": true,
-      "themes_verified": true,
-      "light_image": "artifacts/rust-migration/gallery-reference/light/battery-processes.png",
-      "dark_image": "artifacts/rust-migration/gallery-reference/dark/battery-processes.png"
+      "dark_image": "artifacts/rust-migration/gallery-reference/dark/keyboard-hardware.png",
+      "controls": {
+        "brightnessSlider": {
+          "tested_in_gui_audit": true,
+          "test_case": "displayBrightnessCommitsOnReleaseAndIgnoresMonitorDuringDrag"
+        },
+        "keyboardCanvas": {
+          "tested_in_gui_audit": true,
+          "test_case": "themeChangesPreserveTelemetryAndKeyboardColors"
+        },
+        "colorPicker": {
+          "tested_in_gui_audit": false,
+          "status": "planned"
+        }
+      }
     },
     "About": {
-      "title": "About (AboutPage)",
-      "class": "ucc::AboutPage",
-      "controls": [
-        "versionLabel",
-        "creditsBrowser",
-        "btnViewNotices",
-        "btnViewLicense",
-        "loggingOptInCheck",
-        "notificationBell"
-      ],
-      "actions": [
-        "toggleLogging",
-        "openLogFolder",
-        "viewLicenses",
-        "viewNotificationHistory"
-      ],
-      "visual_tested": true,
-      "input_tested": true,
-      "themes_verified": true,
+      "title": "About",
+      "subtitle": "Build information, project origins and open-source acknowledgements",
+      "widget_class": "ucc::AboutPage",
+      "sidebar_row": 6,
       "light_image": "artifacts/rust-migration/gallery-reference/light/about.png",
-      "dark_image": "artifacts/rust-migration/gallery-reference/dark/about.png"
+      "dark_image": "artifacts/rust-migration/gallery-reference/dark/about.png",
+      "controls": {
+        "aboutNoticesBtn": {
+          "tested_in_gui_audit": true,
+          "test_case": "aboutBuildCreditsAndBundledLicense"
+        },
+        "aboutLicenseBtn": {
+          "tested_in_gui_audit": true,
+          "test_case": "aboutBuildCreditsAndBundledLicense"
+        },
+        "aboutLoggingCheckbox": {
+          "tested_in_gui_audit": true,
+          "test_case": "aboutLoggingPreferenceAndFolderAction"
+        }
+      }
+    },
+    "Power & Devices": {
+      "title": "Power & Devices",
+      "subtitle": "CPU, modules and device policies for every power source",
+      "widget_class": "ucc::PowerDevicesTab",
+      "sidebar_row": 7,
+      "light_image": "artifacts/rust-migration/gallery-reference/light/power-devices.png",
+      "dark_image": "artifacts/rust-migration/gallery-reference/dark/power-devices.png",
+      "controls": {
+        "enabledCoresSelection": {
+          "tested_in_gui_audit": true,
+          "test_case": "individualCpuSelectionSavesIdsAndPreservesKernelLockedCpu"
+        },
+        "governorSelector": {
+          "tested_in_gui_audit": false,
+          "status": "planned"
+        },
+        "eppSelector": {
+          "tested_in_gui_audit": false,
+          "status": "planned"
+        },
+        "deviceMatrixTable": {
+          "tested_in_gui_audit": false,
+          "status": "planned"
+        }
+      }
+    },
+    "Lightbar": {
+      "title": "Lightbar",
+      "subtitle": "Front lighting and notification animations",
+      "widget_class": "ucc::LightbarTab",
+      "sidebar_row": 8,
+      "light_image": "artifacts/rust-migration/gallery-reference/light/lightbar.png",
+      "dark_image": "artifacts/rust-migration/gallery-reference/dark/lightbar.png",
+      "controls": {
+        "managedCheckbox": {
+          "tested_in_gui_audit": false,
+          "status": "planned"
+        },
+        "animationModeCombo": {
+          "tested_in_gui_audit": false,
+          "status": "planned"
+        },
+        "brightnessSlider": {
+          "tested_in_gui_audit": false,
+          "status": "planned"
+        },
+        "colorPicker": {
+          "tested_in_gui_audit": false,
+          "status": "planned"
+        }
+      }
+    },
+    "Battery & Processes": {
+      "title": "Battery & Processes",
+      "subtitle": "Battery power and your NVIDIA processes",
+      "widget_class": "ucc::SessionProcessesWidget + BatterySettingsWidget",
+      "sidebar_row": 9,
+      "light_image": "artifacts/rust-migration/gallery-reference/light/battery-processes.png",
+      "dark_image": "artifacts/rust-migration/gallery-reference/dark/battery-processes.png",
+      "controls": {
+        "chargingThresholdSlider": {
+          "tested_in_gui_audit": false,
+          "status": "planned"
+        },
+        "chargingProfileCombo": {
+          "tested_in_gui_audit": false,
+          "status": "planned"
+        },
+        "processesList": {
+          "tested_in_gui_audit": true,
+          "test_case": "renderReleaseGallery"
+        },
+        "terminateProcessBtn": {
+          "tested_in_gui_audit": false,
+          "status": "planned"
+        }
+      }
     }
   }
 }

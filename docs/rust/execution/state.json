@@ -1,21 +1,23 @@
 {
-  "schema_version": 1,
+  "schema_version": 2,
   "objective": "Complete Frixit Control Center Rust migration",
   "baseline_sha": "45921b0b7021448a81575a840b2b77d93da8b298",
   "integration_branch": "rust/migration",
-  "integration_sha": "f3caae235c5c8266498ee3f5f3e2b34a9efdf2b6",
-  "wave": "V0",
-  "status": "v0_completed",
-  "concurrency_mode": "sequential_fallback",
-  "concurrency_note": "invoke_subagent API returns 400 location unsupported; executing W1/W2/R1/R2 roles sequentially in their designated worktrees with full evidence integrity",
+  "integration_base_sha": "582dd4a",
+  "wave": "V0_repaired",
+  "status": "v0_repair_complete",
+  "execution_mode": "single_operator_role_queues",
+  "execution_mode_note": "invoke_subagent API blocked by location policy; W1, W2, R1, R2 roles execute sequentially in dedicated worktrees with full artifact separation",
+  "verification_mode": "same_actor_self_check",
+  "verification_mode_note": "Independent verification by external roles remains pending until independent reviewers are available",
   "roles": {
-    "W1": {"role": "rust_backend", "worktree": ".worktrees/w1", "branch": "rust/w1", "last_task": "M0.4", "status": "done"},
-    "W2": {"role": "rust_frontend", "worktree": ".worktrees/w2", "branch": "rust/w2", "last_task": "M0.6/M0.7", "status": "done"},
-    "R1": {"role": "parity_reviewer", "worktree": null, "branch": null, "last_task": "M0.8", "status": "done"},
-    "R2": {"role": "test_engineer", "worktree": ".worktrees/r2", "branch": "rust/r2-tests", "last_task": "M0.5/M0.9", "status": "done"}
+    "W1": {"role": "rust_backend", "worktree": ".worktrees/w1", "branch": "rust/w1", "current_ticket": null},
+    "W2": {"role": "rust_frontend", "worktree": ".worktrees/w2", "branch": "rust/w2", "current_ticket": null},
+    "R1": {"role": "parity_reviewer", "worktree": null, "branch": null, "current_ticket": null},
+    "R2": {"role": "test_engineer", "worktree": ".worktrees/r2", "branch": "rust/r2-tests", "current_ticket": null}
   },
   "open_decisions": [
-    "ADR-01: GUI toolkit selection and shell embedding policy (Iced vs Slint vs popup) [M1.2/M1.9]"
+    "ADR-01: GUI toolkit and shell embedding policy (Iced vs Slint vs popup) [M1.2/M1.9]"
   ],
   "environment_blockers": [
     "test_gnome_async.js: gjs not installed in Hyprland session",
@@ -24,7 +26,7 @@
   "next_ready_tickets": [
     "M1.1: Создать минимальный Cargo workspace и закрепить stable toolchain/MSRV/dependencies",
     "M1.2: Iced prototype: Fluent shell, таблица устройств, curve canvas, keyboard canvas, live chart",
-    "M1.6: Проверить Rust ioctl ABI: request numbers/struct layouts против установленного driver ABI"
-  ],
-  "last_verified_integration_sha": "f3caae235c5c8266498ee3f5f3e2b34a9efdf2b6"
+    "M1.6: Проверить Rust ioctl ABI: request numbers/struct layouts против установленного driver ABI",
+    "M1.7: Тестовый стенд Fake BlueZ для проверки GATT water cooler"
+  ]
 }

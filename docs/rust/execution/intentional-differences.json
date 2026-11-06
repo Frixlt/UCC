@@ -1,35 +1,45 @@
 {
-  "schema_version": 1,
+  "schema_version": 2,
   "differences": [
     {
       "id": "DIFF-01",
       "title": "Duplicate keyboardBacklightStates key in legacy serializer",
+      "affected_features": ["F18"],
       "status": "documented",
-      "rationale": "Legacy code emits duplicate keys causing parser issues; Rust implementation serializes valid unique keys with regression test."
+      "legacy_defect": "Legacy serializer emitted duplicate keys for keyboardBacklightStates, causing strict JSON parsers to reject or overwrite data.",
+      "rust_target_behavior": "Serializes unique, validated keyboardBacklightStates keys with round-trip regression tests."
     },
     {
       "id": "DIFF-02",
-      "title": "Missing SetWebcam method on DBus",
+      "title": "Missing SetWebcam method on D-Bus",
+      "affected_features": ["F27"],
       "status": "documented",
-      "rationale": "Legacy exposes WebcamSWAvailable and GetWebcamSWStatus but lacked SetWebcam; will add typed method while preserving old queries."
+      "legacy_defect": "Legacy exposed WebcamSWAvailable and GetWebcamSWStatus but lacked SetWebcam method for toggling webcam hardware state over D-Bus.",
+      "rust_target_behavior": "Implement typed SetWebcam(b) -> b method on D-Bus while retaining legacy query compatibility."
     },
     {
       "id": "DIFF-03",
-      "title": "GNOME Enabled vs Supported mismatch",
+      "title": "GNOME extension GetKeyboardBacklightControlEnabled vs Supported mismatch",
+      "affected_features": ["F42"],
       "status": "documented",
-      "rationale": "Legacy extension checks supported but treats as enabled; clean Rust adapter separates capability from active state."
+      "legacy_defect": "GNOME extension called non-existent D-Bus method GetKeyboardBacklightControlEnabled instead of the actual method GetKeyboardBacklightControlSupported.",
+      "rust_target_behavior": "Correctly call GetKeyboardBacklightControlSupported and separate hardware capability from active backlight brightness state."
     },
     {
       "id": "DIFF-04",
       "title": "False positive bool return code on write errors",
+      "affected_features": ["F10", "F14", "F17", "F20"],
       "status": "documented",
-      "rationale": "Legacy sometimes returned true when IO failed silently; Rust returns explicit false/Result on write failures."
+      "legacy_defect": "Legacy methods occasionally returned true even when underlying sysfs write failed or device IO returned error.",
+      "rust_target_behavior": "Return explicit Result<bool, Error> or false on write failures, never reporting success when hardware writes fail."
     },
     {
       "id": "DIFF-05",
-      "title": "YCbCr / YUV420 color format parsing",
+      "title": "YCbCr / YUV420 parsing quirk on empty destination vector",
+      "affected_features": ["F22", "F28"],
       "status": "documented",
-      "rationale": "Fix parser edge cases when detecting force YUV420 output switches."
+      "legacy_defect": "Settings parser looped over display modes assuming non-empty vector, causing parsing edge cases when checking force YUV420 output switches.",
+      "rust_target_behavior": "Guard against empty display mode lists and safely parse color formats."
     }
   ]
 }
