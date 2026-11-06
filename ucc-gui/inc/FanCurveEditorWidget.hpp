@@ -19,7 +19,7 @@ public:
 
     const QVector<Point>& points() const { return m_points; }
     void setPoints(const QVector<Point>& pts);
-    void setEditable(bool editable) { m_editable = editable; }
+    void setEditable(bool editable);
     bool isEditable() const { return m_editable; }
 
     /** Set a title string drawn at the top of the widget. */
@@ -61,8 +61,12 @@ private:
     // For multi-drag: store starting duty values for all selected points
     QVector<double> m_dragStartDuties;
     double m_dragStartY = 0.0;
+    QSet<int> m_selectionBeforeBand;
 
     QRectF pointRect(const Point &pt) const;
+    double minimumTemperature() const;
+    void resetInteraction();
+    void dragTo(const QPointF& position);
     QPointF toWidget(const Point &pt) const;
     Point fromWidget(const QPointF &pos) const;
     void sortPoints();

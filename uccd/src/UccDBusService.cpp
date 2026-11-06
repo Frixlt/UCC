@@ -171,6 +171,7 @@ static std::string profileToJSON( const UccProfile &profile,
       << "\"noTurbo\":" << ( profile.cpu.noTurbo ? "true" : "false" ) << ","
       << "\"hwpDynamicBoost\":" << ( profile.cpu.hwpDynamicBoost ? "true" : "false" ) << ","
       << "\"onlineCores\":" << optionalValueOr( profile.cpu.onlineCores, defaultOnlineCores ) << ","
+      << (profile.cpu.enabledCores ? "\"enabledCores\":"+nlohmann::json(*profile.cpu.enabledCores).dump()+"," : "")
       << "\"scalingMinFrequency\":" << optionalValueOr( profile.cpu.scalingMinFrequency, defaultScalingMin ) << ","
       << "\"scalingMaxFrequency\":" << optionalValueOr( profile.cpu.scalingMaxFrequency, defaultScalingMax )
       << "},"
@@ -880,6 +881,10 @@ bool UccDBusInterfaceAdaptor::UpdateCustomProfile( const QString &profileJSON )
 
     // Parse the profile JSON and update it
     auto profile = ProfileManager::parseProfileJSON( jsonStr );
+    std::string selectionError;
+    if(m_service->getCpuWorker() && !m_service->getCpuWorker()->validateCoreSelection(profile.cpu,selectionError)) {
+      syslog(LOG_ERR,"Invalid CPU selection: %s",selectionError.c_str());return false;
+    }
 
     if ( profile.id.empty() )
     {
@@ -936,6 +941,10 @@ bool UccDBusInterfaceAdaptor::SaveCustomProfile( const QString &profileJSON )
 
     // Parse the profile JSON
     auto profile = ProfileManager::parseProfileJSON( jsonStr );
+    std::string selectionError;
+    if(m_service->getCpuWorker() && !m_service->getCpuWorker()->validateCoreSelection(profile.cpu,selectionError)) {
+      syslog(LOG_ERR,"Invalid CPU selection: %s",selectionError.c_str());return false;
+    }
 
     // Check if name collides with a built-in profile
     for ( const auto &builtIn : m_service->m_defaultProfiles )
@@ -1700,9 +1709,10 @@ bool UccDBusInterfaceAdaptor::SetChargingProfile( const QString &profileDescript
   {
     std::lock_guard< std::mutex > lock( m_data.dataMutex );
     m_data.currentChargingProfile = profileDescriptor.toStdString();
+    m_service->m_settings.chargingProfile=profileDescriptor.toStdString();
   }
 
-  return result;
+  return result && m_service->m_settingsManager.writeSettings(m_service->m_settings);
 }
 
 QString UccDBusInterfaceAdaptor::GetChargingPrioritiesAvailable()
@@ -1726,9 +1736,10 @@ bool UccDBusInterfaceAdaptor::SetChargingPriority( const QString &priorityDescri
   {
     std::lock_guard< std::mutex > lock( m_data.dataMutex );
     m_data.currentChargingPriority = priorityDescriptor.toStdString();
+    m_service->m_settings.chargingPriority=priorityDescriptor.toStdString();
   }
 
-  return result;
+  return result && m_service->m_settingsManager.writeSettings(m_service->m_settings);
 }
 
 QString UccDBusInterfaceAdaptor::GetChargeStartAvailableThresholds()
@@ -1760,10 +1771,12 @@ bool UccDBusInterfaceAdaptor::SetChargeStartThreshold( int value )
     return false;
   bool result = m_service->m_profileSettingsWorker->setChargeStartThreshold( value );
 
-  if ( result )
+  if ( result ) {
     m_data.chargeStartThreshold = value;
+    m_service->m_settings.chargeStartThreshold=value;
+  }
 
-  return result;
+  return result && m_service->m_settingsManager.writeSettings(m_service->m_settings);
 }
 
 bool UccDBusInterfaceAdaptor::SetChargeEndThreshold( int value )
@@ -1773,10 +1786,12 @@ bool UccDBusInterfaceAdaptor::SetChargeEndThreshold( int value )
     return false;
   bool result = m_service->m_profileSettingsWorker->setChargeEndThreshold( value );
 
-  if ( result )
+  if ( result ) {
     m_data.chargeEndThreshold = value;
+    m_service->m_settings.chargeEndThreshold=value;
+  }
 
-  return result;
+  return result && m_service->m_settingsManager.writeSettings(m_service->m_settings);
 }
 
 QString UccDBusInterfaceAdaptor::GetChargeType()
@@ -1794,9 +1809,10 @@ bool UccDBusInterfaceAdaptor::SetChargeType( const QString &type )
   {
     std::lock_guard< std::mutex > lock( m_data.dataMutex );
     m_data.chargeType = type.toStdString();
+    m_service->m_settings.chargeType=type.toStdString();
   }
 
-  return result;
+  return result && m_service->m_settingsManager.writeSettings(m_service->m_settings);
 }
 
 // fn lock methods (stubs for now)
@@ -1907,6 +1923,11 @@ int UccDBusInterfaceAdaptor::GetCpuCoreCount()
   if ( m_service && m_service->getCpuWorker() )
     return m_service->getCpuWorker()->getCoreCount();
   return -1;
+}
+QString UccDBusInterfaceAdaptor::GetCpuTopologyJSON()
+{
+  if(m_service && m_service->getCpuWorker()) return QString::fromStdString(m_service->getCpuWorker()->getTopologyJSON());
+  return QStringLiteral("[]");
 }
 
 // water cooler methods
@@ -3410,6 +3431,10 @@ bool UccDBusService::applyProfileJSON( const std::string &profileJSON )
   {
     // Parse the profile JSON
     auto profile = m_profileManager.parseProfileJSON( profileJSON );
+    std::string selectionError;
+    if(m_cpuWorker && !m_cpuWorker->validateCoreSelection(profile.cpu,selectionError)) {
+      syslog(LOG_ERR,"Invalid CPU selection: %s",selectionError.c_str());return false;
+    }
     m_profileCpuBase=profile.cpu;
     const auto mode=profileStateToString(m_effectivePowerMode.load()).substr(6);
     m_powerDevices.overlayCpu(profile,mode);
@@ -3519,50 +3544,8 @@ bool UccDBusService::applyProfileJSON( const std::string &profileJSON )
       // Re-read TDP values after apply so D-Bus data reflects new hardware state
       readHardwareCapabilities();
 
-      // Apply charging profile if the profile specifies one
-      if ( !profile.chargingProfile.empty() && m_dbusData.chargingProfilesAvailable != "[]" )
-      {
-        std::cout << "[Profile] Applying charging profile '" << profile.chargingProfile << "'" << std::endl;
-        if ( m_profileSettingsWorker->applyChargingProfile( profile.chargingProfile ) )
-        {
-          std::lock_guard< std::mutex > lk( m_dbusData.dataMutex );
-          m_dbusData.currentChargingProfile = profile.chargingProfile;
-        }
-      }
+      // Charging is configured globally; legacy per-profile fields are ignored.
 
-      // Apply charging priority if the profile specifies one
-      if ( !profile.chargingPriority.empty() && m_dbusData.chargingPrioritiesAvailable != "[]" )
-      {
-        std::cout << "[Profile] Applying charging priority '" << profile.chargingPriority << "'" << std::endl;
-        if ( m_profileSettingsWorker->applyChargingPriority( profile.chargingPriority ) )
-        {
-          std::lock_guard< std::mutex > lk( m_dbusData.dataMutex );
-          m_dbusData.currentChargingPriority = profile.chargingPriority;
-        }
-      }
-
-      // Apply charge type and thresholds if the profile specifies them
-      if ( !profile.chargeType.empty() )
-      {
-        std::cout << "[Profile] Applying charge type '" << profile.chargeType << "'" << std::endl;
-        if ( m_profileSettingsWorker->setChargeType( profile.chargeType ) )
-        {
-          std::lock_guard< std::mutex > lk( m_dbusData.dataMutex );
-          m_dbusData.chargeType = profile.chargeType;
-        }
-      }
-      if ( profile.chargeStartThreshold >= 0 )
-      {
-        std::cout << "[Profile] Applying charge start threshold " << profile.chargeStartThreshold << std::endl;
-        if ( m_profileSettingsWorker->setChargeStartThreshold( profile.chargeStartThreshold ) )
-          m_dbusData.chargeStartThreshold = profile.chargeStartThreshold;
-      }
-      if ( profile.chargeEndThreshold >= 0 )
-      {
-        std::cout << "[Profile] Applying charge end threshold " << profile.chargeEndThreshold << std::endl;
-        if ( m_profileSettingsWorker->setChargeEndThreshold( profile.chargeEndThreshold ) )
-          m_dbusData.chargeEndThreshold = profile.chargeEndThreshold;
-      }
     }
 
     if ( m_keyboardBacklightController.isAvailable()

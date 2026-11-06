@@ -383,6 +383,7 @@ private:
 
   // Cycle counters for staggered polling
   uint32_t m_cycleCounter;
+  DGpuInfo m_nvidiaSample;
 
   // GPU methods
   void initGpu();

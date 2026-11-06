@@ -64,6 +64,9 @@ struct TccSettings
   std::vector< YCbCr420Card > ycbcr420Workaround;  // YUV420 workaround per card/port
   std::optional< std::string > chargingProfile;  // null in TypeScript
   std::optional< std::string > chargingPriority;  // null in TypeScript
+  std::optional<std::string> chargeType;
+  std::optional<int> chargeStartThreshold;
+  std::optional<int> chargeEndThreshold;
 
   // Default constructor - stateMap starts empty.
   // uccd must not auto-assign profiles; it waits for ucc-gui to assign them.

@@ -48,11 +48,6 @@ if( NOT CMAKE_BUILD_TYPE )
   set( CMAKE_BUILD_TYPE RelWithDebInfo CACHE STRING "Build type" FORCE )
 endif()
 
-# Output directories (avoid absolute paths like /plasma/... during build)
-set( CMAKE_RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin" )
-set( CMAKE_LIBRARY_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/lib" )
-set( CMAKE_ARCHIVE_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/lib" )
-
 # Compiler flags
 add_compile_options(
   -Wall
@@ -102,6 +97,12 @@ if( BUILD_TRAY )
   find_package( KF6CoreAddons REQUIRED )
   find_package( Plasma REQUIRED )
 endif()
+
+# KDECMakeSettings resets these directories. Set the shared layout afterwards
+# so clients, tests and gallery capture use the same paths with/without Plasma.
+set( CMAKE_RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin" )
+set( CMAKE_LIBRARY_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/lib" )
+set( CMAKE_ARCHIVE_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/lib" )
 
 # Conditionally find Qt6::Test if tests are enabled
 if( BUILD_TESTS )

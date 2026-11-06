@@ -54,7 +54,7 @@ PowerDevicesTab::PowerDevicesTab(UccdClient *client,QWidget *parent) : QWidget(p
   m_cpu->horizontalHeader()->setSectionResizeMode(QHeaderView::Stretch);
   m_cpu->setMinimumHeight(148);m_cpu->setMaximumHeight(168);cpuLayout->addWidget(m_cpu);layout->addWidget(cpuCard);
   m_nvidia=new QCheckBox("Keep NVIDIA awake (Blackwell workaround)");m_nvidia->setObjectName("keepNvidiaAwake");
-  m_nvidia->setToolTip("Keeps the NVIDIA display controller in D0 and enables persistence. Overrides its PCI runtime PM auto value.");
+  m_nvidia->setToolTip("Keeps NVIDIA awake in every power mode and enables persistence. Uncheck and Save and apply to restore the per-mode policy; auto also disables persistence.");
   m_nvidia->setEnabled(!readOnlyPreview);layout->addWidget(m_nvidia);
   auto *toolbar=new QHBoxLayout;
   m_search=new QLineEdit;m_search->setPlaceholderText("Filter devices by name or path");toolbar->addWidget(m_search,1);

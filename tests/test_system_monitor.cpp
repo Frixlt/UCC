@@ -11,6 +11,7 @@ class FakeDaemon : public QDBusVirtualObject {
   int gpuReads = 0;
   int brightnessWrites = 0;
   int brightness = 70;
+  bool sleepingGpu = false;
 public:
   QString introspect(const QString &) const override {
     QString xml = "<interface name=\"com.uniwill.uccd\">";
@@ -22,7 +23,8 @@ public:
   bool handleMessage(const QDBusMessage &msg, const QDBusConnection &bus) override {
     const QString name = msg.member();
     QVariant value;
-    if (name == "GetTestBrightnessWrites") value = brightnessWrites;
+    if (name == "TestSleepingGpu") {sleepingGpu=msg.arguments().value(0).toBool();value=true;}
+    else if (name == "GetTestBrightnessWrites") value = brightnessWrites;
     else if (name == "SetDisplayBrightness") {
       ++brightnessWrites;
       const int target = msg.arguments().value(0).toInt();
@@ -36,11 +38,11 @@ public:
     else if (name == "GetTestGpuReads") value = gpuReads;
     else if (name == "GetDGpuInfoValuesJSON") {
       ++gpuReads;
-      QTimer::singleShot(300, this, [msg,bus] {
-        bus.send(msg.createReply(QString("{\"temp\":52,\"coreFrequency\":1200,\"powerDraw\":45}")));
+      QTimer::singleShot(300, this, [msg,bus,sleep=sleepingGpu] {
+        bus.send(msg.createReply(sleep ? QString("{}") : QString("{\"temp\":52,\"coreFrequency\":1200,\"powerDraw\":45}")));
       });
       return true;
-    } else if (name == "GetIGpuInfoValuesJSON") value = QString("{}");
+    } else if (name == "GetIGpuInfoValuesJSON") value = QString("{\"temp\":42,\"coreFrequency\":350,\"powerDraw\":0.7}");
     else if (name == "GetCpuPowerValuesJSON") value = QString("{\"powerDraw\":21}");
     else if (name.startsWith("GetFanData")) {
       value = QVariantMap{{"temp",QVariantMap{{"timestamp",qlonglong(1)},{"data",55}}},
@@ -123,6 +125,16 @@ private slots:
     QCOMPARE(display.exitCode(),0);
     QVERIFY2(display.readAllStandardOutput().contains("gpu_temp=52°C"),
              "--display must wait for fresh metrics instead of printing placeholders");
+  }
+  void sleepingDgpuDoesNotDisplayIntelPowerOrTemperature() {
+    auto call=QDBusMessage::createMethodCall("com.uniwill.uccd","/com/uniwill/uccd","com.uniwill.uccd","TestSleepingGpu");
+    call.setArguments({true});QDBusConnection::systemBus().call(call);
+    ucc::SystemMonitor monitor;monitor.setMonitoringActive(true);
+    QTRY_COMPARE_WITH_TIMEOUT(monitor.iGpuPower(),QString("0.7 W"),4000);
+    QCOMPARE(monitor.gpuPower(),QString("--"));QCOMPARE(monitor.gpuTemp(),QString("--"));
+    QCOMPARE(monitor.iGpuTemp(),QString("42°C"));
+    monitor.setMonitoringActive(false);
+    call.setArguments({false});QDBusConnection::systemBus().call(call);
   }
   void cleanupTestCase() { daemon.terminate(); daemon.waitForFinished(); }
 };

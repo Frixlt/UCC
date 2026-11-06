@@ -48,7 +48,10 @@ ucc_add_test( test_lightbar test_lightbar.cpp )
 ucc_add_test( test_driver_health test_driver_health.cpp )
 ucc_add_test( test_notification_monitor test_notification_monitor.cpp )
 ucc_add_test( test_power_policy     test_power_policy.cpp )
+ucc_add_test( test_cpu_selection test_cpu_selection.cpp )
+target_sources(test_cpu_selection PRIVATE ../uccd/inc/workers/DaemonWorker.hpp)
 ucc_add_test( test_power_devices    test_power_devices.cpp )
+ucc_add_test( test_gpu_sysfs test_gpu_sysfs.cpp )
 ucc_add_test( test_display_backlight test_display_backlight.cpp )
 ucc_add_test( test_keyboard_controller test_keyboard_controller.cpp )
 ucc_add_test( test_fan_profile      test_fan_profile.cpp )
@@ -93,7 +96,14 @@ endif()
 if(DBUS_RUN_SESSION_EXECUTABLE AND BUILD_GUI)
   find_package(Qt6 REQUIRED COMPONENTS Widgets Charts Bluetooth)
   set(CMAKE_AUTORCC ON)
+  add_executable(test_fan_curve_editor test_fan_curve_editor.cpp
+    ../ucc-gui/src/FanCurveEditorWidget.cpp ../ucc-gui/inc/FanCurveEditorWidget.hpp)
+  target_include_directories(test_fan_curve_editor PRIVATE ../ucc-gui/inc)
+  target_link_libraries(test_fan_curve_editor PRIVATE Qt6::Widgets Qt6::Test)
+  add_test(NAME test_fan_curve_editor COMMAND test_fan_curve_editor)
+  set_tests_properties(test_fan_curve_editor PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
   add_executable(test_gui_audit test_gui_audit.cpp
+    ../ucc-gui/inc/CpuCoreSelectionWidget.hpp
     ../ucc-gui/src/FanControlTab.cpp ../ucc-gui/inc/FanControlTab.hpp
     ../ucc-gui/src/FanCurveEditorWidget.cpp ../ucc-gui/inc/FanCurveEditorWidget.hpp
     ../ucc-gui/src/PumpCurveEditorWidget.cpp ../ucc-gui/inc/PumpCurveEditorWidget.hpp

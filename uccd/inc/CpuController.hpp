@@ -22,6 +22,8 @@
 #include <algorithm>
 #include <ranges>
 #include <cmath>
+#include <set>
+#include <functional>
 
 enum class ScalingDriver
 {
@@ -60,6 +62,7 @@ public:
   SysfsNode< std::string > scalingGovernor;
   SysfsNode< int32_t > cpuinfoMinFreq;
   SysfsNode< int32_t > cpuinfoMaxFreq;
+  SysfsNode<int32_t> baseFrequency;
 
   explicit LogicalCpuController( const std::string &base, int32_t index )
     : basePath( base )
@@ -78,6 +81,7 @@ public:
     , scalingGovernor( cpufreqPath + "/scaling_governor" )
     , cpuinfoMinFreq( cpufreqPath + "/cpuinfo_min_freq" )
     , cpuinfoMaxFreq( cpufreqPath + "/cpuinfo_max_freq" )
+    , baseFrequency(cpufreqPath + "/base_frequency")
   {}
 
   /**
@@ -115,6 +119,7 @@ class CpuController
 {
 public:
   static constexpr const char *basePath = "/sys/devices/system/cpu";
+  const std::string rootPath;
 
   std::vector< LogicalCpuController > cores;
 
@@ -132,15 +137,16 @@ public:
   // boost
   SysfsNode< bool > boost;
 
-  explicit CpuController()
-    : kernelMax( std::string( basePath ) + "/kernel_max" )
-    , offline( std::string( basePath ) + "/offline", " " )
-    , online( std::string( basePath ) + "/online", " " )
-    , possible( std::string( basePath ) + "/possible", " " )
-    , present( std::string( basePath ) + "/present", " " )
-    , intelPstateNoTurbo( std::string( basePath ) + "/intel_pstate/no_turbo" )
-    , intelHwpDynamicBoost( std::string( basePath ) + "/intel_pstate/hwp_dynamic_boost" )
-    , boost( std::string( basePath ) + "/cpufreq/boost" )
+  explicit CpuController(std::string root=basePath)
+    : rootPath(std::move(root))
+    , kernelMax( rootPath + "/kernel_max" )
+    , offline( rootPath + "/offline" )
+    , online( rootPath + "/online" )
+    , possible( rootPath + "/possible" )
+    , present( rootPath + "/present" )
+    , intelPstateNoTurbo( rootPath + "/intel_pstate/no_turbo" )
+    , intelHwpDynamicBoost( rootPath + "/intel_pstate/hwp_dynamic_boost" )
+    , boost( rootPath + "/cpufreq/boost" )
   {
     getAvailableLogicalCores();
   }
@@ -172,13 +178,10 @@ public:
 
     for ( int32_t coreIndex : coreIndexToAdd )
     {
-      LogicalCpuController newCore( basePath, coreIndex );
+      LogicalCpuController newCore( rootPath, coreIndex );
 
       // core 0 doesn't have online control, always include it
-      if ( coreIndex == 0 or newCore.online.isAvailable() )
-      {
-        cores.push_back( std::move( newCore ) );
-      }
+      cores.push_back( std::move( newCore ) );
     }
   }
 
@@ -189,26 +192,40 @@ public:
    */
   void useCores( std::optional< int32_t > numberOfCores = std::nullopt )
   {
+    if(cores.empty()) return;
     if ( not numberOfCores.has_value() )
       numberOfCores = static_cast< int32_t >( cores.size() );
 
     // Clamp to valid range [1, cores.size()]
     numberOfCores = std::clamp( *numberOfCores, 1, static_cast< int32_t >( cores.size() ) );
 
-    for ( size_t i = 1; i < cores.size(); ++i )
-    {
-      if ( not cores[ i ].online.isAvailable() )
-        continue;
+    std::vector<int32_t> selection;
+    for(size_t i=0;i<cores.size();++i)
+      if(static_cast<int32_t>(i)<*numberOfCores || !cores[i].online.isAvailable()) selection.push_back(cores[i].coreIndex);
+    std::string error;setEnabledCores(selection,error);
+  }
 
-      if ( static_cast< int32_t >( i ) < *numberOfCores )
-      {
-        cores[ i ].online.write( true );
-      }
-      else
-      {
-        cores[ i ].online.write( false );
-      }
+  bool validateEnabledCores(const std::vector<int32_t>& selection,std::string& error) const {
+    const std::set<int32_t> ids(selection.begin(),selection.end());
+    if(ids.empty() || ids.size()!=selection.size()) {error="CPU selection is empty or contains duplicates";return false;}
+    for(const auto id:ids)
+      if(std::ranges::none_of(cores,[id](const auto& c){return c.coreIndex==id;})) {error="Unknown CPU "+std::to_string(id);return false;}
+    for(const auto& core:cores)
+      if(!core.online.isAvailable() && !ids.contains(core.coreIndex)) {error="CPU "+std::to_string(core.coreIndex)+" cannot be disabled";return false;}
+    return true;
+  }
+  using OnlineWriter=std::function<bool(LogicalCpuController&,bool)>;
+  bool setEnabledCores(const std::vector<int32_t>& selection,std::string& error,OnlineWriter writer={}) {
+    if(!validateEnabledCores(selection,error)) return false;
+    const std::set<int32_t> ids(selection.begin(),selection.end());
+    if(!writer) writer=[](auto& core,bool value){return core.online.write(value);};
+    // Bring all requested CPUs online before disabling anything else.
+    for(bool enable:{true,false}) for(auto& core:cores) {
+      if(!core.online.isAvailable() || ids.contains(core.coreIndex)!=enable) continue;
+      if(core.online.read().value_or(!enable)==enable) continue;
+      if(!writer(core,enable)) {error="Cannot change CPU "+std::to_string(core.coreIndex);return false;}
     }
+    return true;
   }
 
   /**
@@ -236,6 +253,13 @@ public:
     return *prev;
   }
 
+  static std::optional<int32_t> effectiveHardwareMaxFreq(const LogicalCpuController& core) {
+    auto maximum=core.cpuinfoMaxFreq.read();
+    if(maximum && SysfsNode<bool>(core.basePath+"/intel_pstate/no_turbo").read().value_or(false))
+      if(auto base=core.baseFrequency.read();base && *base>0) maximum=std::min(*maximum,*base);
+    return maximum;
+  }
+
   /**
    * @brief Compute the effective max scaling frequency that will be written to a core.
    *
@@ -259,12 +283,14 @@ public:
       return std::nullopt;
 
     auto coreMin = core.cpuinfoMinFreq.read();
-    auto coreMax = core.cpuinfoMaxFreq.read();
+    auto coreMax = effectiveHardwareMaxFreq(core);
     auto scalingMin = core.scalingMinFreq.read();
     auto avail = core.scalingAvailableFrequencies.read();
 
     if ( not coreMin or not coreMax or not scalingMin )
       return std::nullopt;
+
+    scalingMin=std::min(*scalingMin,*coreMax);
 
     int32_t freq;
 
@@ -323,12 +349,14 @@ public:
       return std::nullopt;
 
     auto coreMin = core.cpuinfoMinFreq.read();
-    auto coreMax = core.cpuinfoMaxFreq.read();
+    auto coreMax = effectiveHardwareMaxFreq(core);
     auto scalingMax = core.scalingMaxFreq.read();
     auto avail = core.scalingAvailableFrequencies.read();
 
     if ( not coreMin or not coreMax or not scalingMax )
       return std::nullopt;
+    scalingMax=std::min(*scalingMax,*coreMax);
+    if(*coreMin>*scalingMax) return std::nullopt;
 
     int32_t freq;
 
@@ -454,7 +482,7 @@ public:
         continue;
 
       if ( core.coreIndex != 0 and core.online.read().value_or( false ) == false )
-        return;
+        continue;
 
       auto availableGovernors = core.scalingAvailableGovernors.read();
 
@@ -483,7 +511,7 @@ public:
         continue;
 
       if ( core.coreIndex != 0 and core.online.read().value_or( false ) == false )
-        return;
+        continue;
 
       auto availablePreferences = core.energyPerformanceAvailablePreferences.read();
 

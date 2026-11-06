@@ -16,6 +16,7 @@
 #include "workers/HardwareMonitorWorker.hpp"
 #include "SysfsNode.hpp"
 #include "Utils.hpp"
+#include "GpuSysfs.hpp"
 #include <iostream>
 #include <fstream>
 #include <sstream>
@@ -401,9 +402,11 @@ void HardwareMonitorWorker::initGpu()
     if ( std::string intelPath = getIntelIGpuDrmPathImpl(); not intelPath.empty() )
     {
       m_intelIGpuDrmPath = intelPath;
-      m_intelRAPLGpu = std::make_unique< IntelRAPLController >(
-        "/sys/devices/virtual/powercap/intel-rapl/intel-rapl:0/intel-rapl:0:1/" );
-      m_intelGpuPowerController = std::make_unique< PowerController >( *m_intelRAPLGpu );
+      const auto rapl=ucc::intelGpuRaplPath();
+      if(!rapl.empty()) {
+        m_intelRAPLGpu = std::make_unique< IntelRAPLController >(rapl);
+        m_intelGpuPowerController = std::make_unique< PowerController >( *m_intelRAPLGpu );
+      }
     }
   }
 
@@ -551,16 +554,14 @@ IGpuInfo HardwareMonitorWorker::getIntelIGpuValues( const IGpuInfo &base ) const
   values.m_vendor = "intel";
   const std::string &drmPath = m_intelIGpuDrmPath.value();
 
-  // Current GPU frequency (MHz) - directly readable from DRM sysfs
-  if ( auto curFreq = SysfsNode< int64_t >( drmPath + "/gt_act_freq_mhz" ).read(); curFreq and *curFreq > 0 )
-    values.m_coreFrequency = static_cast< double >( *curFreq );
-
-  // Max GPU frequency (MHz)
-  if ( auto maxFreq = SysfsNode< int64_t >( drmPath + "/gt_RP0_freq_mhz" ).read(); maxFreq and *maxFreq > 0 )
-    values.m_maxCoreFrequency = static_cast< double >( *maxFreq );
+  const auto sample=ucc::readIntelGpuSysfs(drmPath);
+  values.m_coreFrequency=sample.frequencyMHz;
+  values.m_maxCoreFrequency=sample.maxFrequencyMHz;
+  values.m_temp=sample.temperatureC;
+  values.m_powerDraw=sample.powerW;
 
   // Power draw via Intel RAPL
-  if ( m_intelGpuPowerController )
+  if ( values.m_powerDraw<0 && m_intelGpuPowerController )
     values.m_powerDraw = m_intelGpuPowerController->getCurrentPower();
 
   return values;
@@ -596,9 +597,11 @@ DGpuInfo HardwareMonitorWorker::getDGpuValues() noexcept
   DGpuInfo values{};
   bool metricsUsage = true;
 
-  if ( m_deviceCounts.nvidiaCount == 1 and m_nvml->isAvailable() and metricsUsage )
+  if ( m_deviceCounts.nvidiaCount == 1 and m_nvml->isAvailable() and metricsUsage && ucc::nvidiaRuntimeActive() )
   {
-    values = getNvidiaDGpuValues();
+    if(ucc::nvidiaTelemetryDue(m_cycleCounter))
+      m_nvidiaSample=getNvidiaDGpuValues();
+    values=m_nvidiaSample;
   }
   else if ( m_deviceCounts.amdDGpuCount == 1 and metricsUsage )
   {
@@ -606,6 +609,11 @@ DGpuInfo HardwareMonitorWorker::getDGpuValues() noexcept
       values = getAmdDGpuValues( values );
   }
 
+  if(m_deviceCounts.nvidiaCount == 1 && !ucc::nvidiaRuntimeActive()) {
+    m_nvidiaSample=DGpuInfo{};
+    values=DGpuInfo{};
+    metricsUsage=false;
+  }
   values.m_d0MetricsUsage = metricsUsage;
   return values;
 }

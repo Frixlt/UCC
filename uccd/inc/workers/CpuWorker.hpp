@@ -17,6 +17,7 @@
 
 #include "DaemonWorker.hpp"
 #include "../CpuController.hpp"
+#include "../CpuTopology.hpp"
 #include "../profiles/UccProfile.hpp"
 #include <functional>
 #include <vector>
@@ -40,9 +41,11 @@ public:
   explicit CpuWorker(
     std::function< UccProfile() > getActiveProfile,
     std::function< bool() > getCpuSettingsEnabled,
-    std::function< void( const std::string & ) > logFunction )
+    std::function< void( const std::string & ) > logFunction,
+    std::string cpuRoot=CpuController::basePath )
     : DaemonWorker( std::chrono::milliseconds( 10000 ), false )
-    , m_cpuCtrl()
+    , m_cpuCtrl(std::move(cpuRoot))
+    , m_topology(m_cpuCtrl.rootPath)
     , m_getActiveProfile( std::move( getActiveProfile ) )
     , m_getCpuSettingsEnabled( std::move( getCpuSettingsEnabled ) )
     , m_logFunction( std::move( logFunction ) )
@@ -122,6 +125,10 @@ public:
       m_reapplyGaveUp = false;
       applyCpuProfile( m_getActiveProfile() );
     }
+  }
+  std::string getTopologyJSON() {return m_topology.read().dump();}
+  bool validateCoreSelection(const UccProfileCpu& cpu,std::string& error) const {
+    return !cpu.enabledCores || m_cpuCtrl.validateEnabledCores(*cpu.enabledCores,error);
   }
 
   /**
@@ -214,6 +221,7 @@ public:
 
 private:
   CpuController m_cpuCtrl;
+  CpuTopology m_topology;
   std::function< UccProfile() > m_getActiveProfile;
   std::function< bool() > m_getCpuSettingsEnabled;
   std::function< void( const std::string & ) > m_logFunction;
@@ -298,8 +306,18 @@ private:
    */
   void applyCpuProfile( const UccProfile &profile )
   {
-    // reset everything to default before applying new settings
-    setCpuDefaultConfig();
+    std::string selectionError;
+    if(!validateCoreSelection(profile.cpu,selectionError)) {logLine(selectionError,LOG_ERR);return;}
+    if(m_cpuCtrl.intelPstateNoTurbo.isAvailable()) m_cpuCtrl.intelPstateNoTurbo.write(profile.cpu.noTurbo);
+    if(m_cpuCtrl.intelHwpDynamicBoost.isAvailable()) m_cpuCtrl.intelHwpDynamicBoost.write(profile.cpu.hwpDynamicBoost);
+    if(profile.cpu.enabledCores) {
+      if(!m_cpuCtrl.setEnabledCores(*profile.cpu.enabledCores,selectionError)) {logLine(selectionError,LOG_ERR);return;}
+    } else m_cpuCtrl.useCores(profile.cpu.onlineCores);
+    // Reset frequency bounds only on the selected CPUs. Resetting the complete
+    // CPU configuration here would bring every disabled CPU back online.
+    m_cpuCtrl.setGovernorScalingMinFrequency(std::nullopt);
+    m_cpuCtrl.setGovernorScalingMaxFrequency(std::nullopt);
+    if(!m_noEPPWriteQuirk && m_systemDefaultEPP) m_cpuCtrl.setEnergyPerformancePreference(m_systemDefaultEPP);
 
     // resolve desired governor (profile value or system default)
     auto governor = not profile.cpu.governor.empty()
@@ -364,9 +382,6 @@ private:
     m_cpuCtrl.setGovernorScalingMinFrequency( profile.cpu.scalingMinFrequency );
     m_cpuCtrl.setGovernorScalingMaxFrequency( profile.cpu.scalingMaxFrequency );
 
-    // set number of online cores
-    m_cpuCtrl.useCores( profile.cpu.onlineCores );
-
     // set no_turbo if available
     if ( m_cpuCtrl.intelPstateNoTurbo.isAvailable() )
       m_cpuCtrl.intelPstateNoTurbo.write( profile.cpu.noTurbo );
@@ -381,6 +396,7 @@ private:
    */
   void setCpuDefaultConfig()
   {
+    if(m_cpuCtrl.intelPstateNoTurbo.isAvailable()) m_cpuCtrl.intelPstateNoTurbo.write(false);
     m_cpuCtrl.useCores( std::nullopt ); // all cores
     m_cpuCtrl.setGovernorScalingMinFrequency( std::nullopt ); // min
     m_cpuCtrl.setGovernorScalingMaxFrequency( std::nullopt ); // max
@@ -403,6 +419,11 @@ private:
   bool validateCpuFreq()
   {
     const UccProfile profile = m_getActiveProfile();
+    if(profile.cpu.enabledCores) {
+      const std::set<int32_t> enabled(profile.cpu.enabledCores->begin(),profile.cpu.enabledCores->end());
+      for(const auto& core:m_cpuCtrl.cores)
+        if(core.online.read().value_or(true)!=enabled.contains(core.coreIndex)) return false;
+    }
     {
       // Determine acpi-cpufreq fallback flag once - mirrors setGovernorScalingMaxFrequency
       bool acpiFallback = false;

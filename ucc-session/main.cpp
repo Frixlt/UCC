@@ -12,28 +12,42 @@
 #include "SessionSignals.hpp"
 #include "RefreshAdvisor.hpp"
 #include "DriverAlert.hpp"
+#include "PowerSourceAlert.hpp"
 #include "DriverHealth.hpp"
 #include "AsyncRead.hpp"
 
 int main(int argc,char **argv) {
   QCoreApplication app(argc,argv);app.setApplicationName("ucc-session-agent");
-  if(app.arguments().contains("--help")) {qInfo("UCC desktop notification relay and KDE display-refresh suggestions. No notification content is retained.");return 0;}
+  if(app.arguments().contains("--help")) {qInfo("UCC desktop notification relay and KDE/Hyprland display-refresh suggestions. No notification content is retained.");return 0;}
   if(ucc::readOnlyPreview) {qInfo("Session relay disabled in read-only preview.");return 0;}
   const auto runtime=QStandardPaths::writableLocation(QStandardPaths::RuntimeLocation);
   if(runtime.isEmpty()) {qCritical("No user runtime directory available");return 1;}
   QLockFile lock(runtime+"/ucc-session-agent.lock");if(!lock.tryLock(0)) return 0;
   SessionSignals shutdownSignals;
   ucc::UccdClient client;QJsonObject settings,policy;
-  ucc::RefreshAdvisor refresh(qEnvironmentVariable("XDG_CURRENT_DESKTOP").split(':').contains("KDE",Qt::CaseInsensitive));
+  const auto desktops=qEnvironmentVariable("XDG_CURRENT_DESKTOP").split(':');
+  const auto backend=desktops.contains("Hyprland",Qt::CaseInsensitive) ? ucc::RefreshBackend::Hyprland :
+    desktops.contains("KDE",Qt::CaseInsensitive) ? ucc::RefreshBackend::KDE : ucc::RefreshBackend::Unsupported;
+  ucc::RefreshAdvisor refresh(backend);
+  quint64 profileGeneration=0;
+  auto loadProfile=[&] {
+    const auto generation=++profileGeneration;
+    ucc::readUccdAsync(&app,"GetActiveProfileJSON",{},[&,generation](std::optional<QVariant> value) {
+      if(generation==profileGeneration) refresh.profileChanged(value ? value->toString() : QString("{}"));
+    });
+  };
+  ucc::PowerSourceAlert powerAlert;
   ucc::SessionSleepMonitor sleepMonitor;
   QObject::connect(&sleepMonitor,&ucc::SessionSleepMonitor::sleeping,&refresh,&ucc::RefreshAdvisor::sleeping);
   auto load=[&] {
     if(auto json=client.getLightbarSettingsJSON()) settings=QJsonDocument::fromJson(QByteArray::fromStdString(*json)).object();else settings={};
-    if(auto json=client.getPowerPolicyJSON()) {policy=QJsonDocument::fromJson(QByteArray::fromStdString(*json)).object();refresh.policyChanged(QString::fromStdString(*json));}else policy={};
+    if(auto json=client.getPowerPolicyJSON()) {policy=QJsonDocument::fromJson(QByteArray::fromStdString(*json)).object();refresh.policyChanged(QString::fromStdString(*json));powerAlert.policyChanged(QString::fromStdString(*json));}else policy={};
+    loadProfile();
   };
-  QObject::connect(&client,&ucc::UccdClient::connectionStatusChanged,&app,[&](bool connected){if(connected) load();else {settings={};policy={};}});
+  QObject::connect(&client,&ucc::UccdClient::connectionStatusChanged,&app,[&](bool connected){if(connected) load();else {++profileGeneration;refresh.profileChanged("{}");settings={};policy={};powerAlert.reset();}});
   QObject::connect(&client,&ucc::UccdClient::lightbarSettingsChanged,&app,[&](const QString &json){settings=QJsonDocument::fromJson(json.toUtf8()).object();});
-  QObject::connect(&client,&ucc::UccdClient::powerPolicyChanged,&app,[&](const QString &json){policy=QJsonDocument::fromJson(json.toUtf8()).object();refresh.policyChanged(json);});
+  QObject::connect(&client,&ucc::UccdClient::powerPolicyChanged,&app,[&](const QString &json){policy=QJsonDocument::fromJson(json.toUtf8()).object();refresh.policyChanged(json);powerAlert.policyChanged(json);loadProfile();});
+  QObject::connect(&client,&ucc::UccdClient::profileChanged,&app,[&](const QString&,const QString&,const QString&){loadProfile();});
   load();
   ucc::DriverAlert driverAlert;
   QTimer driverPoll;driverPoll.setInterval(10000);bool driverPending=false;

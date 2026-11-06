@@ -85,3 +85,27 @@ the six focused GUI scenarios (8 QtTest cases including setup/cleanup), the
 ITE callback regression and four Python migration tests. The historical full
 GUI audit was not rerun. The patched driver was also rebuilt for both installed
 kernels and tested live; see the driver notes for the spot timing measurements.
+
+### Hyprland, Intel GPU and fan curve regressions
+
+`test_refresh_advisor` проверяет предложения реальных режимов Hyprland, отсутствие
+команд до действия пользователя, применение через Lua и повторную проверку режима.
+Уведомления о физическом источнике питания проверяются отдельно от режима профиля,
+включая USB-C, подавление уведомления при запуске и дребезг источника.
+`test_gpu_sysfs` использует временные sysfs-деревья для `i915`/`xe`, нулевой частоты,
+отсутствующего датчика температуры, hwmon, RAPL с другим номером домена и запрета
+NVML-проб спящего устройства. `test_power_devices` проверяет выключение persistence
+при снятии Keep awake и при переходе с сети на батарею/USB-C.
+`test_fan_curve_editor` проверяет возврат соседних точек при обратном перетаскивании,
+выбор ближайшей точки в плотной кривой, фиксацию положения при отпускании мыши,
+игнорирование правой кнопки и сброс перетаскивания при смене профиля.
+
+### Individual CPU selection
+
+`test_cpu_selection` работает на временном sysfs: проверяет разреженные CPU ID,
+порядок включения перед отключением, отказ включения без отключения действующего
+CPU, обязательный CPU, возврат к старому числовому режиму и round-trip профиля.
+Fake CpuWorker проверяет governor/EPP и разные пределы P/E без turbo, высокую
+минимальную частоту, повторную валидацию и восстановление всех CPU при остановке.
+`individualCpuSelectionSavesIdsAndPreservesKernelLockedCpu` проверяет UI, сохранение
+точных ID, кнопку E-cores, заблокированный CPU 0 и возврат к числовому режиму.

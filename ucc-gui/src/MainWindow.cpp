@@ -26,6 +26,7 @@
 #include "FluentSidebar.hpp"
 #include "FluentEntrance.hpp"
 #include "PreviewMode.hpp"
+#include "BatterySettingsWidget.hpp"
 #include <QTabBar>
 #include <QSignalBlocker>
 #include <QPainter>
@@ -402,8 +403,9 @@ void MainWindow::setupUI()
   auto *desktopPage=new QWidget;auto *desktopLayout=new QVBoxLayout(desktopPage);desktopLayout->setContentsMargins(0,0,0,0);
   auto *minimized=new QCheckBox("Start Control Center minimized");minimized->setObjectName("startMinimized");minimized->setChecked(startMinimizedPreference());minimized->setEnabled(!readOnlyPreview);desktopLayout->addWidget(minimized);
   connect(minimized,&QCheckBox::toggled,this,[](bool value){if(!readOnlyPreview) QSettings("UniwillControlCenter","desktop").setValue("startMinimized",value);});
-  auto *refreshHints=new QCheckBox("Offer display refresh changes on KDE");refreshHints->setObjectName("refreshRateNotifications");refreshHints->setChecked(readOnlyPreview || QSettings("UniwillControlCenter","desktop").value("refreshRateNotifications",true).toBool());refreshHints->setEnabled(!readOnlyPreview);desktopLayout->addWidget(refreshHints);
+  auto *refreshHints=new QCheckBox("Offer display refresh changes on KDE / Hyprland");refreshHints->setObjectName("refreshRateNotifications");refreshHints->setChecked(readOnlyPreview || QSettings("UniwillControlCenter","desktop").value("refreshRateNotifications",true).toBool());refreshHints->setEnabled(!readOnlyPreview);desktopLayout->addWidget(refreshHints);
   connect(refreshHints,&QCheckBox::toggled,this,[](bool value){if(!readOnlyPreview) QSettings("UniwillControlCenter","desktop").setValue("refreshRateNotifications",value);});
+  desktopLayout->addWidget(new BatterySettingsWidget(m_UccdClient.get(),desktopPage));
   auto *processes=new SessionProcessesWidget({},nullptr,desktopPage);desktopLayout->addWidget(processes,1);
   connect(processes,&SessionProcessesWidget::message,statusBar(),[this](const QString &text){statusBar()->showMessage(text);});
   m_tabs->addTab(desktopPage,"Battery & Processes");
@@ -500,6 +502,7 @@ void MainWindow::setupProfilesPage()
   m_applyButton->setMaximumWidth( 80 );
 
   m_saveButton = new QPushButton( "Save" );
+  m_saveButton->setObjectName("saveProfile");
   m_saveButton->setProperty("primary",true);
   m_saveButton->setMaximumWidth( 80 );
   m_saveButton->setEnabled( false );
@@ -527,6 +530,7 @@ void MainWindow::setupProfilesPage()
   // Now use grid layout for the details
   scrollLayout->setContentsMargins(0,0,0,0);
   scrollLayout->setSpacing(16);
+  scrollLayout->setSizeConstraint(QLayout::SetMinAndMaxSize);
   QGridLayout *detailsLayout = new QGridLayout();
   detailsLayout->setSpacing( 12 );
   detailsLayout->setColumnStretch( 0, 0 );  // Labels column - minimal width
@@ -580,114 +584,6 @@ void MainWindow::setupProfilesPage()
   detailsLayout->addItem( new QSpacerItem( 0, 15 ), row, 0, 1, 2 );
   row++;
 
-  // === CHARGING SECTION (visible only when hardware supports it) ===
-  QLabel *chargingHeader = new QLabel( "Charging" );
-  chargingHeader->setStyleSheet( "font-weight: bold; font-size: 14px;" );
-  detailsLayout->addWidget( chargingHeader, row, 0, 1, 2 );
-  row++;
-
-  QLabel *chargingProfileLabel = new QLabel( "Charging profile" );
-  m_profileChargingProfileCombo = new QComboBox();
-  detailsLayout->addWidget( chargingProfileLabel, row, 0 );
-  detailsLayout->addWidget( m_profileChargingProfileCombo, row, 1 );
-  row++;
-
-  QLabel *chargingPriorityLabel = new QLabel( "Charging priority" );
-  m_profileChargingPriorityCombo = new QComboBox();
-  detailsLayout->addWidget( chargingPriorityLabel, row, 0 );
-  detailsLayout->addWidget( m_profileChargingPriorityCombo, row, 1 );
-  row++;
-
-  QLabel *chargeLimitLabel = new QLabel( "Charge limit" );
-  m_profileChargeLimitCombo = new QComboBox();
-  m_profileChargeLimitCombo->addItem( "Full Capacity (100%)", "full" );
-  m_profileChargeLimitCombo->addItem( "Reduced (~90%)", "reduced" );
-  m_profileChargeLimitCombo->addItem( "Stationary (~80%)", "stationary" );
-  detailsLayout->addWidget( chargeLimitLabel, row, 0 );
-  detailsLayout->addWidget( m_profileChargeLimitCombo, row, 1 );
-  row++;
-
-  auto setChargingSectionVisible = [chargingHeader, chargingProfileLabel,
-                                    chargingPriorityLabel, chargeLimitLabel, this]( bool visible )
-  {
-    chargingHeader->setVisible( visible );
-    chargingProfileLabel->setVisible( visible );
-    m_profileChargingProfileCombo->setVisible( visible );
-
-    // Charging priority is only visible if priorities are available
-    bool hasPriorities = m_systemMonitor && !m_systemMonitor->chargingPrioritiesAvailable().isEmpty();
-    chargingPriorityLabel->setVisible( visible && hasPriorities );
-    m_profileChargingPriorityCombo->setVisible( visible && hasPriorities );
-
-    // Charge limit is visible when thresholds are available
-    bool hasThresholds = m_systemMonitor && m_systemMonitor->chargeThresholdsAvailable();
-    chargeLimitLabel->setVisible( visible && hasThresholds );
-    m_profileChargeLimitCombo->setVisible( visible && hasThresholds );
-  };
-
-  // Populate and show/hide based on hardware support
-  if ( m_systemMonitor )
-  {
-    auto populateChargingProfiles = [this, setChargingSectionVisible]()
-    {
-      const QStringList profiles = m_systemMonitor->chargingProfilesAvailable();
-      m_profileChargingProfileCombo->blockSignals( true );
-      m_profileChargingProfileCombo->clear();
-
-      static const QMap< QString, QString > displayNames = {
-          { "high_capacity", "High Capacity (Full charge)" },
-          { "balanced", "Balanced (~90%)" },
-          { "stationary", "Stationary (~80%)" } };
-
-      for ( const auto &p : profiles )
-      {
-        QString display = displayNames.value( p, p );
-        m_profileChargingProfileCombo->addItem( display, p );
-      }
-      m_profileChargingProfileCombo->blockSignals( false );
-      setChargingSectionVisible( !profiles.isEmpty() );
-    };
-
-    auto populateChargingPriorities = [this, setChargingSectionVisible]()
-    {
-      const QStringList priorities = m_systemMonitor->chargingPrioritiesAvailable();
-      m_profileChargingPriorityCombo->blockSignals( true );
-      m_profileChargingPriorityCombo->clear();
-
-      static const QMap< QString, QString > priorityDisplayNames = {
-          { "charge_battery", "Charge Battery" },
-          { "performance", "Performance" } };
-
-      for ( const auto &p : priorities )
-      {
-        QString display = priorityDisplayNames.value( p, p );
-        m_profileChargingPriorityCombo->addItem( display, p );
-      }
-      m_profileChargingPriorityCombo->blockSignals( false );
-
-      // Re-evaluate visibility since priority availability changed
-      bool hasProfiles = !m_systemMonitor->chargingProfilesAvailable().isEmpty();
-      setChargingSectionVisible( hasProfiles );
-    };
-
-    populateChargingProfiles();
-    populateChargingPriorities();
-    connect( m_systemMonitor.get(), &SystemMonitor::chargingProfilesAvailableChanged, this,
-             populateChargingProfiles );
-    connect( m_systemMonitor.get(), &SystemMonitor::chargingPrioritiesAvailableChanged, this,
-             populateChargingPriorities );
-    connect( m_systemMonitor.get(), &SystemMonitor::chargeThresholdsAvailableChanged, this,
-             [this, setChargingSectionVisible]()
-             {
-               bool hasProfiles = !m_systemMonitor->chargingProfilesAvailable().isEmpty();
-               setChargingSectionVisible( hasProfiles );
-             } );
-  }
-  else
-  {
-    setChargingSectionVisible( false );
-  }
-
   // Add spacer before Display section
   detailsLayout->addItem( new QSpacerItem( 0, 10 ), row, 0, 1, 2 );
   row++;
@@ -730,6 +626,16 @@ void MainWindow::setupProfilesPage()
   m_setBrightnessCheckBox->setChecked( false );
   detailsLayout->addWidget( setBrightnessLabel, row, 0 );
   detailsLayout->addWidget( m_setBrightnessCheckBox, row, 1, Qt::AlignLeft );
+  row++;
+
+  m_profileRefreshRate = new QComboBox();
+  m_profileRefreshRate->setObjectName("profileRefreshRate");
+  m_profileRefreshRate->addItem("Do not change", 0);
+  for(int hz : {60, 90, 120, 144, 165, 180, 240, 300, 360, 480})
+    m_profileRefreshRate->addItem(QString("%1 Hz").arg(hz), hz);
+  m_profileRefreshRate->setToolTip("Applies automatically when this profile becomes active. Keeps the current resolution and uses only modes supported by the internal display.");
+  detailsLayout->addWidget(new QLabel("Display refresh rate"), row, 0);
+  detailsLayout->addWidget(m_profileRefreshRate, row, 1);
   row++;
 
   // Add spacer
@@ -903,6 +809,10 @@ void MainWindow::setupProfilesPage()
   detailsLayout->addWidget( coresLabel, row, 0 );
   detailsLayout->addLayout( coresLayout, row, 1 );
   row++;
+  m_cpuCoreSelection=new CpuCoreSelectionWidget;
+  detailsLayout->addWidget(new QLabel("CPU selection"),row,0,Qt::AlignTop);
+  detailsLayout->addWidget(m_cpuCoreSelection,row,1);
+  row++;
 
   QLabel *maxPerfLabel = new QLabel( "CPU Governor" );
   m_governorCombo = new QComboBox();
@@ -1015,6 +925,13 @@ void MainWindow::setupProfilesPage()
     if(auto *widget=item->widget()){
       if (auto *label=qobject_cast<QLabel *>(widget); label && c==0 && cs==1) label->setWordWrap(true);
       section.grid->addWidget(widget,r-section.firstRow,c,rs,cs,item->alignment());delete item;
+      if(widget==m_cpuCoreSelection) {
+        section.grid->setSizeConstraint(QLayout::SetMinimumSize);
+        const int coreRow=r-section.firstRow;
+        auto* grid=section.grid;
+        grid->setRowMinimumHeight(coreRow,m_cpuCoreSelection->minimumHeight());
+        connect(m_cpuCoreSelection,&CpuCoreSelectionWidget::contentHeightChanged,grid,[grid,coreRow](int height){grid->setRowMinimumHeight(coreRow,height);});
+      }
     }
     else if(auto *childLayout=item->layout()){childLayout->setParent(nullptr);section.grid->addLayout(childLayout,r-section.firstRow,c,rs,cs);}
     else {delete item;}
@@ -1036,6 +953,13 @@ void MainWindow::setupProfilesPage()
 
 void MainWindow::connectSignals()
 {
+  connect(m_cpuCoreSelection,&CpuCoreSelectionWidget::selectionChanged,this,[this]{
+    if(m_cpuCoreSelection->individual()) {
+      QJsonObject cpu;m_cpuCoreSelection->writeProfile(cpu);
+      m_cpuCoresSlider->setValue(cpu["onlineCores"].toInt());
+    }
+    markChanged();m_cpuCoresSlider->setEnabled(m_profileManager->isCustomProfile(m_profileCombo->currentData().toString()) && !m_cpuCoreSelection->individual());
+  });
   // Profile page connections
 
   connect( m_profileManager.get(), &ProfileManager::allProfilesChanged,
@@ -1171,6 +1095,7 @@ void MainWindow::connectSignals()
 
   connect( m_setBrightnessCheckBox, &QCheckBox::toggled,
            this, &MainWindow::markChanged );
+  connect(m_profileRefreshRate, &QComboBox::currentIndexChanged, this, &MainWindow::markChanged);
 
   connect( m_brightnessSlider, &QSlider::valueChanged,
            this, [this]() { markChanged(); } );
@@ -1241,21 +1166,6 @@ void MainWindow::connectSignals()
              m_keyboardProfileCombo->blockSignals(false);
            } );
 
-  if ( m_profileChargingProfileCombo )
-  {
-    connect( m_profileChargingProfileCombo, QOverload< int >::of( &QComboBox::currentIndexChanged ),
-             this, &MainWindow::markChanged );
-  }
-  if ( m_profileChargingPriorityCombo )
-  {
-    connect( m_profileChargingPriorityCombo, QOverload< int >::of( &QComboBox::currentIndexChanged ),
-             this, &MainWindow::markChanged );
-  }
-  if ( m_profileChargeLimitCombo )
-  {
-    connect( m_profileChargeLimitCombo, QOverload< int >::of( &QComboBox::currentIndexChanged ),
-             this, &MainWindow::markChanged );
-  }
 
   // Mains/Battery/Water Cooler activation buttons
   connect(m_typeCButton, &QPushButton::toggled, this, &MainWindow::markChanged);
@@ -1659,6 +1569,7 @@ void MainWindow::onBrightnessSliderChanged( int value )
 
 void MainWindow::onCpuCoresChanged( int value )
 {
+  if(m_cpuCoreSelection) m_cpuCoreSelection->setLegacyCount(value);
   m_cpuCoresValue->setText( QString::number( value ) );
 }
 
@@ -1831,6 +1742,7 @@ void MainWindow::loadProfileDetails( const QString &profileId )
   // Block signals while updating to avoid triggering slot updates
   m_brightnessSlider->blockSignals( true );
   m_setBrightnessCheckBox->blockSignals( true );
+  m_profileRefreshRate->blockSignals(true);
   m_profileFanProfileCombo->blockSignals( true );
   m_fanControlTab->fanProfileCombo()->blockSignals( true );
   if ( m_autoWaterControlCheckBox ) m_autoWaterControlCheckBox->blockSignals( true );
@@ -1843,9 +1755,6 @@ void MainWindow::loadProfileDetails( const QString &profileId )
   m_odmPowerLimit3Slider->blockSignals( true );
   m_profileKeyboardProfileCombo->blockSignals( true );
   m_keyboardProfileCombo->blockSignals( true );
-  if ( m_profileChargingProfileCombo ) m_profileChargingProfileCombo->blockSignals( true );
-  if ( m_profileChargingPriorityCombo ) m_profileChargingPriorityCombo->blockSignals( true );
-  if ( m_profileChargeLimitCombo ) m_profileChargeLimitCombo->blockSignals( true );
   m_mainsButton->blockSignals( true );
   m_typeCButton->blockSignals(true);
   m_batteryButton->blockSignals( true );
@@ -1853,6 +1762,14 @@ void MainWindow::loadProfileDetails( const QString &profileId )
   if ( m_descriptionEdit ) m_descriptionEdit->blockSignals( true );
 
   // Load Display settings (nested in display object)
+  const auto display = obj["display"].toObject();
+  const int refreshHz = display["useRefRate"].toBool() ? display["refreshRate"].toInt() : 0;
+  int refreshIndex = m_profileRefreshRate->findData(refreshHz);
+  if(refreshIndex < 0 && refreshHz > 0) {
+    m_profileRefreshRate->addItem(QString("%1 Hz").arg(refreshHz), refreshHz);
+    refreshIndex = m_profileRefreshRate->count()-1;
+  }
+  m_profileRefreshRate->setCurrentIndex(qMax(0, refreshIndex));
 
   if ( obj.contains( "display" ) && obj["display"].isObject() )
   {
@@ -1942,6 +1859,7 @@ void MainWindow::loadProfileDetails( const QString &profileId )
   }
 
   // Load CPU settings (nested in cpu object)
+  m_cpuCoreSelection->setProfile(obj["cpu"].toObject());
 
   if ( obj.contains( "cpu" ) && obj["cpu"].isObject() )
   {
@@ -1949,7 +1867,8 @@ void MainWindow::loadProfileDetails( const QString &profileId )
 
 
     if ( cpuObj.contains( "onlineCores" ) )
-      m_cpuCoresSlider->setValue( cpuObj["onlineCores"].toInt( m_cpuCoresSlider->maximum() ) );
+      m_cpuCoresSlider->setValue(cpuObj["onlineCores"].toInt(-1)>0 ? cpuObj["onlineCores"].toInt() : m_cpuCoresSlider->maximum());
+    if(cpuObj["enabledCores"].isArray()) m_cpuCoresSlider->setValue(cpuObj["enabledCores"].toArray().size());
 
     if ( cpuObj.contains( "governor" ) )
     {
@@ -2091,47 +2010,6 @@ void MainWindow::loadProfileDetails( const QString &profileId )
     m_ctgpValueLabel->setText( QString::number( m_ctgpSlider->value() ) + " W" );
   }
 
-  // Load Charging profile setting
-  if ( m_profileChargingProfileCombo && obj.contains( "chargingProfile" ) )
-  {
-    if ( int idx = m_profileChargingProfileCombo->findData( obj["chargingProfile"].toString() ); idx >= 0 )
-      m_profileChargingProfileCombo->setCurrentIndex( idx );
-    else
-      m_profileChargingProfileCombo->setCurrentIndex( 0 );
-  }
-  else if ( m_profileChargingProfileCombo )
-  {
-    m_profileChargingProfileCombo->setCurrentIndex( 0 );
-  }
-
-  // Load Charging priority setting
-  if ( m_profileChargingPriorityCombo && obj.contains( "chargingPriority" ) )
-  {
-    if ( int idx = m_profileChargingPriorityCombo->findData( obj["chargingPriority"].toString() ); idx >= 0 )
-      m_profileChargingPriorityCombo->setCurrentIndex( idx );
-    else
-      m_profileChargingPriorityCombo->setCurrentIndex( 0 );
-  }
-  else if ( m_profileChargingPriorityCombo )
-  {
-    m_profileChargingPriorityCombo->setCurrentIndex( 0 );
-  }
-
-  // Load Charge limit setting (maps chargeType + thresholds to combo selection)
-  if ( m_profileChargeLimitCombo )
-  {
-    QString chargeType = obj.value( "chargeType" ).toString();
-    int startThr = obj.value( "chargeStartThreshold" ).toInt( -1 );
-    int endThr = obj.value( "chargeEndThreshold" ).toInt( -1 );
-
-    if ( chargeType == "Custom" && startThr == 60 && endThr == 90 )
-      m_profileChargeLimitCombo->setCurrentIndex( m_profileChargeLimitCombo->findData( "reduced" ) );
-    else if ( chargeType == "Custom" && startThr == 40 && endThr == 80 )
-      m_profileChargeLimitCombo->setCurrentIndex( m_profileChargeLimitCombo->findData( "stationary" ) );
-    else
-      m_profileChargeLimitCombo->setCurrentIndex( m_profileChargeLimitCombo->findData( "full" ) );
-  }
-
   // Load Keyboard settings - check for embedded keyboard profile name
   QString loadedKeyboardProfile;
   bool keyboardProfileNotFound = false;
@@ -2194,6 +2072,7 @@ void MainWindow::loadProfileDetails( const QString &profileId )
   // Unblock signals
   m_brightnessSlider->blockSignals( false );
   m_setBrightnessCheckBox->blockSignals( false );
+  m_profileRefreshRate->blockSignals(false);
   m_profileFanProfileCombo->blockSignals( false );
   m_fanControlTab->fanProfileCombo()->blockSignals( false );
   if ( m_autoWaterControlCheckBox ) m_autoWaterControlCheckBox->blockSignals( false );
@@ -2210,9 +2089,6 @@ void MainWindow::loadProfileDetails( const QString &profileId )
   m_odmPowerLimit3Slider->blockSignals( false );
   m_profileKeyboardProfileCombo->blockSignals( false );
   m_keyboardProfileCombo->blockSignals( false );
-  if ( m_profileChargingProfileCombo ) m_profileChargingProfileCombo->blockSignals( false );
-  if ( m_profileChargingPriorityCombo ) m_profileChargingPriorityCombo->blockSignals( false );
-  if ( m_profileChargeLimitCombo ) m_profileChargeLimitCombo->blockSignals( false );
   m_mainsButton->blockSignals( false );
   m_typeCButton->blockSignals(false);
   m_batteryButton->blockSignals( false );
@@ -2286,6 +2162,7 @@ void MainWindow::updateProfileEditingWidgets( bool isCustom )
 
   // Display controls
   if ( m_setBrightnessCheckBox ) m_setBrightnessCheckBox->setEnabled( isCustom );
+  if ( m_profileRefreshRate ) m_profileRefreshRate->setEnabled(isCustom);
   if ( m_brightnessSlider ) m_brightnessSlider->setEnabled( isCustom );
 
   // Fan controls
@@ -2294,7 +2171,8 @@ void MainWindow::updateProfileEditingWidgets( bool isCustom )
   if ( m_autoWaterControlCheckBox ) m_autoWaterControlCheckBox->setEnabled( isCustom );
 
   // CPU controls
-  if ( m_cpuCoresSlider ) m_cpuCoresSlider->setEnabled( isCustom );
+  if ( m_cpuCoresSlider ) m_cpuCoresSlider->setEnabled( isCustom && !m_cpuCoreSelection->individual() );
+  m_cpuCoreSelection->setEditable(isCustom);
   if ( m_governorCombo ) m_governorCombo->setEnabled( isCustom );
   if ( m_eppCombo ) m_eppCombo->setEnabled( isCustom );
   if ( m_minFrequencySlider ) m_minFrequencySlider->setEnabled( isCustom );
@@ -2312,9 +2190,6 @@ void MainWindow::updateProfileEditingWidgets( bool isCustom )
   // GPU Power (cTGP) slider
   if ( m_ctgpSlider ) m_ctgpSlider->setEnabled( isCustom );
   // Charging profile
-  if ( m_profileChargingProfileCombo ) m_profileChargingProfileCombo->setEnabled( isCustom );
-  if ( m_profileChargingPriorityCombo ) m_profileChargingPriorityCombo->setEnabled( isCustom );
-  if ( m_profileChargeLimitCombo ) m_profileChargeLimitCombo->setEnabled( isCustom );
 }
 
 void MainWindow::updateCtgpVisibility()
@@ -2359,11 +2234,14 @@ QString MainWindow::buildProfileJSON() const
   profileObj["description"] = m_descriptionEdit->toPlainText();
 
   // Brightness
-  QJsonObject displayObj;
+  QJsonObject displayObj = QJsonDocument::fromJson(m_profileManager->getProfileDetails(profileId).toUtf8()).object()["display"].toObject();
   const bool useBrightness = m_setBrightnessCheckBox->isChecked();
   displayObj["useBrightness"] = useBrightness;
   if ( useBrightness )
     displayObj["brightness"] = m_brightnessSlider->value();
+  const int refreshHz = m_profileRefreshRate->currentData().toInt();
+  displayObj["useRefRate"] = refreshHz > 0;
+  displayObj["refreshRate"] = refreshHz > 0 ? refreshHz : -1;
   profileObj["display"] = displayObj;
 
   // Fan - embed complete fan profile tables
@@ -2401,6 +2279,7 @@ QString MainWindow::buildProfileJSON() const
   // CPU
   QJsonObject cpuObj;
   cpuObj["onlineCores"]                = m_cpuCoresSlider->value();
+  m_cpuCoreSelection->writeProfile(cpuObj);
   cpuObj["governor"]                   = m_governorCombo->currentData().toString();
   cpuObj["energyPerformancePreference"] = m_eppCombo ? m_eppCombo->currentData().toString() : QString();
   cpuObj["scalingMinFrequency"]         = std::clamp( m_minFrequencySlider->value(), m_cpuMinFreqKHz, m_cpuMaxFreqKHz );
@@ -2435,38 +2314,6 @@ QString MainWindow::buildProfileJSON() const
     keyboardObj["brightness"] = m_keyboardBrightnessSlider->value();
   profileObj["keyboard"]               = keyboardObj;
   profileObj["selectedKeyboardProfile"] = keyboardProfileId;
-
-  // Charging
-  if ( m_profileChargingProfileCombo )
-  {
-    QString v = m_profileChargingProfileCombo->currentData().toString();
-    if ( !v.isEmpty() ) profileObj["chargingProfile"] = v;
-  }
-  if ( m_profileChargingPriorityCombo )
-  {
-    QString v = m_profileChargingPriorityCombo->currentData().toString();
-    if ( !v.isEmpty() ) profileObj["chargingPriority"] = v;
-  }
-  if ( m_profileChargeLimitCombo )
-  {
-    QString limitPreset = m_profileChargeLimitCombo->currentData().toString();
-    if ( limitPreset == "full" )
-    {
-      profileObj["chargeType"] = "Standard";
-    }
-    else if ( limitPreset == "reduced" )
-    {
-      profileObj["chargeType"]           = "Custom";
-      profileObj["chargeStartThreshold"] = 60;
-      profileObj["chargeEndThreshold"]   = 90;
-    }
-    else if ( limitPreset == "stationary" )
-    {
-      profileObj["chargeType"]           = "Custom";
-      profileObj["chargeStartThreshold"] = 40;
-      profileObj["chargeEndThreshold"]   = 80;
-    }
-  }
 
   return QString::fromUtf8( QJsonDocument( profileObj ).toJson() );
 }

@@ -390,6 +390,7 @@ public slots:
   QString GetAvailableGovernors();
   QString GetAvailableEPPs();
   int GetCpuCoreCount();
+  QString GetCpuTopologyJSON();
 
   // water cooler methods
   bool GetWaterCoolerAvailable();

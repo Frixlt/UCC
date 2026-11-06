@@ -31,6 +31,11 @@ void ProfileSettingsWorker::start()
   // worker is created. We only need to initialise charging internal state here
   // so that the getter methods (getCurrentChargingProfile etc.) work.
   initializeChargingSettings();
+  if(m_settings.chargingProfile) applyChargingProfile(*m_settings.chargingProfile);
+  if(m_settings.chargingPriority) applyChargingPriority(*m_settings.chargingPriority);
+  if(m_settings.chargeType) setChargeType(*m_settings.chargeType);
+  if(m_settings.chargeStartThreshold) setChargeStartThreshold(*m_settings.chargeStartThreshold);
+  if(m_settings.chargeEndThreshold) setChargeEndThreshold(*m_settings.chargeEndThreshold);
 }
 
 std::vector< TDPInfo > ProfileSettingsWorker::getTDPInfo()
@@ -85,21 +90,21 @@ bool ProfileSettingsWorker::applyChargingProfile( const std::string &profileDesc
   if ( not hasChargingProfile() )
     return false;
 
-  if ( not profileDescriptor.empty() )
-    m_currentChargingProfile = profileDescriptor;
-
   try
   {
-    const std::string profileToSet = m_currentChargingProfile;
+    const std::string profileToSet = profileDescriptor.empty() ? m_currentChargingProfile : profileDescriptor;
     const std::string currentProfile =
       SysfsNode< std::string >( CHARGING_PROFILE ).read().value_or( "" );
     const auto profilesAvailable = getChargingProfilesAvailable();
+    if(std::ranges::find(profilesAvailable,profileToSet)==profilesAvailable.end()) return false;
+    if(profileToSet==currentProfile) {m_currentChargingProfile=profileToSet;return true;}
 
     if ( auto it = std::ranges::find( profilesAvailable, profileToSet );
          not profileToSet.empty() and profileToSet != currentProfile and it != profilesAvailable.end() )
     {
       if ( SysfsNode< std::string >( CHARGING_PROFILE ).write( profileToSet ) )
       {
+        m_currentChargingProfile=profileToSet;
         syslog( LOG_INFO, "Applied charging profile '%s'", profileToSet.c_str() );
         return true;
       }
@@ -118,20 +123,20 @@ bool ProfileSettingsWorker::applyChargingPriority( const std::string &priorityDe
   if ( not hasChargingPriority() )
     return false;
 
-  if ( not priorityDescriptor.empty() )
-    m_currentChargingPriority = priorityDescriptor;
-
   try
   {
-    const std::string prioToSet = m_currentChargingPriority;
+    const std::string prioToSet = priorityDescriptor.empty() ? m_currentChargingPriority : priorityDescriptor;
     const std::string currentPrio = SysfsNode< std::string >( CHARGING_PRIORITY ).read().value_or( "" );
     const auto priosAvailable = getChargingPrioritiesAvailable();
+    if(std::ranges::find(priosAvailable,prioToSet)==priosAvailable.end()) return false;
+    if(prioToSet==currentPrio) {m_currentChargingPriority=prioToSet;return true;}
 
     if ( auto it = std::ranges::find( priosAvailable, prioToSet );
          not prioToSet.empty() and prioToSet != currentPrio and it != priosAvailable.end() )
     {
       if ( SysfsNode< std::string >( CHARGING_PRIORITY ).write( prioToSet ) )
       {
+        m_currentChargingPriority=prioToSet;
         syslog( LOG_INFO, "Applied charging priority '%s'", prioToSet.c_str() );
         return true;
       }

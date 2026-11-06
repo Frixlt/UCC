@@ -38,6 +38,17 @@ private:
   SettingsManager mgr;
 
 private slots:
+  void globalChargingPreferencesAreIndependentOfProfiles() {
+    TccSettings settings;settings.chargingProfile="stationary";settings.chargingPriority="performance";
+    settings.chargeType="Custom";settings.chargeStartThreshold=40;settings.chargeEndThreshold=80;
+    settings.profiles["battery"]=R"({"id":"battery","name":"Battery","chargingProfile":"high_capacity"})";
+    const auto parsed=mgr.parseSettingsJSON(R"({"chargingProfile":"stationary","chargingPriority":"performance","chargeType":"Custom","chargeStartThreshold":40,"chargeEndThreshold":80,"profiles":{"battery":{"id":"battery","name":"Battery","chargingProfile":"high_capacity"}}})");
+    QVERIFY(parsed);QCOMPARE(*parsed->chargingProfile,std::string("stationary"));
+    QCOMPARE(*parsed->chargeType,std::string("Custom"));QCOMPARE(*parsed->chargeStartThreshold,40);QCOMPARE(*parsed->chargeEndThreshold,80);
+    QVERIFY(parsed->profiles.at("battery").find("high_capacity")!=std::string::npos);
+  }
+
+private slots:
 
   // parseSettingsJSON() - happy path
 

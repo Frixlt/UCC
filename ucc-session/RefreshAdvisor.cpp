@@ -25,7 +25,7 @@ bool validSource( const QString& s )
 }
 bool identifier( const QString& s )
 {
-  return QRegularExpression( "^[A-Za-z0-9_:@+-]{1,128}$" ).match( s ).hasMatch();
+  return QRegularExpression( "^[A-Za-z0-9_.:@+-]{1,128}$" ).match( s ).hasMatch();
 }
 bool internal( const QString& s )
 {
@@ -57,7 +57,7 @@ bool RefreshPlan::sameSelection( const RefreshPlan& o ) const
          height == o.height && std::abs( currentHz - o.currentHz ) < 0.1 && std::abs( targetHz - o.targetHz ) < 0.1;
 }
 std::optional< RefreshPlan > RefreshAdvisor::plan( const QJsonObject& configuration, const QString& source,
-                                                   const QString& drm )
+                                                   const QString& drm, int requestedHz )
 {
   if( !validSource( source ) )
     return {};
@@ -72,7 +72,7 @@ std::optional< RefreshPlan > RefreshAdvisor::plan( const QJsonObject& configurat
     const double currentHz = current["refreshRate"].toDouble();
     if( w <= 0 || h <= 0 || !std::isfinite( currentHz ) || currentHz <= 0 )
       continue;
-    const double preferred = source == "bat" ? 60 : nvidiaPanel( name, drm ) ? 300 : 240;
+    const double preferred = requestedHz > 0 ? requestedHz : source == "bat" ? 60 : nvidiaPanel( name, drm ) ? 300 : 240;
     QJsonObject selected;
     double best = -1;
     for( const auto& m : output["modes"].toArray() )
@@ -82,9 +82,9 @@ std::optional< RefreshPlan > RefreshAdvisor::plan( const QJsonObject& configurat
       if( s["width"].toInt() != w || s["height"].toInt() != h || !identifier( mode["id"].toString() ) ||
           !std::isfinite( hz ) )
         continue;
-      if( source == "bat" ? std::abs( hz - 60 ) > 2 : ( hz < 100 || hz > preferred + 2 ) )
+      if( requestedHz > 0 ? std::abs(hz-preferred)>2 : source == "bat" ? std::abs( hz - 60 ) > 2 : ( hz < 100 || hz > preferred + 2 ) )
         continue;
-      if( selected.isEmpty() || ( source == "bat" ? std::abs( hz - 60 ) < std::abs( best - 60 ) : hz > best ) )
+      if( selected.isEmpty() || ( requestedHz > 0 ? std::abs(hz-preferred)<std::abs(best-preferred) : source == "bat" ? std::abs( hz - 60 ) < std::abs( best - 60 ) : hz > best ) )
       {
         selected = mode;
         best = hz;
@@ -109,7 +109,11 @@ bool RefreshAdvisor::applied( const QJsonObject& configuration, const RefreshPla
   return false;
 }
 RefreshAdvisor::RefreshAdvisor( bool kdeSession, QString command, QString drm, QDBusConnection bus, QObject* parent )
-    : QObject( parent ), m_kde( kdeSession ), m_command( std::move( command ) ), m_drm( std::move( drm ) ),
+    : RefreshAdvisor(kdeSession ? RefreshBackend::KDE : RefreshBackend::Unsupported,
+                     std::move(command), std::move(drm), std::move(bus), parent) {}
+
+RefreshAdvisor::RefreshAdvisor( RefreshBackend backend, QString command, QString drm, QDBusConnection bus, QObject* parent )
+    : QObject( parent ), m_backend( backend ), m_command( command.isEmpty() ? backend == RefreshBackend::Hyprland ? "hyprctl" : "kscreen-doctor" : std::move(command) ), m_drm( std::move( drm ) ),
       m_bus( std::move( bus ) )
 {
   m_debounce.setSingleShot( true );
@@ -126,8 +130,39 @@ RefreshAdvisor::~RefreshAdvisor()
 }
 bool RefreshAdvisor::enabled() const
 {
-  return !readOnlyPreview && m_kde &&
-         QSettings( "UniwillControlCenter", "desktop" ).value( "refreshRateNotifications", true ).toBool();
+  return !readOnlyPreview && m_backend != RefreshBackend::Unsupported &&
+         (m_profileHz > 0 || QSettings( "UniwillControlCenter", "desktop" ).value( "refreshRateNotifications", true ).toBool());
+}
+QJsonObject RefreshAdvisor::hyprlandConfiguration(const QByteArray& json)
+{
+  QJsonArray outputs;
+  const QRegularExpression modePattern("^([0-9]{1,5})x([0-9]{1,5})@([0-9]+(?:\\.[0-9]+)?)Hz$");
+  for(const auto& value : QJsonDocument::fromJson(json).array()) {
+    const auto monitor=value.toObject();
+    if(monitor["disabled"].toBool() || (!monitor["mirrorOf"].toString().isEmpty() && monitor["mirrorOf"].toString()!="none")) continue;
+    QJsonArray modes;
+    QString current;
+    for(const auto& v : monitor["availableModes"].toArray()) {
+      const auto match=modePattern.match(v.toString());
+      if(!match.hasMatch()) continue;
+      const int w=match.captured(1).toInt(),h=match.captured(2).toInt();
+      const double hz=match.captured(3).toDouble();
+      const QString id=QString("%1x%2@%3").arg(w).arg(h).arg(hz,0,'f',2);
+      modes.append(QJsonObject{{"id",id},{"refreshRate",hz},{"size",QJsonObject{{"width",w},{"height",h}}}});
+      if(w==monitor["width"].toInt() && h==monitor["height"].toInt() && std::abs(hz-monitor["refreshRate"].toDouble())<0.1) current=id;
+    }
+    outputs.append(QJsonObject{{"name",monitor["name"]},{"connected",true},{"enabled",!current.isEmpty()},
+                               {"currentModeId",current},{"modes",modes}});
+  }
+  return {{"outputs",outputs}};
+}
+QJsonObject RefreshAdvisor::configuration(const QByteArray& json) const
+{
+  return m_backend==RefreshBackend::Hyprland ? hyprlandConfiguration(json) : QJsonDocument::fromJson(json).object();
+}
+QStringList RefreshAdvisor::queryArguments() const
+{
+  return m_backend==RefreshBackend::Hyprland ? QStringList{"-j","monitors","all"} : QStringList{"-j"};
 }
 void RefreshAdvisor::closeNotification()
 {
@@ -183,11 +218,24 @@ void RefreshAdvisor::policyChanged( const QString& json )
   if( enabled() && !m_sleeping )
     m_debounce.start();
 }
+void RefreshAdvisor::profileChanged(const QString& json)
+{
+  const auto profile=QJsonDocument::fromJson(json.toUtf8()).object();
+  const auto display=profile["display"].toObject();
+  const int requested=display["refreshRate"].toInt();
+  const int hz=display["useRefRate"].toBool() && requested>=24 && requested<=1000 ? requested : 0;
+  const auto id=profile["id"].toString();
+  if(hz==0 && m_profileHz==0) {m_profileId=id;return;}
+  if(hz==m_profileHz && id==m_profileId) return;
+  invalidate();m_profileHz=hz;m_profileId=id;m_retries=0;
+  m_wanted=hz>0;
+  if(m_wanted && enabled() && !m_sleeping) m_debounce.start();
+}
 void RefreshAdvisor::sleeping( bool sleep )
 {
   if( sleep == m_sleeping )
     return;
-  if( sleep && m_pending )
+  if( sleep && (m_pending || m_profileHz>0) )
     m_wanted = true;
   m_sleeping = sleep;
   invalidate();
@@ -252,11 +300,11 @@ void RefreshAdvisor::propose()
 {
   if( !m_wanted || !enabled() || m_sleeping )
     return;
-  run( { "-j" },
+  run( queryArguments(),
        [this]( bool ok, const QByteArray& bytes )
        {
-         const auto doc = QJsonDocument::fromJson( bytes );
-         if( !ok || !doc.isObject() || doc.object()["outputs"].toArray().isEmpty() )
+         const auto config = configuration(bytes);
+         if( !ok || config["outputs"].toArray().isEmpty() )
          {
            if( ++m_retries < 3 )
              m_debounce.start( 1500 );
@@ -265,9 +313,23 @@ void RefreshAdvisor::propose()
            return;
          }
          m_wanted = false;
-         const auto offer = plan( doc.object(), m_source, m_drm );
-         if( !offer )
+         const auto offer = plan( config, m_source, m_drm, m_profileHz );
+         if( !offer ) {
+           if(m_profileHz>0) {
+             bool already=false;
+             for(const auto& value:config["outputs"].toArray()) {
+               const auto output=value.toObject();
+               already |= internal(output["name"].toString()) && output["connected"].toBool() && output["enabled"].toBool() &&
+                 std::abs(currentMode(output)["refreshRate"].toDouble()-m_profileHz)<2;
+             }
+             if(!already) {
+               const auto text=QString("%1 Гц недоступны при текущем разрешении внутреннего экрана.").arg(m_profileHz);
+               emit result(false,text);notify("Частота не изменена",text);
+             }
+           }
            return;
+         }
+         if(m_profileHz > 0) {applySelection(*offer);return;}
          notify( m_source == "bat" ? "Энергосбережение дисплея" : "Питание подключено",
                  QString( "%1: сейчас %2 Гц. Переключить на %3 Гц?" )
                      .arg( offer->output )
@@ -315,18 +377,27 @@ void RefreshAdvisor::actionInvoked( uint id, const QString& action )
     return;
   const auto selected = *m_pending;
   closeNotification();
+  applySelection(selected);
+}
+void RefreshAdvisor::applySelection(const RefreshPlan& selected)
+{
   if( !enabled() || m_sleeping )
     return;
-  run( { "-j" },
+  run( queryArguments(),
        [this, selected]( bool ok, const QByteArray& bytes )
        {
-         const auto fresh = ok ? plan( QJsonDocument::fromJson( bytes ).object(), m_source, m_drm ) : std::nullopt;
+         const auto fresh = ok ? plan( configuration(bytes), m_source, m_drm, m_profileHz ) : std::nullopt;
          if( !fresh || !selected.sameSelection( *fresh ) || !enabled() )
          {
            emit result( false, "Display or power state changed; the old suggestion was discarded" );
            return;
          }
-         run( { "output." + selected.output + ".mode." + selected.targetMode },
+         // Lua monitor updates merge with the existing rule, preserving scale,
+         // position, colour profile, transform and other output settings.
+         const QStringList args = m_backend==RefreshBackend::Hyprland
+             ? QStringList{"eval",QString("hl.monitor({ output = \"%1\", mode = \"%2\" })").arg(selected.output,selected.targetMode)}
+             : QStringList{"output." + selected.output + ".mode." + selected.targetMode};
+         run( args,
               [this, selected]( bool appliedCommand, const QByteArray& )
               {
                 if( !appliedCommand )
@@ -340,10 +411,10 @@ void RefreshAdvisor::actionInvoked( uint id, const QString& action )
                     [this, selected, generation]
                     {
                       if( generation == m_generation )
-                        run( { "-j" },
+                        run( queryArguments(),
                              [this, selected]( bool ok, const QByteArray& bytes )
                              {
-                               report( ok && applied( QJsonDocument::fromJson( bytes ).object(), selected ), selected );
+                               report( ok && applied( configuration(bytes), selected ), selected );
                              } );
                     } );
               } );

@@ -101,9 +101,9 @@ void SystemMonitor::updateMetrics()
     setText(m_cpuTemp, formatted(fanValue(cpuFan,"temp"), "°C"), &SystemMonitor::cpuTempChanged);
     setText(m_cpuFrequency, formatted(snapshot.value("GetCpuFrequencyMHz",-1).toInt()," MHz"), &SystemMonitor::cpuFrequencyChanged);
     setText(m_cpuPower, formatted(numeric(cpu,"powerDraw")," W",1), &SystemMonitor::cpuPowerChanged);
-    setText(m_gpuTemp, formatted(fallback(numeric(gpu,"temp"),numeric(igpu,"temp")),"°C"), &SystemMonitor::gpuTempChanged);
+    setText(m_gpuTemp, formatted(numeric(gpu,"temp"),"°C"), &SystemMonitor::gpuTempChanged);
     setText(m_gpuFrequency, formatted(fallback(numeric(gpu,"coreFrequency"),numeric(gpu,"coreFreq"))," MHz"), &SystemMonitor::gpuFrequencyChanged);
-    setText(m_gpuPower, formatted(fallback(numeric(gpu,"powerDraw"),numeric(igpu,"powerDraw"))," W",1), &SystemMonitor::gpuPowerChanged);
+    setText(m_gpuPower, formatted(numeric(gpu,"powerDraw")," W",1), &SystemMonitor::gpuPowerChanged);
     setText(m_iGpuFrequency, formatted(numeric(igpu,"coreFrequency")," MHz"), &SystemMonitor::iGpuFrequencyChanged);
     setText(m_iGpuPower, formatted(numeric(igpu,"powerDraw")," W",1), &SystemMonitor::iGpuPowerChanged);
     setText(m_iGpuTemp, formatted(numeric(igpu,"temp"),"°C"), &SystemMonitor::iGpuTempChanged);

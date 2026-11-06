@@ -30,6 +30,8 @@
 #include <iostream>
 #include <map>
 #include <syslog.h>
+#include <nlohmann/json.hpp>
+#include <set>
 
 /**
  * @brief Manages TCC profile loading, saving and manipulation
@@ -189,6 +191,18 @@ public:
     std::string cpuJson = extractObject( json, "cpu" );
     if ( !cpuJson.empty() )
     {
+      const auto cpuObject=nlohmann::json::parse(cpuJson);
+      if(cpuObject.contains("enabledCores")) {
+        const auto& mask=cpuObject.at("enabledCores");
+        if(!mask.is_array() || mask.empty() || mask.size()>4096)
+          throw std::invalid_argument("CPU selection must be a nonempty array");
+        std::set<int32_t> ids;
+        for(const auto& value:mask) {
+          if(!value.is_number_integer() || value.get<int64_t>()<0 || value.get<int64_t>()>1048575 || !ids.insert(value.get<int32_t>()).second)
+            throw std::invalid_argument("Invalid or duplicate logical CPU ID");
+        }
+        profile.cpu.enabledCores=std::vector<int32_t>(ids.begin(),ids.end());
+      }
       int32_t onlineCores = extractInt( cpuJson, "onlineCores", -1 );
       if ( onlineCores >= 0 )
       {
@@ -627,6 +641,7 @@ public:
         << "},"
         << "\"cpu\":{"
         << "\"onlineCores\":" << ( profile.cpu.onlineCores.has_value() ? std::to_string( *profile.cpu.onlineCores ) : "-1" ) << ","
+        << (profile.cpu.enabledCores ? "\"enabledCores\":"+nlohmann::json(*profile.cpu.enabledCores).dump()+"," : "")
         << "\"scalingMinFrequency\":" << ( profile.cpu.scalingMinFrequency.has_value() ? std::to_string( *profile.cpu.scalingMinFrequency ) : "-1" ) << ","
         << "\"scalingMaxFrequency\":" << ( profile.cpu.scalingMaxFrequency.has_value() ? std::to_string( *profile.cpu.scalingMaxFrequency ) : "-1" ) << ","
         << "\"governor\":\"" << jsonEscape( profile.cpu.governor ) << "\","

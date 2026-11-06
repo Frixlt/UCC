@@ -28,6 +28,7 @@ find_package( Qt6 REQUIRED COMPONENTS
 
 # Application sources
 set( UCC_GUI_SOURCES
+  inc/CpuCoreSelectionWidget.hpp
   resources/fluent.qrc
     resources/legal.qrc
     src/AboutPage.cpp inc/AboutPage.hpp

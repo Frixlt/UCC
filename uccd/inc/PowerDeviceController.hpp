@@ -92,18 +92,23 @@ public:
       const auto cpu=config.value("cpu",Json::object()).value(mode,Json::object());
       const std::string aspm=cpu.value("aspm",std::string());
       if (!aspm.empty()) result["aspmApplied"]=write("/sys/module/pcie_aspm/parameters/policy",aspm);
-      bool wakeNvidia=false;
+      bool wakeNvidia=false, manageNvidia=false;
       for(const auto &device:config.value("devices",Json::array())) {
         if(device["type"]!="pci") continue;
         const std::string path=device["path"];
         const auto base=std::filesystem::path(path).parent_path().parent_path();
-        if(read(base/"vendor")=="0x10de" && read(base/"class").starts_with("0x03") &&
-           (config.value("keepNvidiaAwake",false) || device[mode+"_val"]=="on")) {
-          wakeNvidia=write(path,"on") || wakeNvidia;
+        if(read(base/"vendor")=="0x10de" && read(base/"class").starts_with("0x03")) {
+          manageNvidia=true;
+          if(config.value("keepNvidiaAwake",false) || device[mode+"_val"]=="on")
+            wakeNvidia=write(path,"on") || wakeNvidia;
         }
       }
-      if(wakeNvidia && std::filesystem::exists(m_proc/"driver/nvidia/version"))
-        result["nvidiaPersistenceApplied"]=run("nvidia-smi",{"-pm","1"});
+      // Undo persistence before allowing runtime suspend, including after a
+      // daemon restart with the workaround already disabled in saved settings.
+      if(manageNvidia && std::filesystem::exists(m_proc/"driver/nvidia/version")) {
+        result["nvidiaPersistenceEnabled"]=wakeNvidia;
+        result["nvidiaPersistenceApplied"]=run("nvidia-smi",{"-pm",wakeNvidia ? "1" : "0"});
+      }
       for (const auto &device : config.value("devices",Json::array())) {
         const std::string type=device["type"], path=device["path"];
         std::string value=device[mode+"_val"];

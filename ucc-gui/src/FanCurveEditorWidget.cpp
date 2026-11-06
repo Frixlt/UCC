@@ -22,6 +22,7 @@ FanCurveEditorWidget::FanCurveEditorWidget(QWidget *parent)
 }
 
 void FanCurveEditorWidget::setPoints(const QVector<Point>& pts) {
+    resetInteraction();
     m_points = pts;
     sortPoints();
     // Enforce monotonicity on all points
@@ -31,6 +32,24 @@ void FanCurveEditorWidget::setPoints(const QVector<Point>& pts) {
     m_selectedIndices.clear();
     update();
     emit pointsChanged(m_points);
+}
+
+void FanCurveEditorWidget::resetInteraction() {
+    m_draggedIndex = -1;
+    m_dragStartDuties.clear();
+    m_rubberBandActive = false;
+    m_rubberBandRect = QRect();
+    m_selectionBeforeBand.clear();
+}
+
+void FanCurveEditorWidget::setEditable(bool editable) {
+    resetInteraction();
+    m_editable = editable;
+    update();
+}
+
+double FanCurveEditorWidget::minimumTemperature() const {
+    return m_points.isEmpty() ? 20.0 : std::min(20.0, std::floor(m_points.first().temp / 5.0) * 5.0);
 }
 
 void FanCurveEditorWidget::setCrosshair( double temp, double duty )
@@ -56,7 +75,8 @@ QPointF FanCurveEditorWidget::toWidget(const Point& pt) const {
     const int left = 80, right = 20, top = 28, bottom = 68;
     double plotW = width() - left - right;
     double plotH = height() - top - bottom;
-    double x = left + (pt.temp - 20.0) / 80.0 * plotW;
+    const double minimum = minimumTemperature();
+    double x = left + (pt.temp - minimum) / (100.0 - minimum) * plotW;
     double y = top + (1.0 - pt.duty / 100.0) * plotH;
     return QPointF(x, y);
 }
@@ -65,14 +85,16 @@ FanCurveEditorWidget::Point FanCurveEditorWidget::fromWidget(const QPointF& pos)
     const int left = 80, right = 20, top = 28, bottom = 68;
     double plotW = width() - left - right;
     double plotH = height() - top - bottom;
-    double temp = (pos.x() - left) / plotW * 80.0 + 20.0;
+    const double minimum = minimumTemperature();
+    double temp = (pos.x() - left) / plotW * (100.0 - minimum) + minimum;
     double duty = (1.0 - (pos.y() - top) / plotH) * 100.0;
-    return { std::clamp(temp, 20.0, 100.0), std::clamp(duty, 0.0, 100.0) };
+    return { std::clamp(temp, minimum, 100.0), std::clamp(duty, 0.0, 100.0) };
 }
 
 QRectF FanCurveEditorWidget::pointRect(const Point& pt) const {
     QPointF c = toWidget(pt);
-    return QRectF(c.x() - 7.0, c.y() - 7.0, 14.0, 14.0);
+    const double radius = std::clamp((width() - 100.0) / std::max(1LL, static_cast<long long>(m_points.size()) - 1) * 0.35, 3.0, 7.0);
+    return QRectF(c.x() - radius, c.y() - radius, radius * 2, radius * 2);
 }
 
 void FanCurveEditorWidget::enforceMonotonicity(int modifiedIndex) {
@@ -154,15 +176,16 @@ void FanCurveEditorWidget::paintEvent(QPaintEvent*) {
     }
 
     // X grid/ticks/labels (20-100 degC every 5 degC)
-    for (int i = 0; i <= 16; ++i) {
-        double frac = i / 16.0;
+    const double minimum = minimumTemperature();
+    const int tickStep = (width() - left - right) < 850 ? 10 : 5;
+    for (int temp = static_cast<int>(minimum); temp <= 100; temp += tickStep) {
+        double frac = (temp - minimum) / (100.0 - minimum);
         qreal x = plotRect.left() + frac * plotRect.width();
         qreal xx = qRound(x) + 0.5;
         // grid line
         p.setPen(gridColor);
         p.drawLine(QPointF(xx, qRound(plotRect.top()) + 0.5), QPointF(xx, qRound(plotRect.bottom()) + 0.5));
         // tick label
-        int temp = 20 + i * 5;
         QString label = QString::number(temp) + QChar(0x00B0) + "C";
         p.setPen(labelColor);
         QRectF labelRect(xx-20, plotRect.bottom()+12, 40, 20);
@@ -278,15 +301,19 @@ void FanCurveEditorWidget::paintEvent(QPaintEvent*) {
 }
 
 void FanCurveEditorWidget::mousePressEvent(QMouseEvent* e) {
-    if (!m_editable) return;
+    if (!m_editable || e->button() != Qt::LeftButton) return;
+    resetInteraction();
     m_ctrlHeld = (e->modifiers() & Qt::ControlModifier);
 
     // Check if clicked on a point
     int hitIndex = -1;
+    double nearest = 100.0;
     for (int i = 0; i < m_points.size(); ++i) {
-        if (pointRect(m_points[i]).contains(e->pos())) {
+        const auto offset = toWidget(m_points[i]) - e->position();
+        const double distance = QPointF::dotProduct(offset, offset);
+        if (distance < nearest) {
             hitIndex = i;
-            break;
+            nearest = distance;
         }
     }
 
@@ -297,6 +324,8 @@ void FanCurveEditorWidget::mousePressEvent(QMouseEvent* e) {
                 m_selectedIndices.remove(hitIndex);
             else
                 m_selectedIndices.insert(hitIndex);
+            update();
+            return;
         } else {
             // Plain click on a point: if not already selected, replace selection
             if (!m_selectedIndices.contains(hitIndex)) {
@@ -317,6 +346,7 @@ void FanCurveEditorWidget::mousePressEvent(QMouseEvent* e) {
     // Clicked on empty space - start rubber band
     if (!m_ctrlHeld)
         m_selectedIndices.clear();
+    m_selectionBeforeBand = m_selectedIndices;
     m_rubberBandActive = true;
     m_rubberBandOrigin = e->pos();
     m_rubberBandRect = QRect();
@@ -324,14 +354,13 @@ void FanCurveEditorWidget::mousePressEvent(QMouseEvent* e) {
 }
 
 void FanCurveEditorWidget::mouseMoveEvent(QMouseEvent* e) {
-    if (!m_editable) return;
+    if (!m_editable || !(e->buttons() & Qt::LeftButton)) return;
 
     // Rubber band selection
     if (m_rubberBandActive) {
         m_rubberBandRect = QRect(m_rubberBandOrigin, e->pos()).normalized();
         // Preview: select all points inside the rubber band
-        if (!m_ctrlHeld)
-            m_selectedIndices.clear();
+        m_selectedIndices = m_selectionBeforeBand;
         for (int i = 0; i < m_points.size(); ++i) {
             QPointF wp = toWidget(m_points[i]);
             if (m_rubberBandRect.contains(wp.toPoint()))
@@ -343,11 +372,21 @@ void FanCurveEditorWidget::mouseMoveEvent(QMouseEvent* e) {
 
     // Dragging selected points
     if (m_draggedIndex < 0) return;
+    dragTo(e->position());
+}
+
+void FanCurveEditorWidget::dragTo(const QPointF& position) {
+    if (m_draggedIndex < 0 || m_dragStartDuties.size() != m_points.size()) return;
 
     const int top = 28, bottom = 68;
     double plotH = height() - top - bottom;
-    double deltaY = e->pos().y() - m_dragStartY;
+    double deltaY = position.y() - m_dragStartY;
     double deltaDuty = -(deltaY / plotH) * 100.0;
+
+    // Rebuild every preview from the press snapshot. Otherwise monotonicity
+    // edits to neighbouring points accumulate and cannot be undone by dragging back.
+    for (int i = 0; i < m_points.size(); ++i)
+        m_points[i].duty = m_dragStartDuties[i];
 
     for (int idx : m_selectedIndices) {
         if (idx < 0 || idx >= m_points.size()) continue;
@@ -368,13 +407,15 @@ void FanCurveEditorWidget::mouseMoveEvent(QMouseEvent* e) {
     emit pointsChanged(m_points);
 }
 
-void FanCurveEditorWidget::mouseReleaseEvent(QMouseEvent*) {
+void FanCurveEditorWidget::mouseReleaseEvent(QMouseEvent* e) {
+    if (e->button() != Qt::LeftButton) return;
+    if (m_draggedIndex >= 0) dragTo(e->position());
     if (m_rubberBandActive) {
         m_rubberBandActive = false;
         m_rubberBandRect = QRect();
         update();
     }
-    m_draggedIndex = -1;
+    resetInteraction();
 }
 
 void FanCurveEditorWidget::contextMenuEvent(QContextMenuEvent*) {

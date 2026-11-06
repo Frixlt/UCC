@@ -531,7 +531,7 @@ void DashboardTab::onIGpuFrequencyChanged()
 
     if ( ok )
     {
-      if ( mhz > 0.0 )
+      if ( mhz >= 0.0 )
       {
         double ghz = mhz / 1000.0;
         m_iGpuFrequencyLabel->setText( QString::number( ghz, 'f', 2 ) );
@@ -552,7 +552,7 @@ void DashboardTab::onIGpuPowerChanged()
   bool ok = false;
   double watts = trimmed.toDouble( &ok );
 
-  if ( ok && watts > 0.0 )
+  if ( ok && watts >= 0.0 )
   {
     m_iGpuPowerLabel->setText( QString::number( watts, 'f', 1 ) );
     if ( !m_hasIGpuData ) { m_hasIGpuData = true; updateGpuSwitchVisibility(); }

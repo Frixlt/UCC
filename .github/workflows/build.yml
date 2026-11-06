@@ -17,6 +17,8 @@ jobs:
     container:
       image: invent-registry.kde.org/neon/docker-images/plasma:unstable
       options: --user root
+    env:
+      XDG_RUNTIME_DIR: /tmp/ucc-ci-runtime
     strategy:
       fail-fast: false
       matrix:
@@ -58,9 +60,15 @@ jobs:
         with:
           fetch-depth: 0
 
+      - name: Prepare unprivileged build user
+        run: |
+          useradd --create-home ucc-ci
+          install -d -m 0700 -o ucc-ci -g ucc-ci "$XDG_RUNTIME_DIR"
+          chown -R ucc-ci:ucc-ci "$GITHUB_WORKSPACE"
+
       - name: Configure
         run: |
-          cmake -S . -B build -G Ninja \
+          runuser -u ucc-ci -- cmake -S . -B build -G Ninja \
             -DCMAKE_BUILD_TYPE=${{ matrix.build_type }} \
             -DBUILD_GUI=ON \
             -DBUILD_TRAY=ON \
@@ -70,15 +78,15 @@ jobs:
             -DCMAKE_EXPORT_COMPILE_COMMANDS=ON
 
       - name: Build
-        run: cmake --build build --parallel 2
+        run: runuser -u ucc-ci -- cmake --build build --parallel 2
 
       - name: Run tests
         working-directory: build
-        run: ctest --output-on-failure --parallel 1 -E '^test_gui_audit$'
+        run: runuser -u ucc-ci -- ctest --output-on-failure --parallel 1 -E '^test_gui_audit$'
 
       - name: Run focused GUI checks
         run: |
-          dbus-run-session -- bash tests/run_gui_audit_test.sh \
+          runuser -u ucc-ci -- dbus-run-session -- bash tests/run_gui_audit_test.sh \
             "$PWD/build/bin/test_gui_audit" \
             displayBrightnessCommitsOnReleaseAndIgnoresMonitorDuringDrag \
             dashboardShowsDriverFailureAndClearsAfterRecovery \
@@ -86,7 +94,7 @@ jobs:
             lightbarKeepsSourceValuesAndRejectsFailedCommands deviceMatrixKeepsThreeIndependentModes
 
       - name: Capture current GUI pages on an isolated bus
-        run: python3 contrib/frixit/capture-gallery.py --build build --output artifacts/ci-gallery
+        run: runuser -u ucc-ci -- python3 contrib/frixit/capture-gallery.py --build build --output artifacts/ci-gallery
 
       - name: Upload compile_commands.json
         if: matrix.build_type == 'RelWithDebInfo'

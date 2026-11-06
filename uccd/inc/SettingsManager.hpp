@@ -241,6 +241,9 @@ private:
       if (j.contains("shutdownTime") && j["shutdownTime"].is_string()) settings.shutdownTime = j["shutdownTime"];
       if (j.contains("chargingProfile") && j["chargingProfile"].is_string()) settings.chargingProfile = j["chargingProfile"];
       if (j.contains("chargingPriority") && j["chargingPriority"].is_string()) settings.chargingPriority = j["chargingPriority"];
+      if(j.contains("chargeType") && j["chargeType"].is_string()) settings.chargeType=j["chargeType"];
+      if(j.contains("chargeStartThreshold") && j["chargeStartThreshold"].is_number_integer()) settings.chargeStartThreshold=j["chargeStartThreshold"];
+      if(j.contains("chargeEndThreshold") && j["chargeEndThreshold"].is_number_integer()) settings.chargeEndThreshold=j["chargeEndThreshold"];
 
       // Parse ycbcr420Workaround array
       if (j.contains("ycbcr420Workaround")) {
@@ -340,6 +343,9 @@ private:
 
     json << "  \"chargingProfile\": " << ( settings.chargingProfile.has_value() ? "\"" + settings.chargingProfile.value() + "\"" : "null" ) << ",\n";
     json << "  \"chargingPriority\": " << ( settings.chargingPriority.has_value() ? "\"" + settings.chargingPriority.value() + "\"" : "null" ) << ",\n";
+    if(settings.chargeType) json << "  \"chargeType\": " << nlohmann::json(*settings.chargeType).dump() << ",\n";
+    if(settings.chargeStartThreshold) json << "  \"chargeStartThreshold\": " << *settings.chargeStartThreshold << ",\n";
+    if(settings.chargeEndThreshold) json << "  \"chargeEndThreshold\": " << *settings.chargeEndThreshold << ",\n";
     json << "  \"keyboardBacklightStates\": []\n";
     json << "}\n";
 

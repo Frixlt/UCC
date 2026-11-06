@@ -74,6 +74,25 @@ private slots:
     QVERIFY(controller.setSettings({{"enabled",true},{"devices",Json::array({device("pci","/sys/bus/pci/devices/0000:02:00.0/power/control")})}},error));
     controller.apply("ac");QVERIFY(!controller.status()["devices"][0]["ok"].get<bool>());
   }
+  void disablingKeepAwakeAndSwitchingToBatteryUndoPersistence() {
+    QTemporaryDir root;const auto sys=std::filesystem::path(root.path().toStdString())/"sys",proc=sys/"proc";
+    const auto gpu=sys/"bus/pci/devices/0000:02:00.0";
+    file(gpu/"vendor","0x10de");file(gpu/"class","0x030000");file(gpu/"power/control","auto");
+    file(proc/"driver/nvidia/version","test");
+    std::vector<std::string> calls;
+    PowerDeviceController controller(sys,proc,[&](const auto& cmd,const auto& args) {
+      calls.push_back(cmd+":"+args.back());return true;
+    });
+    auto config=Json{{"enabled",true},{"keepNvidiaAwake",true},{"devices",Json::array({device("pci","/sys/bus/pci/devices/0000:02:00.0/power/control")})}};
+    std::string error;QVERIFY(controller.setSettings(config,error));
+    controller.apply("bat");QCOMPARE(calls.back(),std::string("nvidia-smi:1"));
+    config["keepNvidiaAwake"]=false;QVERIFY(controller.setSettings(config,error));
+    controller.apply("bat");QCOMPARE(calls.back(),std::string("nvidia-smi:0"));
+    QCOMPARE(read(gpu/"power/control"),std::string("auto"));
+    controller.apply("ac");QCOMPARE(calls.back(),std::string("nvidia-smi:1"));
+    controller.apply("type_c");QCOMPARE(calls.back(),std::string("nvidia-smi:0"));
+    QVERIFY(!controller.status()["nvidiaPersistenceEnabled"].get<bool>());
+  }
 };
 QTEST_GUILESS_MAIN(TestPowerDevices)
 #include "test_power_devices.moc"

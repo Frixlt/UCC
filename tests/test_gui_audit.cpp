@@ -36,6 +36,7 @@
 #include "DashboardTab.hpp"
 #include "MonitorTab.hpp"
 #include "SystemMonitor.hpp"
+#include "BatterySettingsWidget.hpp"
 
 class AuditDaemon : public QDBusVirtualObject {
   QJsonArray writes;
@@ -45,12 +46,22 @@ class AuditDaemon : public QDBusVirtualObject {
   bool visualFixture=false;
   bool coolerAuto=false;
   bool coolerEnabled=false;
+  QString customProfile,lastSavedProfile,chargingMode="stationary";
 public:
   QString introspect(const QString &) const override {
     return "<interface name=\"com.uniwill.uccd\"><method name=\"GetWaterCoolerConnected\"><arg type=\"b\" direction=\"out\"/></method></interface>";
   }
   bool handleMessage(const QDBusMessage &msg,const QDBusConnection &bus) override {
     const auto method=msg.member(); QVariant result;
+    if(method=="GetCpuTopologyJSON") {
+      QJsonArray rows;for(int id=0;id<24;++id) rows.append(QJsonObject{{"id",id},{"online",id<8},{"hotpluggable",id!=0},{"type",id<8 ? "P" : "E"},{"physicalCore",id},{"siblings",QString::number(id)}});
+      bus.send(msg.createReply(QString::fromUtf8(QJsonDocument(rows).toJson())));return true;
+    }
+    if(method=="TestCustomProfile") {customProfile=msg.arguments().value(0).toString();bus.send(msg.createReply(true));return true;}
+    if(method=="TestLastSavedProfile") {bus.send(msg.createReply(lastSavedProfile));return true;}
+    if(method=="GetCustomProfilesJSON" && !customProfile.isEmpty()) {bus.send(msg.createReply("["+customProfile+"]"));return true;}
+    if(method=="GetChargingProfilesAvailable") {bus.send(msg.createReply(QString("[\"stationary\",\"high_capacity\"]")));return true;}
+    if(method=="GetCurrentChargingProfile") {bus.send(msg.createReply(chargingMode));return true;}
     if(method=="TestDriverHealth") {driverHealth=msg.arguments().value(0).toString();bus.send(msg.createReply(true));return true;}
     if(method=="GetDriverHealthJSON") {bus.send(msg.createReply(driverHealth.isEmpty() ? QString("{\"healthy\":true}") : driverHealth));return true;}
     if(method=="TestRuntimeProfile") {runtimeProfile=msg.arguments().value(0).toString();bus.send(msg.createReply(true));return true;}
@@ -70,10 +81,12 @@ public:
     else if(method=="IsWaterCoolerAutoControlEnabled") result=coolerAuto;
     else if (method=="TestVisualFixture") {visualFixture=true;result=true;}
     else if (method=="TestStats") result=QString::fromUtf8(QJsonDocument(QJsonObject{{"writes",writes},{"reads",reads}}).toJson());
-    else if (method=="TestReset") { writes={};reads={};runtimeProfile.clear();driverHealth.clear();lastAppliedProfile.clear();lastDeviceSettings.clear();lastLightbar.clear();failReads=false;failControl=false;visualFixture=false;coolerAuto=false;coolerEnabled=false;result=true; }
+    else if (method=="TestReset") { customProfile.clear();lastSavedProfile.clear();chargingMode="stationary";writes={};reads={};runtimeProfile.clear();driverHealth.clear();lastAppliedProfile.clear();lastDeviceSettings.clear();lastLightbar.clear();failReads=false;failControl=false;visualFixture=false;coolerAuto=false;coolerEnabled=false;result=true; }
     else if (method=="TestFailReads") { failReads=msg.arguments().value(0).toBool();result=true; }
     else if (method=="TriggerLightbarAnimation" || method=="ScanPowerDevices" || method.startsWith("Register") || method.startsWith("Unregister") || method.startsWith("Set") || method.startsWith("TurnOff") || method=="EnableWaterCooler" || method.startsWith("Apply") || method.startsWith("Save") || method.startsWith("Delete") || method.startsWith("Revert")) {
       if(failControl) {bus.send(msg.createReply(false));return true;}
+      if(method=="SaveCustomProfile") customProfile=lastSavedProfile=msg.arguments().value(0).toString();
+      if(method=="SetChargingProfile") chargingMode=msg.arguments().value(0).toString();
       if(method=="SetLightbarSettingsJSON") lastLightbar=msg.arguments().value(0).toString();
       if(method=="SetPowerDeviceSettingsJSON") lastDeviceSettings=msg.arguments().value(0).toString();
       writes.append(method);if(method=="ApplyProfile") lastAppliedProfile=msg.arguments().value(0).toString();result=true;
@@ -137,6 +150,85 @@ private slots:
     QCOMPARE(importer.exitCode(),0);desktop.sync();appearance.sync();QVERIFY(desktop.value("startMinimized").toBool());QCOMPARE(appearance.value("themeMode").toInt(),1);
 #endif
     QCOMPARE(stats(),before);
+  }
+  void profileRefreshRateSavesAndChargingLivesOutsideProfiles() {
+    control("TestVisualFixture");
+    control("TestCustomProfile",{QString(R"({"id":"custom-rate","name":"Custom rate","display":{"useRefRate":true,"refreshRate":60,"useResolution":false},"chargingProfile":"high_capacity","fan":{"fanProfile":"balanced-cooling"}})")});
+    ucc::MainWindow window;window.resize(1280,1000);window.show();
+    auto* nav=window.findChild<QListWidget*>("navigation");nav->setCurrentRow(1);
+    auto* names=window.findChild<QComboBox*>("profileName");QVERIFY(names);
+    names->setCurrentIndex(names->findData("custom-rate"));
+    auto* rate=window.findChild<QComboBox*>("profileRefreshRate");QVERIFY(rate);
+    QCOMPARE(rate->currentData().toInt(),60);
+    auto* charging=window.findChild<QComboBox*>("globalChargingProfile");QVERIFY(charging);
+    QTRY_COMPARE(charging->count(),2);QVERIFY(!charging->isVisible());
+    QCOMPARE(charging->currentData().toString(),QString("stationary"));
+#ifndef UCC_READ_ONLY_PREVIEW
+    rate->setCurrentIndex(rate->findData(240));
+    window.findChild<QPushButton*>("saveProfile")->click();
+    QTRY_VERIFY(!control("TestLastSavedProfile").toString().isEmpty());
+    auto saved=QJsonDocument::fromJson(control("TestLastSavedProfile").toString().toUtf8()).object();
+    QCOMPARE(saved["display"].toObject()["refreshRate"].toInt(),240);
+    QVERIFY(saved["display"].toObject()["useRefRate"].toBool());
+    QVERIFY(!saved.contains("chargingProfile"));QVERIFY(!saved.contains("chargeType"));
+    rate->setCurrentIndex(0);window.findChild<QPushButton*>("saveProfile")->click();
+    saved=QJsonDocument::fromJson(control("TestLastSavedProfile").toString().toUtf8()).object();
+    QVERIFY(!saved["display"].toObject()["useRefRate"].toBool());
+#endif
+    const auto output=qEnvironmentVariable("UCC_SCREENSHOT_DIR");
+    if(!output.isEmpty()) {QTest::qWait(450);for(auto* scroll:window.findChildren<QScrollArea*>()) if(scroll->widget() && scroll->widget()->isAncestorOf(rate)) scroll->ensureWidgetVisible(rate);QTest::qWait(100);QDir().mkpath(output);QVERIFY(window.grab().save(output+"/profile-refresh.png"));}
+    nav->setCurrentRow(9);QVERIFY(charging->isVisible());
+#ifndef UCC_READ_ONLY_PREVIEW
+    const auto before=stats()["writes"].toArray().size();
+    charging->setCurrentIndex(charging->findData("high_capacity"));
+    window.findChild<QPushButton*>("saveBatterySettings")->click();
+    QTRY_VERIFY(stats()["writes"].toArray().size()>before);
+    QVERIFY(stats()["writes"].toArray().contains("SetChargingProfile"));
+#endif
+    if(!output.isEmpty()) QVERIFY(window.grab().save(output+"/battery-charging.png"));
+  }
+  void individualCpuSelectionSavesIdsAndPreservesKernelLockedCpu() {
+    control("TestVisualFixture");
+    control("TestCustomProfile",{QString(R"({"id":"core-mask","name":"Core mask","cpu":{"onlineCores":3,"enabledCores":[0,8,10]},"fan":{"fanProfile":"balanced-cooling"}})")});
+    ucc::MainWindow window;window.resize(1280,1000);window.show();
+    auto* nav=window.findChild<QListWidget*>("navigation");nav->setCurrentRow(1);
+    auto* names=window.findChild<QComboBox*>("profileName");names->setCurrentIndex(names->findData("core-mask"));
+    auto* mode=window.findChild<QComboBox*>("cpuCoreSelectionMode");QVERIFY(mode);QCOMPARE(mode->currentIndex(),1);
+    QTRY_VERIFY(window.findChild<QCheckBox*>("enabledCpu23"));
+    auto* boot=window.findChild<QCheckBox*>("enabledCpu0");QVERIFY(boot->isChecked());QVERIFY(!boot->isEnabled());
+    auto* c8=window.findChild<QCheckBox*>("enabledCpu8");auto* c9=window.findChild<QCheckBox*>("enabledCpu9");
+    QVERIFY(c8->text().contains("E"));QVERIFY(c8->isChecked());QVERIFY(!c9->isChecked());
+#ifndef UCC_READ_ONLY_PREVIEW
+    c8->setChecked(false);c9->setChecked(true);window.findChild<QPushButton*>("saveProfile")->click();
+    auto saved=QJsonDocument::fromJson(control("TestLastSavedProfile").toString().toUtf8()).object()["cpu"].toObject();
+    QCOMPARE(saved["enabledCores"].toArray(),QJsonArray({0,9,10}));QCOMPARE(saved["onlineCores"].toInt(),3);
+    window.findChild<QPushButton*>("selectECpus")->click();
+    QVERIFY(boot->isChecked());QVERIFY(!window.findChild<QCheckBox*>("enabledCpu1")->isChecked());
+    QVERIFY(window.findChild<QCheckBox*>("enabledCpu23")->isChecked());
+#endif
+    // The dynamically revealed grid must expand the card, rather than clip its CPUs.
+    QTest::qWait(100);
+    auto* selectionWidget=window.findChild<ucc::CpuCoreSelectionWidget*>();
+    auto* lastCpu=window.findChild<QCheckBox*>("enabledCpu23");
+    QVERIFY(selectionWidget->rect().contains(lastCpu->mapTo(selectionWidget,QPoint(0,lastCpu->height()-1))));
+    for(auto* sibling:selectionWidget->parentWidget()->findChildren<QWidget*>(QString(),Qt::FindDirectChildrenOnly)) {
+      if(sibling==selectionWidget || sibling->isHidden()) continue;
+      QVERIFY2(!selectionWidget->geometry().intersects(sibling->geometry()),qPrintable(QString("%1: selection %2,%3 %4x%5; sibling %6,%7 %8x%9").arg(sibling->metaObject()->className()).arg(selectionWidget->x()).arg(selectionWidget->y()).arg(selectionWidget->width()).arg(selectionWidget->height()).arg(sibling->x()).arg(sibling->y()).arg(sibling->width()).arg(sibling->height())));
+    }
+    const auto output=qEnvironmentVariable("UCC_SCREENSHOT_DIR");
+    if(!output.isEmpty()) {
+      QTest::qWait(450);auto* selection=window.findChild<ucc::CpuCoreSelectionWidget*>();QVERIFY(selection);
+      for(auto* scroll:window.findChildren<QScrollArea*>()) if(scroll->widget() && scroll->widget()->isAncestorOf(selection)) scroll->ensureWidgetVisible(selection);
+      QTest::qWait(100);QDir().mkpath(output);QVERIFY(window.grab().save(output+"/cpu-selection.png"));
+    }
+#ifndef UCC_READ_ONLY_PREVIEW
+    mode->setCurrentIndex(0);window.findChild<QPushButton*>("saveProfile")->click();
+    QTRY_VERIFY(selectionWidget->height()<150);
+    saved=QJsonDocument::fromJson(control("TestLastSavedProfile").toString().toUtf8()).object()["cpu"].toObject();
+    QVERIFY(!saved.contains("enabledCores"));
+#else
+    QVERIFY(!mode->isEnabled());
+#endif
   }
   void standaloneTrayShowsModesAndHonorsCommandFailures() {
     control("TestVisualFixture");QTemporaryDir root;ucc::SessionPaths paths{root.path()+"/sys",root.path()+"/pci",root.path()+"/proc",root.path()+"/nvidia"};ucc::DesktopTray tray(client.get(),paths);

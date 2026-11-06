@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 #include "PreviewMode.hpp"
 #include "RefreshAdvisor.hpp"
+#include "PowerSourceAlert.hpp"
 #include <QDBusArgument>
 #include <QDBusMessage>
 #include <QDBusVirtualObject>
@@ -94,7 +95,12 @@ root = Path(__file__).parent
 with (root / 'calls').open('a') as log: log.write(' '.join(sys.argv[1:]) + '\n')
 config = root / 'configuration.json'
 data = json.loads(config.read_text())
-if sys.argv[1:] == ['-j']: print(json.dumps(data))
+if sys.argv[1:] in (['-j'], ['-j','monitors','all']): print(json.dumps(data))
+elif sys.argv[1] == 'eval':
+    import re
+    target = re.search(r'mode = "([0-9x@.]+)"', sys.argv[2]).group(1)
+    data[0]['refreshRate'] = float(target.split('@')[1])
+    config.write_text(json.dumps(data))
 else:
     assert len(sys.argv) == 2
     if (root / 'ignore-mode').exists(): sys.exit(0)
@@ -155,6 +161,67 @@ else:
     QTest::qWait( 950 );
     QVERIFY( logContents().isEmpty() );
     QVERIFY( notifications.offers.isEmpty() );
+  }
+  void profilesAutomaticallyApplyTheirOwnRateWithoutOffersEnabled() {
+    if(readOnlyPreview) QSKIP("Normal-build integration");
+    QSettings("UniwillControlCenter","desktop").setValue("refreshRateNotifications",false);
+    RefreshAdvisor advisor(true,command,directory.path());
+    QSignalSpy result(&advisor,&RefreshAdvisor::result);
+    advisor.policyChanged(policy("bat"));
+    const auto profile=[](QString id,int hz) {return QString::fromUtf8(QJsonDocument(QJsonObject{{"id",id},{"display",QJsonObject{{"useRefRate",true},{"refreshRate",hz}}}}).toJson());};
+    advisor.profileChanged(profile("battery",60));
+    QTRY_COMPARE_WITH_TIMEOUT(result.size(),1,4000);QVERIFY(result[0][0].toBool());
+    QVERIFY(logContents().contains("output.eDP-1.mode.slow"));
+    // A profile setting wins over the source-based 60 Hz suggestion.
+    advisor.profileChanged(profile("performance",240));
+    QTRY_COMPARE_WITH_TIMEOUT(result.size(),2,4000);QVERIFY(result[1][0].toBool());
+    QVERIFY(logContents().contains("output.eDP-1.mode.fast"));
+    advisor.profileChanged(profile("unsupported",144));
+    QTRY_COMPARE_WITH_TIMEOUT(result.size(),3,4000);QVERIFY(!result[2][0].toBool());
+    QVERIFY(!logContents().contains("mode.144"));
+  }
+  void disabledProfileAndMissingProfileDoNotCancelPowerOffers() {
+    if(readOnlyPreview) QSKIP("Normal-build integration");
+    RefreshAdvisor advisor(true,command,directory.path());
+    advisor.policyChanged(policy("ac"));
+    advisor.profileChanged("{\"id\":\"ac\",\"display\":{\"useRefRate\":false,\"refreshRate\":60}}");
+    advisor.policyChanged(policy("bat"));advisor.profileChanged("{\"id\":\"bat\"}");
+    QTRY_COMPARE_WITH_TIMEOUT(notifications.offers.size(),1,4000);
+    QVERIFY(!logContents().contains("output."));
+  }
+  void hyprlandOffersActualModeAndAppliesAfterConsent() {
+    if(readOnlyPreview) QSKIP("Normal-build integration");
+    const QJsonArray monitors{QJsonObject{{"name","eDP-1"},{"width",2560},{"height",1600},{"refreshRate",240.0},
+      {"availableModes",QJsonArray{"2560x1600@240.00Hz","2560x1600@60.00Hz","1920x1080@60.00Hz"}}}};
+    QVERIFY(write(config,QJsonDocument(monitors).toJson()));
+    RefreshAdvisor advisor(RefreshBackend::Hyprland,command,directory.path());
+    QSignalSpy result(&advisor,&RefreshAdvisor::result);
+    advisor.policyChanged(policy("ac"));advisor.policyChanged(policy("bat"));
+    QTRY_COMPARE_WITH_TIMEOUT(notifications.offers.size(),1,4000);
+    QTest::qWait(50);
+    QCOMPARE(logContents(),"-j monitors all\n");
+    notifications.action(notifications.next);
+    QTRY_COMPARE_WITH_TIMEOUT(result.size(),1,4000);
+    QVERIFY(result[0][0].toBool());
+    QVERIFY(logContents().contains("hl.monitor({ output = \"eDP-1\", mode = \"2560x1600@60.00\" })"));
+    QVERIFY(!logContents().contains("scale"));
+    QVERIFY(!logContents().contains("position"));
+  }
+  void powerNotificationsFollowPhysicalSourceOnAnyDesktop() {
+    if(readOnlyPreview) QSKIP("Normal-build integration");
+    PowerSourceAlert alert;
+    alert.policyChanged(policy("ac"));alert.policyChanged(policy("ac","bat"));
+    QTest::qWait(900);QVERIFY(notifications.offers.isEmpty());
+    alert.policyChanged(policy("bat"));
+    QTRY_COMPARE_WITH_TIMEOUT(notifications.offers.size(),1,2000);
+    QCOMPARE(notifications.offers[0][3].toString(),QString("Питание от батареи"));
+    alert.policyChanged(policy("ac"));alert.policyChanged(policy("bat"));
+    QTest::qWait(900);QCOMPARE(notifications.offers.size(),1);
+    alert.policyChanged(policy("type_c"));
+    QTRY_COMPARE_WITH_TIMEOUT(notifications.offers.size(),2,2000);
+    QVERIFY(notifications.offers[1][4].toString().contains("USB-C"));
+    alert.reset();alert.policyChanged(policy("ac"));
+    QTest::qWait(900);QCOMPARE(notifications.offers.size(),2);
   }
   void appliesOnlyAfterActionAndVerifies()
   {

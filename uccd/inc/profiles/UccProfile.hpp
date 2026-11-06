@@ -54,6 +54,7 @@ struct UccProfileDisplay
 struct UccProfileCpu
 {
   std::optional< int32_t > onlineCores;
+  std::optional<std::vector<int32_t>> enabledCores;
   std::optional< int32_t > scalingMinFrequency;
   std::optional< int32_t > scalingMaxFrequency;
   std::string governor;

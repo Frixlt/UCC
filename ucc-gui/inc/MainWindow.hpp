@@ -28,6 +28,7 @@
 #include <QTextEdit>
 #include <QSpinBox>
 #include <QListWidget>
+#include "CpuCoreSelectionWidget.hpp"
 #include <QLineEdit>
 #include <QInputDialog>
 #include <QColorDialog>
@@ -187,14 +188,12 @@ namespace ucc
 
     // Display controls
     QCheckBox *m_setBrightnessCheckBox = nullptr;
+    QComboBox *m_profileRefreshRate = nullptr;
     QSlider *m_brightnessSlider = nullptr;
     QLabel *m_brightnessValueLabel = nullptr;
     QComboBox *m_profileKeyboardProfileCombo = nullptr;
 
     // Charging profile (per-profile firmware-level mode)
-    QComboBox *m_profileChargingProfileCombo = nullptr;
-    QComboBox *m_profileChargingPriorityCombo = nullptr;
-    QComboBox *m_profileChargeLimitCombo = nullptr;
 
     // Fan control widgets (profile page)
     QCheckBox *m_sameFanSpeedCheckBox = nullptr;
@@ -216,6 +215,7 @@ namespace ucc
 
     // CPU frequency control widgets
     QSlider *m_cpuCoresSlider = nullptr;
+    CpuCoreSelectionWidget* m_cpuCoreSelection = nullptr;
     QLabel *m_cpuCoresValue = nullptr;
     QComboBox *m_governorCombo = nullptr;
     QComboBox *m_eppCombo = nullptr;
