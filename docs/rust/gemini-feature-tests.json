@@ -1,0 +1,2471 @@
+{
+  "schema_version": 1,
+  "kind": "planning_seed_not_test_results",
+  "baseline_sha": "45921b0b7021448a81575a840b2b77d93da8b298",
+  "instructions": "Copy to execution/feature-status.json. Split assertions into real tests; never mark passed without evidence. Preserve IDs. This list is a minimum; add source-discovered behavior. Cross-cutting non-applicability needs R1 rationale.",
+  "features": [
+    {
+      "id": "F01",
+      "area": "Определение устройства",
+      "requirement": "DMI, Clevo/Uniwill/Dummy, exact Mechrevo tuple, near misses, реальные capabilities",
+      "baseline_references": "SystemInfo, identifyDevice, DriverHealth, device tests",
+      "status": "planned",
+      "implementation_paths": [],
+      "cases": [
+        {
+          "id": "FT-F01-01",
+          "assertion": "Exact supported DMI tuple selects the correct backend; each near miss fails the quirk gate.",
+          "status": "planned",
+          "test_paths": [],
+          "evidence": [],
+          "review": null,
+          "applicability": "required; subdivide into concrete observable cases"
+        },
+        {
+          "id": "FT-F01-02",
+          "assertion": "Clevo, Uniwill and Dummy are selected from capabilities, not laptop marketing name.",
+          "status": "planned",
+          "test_paths": [],
+          "evidence": [],
+          "review": null,
+          "applicability": "required; subdivide into concrete observable cases"
+        },
+        {
+          "id": "FT-F01-03",
+          "assertion": "Missing driver and disappearing device produce honest unsupported/error state with zero guessed writes.",
+          "status": "planned",
+          "test_paths": [],
+          "evidence": [],
+          "review": null,
+          "applicability": "required; subdivide into concrete observable cases"
+        }
+      ],
+      "cross_cutting_checks": [
+        "positive",
+        "failure_or_unsupported",
+        "boundary_values",
+        "persistence_or_lifecycle",
+        "async_race_if_applicable",
+        "preview_and_authorization_if_mutating"
+      ],
+      "hardware_evidence": [],
+      "r1_verdict": null,
+      "r2_verdict": null
+    },
+    {
+      "id": "F02",
+      "area": "Источник питания",
+      "requirement": "Учитывать все supplies; USB-C имеет приоритет при одновременном Mains; отсутствие данных отличается от battery",
+      "baseline_references": "StateUtils, power_policy tests",
+      "status": "planned",
+      "implementation_paths": [],
+      "cases": [
+        {
+          "id": "FT-F02-01",
+          "assertion": "Enumerate every power supply; simultaneous USB-C and Mains selects Type-C.",
+          "status": "planned",
+          "test_paths": [],
+          "evidence": [],
+          "review": null,
+          "applicability": "required; subdivide into concrete observable cases"
+        },
+        {
+          "id": "FT-F02-02",
+          "assertion": "USB-PD detection does not rely solely on one hardcoded device name.",
+          "status": "planned",
+          "test_paths": [],
+          "evidence": [],
+          "review": null,
+          "applicability": "required; subdivide into concrete observable cases"
+        },
+        {
+          "id": "FT-F02-03",
+          "assertion": "Battery, unknown/absent supplies and malformed online values follow the documented fallback.",
+          "status": "planned",
+          "test_paths": [],
+          "evidence": [],
+          "review": null,
+          "applicability": "required; subdivide into concrete observable cases"
+        }
+      ],
+      "cross_cutting_checks": [
+        "positive",
+        "failure_or_unsupported",
+        "boundary_values",
+        "persistence_or_lifecycle",
+        "async_race_if_applicable",
+        "preview_and_authorization_if_mutating"
+      ],
+      "hardware_evidence": [],
+      "r1_verdict": null,
+      "r2_verdict": null
+    },
+    {
+      "id": "F03",
+      "area": "Эффективный режим",
+      "requirement": "Auto/AC/Type-C/Battery; manual выше requests; requests только повышают режим; physical source показан отдельно",
+      "baseline_references": "PowerPolicy",
+      "status": "planned",
+      "implementation_paths": [],
+      "cases": [
+        {
+          "id": "FT-F03-01",
+          "assertion": "Exhaust the physical source × manual mode × request rank matrix.",
+          "status": "planned",
+          "test_paths": [],
+          "evidence": [],
+          "review": null,
+          "applicability": "required; subdivide into concrete observable cases"
+        },
+        {
+          "id": "FT-F03-02",
+          "assertion": "Manual override wins; automatic requests only raise effective mode.",
+          "status": "planned",
+          "test_paths": [],
+          "evidence": [],
+          "review": null,
+          "applicability": "required; subdivide into concrete observable cases"
+        },
+        {
+          "id": "FT-F03-03",
+          "assertion": "Reported real_power_source, current_mode and profile_state remain distinct.",
+          "status": "planned",
+          "test_paths": [],
+          "evidence": [],
+          "review": null,
+          "applicability": "required; subdivide into concrete observable cases"
+        }
+      ],
+      "cross_cutting_checks": [
+        "positive",
+        "failure_or_unsupported",
+        "boundary_values",
+        "persistence_or_lifecycle",
+        "async_race_if_applicable",
+        "preview_and_authorization_if_mutating"
+      ],
+      "hardware_evidence": [],
+      "r1_verdict": null,
+      "r2_verdict": null
+    },
+    {
+      "id": "F04",
+      "area": "WC profile state",
+      "requirement": "Water-cooler profile при разрешённом auto-выборе; override меняет profile state согласно текущей policy",
+      "baseline_references": "PowerPolicy, startup/profile tests",
+      "status": "planned",
+      "implementation_paths": [],
+      "cases": [
+        {
+          "id": "FT-F04-01",
+          "assertion": "Cooler connection selects WC profile only in the allowed automatic decision.",
+          "status": "planned",
+          "test_paths": [],
+          "evidence": [],
+          "review": null,
+          "applicability": "required; subdivide into concrete observable cases"
+        },
+        {
+          "id": "FT-F04-02",
+          "assertion": "Manual override and raising requests change WC selection according to the baseline.",
+          "status": "planned",
+          "test_paths": [],
+          "evidence": [],
+          "review": null,
+          "applicability": "required; subdivide into concrete observable cases"
+        },
+        {
+          "id": "FT-F04-03",
+          "assertion": "Informational requests do not accidentally disable WC profile selection.",
+          "status": "planned",
+          "test_paths": [],
+          "evidence": [],
+          "review": null,
+          "applicability": "required; subdivide into concrete observable cases"
+        }
+      ],
+      "cross_cutting_checks": [
+        "positive",
+        "failure_or_unsupported",
+        "boundary_values",
+        "persistence_or_lifecycle",
+        "async_race_if_applicable",
+        "preview_and_authorization_if_mutating"
+      ],
+      "hardware_evidence": [],
+      "r1_verdict": null,
+      "r2_verdict": null
+    },
+    {
+      "id": "F05",
+      "area": "App requests",
+      "requirement": "256 всего/32 на owner, имя 128/reason 512, ownership, disconnect cleanup",
+      "baseline_references": "PowerPolicy, service watcher",
+      "status": "planned",
+      "implementation_paths": [],
+      "cases": [
+        {
+          "id": "FT-F05-01",
+          "assertion": "Requests are owned by the real unique D-Bus sender; another sender cannot remove them.",
+          "status": "planned",
+          "test_paths": [],
+          "evidence": [],
+          "review": null,
+          "applicability": "required; subdivide into concrete observable cases"
+        },
+        {
+          "id": "FT-F05-02",
+          "assertion": "Owner disconnect/crash removes requests and reevaluates mode.",
+          "status": "planned",
+          "test_paths": [],
+          "evidence": [],
+          "review": null,
+          "applicability": "required; subdivide into concrete observable cases"
+        },
+        {
+          "id": "FT-F05-03",
+          "assertion": "Enforce total/per-owner/name/reason limits and duplicate-update semantics.",
+          "status": "planned",
+          "test_paths": [],
+          "evidence": [],
+          "review": null,
+          "applicability": "required; subdivide into concrete observable cases"
+        },
+        {
+          "id": "FT-F05-04",
+          "assertion": "Concurrent registration/unregistration and owner disappearance leave no orphan request.",
+          "status": "planned",
+          "test_paths": [],
+          "evidence": [],
+          "review": null,
+          "applicability": "required; subdivide into concrete observable cases"
+        }
+      ],
+      "cross_cutting_checks": [
+        "positive",
+        "failure_or_unsupported",
+        "boundary_values",
+        "persistence_or_lifecycle",
+        "async_race_if_applicable",
+        "preview_and_authorization_if_mutating"
+      ],
+      "hardware_evidence": [],
+      "r1_verdict": null,
+      "r2_verdict": null
+    },
+    {
+      "id": "F06",
+      "area": "Назначения профилей",
+      "requirement": "power_ac/power_type_c/power_bat/power_wc; Type-C fallback на AC; отсутствие назначения не создаёт произвольный профиль",
+      "baseline_references": "TccSettings, applyProfileForCurrentState",
+      "status": "planned",
+      "implementation_paths": [],
+      "cases": [
+        {
+          "id": "FT-F06-01",
+          "assertion": "Preserve all four power_* assignments; missing Type-C assignment falls back to AC.",
+          "status": "planned",
+          "test_paths": [],
+          "evidence": [],
+          "review": null,
+          "applicability": "required; subdivide into concrete observable cases"
+        },
+        {
+          "id": "FT-F06-02",
+          "assertion": "Missing mapping or profile reference is reported without invented power settings.",
+          "status": "planned",
+          "test_paths": [],
+          "evidence": [],
+          "review": null,
+          "applicability": "required; subdivide into concrete observable cases"
+        },
+        {
+          "id": "FT-F06-03",
+          "assertion": "Batch map changes validate atomically before publishing a new revision.",
+          "status": "planned",
+          "test_paths": [],
+          "evidence": [],
+          "review": null,
+          "applicability": "required; subdivide into concrete observable cases"
+        }
+      ],
+      "cross_cutting_checks": [
+        "positive",
+        "failure_or_unsupported",
+        "boundary_values",
+        "persistence_or_lifecycle",
+        "async_race_if_applicable",
+        "preview_and_authorization_if_mutating"
+      ],
+      "hardware_evidence": [],
+      "r1_verdict": null,
+      "r2_verdict": null
+    },
+    {
+      "id": "F07",
+      "area": "Профили",
+      "requirement": "Built-in/custom, create/copy/rename/delete, references, Save отдельно от Apply, temporary apply/revert",
+      "baseline_references": "Два ProfileManager, MainWindow, CLI",
+      "status": "planned",
+      "implementation_paths": [],
+      "cases": [
+        {
+          "id": "FT-F07-01",
+          "assertion": "CRUD/copy/rename preserve IDs, fields and fan/keyboard references.",
+          "status": "planned",
+          "test_paths": [],
+          "evidence": [],
+          "review": null,
+          "applicability": "required; subdivide into concrete observable cases"
+        },
+        {
+          "id": "FT-F07-02",
+          "assertion": "Built-ins cannot be accidentally overwritten/deleted; referenced deletion has defined behavior.",
+          "status": "planned",
+          "test_paths": [],
+          "evidence": [],
+          "review": null,
+          "applicability": "required; subdivide into concrete observable cases"
+        },
+        {
+          "id": "FT-F07-03",
+          "assertion": "Save, Apply, temporary Apply and Revert have distinct persistence effects.",
+          "status": "planned",
+          "test_paths": [],
+          "evidence": [],
+          "review": null,
+          "applicability": "required; subdivide into concrete observable cases"
+        },
+        {
+          "id": "FT-F07-04",
+          "assertion": "Serialize/load malformed and partial profiles; preserve legacy fields and declared unknown data.",
+          "status": "planned",
+          "test_paths": [],
+          "evidence": [],
+          "review": null,
+          "applicability": "required; subdivide into concrete observable cases"
+        }
+      ],
+      "cross_cutting_checks": [
+        "positive",
+        "failure_or_unsupported",
+        "boundary_values",
+        "persistence_or_lifecycle",
+        "async_race_if_applicable",
+        "preview_and_authorization_if_mutating"
+      ],
+      "hardware_evidence": [],
+      "r1_verdict": null,
+      "r2_verdict": null
+    },
+    {
+      "id": "F08",
+      "area": "CPU policy",
+      "requirement": "governor/EPP/turbo/boost/HWP, defaults, частоты в правильных единицах, driver quirks",
+      "baseline_references": "CpuController/CpuWorker",
+      "status": "planned",
+      "implementation_paths": [],
+      "cases": [
+        {
+          "id": "FT-F08-01",
+          "assertion": "Apply governor/EPP/turbo/HWP only when supported and requested.",
+          "status": "planned",
+          "test_paths": [],
+          "evidence": [],
+          "review": null,
+          "applicability": "required; subdivide into concrete observable cases"
+        },
+        {
+          "id": "FT-F08-02",
+          "assertion": "Min/max frequency writes use correct units and an admissible transition order.",
+          "status": "planned",
+          "test_paths": [],
+          "evidence": [],
+          "review": null,
+          "applicability": "required; subdivide into concrete observable cases"
+        },
+        {
+          "id": "FT-F08-03",
+          "assertion": "Intel/AMD/acpi driver cases and shared cpufreq policies are handled.",
+          "status": "planned",
+          "test_paths": [],
+          "evidence": [],
+          "review": null,
+          "applicability": "required; subdivide into concrete observable cases"
+        },
+        {
+          "id": "FT-F08-04",
+          "assertion": "Failed write/readback returns a failure without publishing unconfirmed state.",
+          "status": "planned",
+          "test_paths": [],
+          "evidence": [],
+          "review": null,
+          "applicability": "required; subdivide into concrete observable cases"
+        }
+      ],
+      "cross_cutting_checks": [
+        "positive",
+        "failure_or_unsupported",
+        "boundary_values",
+        "persistence_or_lifecycle",
+        "async_race_if_applicable",
+        "preview_and_authorization_if_mutating"
+      ],
+      "hardware_evidence": [],
+      "r1_verdict": null,
+      "r2_verdict": null
+    },
+    {
+      "id": "F09",
+      "area": "CPU selection",
+      "requirement": "Точные sparse IDs, enabledCores выше onlineCores, обязательный CPU, P/E/unknown, enable-before-disable",
+      "baseline_references": "CpuTopology, CPU tests",
+      "status": "planned",
+      "implementation_paths": [],
+      "cases": [
+        {
+          "id": "FT-F09-01",
+          "assertion": "Sparse enabledCores IDs override legacy onlineCores count.",
+          "status": "planned",
+          "test_paths": [],
+          "evidence": [],
+          "review": null,
+          "applicability": "required; subdivide into concrete observable cases"
+        },
+        {
+          "id": "FT-F09-02",
+          "assertion": "Reject empty/duplicate/unknown IDs and removal of mandatory CPU.",
+          "status": "planned",
+          "test_paths": [],
+          "evidence": [],
+          "review": null,
+          "applicability": "required; subdivide into concrete observable cases"
+        },
+        {
+          "id": "FT-F09-03",
+          "assertion": "Enable requested CPUs before disabling others; failed enable prevents later disables.",
+          "status": "planned",
+          "test_paths": [],
+          "evidence": [],
+          "review": null,
+          "applicability": "required; subdivide into concrete observable cases"
+        },
+        {
+          "id": "FT-F09-04",
+          "assertion": "Probe P/E only on allowed online CPU, restore affinity and retain cached labels for offline CPUs.",
+          "status": "planned",
+          "test_paths": [],
+          "evidence": [],
+          "review": null,
+          "applicability": "required; subdivide into concrete observable cases"
+        }
+      ],
+      "cross_cutting_checks": [
+        "positive",
+        "failure_or_unsupported",
+        "boundary_values",
+        "persistence_or_lifecycle",
+        "async_race_if_applicable",
+        "preview_and_authorization_if_mutating"
+      ],
+      "hardware_evidence": [],
+      "r1_verdict": null,
+      "r2_verdict": null
+    },
+    {
+      "id": "F10",
+      "area": "CPU validation",
+      "requirement": "Ограниченные reapply attempts при конфликтующем сервисе, reset на новом профиле, восстановление исходного CPU состояния",
+      "baseline_references": "CpuWorker",
+      "status": "planned",
+      "implementation_paths": [],
+      "cases": [
+        {
+          "id": "FT-F10-01",
+          "assertion": "Conflicting-service reapply stops after the documented bounded attempts.",
+          "status": "planned",
+          "test_paths": [],
+          "evidence": [],
+          "review": null,
+          "applicability": "required; subdivide into concrete observable cases"
+        },
+        {
+          "id": "FT-F10-02",
+          "assertion": "New profile resets validation attempt state.",
+          "status": "planned",
+          "test_paths": [],
+          "evidence": [],
+          "review": null,
+          "applicability": "required; subdivide into concrete observable cases"
+        },
+        {
+          "id": "FT-F10-03",
+          "assertion": "Shutdown restores the intended original/default CPU configuration, including all required online CPUs.",
+          "status": "planned",
+          "test_paths": [],
+          "evidence": [],
+          "review": null,
+          "applicability": "required; subdivide into concrete observable cases"
+        }
+      ],
+      "cross_cutting_checks": [
+        "positive",
+        "failure_or_unsupported",
+        "boundary_values",
+        "persistence_or_lifecycle",
+        "async_race_if_applicable",
+        "preview_and_authorization_if_mutating"
+      ],
+      "hardware_evidence": [],
+      "r1_verdict": null,
+      "r2_verdict": null
+    },
+    {
+      "id": "F11",
+      "area": "Device matrix",
+      "requirement": "Независимые ac/type_c/bat значения, overlay CPU поверх профиля, rescan сохраняет отсутствующие устройства",
+      "baseline_references": "PowerDeviceController/PowerDevicesTab",
+      "status": "planned",
+      "implementation_paths": [],
+      "cases": [
+        {
+          "id": "FT-F11-01",
+          "assertion": "AC, Type-C and Battery columns are independent through collect/save/load/apply.",
+          "status": "planned",
+          "test_paths": [],
+          "evidence": [],
+          "review": null,
+          "applicability": "required; subdivide into concrete observable cases"
+        },
+        {
+          "id": "FT-F11-02",
+          "assertion": "Rescan preserves user values and disconnected devices.",
+          "status": "planned",
+          "test_paths": [],
+          "evidence": [],
+          "review": null,
+          "applicability": "required; subdivide into concrete observable cases"
+        },
+        {
+          "id": "FT-F11-03",
+          "assertion": "Enabled CPU overlay wins over profile CPU; disabling overlay restores active profile CPU.",
+          "status": "planned",
+          "test_paths": [],
+          "evidence": [],
+          "review": null,
+          "applicability": "required; subdivide into concrete observable cases"
+        },
+        {
+          "id": "FT-F11-04",
+          "assertion": "Disabling policy stops future device writes and does not claim undocumented automatic rollback.",
+          "status": "planned",
+          "test_paths": [],
+          "evidence": [],
+          "review": null,
+          "applicability": "required; subdivide into concrete observable cases"
+        }
+      ],
+      "cross_cutting_checks": [
+        "positive",
+        "failure_or_unsupported",
+        "boundary_values",
+        "persistence_or_lifecycle",
+        "async_race_if_applicable",
+        "preview_and_authorization_if_mutating"
+      ],
+      "hardware_evidence": [],
+      "r1_verdict": null,
+      "r2_verdict": null
+    },
+    {
+      "id": "F12",
+      "area": "System controls",
+      "requirement": "PCI/USB runtime PM, ASPM, Wi-Fi power save, audio powersave, NMI watchdog, writeback, только разрешённый nvidia-powerd",
+      "baseline_references": "PowerDeviceController",
+      "status": "planned",
+      "implementation_paths": [],
+      "cases": [
+        {
+          "id": "FT-F12-01",
+          "assertion": "Only whitelisted PCI/USB/sysfs/procfs/service operations are dispatched.",
+          "status": "planned",
+          "test_paths": [],
+          "evidence": [],
+          "review": null,
+          "applicability": "required; subdivide into concrete observable cases"
+        },
+        {
+          "id": "FT-F12-02",
+          "assertion": "Reject traversal/arbitrary paths, forbidden service names, malformed values and shell injection.",
+          "status": "planned",
+          "test_paths": [],
+          "evidence": [],
+          "review": null,
+          "applicability": "required; subdivide into concrete observable cases"
+        },
+        {
+          "id": "FT-F12-03",
+          "assertion": "Device missing, process failure, write error and deferred flush error appear per device.",
+          "status": "planned",
+          "test_paths": [],
+          "evidence": [],
+          "review": null,
+          "applicability": "required; subdivide into concrete observable cases"
+        },
+        {
+          "id": "FT-F12-04",
+          "assertion": "ASPM/Wi-Fi/audio/watchdog/writeback use exact permitted units and values.",
+          "status": "planned",
+          "test_paths": [],
+          "evidence": [],
+          "review": null,
+          "applicability": "required; subdivide into concrete observable cases"
+        }
+      ],
+      "cross_cutting_checks": [
+        "positive",
+        "failure_or_unsupported",
+        "boundary_values",
+        "persistence_or_lifecycle",
+        "async_race_if_applicable",
+        "preview_and_authorization_if_mutating"
+      ],
+      "hardware_evidence": [],
+      "r1_verdict": null,
+      "r2_verdict": null
+    },
+    {
+      "id": "F13",
+      "area": "NVIDIA power",
+      "requirement": "Keep awake выше runtime auto; wake до power operations; undo persistence при выключении; per-device errors",
+      "baseline_references": "PowerDeviceController/ProfileSettingsWorker",
+      "status": "planned",
+      "implementation_paths": [],
+      "cases": [
+        {
+          "id": "FT-F13-01",
+          "assertion": "Keep-awake overrides NVIDIA runtime auto; wake happens before dependent power operations.",
+          "status": "planned",
+          "test_paths": [],
+          "evidence": [],
+          "review": null,
+          "applicability": "required; subdivide into concrete observable cases"
+        },
+        {
+          "id": "FT-F13-02",
+          "assertion": "Removing keep-awake disables persistence before allowing runtime suspend.",
+          "status": "planned",
+          "test_paths": [],
+          "evidence": [],
+          "review": null,
+          "applicability": "required; subdivide into concrete observable cases"
+        },
+        {
+          "id": "FT-F13-03",
+          "assertion": "AC→Battery/Type-C and daemon restart honor saved policy and report failures.",
+          "status": "planned",
+          "test_paths": [],
+          "evidence": [],
+          "review": null,
+          "applicability": "required; subdivide into concrete observable cases"
+        },
+        {
+          "id": "FT-F13-04",
+          "assertion": "Unsupported NVIDIA/powerd/library states do not claim successful control.",
+          "status": "planned",
+          "test_paths": [],
+          "evidence": [],
+          "review": null,
+          "applicability": "required; subdivide into concrete observable cases"
+        }
+      ],
+      "cross_cutting_checks": [
+        "positive",
+        "failure_or_unsupported",
+        "boundary_values",
+        "persistence_or_lifecycle",
+        "async_race_if_applicable",
+        "preview_and_authorization_if_mutating"
+      ],
+      "hardware_evidence": [],
+      "r1_verdict": null,
+      "r2_verdict": null
+    },
+    {
+      "id": "F14",
+      "area": "CPU/GPU cooling",
+      "requirement": "CPU/GPU curves, interpolation, EWMA/hysteresis, sameSpeed, min/off limits, temporary/saved curves",
+      "baseline_references": "FanControlWorker/FanProfile",
+      "status": "planned",
+      "implementation_paths": [],
+      "cases": [
+        {
+          "id": "FT-F14-01",
+          "assertion": "CPU/GPU interpolation, half rounding and endpoints match independent golden traces.",
+          "status": "planned",
+          "test_paths": [],
+          "evidence": [],
+          "review": null,
+          "applicability": "required; subdivide into concrete observable cases"
+        },
+        {
+          "id": "FT-F14-02",
+          "assertion": "Temperature/speed EWMA, 3-degree hysteresis, min/off and sameSpeed match the approved algorithm.",
+          "status": "planned",
+          "test_paths": [],
+          "evidence": [],
+          "review": null,
+          "applicability": "required; subdivide into concrete observable cases"
+        },
+        {
+          "id": "FT-F14-03",
+          "assertion": "Critical temperature and stale/missing sensor paths use the approved explicit fail-safe.",
+          "status": "planned",
+          "test_paths": [],
+          "evidence": [],
+          "review": null,
+          "applicability": "required; subdivide into concrete observable cases"
+        },
+        {
+          "id": "FT-F14-04",
+          "assertion": "Temporary/saved CPU/GPU/WC fan/pump tables do not overwrite each other or persistent state.",
+          "status": "planned",
+          "test_paths": [],
+          "evidence": [],
+          "review": null,
+          "applicability": "required; subdivide into concrete observable cases"
+        }
+      ],
+      "cross_cutting_checks": [
+        "positive",
+        "failure_or_unsupported",
+        "boundary_values",
+        "persistence_or_lifecycle",
+        "async_race_if_applicable",
+        "preview_and_authorization_if_mutating"
+      ],
+      "hardware_evidence": [],
+      "r1_verdict": null,
+      "r2_verdict": null
+    },
+    {
+      "id": "F15",
+      "area": "Cooler transport",
+      "requirement": "LCT models, saved identity, Nordic UART UUID, exact packet encoding, GATT readiness",
+      "baseline_references": "LCTWaterCoolerWorker/AquarisSelection",
+      "status": "planned",
+      "implementation_paths": [],
+      "cases": [
+        {
+          "id": "FT-F15-01",
+          "assertion": "Golden packets cover commands, payload lengths, model-specific encoding and supported UUIDs.",
+          "status": "planned",
+          "test_paths": [],
+          "evidence": [],
+          "review": null,
+          "applicability": "required; subdivide into concrete observable cases"
+        },
+        {
+          "id": "FT-F15-02",
+          "assertion": "Connected is published only after valid GATT service/characteristics are ready.",
+          "status": "planned",
+          "test_paths": [],
+          "evidence": [],
+          "review": null,
+          "applicability": "required; subdivide into concrete observable cases"
+        },
+        {
+          "id": "FT-F15-03",
+          "assertion": "Saved exact identity wins; ambiguous rotated-address/name matches fail closed.",
+          "status": "planned",
+          "test_paths": [],
+          "evidence": [],
+          "review": null,
+          "applicability": "required; subdivide into concrete observable cases"
+        },
+        {
+          "id": "FT-F15-04",
+          "assertion": "Malformed identity and unsupported model do not connect to an arbitrary first device.",
+          "status": "planned",
+          "test_paths": [],
+          "evidence": [],
+          "review": null,
+          "applicability": "required; subdivide into concrete observable cases"
+        }
+      ],
+      "cross_cutting_checks": [
+        "positive",
+        "failure_or_unsupported",
+        "boundary_values",
+        "persistence_or_lifecycle",
+        "async_race_if_applicable",
+        "preview_and_authorization_if_mutating"
+      ],
+      "hardware_evidence": [],
+      "r1_verdict": null,
+      "r2_verdict": null
+    },
+    {
+      "id": "F16",
+      "area": "Cooler recovery",
+      "requirement": "Discovery/reconnect/backoff/keepalive, late adapter, rotating address при единственном допустимом совпадении, restart/sleep",
+      "baseline_references": "Bluetooth tests",
+      "status": "planned",
+      "implementation_paths": [],
+      "cases": [
+        {
+          "id": "FT-F16-01",
+          "assertion": "Late adapter, discovery timeout, connect timeout and direct reconnect failures follow the state machine.",
+          "status": "planned",
+          "test_paths": [],
+          "evidence": [],
+          "review": null,
+          "applicability": "required; subdivide into concrete observable cases"
+        },
+        {
+          "id": "FT-F16-02",
+          "assertion": "Backoff, known-target reset and keepalive loss are bounded and measured with fake monotonic time.",
+          "status": "planned",
+          "test_paths": [],
+          "evidence": [],
+          "review": null,
+          "applicability": "required; subdivide into concrete observable cases"
+        },
+        {
+          "id": "FT-F16-03",
+          "assertion": "Disconnect/restart/sleep invalidates old connection callbacks and pending writes.",
+          "status": "planned",
+          "test_paths": [],
+          "evidence": [],
+          "review": null,
+          "applicability": "required; subdivide into concrete observable cases"
+        },
+        {
+          "id": "FT-F16-04",
+          "assertion": "Cache purge/adapter reset policy does not create an unbounded global Bluetooth reset loop.",
+          "status": "planned",
+          "test_paths": [],
+          "evidence": [],
+          "review": null,
+          "applicability": "required; subdivide into concrete observable cases"
+        }
+      ],
+      "cross_cutting_checks": [
+        "positive",
+        "failure_or_unsupported",
+        "boundary_values",
+        "persistence_or_lifecycle",
+        "async_race_if_applicable",
+        "preview_and_authorization_if_mutating"
+      ],
+      "hardware_evidence": [],
+      "r1_verdict": null,
+      "r2_verdict": null
+    },
+    {
+      "id": "F17",
+      "area": "Cooler controls",
+      "requirement": "Fan 0–100, pump codes 0/2/3/4, LED modes/colors, auto/manual persistence, reconnect restore",
+      "baseline_references": "Watercooler override tests",
+      "status": "planned",
+      "implementation_paths": [],
+      "cases": [
+        {
+          "id": "FT-F17-01",
+          "assertion": "Fan range 0..100, pump 0/2/3/4 and valid RGB/modes encode correctly; pump 1 is rejected.",
+          "status": "planned",
+          "test_paths": [],
+          "evidence": [],
+          "review": null,
+          "applicability": "required; subdivide into concrete observable cases"
+        },
+        {
+          "id": "FT-F17-02",
+          "assertion": "Manual state updates only after successful send and survives reconnect.",
+          "status": "planned",
+          "test_paths": [],
+          "evidence": [],
+          "review": null,
+          "applicability": "required; subdivide into concrete observable cases"
+        },
+        {
+          "id": "FT-F17-03",
+          "assertion": "Auto/manual transitions cancel obsolete commands and restore the appropriate profile.",
+          "status": "planned",
+          "test_paths": [],
+          "evidence": [],
+          "review": null,
+          "applicability": "required; subdivide into concrete observable cases"
+        },
+        {
+          "id": "FT-F17-04",
+          "assertion": "UART writes remain ordered with at least 80ms spacing without blocking the fan loop.",
+          "status": "planned",
+          "test_paths": [],
+          "evidence": [],
+          "review": null,
+          "applicability": "required; subdivide into concrete observable cases"
+        }
+      ],
+      "cross_cutting_checks": [
+        "positive",
+        "failure_or_unsupported",
+        "boundary_values",
+        "persistence_or_lifecycle",
+        "async_race_if_applicable",
+        "preview_and_authorization_if_mutating"
+      ],
+      "hardware_evidence": [],
+      "r1_verdict": null,
+      "r2_verdict": null
+    },
+    {
+      "id": "F18",
+      "area": "Keyboard",
+      "requirement": "White, zone RGB, per-key; physical LED IDs, missing zones, global brightness, batched RGB",
+      "baseline_references": "KeyboardBacklightController, AssignKeyZones",
+      "status": "planned",
+      "implementation_paths": [],
+      "cases": [
+        {
+          "id": "FT-F18-01",
+          "assertion": "White, 1..3-zone and per-key keyboards expose correct capabilities.",
+          "status": "planned",
+          "test_paths": [],
+          "evidence": [],
+          "review": null,
+          "applicability": "required; subdivide into concrete observable cases"
+        },
+        {
+          "id": "FT-F18-02",
+          "assertion": "Sparse physical LED IDs map to the right paths; missing zones do not shift the rest.",
+          "status": "planned",
+          "test_paths": [],
+          "evidence": [],
+          "review": null,
+          "applicability": "required; subdivide into concrete observable cases"
+        },
+        {
+          "id": "FT-F18-03",
+          "assertion": "Brightness scaling and RGB updates reach every intended LED.",
+          "status": "planned",
+          "test_paths": [],
+          "evidence": [],
+          "review": null,
+          "applicability": "required; subdivide into concrete observable cases"
+        },
+        {
+          "id": "FT-F18-04",
+          "assertion": "buffer_input is restored on success, write failure, cancellation and controller shutdown.",
+          "status": "planned",
+          "test_paths": [],
+          "evidence": [],
+          "review": null,
+          "applicability": "required; subdivide into concrete observable cases"
+        }
+      ],
+      "cross_cutting_checks": [
+        "positive",
+        "failure_or_unsupported",
+        "boundary_values",
+        "persistence_or_lifecycle",
+        "async_race_if_applicable",
+        "preview_and_authorization_if_mutating"
+      ],
+      "hardware_evidence": [],
+      "r1_verdict": null,
+      "r2_verdict": null
+    },
+    {
+      "id": "F19",
+      "area": "Личная раскладка",
+      "requirement": "Enter 56, LShift 21, LCtrl 0; 101 physical keys при 126 обнаруженных zones на документированной машине",
+      "baseline_references": "keyboard-layout.json, GUI calibration tests",
+      "status": "planned",
+      "implementation_paths": [],
+      "cases": [
+        {
+          "id": "FT-F19-01",
+          "assertion": "Calibrated Enter=56, left Shift=21 and left Ctrl=0 remain physical identities.",
+          "status": "planned",
+          "test_paths": [],
+          "evidence": [],
+          "review": null,
+          "applicability": "required; subdivide into concrete observable cases"
+        },
+        {
+          "id": "FT-F19-02",
+          "assertion": "Selection, hover and multiselect do not write hardware.",
+          "status": "planned",
+          "test_paths": [],
+          "evidence": [],
+          "review": null,
+          "applicability": "required; subdivide into concrete observable cases"
+        },
+        {
+          "id": "FT-F19-03",
+          "assertion": "Apply-selected changes exactly selected IDs; apply-all handles the full discovered set.",
+          "status": "planned",
+          "test_paths": [],
+          "evidence": [],
+          "review": null,
+          "applicability": "required; subdivide into concrete observable cases"
+        },
+        {
+          "id": "FT-F19-04",
+          "assertion": "Import and GUI round-trip preserve the documented 101-key/126-zone relationship without assuming all devices have it.",
+          "status": "planned",
+          "test_paths": [],
+          "evidence": [],
+          "review": null,
+          "applicability": "required; subdivide into concrete observable cases"
+        }
+      ],
+      "cross_cutting_checks": [
+        "positive",
+        "failure_or_unsupported",
+        "boundary_values",
+        "persistence_or_lifecycle",
+        "async_race_if_applicable",
+        "preview_and_authorization_if_mutating"
+      ],
+      "hardware_evidence": [],
+      "r1_verdict": null,
+      "r2_verdict": null
+    },
+    {
+      "id": "F20",
+      "area": "Lightbar",
+      "requirement": "Managed flag, независимые power settings, пять анимаций, Auto majority color, Silent/Welcome/Test",
+      "baseline_references": "LightbarController",
+      "status": "planned",
+      "implementation_paths": [],
+      "cases": [
+        {
+          "id": "FT-F20-01",
+          "assertion": "Round-trip managed/silent/welcome and each AC/Type-C/Battery setting independently.",
+          "status": "planned",
+          "test_paths": [],
+          "evidence": [],
+          "review": null,
+          "applicability": "required; subdivide into concrete observable cases"
+        },
+        {
+          "id": "FT-F20-02",
+          "assertion": "Golden frames cover Pulse, Flash, Rainbow, Police Strobe and Disco.",
+          "status": "planned",
+          "test_paths": [],
+          "evidence": [],
+          "review": null,
+          "applicability": "required; subdivide into concrete observable cases"
+        },
+        {
+          "id": "FT-F20-03",
+          "assertion": "Auto color chooses the correct majority, handles black/LED0/no-data and deterministic ties.",
+          "status": "planned",
+          "test_paths": [],
+          "evidence": [],
+          "review": null,
+          "applicability": "required; subdivide into concrete observable cases"
+        },
+        {
+          "id": "FT-F20-04",
+          "assertion": "Invalid RGB/brightness/mode/settings are rejected before any write.",
+          "status": "planned",
+          "test_paths": [],
+          "evidence": [],
+          "review": null,
+          "applicability": "required; subdivide into concrete observable cases"
+        }
+      ],
+      "cross_cutting_checks": [
+        "positive",
+        "failure_or_unsupported",
+        "boundary_values",
+        "persistence_or_lifecycle",
+        "async_race_if_applicable",
+        "preview_and_authorization_if_mutating"
+      ],
+      "hardware_evidence": [],
+      "r1_verdict": null,
+      "r2_verdict": null
+    },
+    {
+      "id": "F21",
+      "area": "Lightbar idle",
+      "requirement": "Flash выключен сразу после Save/start/mode change и между событиями; нет наложения анимаций, welcome не повторяется после resume",
+      "baseline_references": "Lightbar tests",
+      "status": "planned",
+      "implementation_paths": [],
+      "cases": [
+        {
+          "id": "FT-F21-01",
+          "assertion": "Flash is off immediately after save/start/mode-change and after animation ends.",
+          "status": "planned",
+          "test_paths": [],
+          "evidence": [],
+          "review": null,
+          "applicability": "required; subdivide into concrete observable cases"
+        },
+        {
+          "id": "FT-F21-02",
+          "assertion": "Silent suppresses ordinary events but explicit Test follows the specified force semantics.",
+          "status": "planned",
+          "test_paths": [],
+          "evidence": [],
+          "review": null,
+          "applicability": "required; subdivide into concrete observable cases"
+        },
+        {
+          "id": "FT-F21-03",
+          "assertion": "Animations never overlap; configure/mode change/shutdown cancels old frames.",
+          "status": "planned",
+          "test_paths": [],
+          "evidence": [],
+          "review": null,
+          "applicability": "required; subdivide into concrete observable cases"
+        },
+        {
+          "id": "FT-F21-04",
+          "assertion": "Resume preserves welcome setting without replaying the startup welcome.",
+          "status": "planned",
+          "test_paths": [],
+          "evidence": [],
+          "review": null,
+          "applicability": "required; subdivide into concrete observable cases"
+        }
+      ],
+      "cross_cutting_checks": [
+        "positive",
+        "failure_or_unsupported",
+        "boundary_values",
+        "persistence_or_lifecycle",
+        "async_race_if_applicable",
+        "preview_and_authorization_if_mutating"
+      ],
+      "hardware_evidence": [],
+      "r1_verdict": null,
+      "r2_verdict": null
+    },
+    {
+      "id": "F22",
+      "area": "Display brightness",
+      "requirement": "Реальная активная панель hybrid GPU, MUX/hotplug, rounding, legacy AMD inversion",
+      "baseline_references": "DisplayBacklight, brightness tests",
+      "status": "planned",
+      "implementation_paths": [],
+      "cases": [
+        {
+          "id": "FT-F22-01",
+          "assertion": "Hybrid Intel/NVIDIA topology selects the active internal panel, not the disconnected one.",
+          "status": "planned",
+          "test_paths": [],
+          "evidence": [],
+          "review": null,
+          "applicability": "required; subdivide into concrete observable cases"
+        },
+        {
+          "id": "FT-F22-02",
+          "assertion": "MUX/hotplug rediscovery, raw/platform fallback and legacy AMD inversion work.",
+          "status": "planned",
+          "test_paths": [],
+          "evidence": [],
+          "review": null,
+          "applicability": "required; subdivide into concrete observable cases"
+        },
+        {
+          "id": "FT-F22-03",
+          "assertion": "Percent conversion boundaries and rounding match the approved behavior.",
+          "status": "planned",
+          "test_paths": [],
+          "evidence": [],
+          "review": null,
+          "applicability": "required; subdivide into concrete observable cases"
+        },
+        {
+          "id": "FT-F22-04",
+          "assertion": "Slider drag previews locally and commits once on release; delayed monitor replies do not overwrite the drag.",
+          "status": "planned",
+          "test_paths": [],
+          "evidence": [],
+          "review": null,
+          "applicability": "required; subdivide into concrete observable cases"
+        }
+      ],
+      "cross_cutting_checks": [
+        "positive",
+        "failure_or_unsupported",
+        "boundary_values",
+        "persistence_or_lifecycle",
+        "async_race_if_applicable",
+        "preview_and_authorization_if_mutating"
+      ],
+      "hardware_evidence": [],
+      "r1_verdict": null,
+      "r2_verdict": null
+    },
+    {
+      "id": "F23",
+      "area": "Display profile",
+      "requirement": "useRefRate/refreshRate сохраняются; profile Hz имеет приоритет над offers, сохраняется разрешение",
+      "baseline_references": "MainWindow/RefreshAdvisor",
+      "status": "planned",
+      "implementation_paths": [],
+      "cases": [
+        {
+          "id": "FT-F23-01",
+          "assertion": "useRefRate/refreshRate round-trip through profile save/load/apply.",
+          "status": "planned",
+          "test_paths": [],
+          "evidence": [],
+          "review": null,
+          "applicability": "required; subdivide into concrete observable cases"
+        },
+        {
+          "id": "FT-F23-02",
+          "assertion": "Explicit profile Hz takes priority over optional offers even if offers are disabled.",
+          "status": "planned",
+          "test_paths": [],
+          "evidence": [],
+          "review": null,
+          "applicability": "required; subdivide into concrete observable cases"
+        },
+        {
+          "id": "FT-F23-03",
+          "assertion": "Unsupported target is reported without selecting an unrelated mode.",
+          "status": "planned",
+          "test_paths": [],
+          "evidence": [],
+          "review": null,
+          "applicability": "required; subdivide into concrete observable cases"
+        },
+        {
+          "id": "FT-F23-04",
+          "assertion": "Startup/profile switch/resume applies only the current profile generation.",
+          "status": "planned",
+          "test_paths": [],
+          "evidence": [],
+          "review": null,
+          "applicability": "required; subdivide into concrete observable cases"
+        }
+      ],
+      "cross_cutting_checks": [
+        "positive",
+        "failure_or_unsupported",
+        "boundary_values",
+        "persistence_or_lifecycle",
+        "async_race_if_applicable",
+        "preview_and_authorization_if_mutating"
+      ],
+      "hardware_evidence": [],
+      "r1_verdict": null,
+      "r2_verdict": null
+    },
+    {
+      "id": "F24",
+      "area": "Session refresh",
+      "requirement": "KDE реальные mode IDs; Hyprland доступные режимы и сохранение scale/position/color rule; X11 backend",
+      "baseline_references": "RefreshAdvisor/DisplayWorker",
+      "status": "planned",
+      "implementation_paths": [],
+      "cases": [
+        {
+          "id": "FT-F24-01",
+          "assertion": "KDE uses discovered real mode IDs; Hyprland uses available modes and X11 uses the proper user session.",
+          "status": "planned",
+          "test_paths": [],
+          "evidence": [],
+          "review": null,
+          "applicability": "required; subdivide into concrete observable cases"
+        },
+        {
+          "id": "FT-F24-02",
+          "assertion": "Changing rate preserves resolution, scale, position and color-profile rule.",
+          "status": "planned",
+          "test_paths": [],
+          "evidence": [],
+          "review": null,
+          "applicability": "required; subdivide into concrete observable cases"
+        },
+        {
+          "id": "FT-F24-03",
+          "assertion": "Command success without matching readback is a failure.",
+          "status": "planned",
+          "test_paths": [],
+          "evidence": [],
+          "review": null,
+          "applicability": "required; subdivide into concrete observable cases"
+        },
+        {
+          "id": "FT-F24-04",
+          "assertion": "Missing compositor command/unsupported DE/invalid output are honest unsupported/error states.",
+          "status": "planned",
+          "test_paths": [],
+          "evidence": [],
+          "review": null,
+          "applicability": "required; subdivide into concrete observable cases"
+        }
+      ],
+      "cross_cutting_checks": [
+        "positive",
+        "failure_or_unsupported",
+        "boundary_values",
+        "persistence_or_lifecycle",
+        "async_race_if_applicable",
+        "preview_and_authorization_if_mutating"
+      ],
+      "hardware_evidence": [],
+      "r1_verdict": null,
+      "r2_verdict": null
+    },
+    {
+      "id": "F25",
+      "area": "Refresh offers",
+      "requirement": "Только после кнопки уведомления, stale consent отменяется при смене topology/source/sleep; readback после команды",
+      "baseline_references": "refresh tests",
+      "status": "planned",
+      "implementation_paths": [],
+      "cases": [
+        {
+          "id": "FT-F25-01",
+          "assertion": "No offer-based change is sent before the user invokes the matching action.",
+          "status": "planned",
+          "test_paths": [],
+          "evidence": [],
+          "review": null,
+          "applicability": "required; subdivide into concrete observable cases"
+        },
+        {
+          "id": "FT-F25-02",
+          "assertion": "Source/topology/profile/sleep changes invalidate stale consent.",
+          "status": "planned",
+          "test_paths": [],
+          "evidence": [],
+          "review": null,
+          "applicability": "required; subdivide into concrete observable cases"
+        },
+        {
+          "id": "FT-F25-03",
+          "assertion": "Closed/expired/replaced notifications cannot execute old selections.",
+          "status": "planned",
+          "test_paths": [],
+          "evidence": [],
+          "review": null,
+          "applicability": "required; subdivide into concrete observable cases"
+        },
+        {
+          "id": "FT-F25-04",
+          "assertion": "Offer coalescing and retry are bounded; the post-action result is verified.",
+          "status": "planned",
+          "test_paths": [],
+          "evidence": [],
+          "review": null,
+          "applicability": "required; subdivide into concrete observable cases"
+        }
+      ],
+      "cross_cutting_checks": [
+        "positive",
+        "failure_or_unsupported",
+        "boundary_values",
+        "persistence_or_lifecycle",
+        "async_race_if_applicable",
+        "preview_and_authorization_if_mutating"
+      ],
+      "hardware_evidence": [],
+      "r1_verdict": null,
+      "r2_verdict": null
+    },
+    {
+      "id": "F26",
+      "area": "Charging",
+      "requirement": "Общие profile/priority/type/thresholds сохраняются независимо от performance profile; старые поля профиля читаются, не применяются",
+      "baseline_references": "BatterySettingsWidget/SettingsManager",
+      "status": "planned",
+      "implementation_paths": [],
+      "cases": [
+        {
+          "id": "FT-F26-01",
+          "assertion": "Global charging mode/priority/type/start/end persist across daemon restart.",
+          "status": "planned",
+          "test_paths": [],
+          "evidence": [],
+          "review": null,
+          "applicability": "required; subdivide into concrete observable cases"
+        },
+        {
+          "id": "FT-F26-02",
+          "assertion": "Performance profile changes do not apply legacy per-profile charging fields.",
+          "status": "planned",
+          "test_paths": [],
+          "evidence": [],
+          "review": null,
+          "applicability": "required; subdivide into concrete observable cases"
+        },
+        {
+          "id": "FT-F26-03",
+          "assertion": "Advertised threshold sets and valid start/end order are enforced.",
+          "status": "planned",
+          "test_paths": [],
+          "evidence": [],
+          "review": null,
+          "applicability": "required; subdivide into concrete observable cases"
+        },
+        {
+          "id": "FT-F26-04",
+          "assertion": "Partial authorization/write failure remains visible; saved state is not falsely marked confirmed.",
+          "status": "planned",
+          "test_paths": [],
+          "evidence": [],
+          "review": null,
+          "applicability": "required; subdivide into concrete observable cases"
+        }
+      ],
+      "cross_cutting_checks": [
+        "positive",
+        "failure_or_unsupported",
+        "boundary_values",
+        "persistence_or_lifecycle",
+        "async_race_if_applicable",
+        "preview_and_authorization_if_mutating"
+      ],
+      "hardware_evidence": [],
+      "r1_verdict": null,
+      "r2_verdict": null
+    },
+    {
+      "id": "F27",
+      "area": "Webcam/Fn Lock",
+      "requirement": "Capability-aware controls и фактический ответ backend; разрыв SetWebcam сначала фиксируется отдельно",
+      "baseline_references": "HardwareTab/FnLockController",
+      "status": "planned",
+      "implementation_paths": [],
+      "cases": [
+        {
+          "id": "FT-F27-01",
+          "assertion": "Supported webcam/FnLock paths use actual backend and verified results.",
+          "status": "planned",
+          "test_paths": [],
+          "evidence": [],
+          "review": null,
+          "applicability": "required; subdivide into concrete observable cases"
+        },
+        {
+          "id": "FT-F27-02",
+          "assertion": "Unsupported/missing paths expose unavailable controls and do not write.",
+          "status": "planned",
+          "test_paths": [],
+          "evidence": [],
+          "review": null,
+          "applicability": "required; subdivide into concrete observable cases"
+        },
+        {
+          "id": "FT-F27-03",
+          "assertion": "Missing SetWebcam and Enabled/Supported mismatch are covered by documented compatibility tests.",
+          "status": "planned",
+          "test_paths": [],
+          "evidence": [],
+          "review": null,
+          "applicability": "required; subdivide into concrete observable cases"
+        },
+        {
+          "id": "FT-F27-04",
+          "assertion": "Rejected operations leave UI at confirmed state and obey preview/auth.",
+          "status": "planned",
+          "test_paths": [],
+          "evidence": [],
+          "review": null,
+          "applicability": "required; subdivide into concrete observable cases"
+        }
+      ],
+      "cross_cutting_checks": [
+        "positive",
+        "failure_or_unsupported",
+        "boundary_values",
+        "persistence_or_lifecycle",
+        "async_race_if_applicable",
+        "preview_and_authorization_if_mutating"
+      ],
+      "hardware_evidence": [],
+      "r1_verdict": null,
+      "r2_verdict": null
+    },
+    {
+      "id": "F28",
+      "area": "Telemetry",
+      "requirement": "CPU/RAPL, GPU NVIDIA/AMD/Intel i915/xe, power/clock/temp/fan/util/VRAM/voltage, units/sentinels",
+      "baseline_references": "HardwareMonitorWorker/NvmlWrapper",
+      "status": "planned",
+      "implementation_paths": [],
+      "cases": [
+        {
+          "id": "FT-F28-01",
+          "assertion": "CPU/RAPL and each NVIDIA/AMD/Intel GPU keep correct device identity and units.",
+          "status": "planned",
+          "test_paths": [],
+          "evidence": [],
+          "review": null,
+          "applicability": "required; subdivide into concrete observable cases"
+        },
+        {
+          "id": "FT-F28-02",
+          "assertion": "Zero, missing, negative sentinel, NaN and stale values remain distinct.",
+          "status": "planned",
+          "test_paths": [],
+          "evidence": [],
+          "review": null,
+          "applicability": "required; subdivide into concrete observable cases"
+        },
+        {
+          "id": "FT-F28-03",
+          "assertion": "RAPL wrap-around, zero/negative time delta and optional GPU symbols are handled.",
+          "status": "planned",
+          "test_paths": [],
+          "evidence": [],
+          "review": null,
+          "applicability": "required; subdivide into concrete observable cases"
+        },
+        {
+          "id": "FT-F28-04",
+          "assertion": "NVML v1/v2 layouts, library lifetime, error codes, voltage path and shutdown are reviewed and exercised at available boundaries.",
+          "status": "planned",
+          "test_paths": [],
+          "evidence": [],
+          "review": null,
+          "applicability": "required; subdivide into concrete observable cases"
+        }
+      ],
+      "cross_cutting_checks": [
+        "positive",
+        "failure_or_unsupported",
+        "boundary_values",
+        "persistence_or_lifecycle",
+        "async_race_if_applicable",
+        "preview_and_authorization_if_mutating"
+      ],
+      "hardware_evidence": [],
+      "r1_verdict": null,
+      "r2_verdict": null
+    },
+    {
+      "id": "F29",
+      "area": "Sleeping NVIDIA",
+      "requirement": "Не probe при suspended/unknown; cadence допускает idle timeout при auto; sleeping dGPU не показывает iGPU как замену",
+      "baseline_references": "GpuSysfs/SystemMonitor tests",
+      "status": "planned",
+      "implementation_paths": [],
+      "cases": [
+        {
+          "id": "FT-F29-01",
+          "assertion": "Suspended/suspending/unknown GPU never calls NVML telemetry probe.",
+          "status": "planned",
+          "test_paths": [],
+          "evidence": [],
+          "review": null,
+          "applicability": "required; subdivide into concrete observable cases"
+        },
+        {
+          "id": "FT-F29-02",
+          "assertion": "When runtime auto is allowed, polling leaves the documented idle window.",
+          "status": "planned",
+          "test_paths": [],
+          "evidence": [],
+          "review": null,
+          "applicability": "required; subdivide into concrete observable cases"
+        },
+        {
+          "id": "FT-F29-03",
+          "assertion": "Sleep clears dGPU metrics without borrowing iGPU temperature/power.",
+          "status": "planned",
+          "test_paths": [],
+          "evidence": [],
+          "review": null,
+          "applicability": "required; subdivide into concrete observable cases"
+        },
+        {
+          "id": "FT-F29-04",
+          "assertion": "Initial library/probe behavior and open/hidden GUI renderer effects are measured on hardware separately.",
+          "status": "planned",
+          "test_paths": [],
+          "evidence": [],
+          "review": null,
+          "applicability": "required; subdivide into concrete observable cases"
+        }
+      ],
+      "cross_cutting_checks": [
+        "positive",
+        "failure_or_unsupported",
+        "boundary_values",
+        "persistence_or_lifecycle",
+        "async_race_if_applicable",
+        "preview_and_authorization_if_mutating"
+      ],
+      "hardware_evidence": [],
+      "r1_verdict": null,
+      "r2_verdict": null
+    },
+    {
+      "id": "F30",
+      "area": "History/Monitor",
+      "requirement": "10 metrics, horizon, grouped/unified charts, zoom/pan/markers/toggles, local prefs, устойчивое обновление",
+      "baseline_references": "MetricsHistoryStore/MonitorTab",
+      "status": "planned",
+      "implementation_paths": [],
+      "cases": [
+        {
+          "id": "FT-F30-01",
+          "assertion": "All ten MetricIds preserve values/order/units and inclusive since timestamp semantics.",
+          "status": "planned",
+          "test_paths": [],
+          "evidence": [],
+          "review": null,
+          "applicability": "required; subdivide into concrete observable cases"
+        },
+        {
+          "id": "FT-F30-02",
+          "assertion": "Native-endian legacy binary format round-trips byte-for-byte against independent golden bytes.",
+          "status": "planned",
+          "test_paths": [],
+          "evidence": [],
+          "review": null,
+          "applicability": "required; subdivide into concrete observable cases"
+        },
+        {
+          "id": "FT-F30-03",
+          "assertion": "Truncated/oversize/count-overflow/unknown-metric payloads are handled safely.",
+          "status": "planned",
+          "test_paths": [],
+          "evidence": [],
+          "review": null,
+          "applicability": "required; subdivide into concrete observable cases"
+        },
+        {
+          "id": "FT-F30-04",
+          "assertion": "Horizon clamp/eviction, clock jumps, bounded memory and full-history chart zoom/markers/prefs work.",
+          "status": "planned",
+          "test_paths": [],
+          "evidence": [],
+          "review": null,
+          "applicability": "required; subdivide into concrete observable cases"
+        }
+      ],
+      "cross_cutting_checks": [
+        "positive",
+        "failure_or_unsupported",
+        "boundary_values",
+        "persistence_or_lifecycle",
+        "async_race_if_applicable",
+        "preview_and_authorization_if_mutating"
+      ],
+      "hardware_evidence": [],
+      "r1_verdict": null,
+      "r2_verdict": null
+    },
+    {
+      "id": "F31",
+      "area": "Notifications",
+      "requirement": "Event relay без forwarding/logging текста; rate limit, restart monitor, driver/source alerts, GUI notification history",
+      "baseline_references": "NotificationMonitor/NotificationCenter",
+      "status": "planned",
+      "implementation_paths": [],
+      "cases": [
+        {
+          "id": "FT-F31-01",
+          "assertion": "External Notify method events trigger only bounded lightbar events without recording notification content.",
+          "status": "planned",
+          "test_paths": [],
+          "evidence": [],
+          "review": null,
+          "applicability": "required; subdivide into concrete observable cases"
+        },
+        {
+          "id": "FT-F31-02",
+          "assertion": "Oversize/fragmented monitor input, process death and rate limiting are bounded.",
+          "status": "planned",
+          "test_paths": [],
+          "evidence": [],
+          "review": null,
+          "applicability": "required; subdivide into concrete observable cases"
+        },
+        {
+          "id": "FT-F31-03",
+          "assertion": "Driver/source notifications debounce and recover; startup is not a false source-change event.",
+          "status": "planned",
+          "test_paths": [],
+          "evidence": [],
+          "review": null,
+          "applicability": "required; subdivide into concrete observable cases"
+        },
+        {
+          "id": "FT-F31-04",
+          "assertion": "GUI own-event history is bounded at 200 and implements unread/read-all/clear without importing external message text.",
+          "status": "planned",
+          "test_paths": [],
+          "evidence": [],
+          "review": null,
+          "applicability": "required; subdivide into concrete observable cases"
+        }
+      ],
+      "cross_cutting_checks": [
+        "positive",
+        "failure_or_unsupported",
+        "boundary_values",
+        "persistence_or_lifecycle",
+        "async_race_if_applicable",
+        "preview_and_authorization_if_mutating"
+      ],
+      "hardware_evidence": [],
+      "r1_verdict": null,
+      "r2_verdict": null
+    },
+    {
+      "id": "F32",
+      "area": "Battery telemetry",
+      "requirement": "Несколько system batteries, исключение device batteries, power_now или current×voltage, корректные µ-units",
+      "baseline_references": "SessionTelemetry",
+      "status": "planned",
+      "implementation_paths": [],
+      "cases": [
+        {
+          "id": "FT-F32-01",
+          "assertion": "Multiple system batteries are preserved; device batteries and absent batteries are excluded.",
+          "status": "planned",
+          "test_paths": [],
+          "evidence": [],
+          "review": null,
+          "applicability": "required; subdivide into concrete observable cases"
+        },
+        {
+          "id": "FT-F32-02",
+          "assertion": "power_now fallback current_now×voltage_now uses correct micro-unit conversion.",
+          "status": "planned",
+          "test_paths": [],
+          "evidence": [],
+          "review": null,
+          "applicability": "required; subdivide into concrete observable cases"
+        },
+        {
+          "id": "FT-F32-03",
+          "assertion": "Missing/invalid capacity/power is unavailable; charging/discharging signs and summaries are correct.",
+          "status": "planned",
+          "test_paths": [],
+          "evidence": [],
+          "review": null,
+          "applicability": "required; subdivide into concrete observable cases"
+        },
+        {
+          "id": "FT-F32-04",
+          "assertion": "Activity-aware polling coalesces requests and does not scan processes continuously while hidden.",
+          "status": "planned",
+          "test_paths": [],
+          "evidence": [],
+          "review": null,
+          "applicability": "required; subdivide into concrete observable cases"
+        }
+      ],
+      "cross_cutting_checks": [
+        "positive",
+        "failure_or_unsupported",
+        "boundary_values",
+        "persistence_or_lifecycle",
+        "async_race_if_applicable",
+        "preview_and_authorization_if_mutating"
+      ],
+      "hardware_evidence": [],
+      "r1_verdict": null,
+      "r2_verdict": null
+    },
+    {
+      "id": "F33",
+      "area": "NVIDIA processes",
+      "requirement": "Только процессы текущего UID, /dev/nvidia fd, bounded list, active-page sampling",
+      "baseline_references": "SessionTelemetry",
+      "status": "planned",
+      "implementation_paths": [],
+      "cases": [
+        {
+          "id": "FT-F33-01",
+          "assertion": "Only current-UID live processes holding valid NVIDIA device fds are listed.",
+          "status": "planned",
+          "test_paths": [],
+          "evidence": [],
+          "review": null,
+          "applicability": "required; subdivide into concrete observable cases"
+        },
+        {
+          "id": "FT-F33-02",
+          "assertion": "PID reuse/startTime mismatch/exited/zombie/self/root/foreign-UID targets are excluded.",
+          "status": "planned",
+          "test_paths": [],
+          "evidence": [],
+          "review": null,
+          "applicability": "required; subdivide into concrete observable cases"
+        },
+        {
+          "id": "FT-F33-03",
+          "assertion": "Bounded process list and scan cancellation are honored.",
+          "status": "planned",
+          "test_paths": [],
+          "evidence": [],
+          "review": null,
+          "applicability": "required; subdivide into concrete observable cases"
+        },
+        {
+          "id": "FT-F33-04",
+          "assertion": "Sleeping GPU skips unnecessary process scans; unknown and active states follow the explicit rule.",
+          "status": "planned",
+          "test_paths": [],
+          "evidence": [],
+          "review": null,
+          "applicability": "required; subdivide into concrete observable cases"
+        }
+      ],
+      "cross_cutting_checks": [
+        "positive",
+        "failure_or_unsupported",
+        "boundary_values",
+        "persistence_or_lifecycle",
+        "async_race_if_applicable",
+        "preview_and_authorization_if_mutating"
+      ],
+      "hardware_evidence": [],
+      "r1_verdict": null,
+      "r2_verdict": null
+    },
+    {
+      "id": "F34",
+      "area": "Termination",
+      "requirement": "Явное подтверждение, pidfd + startTime/UID recheck, SIGTERM → grace → SIGKILL, preview запрет",
+      "baseline_references": "ProcessTerminator",
+      "status": "planned",
+      "implementation_paths": [],
+      "cases": [
+        {
+          "id": "FT-F34-01",
+          "assertion": "Confirmation is required before production process termination.",
+          "status": "planned",
+          "test_paths": [],
+          "evidence": [],
+          "review": null,
+          "applicability": "required; subdivide into concrete observable cases"
+        },
+        {
+          "id": "FT-F34-02",
+          "assertion": "Open pidfd and recheck UID/startTime/device ownership before sending any signal.",
+          "status": "planned",
+          "test_paths": [],
+          "evidence": [],
+          "review": null,
+          "applicability": "required; subdivide into concrete observable cases"
+        },
+        {
+          "id": "FT-F34-03",
+          "assertion": "Only controlled child processes are used for SIGTERM/grace/SIGKILL unit/integration tests.",
+          "status": "planned",
+          "test_paths": [],
+          "evidence": [],
+          "review": null,
+          "applicability": "required; subdivide into concrete observable cases"
+        },
+        {
+          "id": "FT-F34-04",
+          "assertion": "Exited/reused/unresponsive targets and repeated jobs report exact results without signaling a new reused PID.",
+          "status": "planned",
+          "test_paths": [],
+          "evidence": [],
+          "review": null,
+          "applicability": "required; subdivide into concrete observable cases"
+        }
+      ],
+      "cross_cutting_checks": [
+        "positive",
+        "failure_or_unsupported",
+        "boundary_values",
+        "persistence_or_lifecycle",
+        "async_race_if_applicable",
+        "preview_and_authorization_if_mutating"
+      ],
+      "hardware_evidence": [],
+      "r1_verdict": null,
+      "r2_verdict": null
+    },
+    {
+      "id": "F35",
+      "area": "Tray",
+      "requirement": "Иконка режима/батареи/manual override, меню, процессы, ошибки, adaptive polling",
+      "baseline_references": "DesktopTray",
+      "status": "planned",
+      "implementation_paths": [],
+      "cases": [
+        {
+          "id": "FT-F35-01",
+          "assertion": "Mode/manual/profile/battery/GPU state produce correct tray icon, tooltip and menu state.",
+          "status": "planned",
+          "test_paths": [],
+          "evidence": [],
+          "review": null,
+          "applicability": "required; subdivide into concrete observable cases"
+        },
+        {
+          "id": "FT-F35-02",
+          "assertion": "Manual-mode failure restores confirmed selection; disconnect disables writes.",
+          "status": "planned",
+          "test_paths": [],
+          "evidence": [],
+          "review": null,
+          "applicability": "required; subdivide into concrete observable cases"
+        },
+        {
+          "id": "FT-F35-03",
+          "assertion": "Menu/dialog activity controls polling; closing them reduces work.",
+          "status": "planned",
+          "test_paths": [],
+          "evidence": [],
+          "review": null,
+          "applicability": "required; subdivide into concrete observable cases"
+        },
+        {
+          "id": "FT-F35-04",
+          "assertion": "Tray host loss/restart and missing host produce explicit behavior, not a silent success.",
+          "status": "planned",
+          "test_paths": [],
+          "evidence": [],
+          "review": null,
+          "applicability": "required; subdivide into concrete observable cases"
+        }
+      ],
+      "cross_cutting_checks": [
+        "positive",
+        "failure_or_unsupported",
+        "boundary_values",
+        "persistence_or_lifecycle",
+        "async_race_if_applicable",
+        "preview_and_authorization_if_mutating"
+      ],
+      "hardware_evidence": [],
+      "r1_verdict": null,
+      "r2_verdict": null
+    },
+    {
+      "id": "F36",
+      "area": "Activation",
+      "requirement": "Один GUI, concurrent launch, activation token, existing desktop focus, --show против startMinimized",
+      "baseline_references": "GuiInstance/WindowActivation",
+      "status": "planned",
+      "implementation_paths": [],
+      "cases": [
+        {
+          "id": "FT-F36-01",
+          "assertion": "Concurrent launches create one GUI owner/window.",
+          "status": "planned",
+          "test_paths": [],
+          "evidence": [],
+          "review": null,
+          "applicability": "required; subdivide into concrete observable cases"
+        },
+        {
+          "id": "FT-F36-02",
+          "assertion": "Explicit --show/tray activation overrides startMinimized while autostart respects it.",
+          "status": "planned",
+          "test_paths": [],
+          "evidence": [],
+          "review": null,
+          "applicability": "required; subdivide into concrete observable cases"
+        },
+        {
+          "id": "FT-F36-03",
+          "assertion": "Activation token reaches new and existing window without leaking to unrelated child processes.",
+          "status": "planned",
+          "test_paths": [],
+          "evidence": [],
+          "review": null,
+          "applicability": "required; subdivide into concrete observable cases"
+        },
+        {
+          "id": "FT-F36-04",
+          "assertion": "Normal/preview identities are distinct; owner exit allows a fresh instance.",
+          "status": "planned",
+          "test_paths": [],
+          "evidence": [],
+          "review": null,
+          "applicability": "required; subdivide into concrete observable cases"
+        }
+      ],
+      "cross_cutting_checks": [
+        "positive",
+        "failure_or_unsupported",
+        "boundary_values",
+        "persistence_or_lifecycle",
+        "async_race_if_applicable",
+        "preview_and_authorization_if_mutating"
+      ],
+      "hardware_evidence": [],
+      "r1_verdict": null,
+      "r2_verdict": null
+    },
+    {
+      "id": "F37",
+      "area": "Appearance",
+      "requirement": "Fluent layout, Light/Dark/Auto, масштабирование, выбор страницы, focus/keyboard, optional entrance animations",
+      "baseline_references": "FluentTheme/Sidebar/Entrance",
+      "status": "planned",
+      "implementation_paths": [],
+      "cases": [
+        {
+          "id": "FT-F37-01",
+          "assertion": "All pages remain usable in Light/Dark/Auto and at 100/125/150/200-percent scale.",
+          "status": "planned",
+          "test_paths": [],
+          "evidence": [],
+          "review": null,
+          "applicability": "required; subdivide into concrete observable cases"
+        },
+        {
+          "id": "FT-F37-02",
+          "assertion": "Cyrillic/IME/keyboard navigation/focus/tooltips and scroll behave correctly.",
+          "status": "planned",
+          "test_paths": [],
+          "evidence": [],
+          "review": null,
+          "applicability": "required; subdivide into concrete observable cases"
+        },
+        {
+          "id": "FT-F37-03",
+          "assertion": "Rapid page navigation/theme change leaves no stale animation or lost editor focus.",
+          "status": "planned",
+          "test_paths": [],
+          "evidence": [],
+          "review": null,
+          "applicability": "required; subdivide into concrete observable cases"
+        },
+        {
+          "id": "FT-F37-04",
+          "assertion": "Hidden windows/pages stop unnecessary rendering/polling and do not keep dGPU awake by renderer choice.",
+          "status": "planned",
+          "test_paths": [],
+          "evidence": [],
+          "review": null,
+          "applicability": "required; subdivide into concrete observable cases"
+        }
+      ],
+      "cross_cutting_checks": [
+        "positive",
+        "failure_or_unsupported",
+        "boundary_values",
+        "persistence_or_lifecycle",
+        "async_race_if_applicable",
+        "preview_and_authorization_if_mutating"
+      ],
+      "hardware_evidence": [],
+      "r1_verdict": null,
+      "r2_verdict": null
+    },
+    {
+      "id": "F38",
+      "area": "Diagnostics/About",
+      "requirement": "build/version/commit, credits/licenses, driver banner/recovery, bounded local logs, folder action",
+      "baseline_references": "AppLogging/AboutPage/DriverHealth",
+      "status": "planned",
+      "implementation_paths": [],
+      "cases": [
+        {
+          "id": "FT-F38-01",
+          "assertion": "Version/commit/build metadata and bundled credits/licenses match the actual candidate.",
+          "status": "planned",
+          "test_paths": [],
+          "evidence": [],
+          "review": null,
+          "applicability": "required; subdivide into concrete observable cases"
+        },
+        {
+          "id": "FT-F38-02",
+          "assertion": "Driver warning appears on failure and clears after recovery.",
+          "status": "planned",
+          "test_paths": [],
+          "evidence": [],
+          "review": null,
+          "applicability": "required; subdivide into concrete observable cases"
+        },
+        {
+          "id": "FT-F38-03",
+          "assertion": "Logging toggle/persistence/rotation/max files/error handling preserve bounded private files.",
+          "status": "planned",
+          "test_paths": [],
+          "evidence": [],
+          "review": null,
+          "applicability": "required; subdivide into concrete observable cases"
+        },
+        {
+          "id": "FT-F38-04",
+          "assertion": "Logs folder action works; preview does not write local diagnostics preferences or logs.",
+          "status": "planned",
+          "test_paths": [],
+          "evidence": [],
+          "review": null,
+          "applicability": "required; subdivide into concrete observable cases"
+        }
+      ],
+      "cross_cutting_checks": [
+        "positive",
+        "failure_or_unsupported",
+        "boundary_values",
+        "persistence_or_lifecycle",
+        "async_race_if_applicable",
+        "preview_and_authorization_if_mutating"
+      ],
+      "hardware_evidence": [],
+      "r1_verdict": null,
+      "r2_verdict": null
+    },
+    {
+      "id": "F39",
+      "area": "Preview",
+      "requirement": "Ни аппаратных, ни config/profile/user-pref/process writes; отдельный instance ID",
+      "baseline_references": "PreviewMode, GUI preview tests",
+      "status": "planned",
+      "implementation_paths": [],
+      "cases": [
+        {
+          "id": "FT-F39-01",
+          "assertion": "Every mutation API and direct/indirect UI/CLI write path is blocked in preview.",
+          "status": "planned",
+          "test_paths": [],
+          "evidence": [],
+          "review": null,
+          "applicability": "required; subdivide into concrete observable cases"
+        },
+        {
+          "id": "FT-F39-02",
+          "assertion": "No writes to hardware/config/profiles/user prefs/process signals/BLE discovery occur.",
+          "status": "planned",
+          "test_paths": [],
+          "evidence": [],
+          "review": null,
+          "applicability": "required; subdivide into concrete observable cases"
+        },
+        {
+          "id": "FT-F39-03",
+          "assertion": "Disabled visible controls are backed by dispatch guards that reject programmatic calls.",
+          "status": "planned",
+          "test_paths": [],
+          "evidence": [],
+          "review": null,
+          "applicability": "required; subdivide into concrete observable cases"
+        },
+        {
+          "id": "FT-F39-04",
+          "assertion": "Preview uses separate instance identity and leaves an existing normal session untouched.",
+          "status": "planned",
+          "test_paths": [],
+          "evidence": [],
+          "review": null,
+          "applicability": "required; subdivide into concrete observable cases"
+        }
+      ],
+      "cross_cutting_checks": [
+        "positive",
+        "failure_or_unsupported",
+        "boundary_values",
+        "persistence_or_lifecycle",
+        "async_race_if_applicable",
+        "preview_and_authorization_if_mutating"
+      ],
+      "hardware_evidence": [],
+      "r1_verdict": null,
+      "r2_verdict": null
+    },
+    {
+      "id": "F40",
+      "area": "Sleep/recovery",
+      "requirement": "Manual/cooler snapshot, stop before NVIDIA sleep, start only if previously active, failed-start retry, private snapshot",
+      "baseline_references": "SleepState, units, helper",
+      "status": "planned",
+      "implementation_paths": [],
+      "cases": [
+        {
+          "id": "FT-F40-01",
+          "assertion": "Sleep snapshots preserve manual mode and cooler enabled state only across sleep, not reboot.",
+          "status": "planned",
+          "test_paths": [],
+          "evidence": [],
+          "review": null,
+          "applicability": "required; subdivide into concrete observable cases"
+        },
+        {
+          "id": "FT-F40-02",
+          "assertion": "Previously inactive daemon stays inactive; failed stop/start retains appropriate recovery state.",
+          "status": "planned",
+          "test_paths": [],
+          "evidence": [],
+          "review": null,
+          "applicability": "required; subdivide into concrete observable cases"
+        },
+        {
+          "id": "FT-F40-03",
+          "assertion": "Reject symlink/foreign-owned/insecure/oversize/malformed snapshot and directory cases.",
+          "status": "planned",
+          "test_paths": [],
+          "evidence": [],
+          "review": null,
+          "applicability": "required; subdivide into concrete observable cases"
+        },
+        {
+          "id": "FT-F40-04",
+          "assertion": "Stop ordering precedes NVIDIA sleep; shutdown/crash recovery and real resume have separate evidence.",
+          "status": "planned",
+          "test_paths": [],
+          "evidence": [],
+          "review": null,
+          "applicability": "required; subdivide into concrete observable cases"
+        }
+      ],
+      "cross_cutting_checks": [
+        "positive",
+        "failure_or_unsupported",
+        "boundary_values",
+        "persistence_or_lifecycle",
+        "async_race_if_applicable",
+        "preview_and_authorization_if_mutating"
+      ],
+      "hardware_evidence": [],
+      "r1_verdict": null,
+      "r2_verdict": null
+    },
+    {
+      "id": "F41",
+      "area": "Import/deploy",
+      "requirement": "UCC/TCC/Python, exact LED colors, unresolved report, no guessed limits, offline checks, package upgrade/rollback",
+      "baseline_references": "contrib и import/deploy tests",
+      "status": "planned",
+      "implementation_paths": [],
+      "cases": [
+        {
+          "id": "FT-F41-01",
+          "assertion": "UCC/TCC/Python imports preserve actual user precedence, profile IDs, calibrated colors and supported cooler state.",
+          "status": "planned",
+          "test_paths": [],
+          "evidence": [],
+          "review": null,
+          "applicability": "required; subdivide into concrete observable cases"
+        },
+        {
+          "id": "FT-F41-02",
+          "assertion": "Missing profile/preset and unsupported pump/power control fail with unresolved report, not guessed defaults.",
+          "status": "planned",
+          "test_paths": [],
+          "evidence": [],
+          "review": null,
+          "applicability": "required; subdivide into concrete observable cases"
+        },
+        {
+          "id": "FT-F41-03",
+          "assertion": "Static ASAR parsing never executes JavaScript and bounds input/path traversal.",
+          "status": "planned",
+          "test_paths": [],
+          "evidence": [],
+          "review": null,
+          "applicability": "required; subdivide into concrete observable cases"
+        },
+        {
+          "id": "FT-F41-04",
+          "assertion": "Staged update failure/downgrade/rollback restores files/package/service/autostart/preferences and prior disabled/masked state.",
+          "status": "planned",
+          "test_paths": [],
+          "evidence": [],
+          "review": null,
+          "applicability": "required; subdivide into concrete observable cases"
+        }
+      ],
+      "cross_cutting_checks": [
+        "positive",
+        "failure_or_unsupported",
+        "boundary_values",
+        "persistence_or_lifecycle",
+        "async_race_if_applicable",
+        "preview_and_authorization_if_mutating"
+      ],
+      "hardware_evidence": [],
+      "r1_verdict": null,
+      "r2_verdict": null
+    },
+    {
+      "id": "F42",
+      "area": "Shell interfaces",
+      "requirement": "Все текущие быстрые controls GNOME/Plasma учтены; перенос функций и решение о встраивании отдельно",
+      "baseline_references": "TrayBackend, extension.js",
+      "status": "planned",
+      "implementation_paths": [],
+      "cases": [
+        {
+          "id": "FT-F42-01",
+          "assertion": "Enumerate every GNOME/Plasma quick control and map it to its Rust replacement or approved minimal adapter.",
+          "status": "planned",
+          "test_paths": [],
+          "evidence": [],
+          "review": null,
+          "applicability": "required; subdivide into concrete observable cases"
+        },
+        {
+          "id": "FT-F42-02",
+          "assertion": "Retained shell clients use working D-Bus methods and reconnect/async error paths.",
+          "status": "planned",
+          "test_paths": [],
+          "evidence": [],
+          "review": null,
+          "applicability": "required; subdivide into concrete observable cases"
+        },
+        {
+          "id": "FT-F42-03",
+          "assertion": "Strict Rust popup does not silently claim embedded panel parity.",
+          "status": "planned",
+          "test_paths": [],
+          "evidence": [],
+          "review": null,
+          "applicability": "required; subdivide into concrete observable cases"
+        },
+        {
+          "id": "FT-F42-04",
+          "assertion": "No removal of old shell runtime until the embedding decision and replacement tests are accepted.",
+          "status": "planned",
+          "test_paths": [],
+          "evidence": [],
+          "review": null,
+          "applicability": "required; subdivide into concrete observable cases"
+        }
+      ],
+      "cross_cutting_checks": [
+        "positive",
+        "failure_or_unsupported",
+        "boundary_values",
+        "persistence_or_lifecycle",
+        "async_race_if_applicable",
+        "preview_and_authorization_if_mutating"
+      ],
+      "hardware_evidence": [],
+      "r1_verdict": null,
+      "r2_verdict": null
+    },
+    {
+      "id": "F43",
+      "area": "CLI/API users",
+      "requirement": "Существующие команды, aliases, --json, monitor, codes 0/1/2, completion/man",
+      "baseline_references": "ucc-cli/main.cpp",
+      "status": "planned",
+      "implementation_paths": [],
+      "cases": [
+        {
+          "id": "FT-F43-01",
+          "assertion": "Every real CLI command/alias/flag is executed through its production parser and client.",
+          "status": "planned",
+          "test_paths": [],
+          "evidence": [],
+          "review": null,
+          "applicability": "required; subdivide into concrete observable cases"
+        },
+        {
+          "id": "FT-F43-02",
+          "assertion": "stdout/stderr/JSON and codes 0/1/2 match the approved contract, including rejected operations.",
+          "status": "planned",
+          "test_paths": [],
+          "evidence": [],
+          "review": null,
+          "applicability": "required; subdivide into concrete observable cases"
+        },
+        {
+          "id": "FT-F43-03",
+          "assertion": "monitor count/interval/cancellation and --help/--version work without daemon where appropriate.",
+          "status": "planned",
+          "test_paths": [],
+          "evidence": [],
+          "review": null,
+          "applicability": "required; subdivide into concrete observable cases"
+        },
+        {
+          "id": "FT-F43-04",
+          "assertion": "Man/completion examples parse and refer to real supported commands.",
+          "status": "planned",
+          "test_paths": [],
+          "evidence": [],
+          "review": null,
+          "applicability": "required; subdivide into concrete observable cases"
+        }
+      ],
+      "cross_cutting_checks": [
+        "positive",
+        "failure_or_unsupported",
+        "boundary_values",
+        "persistence_or_lifecycle",
+        "async_race_if_applicable",
+        "preview_and_authorization_if_mutating"
+      ],
+      "hardware_evidence": [],
+      "r1_verdict": null,
+      "r2_verdict": null
+    },
+    {
+      "id": "F44",
+      "area": "Distribution",
+      "requirement": "Arch, DEB/RPM/Nix recipes, service/autostart, driver separation, licenses/assets/source release",
+      "baseline_references": "Корневые рецепты, CI",
+      "status": "planned",
+      "implementation_paths": [],
+      "cases": [
+        {
+          "id": "FT-F44-01",
+          "assertion": "Every declared supported package target builds/stages correct binaries/resources/paths.",
+          "status": "planned",
+          "test_paths": [],
+          "evidence": [],
+          "review": null,
+          "applicability": "required; subdivide into concrete observable cases"
+        },
+        {
+          "id": "FT-F44-02",
+          "assertion": "Upgrade/private→public/downgrade preserve config and enabled/disabled/masked hook states.",
+          "status": "planned",
+          "test_paths": [],
+          "evidence": [],
+          "review": null,
+          "applicability": "required; subdivide into concrete observable cases"
+        },
+        {
+          "id": "FT-F44-03",
+          "assertion": "Normal/preview feature matrix and missing optional native-library configurations are exercised.",
+          "status": "planned",
+          "test_paths": [],
+          "evidence": [],
+          "review": null,
+          "applicability": "required; subdivide into concrete observable cases"
+        },
+        {
+          "id": "FT-F44-04",
+          "assertion": "No own old C++/Python runtime bridge or Qt/libucc-dbus dependency remains in the final main package.",
+          "status": "planned",
+          "test_paths": [],
+          "evidence": [],
+          "review": null,
+          "applicability": "required; subdivide into concrete observable cases"
+        },
+        {
+          "id": "FT-F44-05",
+          "assertion": "Versions/commit/source archive/checksums/licenses/SBOM and install/uninstall/rollback match the actual release.",
+          "status": "planned",
+          "test_paths": [],
+          "evidence": [],
+          "review": null,
+          "applicability": "required; subdivide into concrete observable cases"
+        }
+      ],
+      "cross_cutting_checks": [
+        "positive",
+        "failure_or_unsupported",
+        "boundary_values",
+        "persistence_or_lifecycle",
+        "async_race_if_applicable",
+        "preview_and_authorization_if_mutating"
+      ],
+      "hardware_evidence": [],
+      "r1_verdict": null,
+      "r2_verdict": null
+    }
+  ]
+}
