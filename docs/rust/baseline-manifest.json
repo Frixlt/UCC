@@ -1,0 +1,4881 @@
+{
+  "date": "2026-11-07",
+  "scope": "Tracked baseline files only; no ignored private artifacts or installed settings. Static source extraction is not live introspection or a test report.",
+  "repos": [
+    {
+      "repository": "UCC-Revorked",
+      "commit": "45921b0b7021448a81575a840b2b77d93da8b298",
+      "files": [
+        {
+          "path": ".clang-format",
+          "bytes": 455,
+          "lines": 19,
+          "sha256": "561a7055f1a76da533dcf1f7f8a68125c460e4de9a92c3101795fbcfb3d4c569",
+          "binary": false,
+          "destination": "Cargo / xtask / distribution packaging"
+        },
+        {
+          "path": ".clangd",
+          "bytes": 34,
+          "lines": 2,
+          "sha256": "7a11c990ac020cc72f6de16864d6acfbadd6257664b57a35cba34cfa6b33ecf5",
+          "binary": false,
+          "destination": "Cargo / xtask / distribution packaging"
+        },
+        {
+          "path": ".gitattributes",
+          "bytes": 197,
+          "lines": 5,
+          "sha256": "4b9b2f35c37f4fee0f8dad46cf77a17cb4207303dd1f28b725ab457688b6850c",
+          "binary": false,
+          "destination": "Cargo / xtask / distribution packaging"
+        },
+        {
+          "path": ".github/workflows/build.yml",
+          "bytes": 3361,
+          "lines": 106,
+          "sha256": "e1d6d81d233ffde2d264a6026cf3b69a53e4682460d3561a9ab3ab988d15c68f",
+          "binary": false,
+          "destination": "Cargo / xtask / distribution packaging"
+        },
+        {
+          "path": ".github/workflows/nix.yml",
+          "bytes": 1068,
+          "lines": 45,
+          "sha256": "0f86f68bf85501f334910ea9e71d55e85a8113380479516ac67d14e6e7563270",
+          "binary": false,
+          "destination": "Cargo / xtask / distribution packaging"
+        },
+        {
+          "path": ".github/workflows/release.yml",
+          "bytes": 2902,
+          "lines": 82,
+          "sha256": "aa3a3baff4e6da0be6fe5ff8a254f69b3b6c6c721854b4679ef9c584b74201e2",
+          "binary": false,
+          "destination": "Cargo / xtask / distribution packaging"
+        },
+        {
+          "path": ".gitignore",
+          "bytes": 468,
+          "lines": 31,
+          "sha256": "a6368eda531a24d4af9edf97e193f523681903bf97529263b99ae4799051fd45",
+          "binary": false,
+          "destination": "Cargo / xtask / distribution packaging"
+        },
+        {
+          "path": ".vscode/c_cpp_properties.json",
+          "bytes": 544,
+          "lines": 20,
+          "sha256": "1a5208acd318e45873ee0cf3a67cbcebe065791230dea5982126c17296b601c3",
+          "binary": false,
+          "destination": "Cargo / xtask / distribution packaging"
+        },
+        {
+          "path": ".vscode/extensions.json",
+          "bytes": 136,
+          "lines": 8,
+          "sha256": "fecb2db4d67341248a5439e78a9d3ed8d46597f9524933ff96e0f7ff0edf3eac",
+          "binary": false,
+          "destination": "Cargo / xtask / distribution packaging"
+        },
+        {
+          "path": ".vscode/launch.json",
+          "bytes": 3441,
+          "lines": 103,
+          "sha256": "89ac324ef36dfd5137912a2ab885d1eb6fb33407c224785f9df4f27008f7de4c",
+          "binary": false,
+          "destination": "Cargo / xtask / distribution packaging"
+        },
+        {
+          "path": ".vscode/settings.json",
+          "bytes": 7465,
+          "lines": 124,
+          "sha256": "017403b3564ff30d963accc8f04dc0639c9cb628b198f436619ed2f1f9ea73b9",
+          "binary": false,
+          "destination": "Cargo / xtask / distribution packaging"
+        },
+        {
+          "path": ".vscode/tasks.json",
+          "bytes": 2568,
+          "lines": 145,
+          "sha256": "910a2426620fcecf81dda5f46e0b659ea2e579c7d316106ca5ccd548c1e9e264",
+          "binary": false,
+          "destination": "Cargo / xtask / distribution packaging"
+        },
+        {
+          "path": "CHANGELOG.md",
+          "bytes": 1240,
+          "lines": 20,
+          "sha256": "666fb388dbc1d70ca854405dad0ba9859a1a96fd2044b260c2213e905be93bc7",
+          "binary": false,
+          "destination": "Cargo / xtask / distribution packaging"
+        },
+        {
+          "path": "CMakeLists.txt",
+          "bytes": 7702,
+          "lines": 239,
+          "sha256": "24129a7a4795346e5ada6da7d1f84236a451242c9cbe69935e23d2c70788c6f2",
+          "binary": false,
+          "destination": "Cargo / xtask / distribution packaging"
+        },
+        {
+          "path": "COPYING",
+          "bytes": 35149,
+          "lines": 674,
+          "sha256": "3972dc9744f6499f0f9b2dbf76696f2ae7ad8af9b23dde66d6af86c9dfb36986",
+          "binary": false,
+          "destination": "Cargo / xtask / distribution packaging"
+        },
+        {
+          "path": "LICENSE",
+          "bytes": 426,
+          "lines": 8,
+          "sha256": "4bc5dcba037ee016a12216eaaa88daf78fe31e31ada4aaaebbc7c5b3a0f03bd1",
+          "binary": false,
+          "destination": "Cargo / xtask / distribution packaging"
+        },
+        {
+          "path": "Makefile",
+          "bytes": 5260,
+          "lines": 152,
+          "sha256": "6a8623ca4f9ce11c396cf1a114ee34eed7622c33d66753e4b8471fddf3959d82",
+          "binary": false,
+          "destination": "Cargo / xtask / distribution packaging"
+        },
+        {
+          "path": "PKGBUILD",
+          "bytes": 2389,
+          "lines": 55,
+          "sha256": "e8fe6a0e2f97bd1cf1070d0876be931cd4682794276d268cf77b079d71317c2e",
+          "binary": false,
+          "destination": "Cargo / xtask / distribution packaging"
+        },
+        {
+          "path": "PROJECT_ORIGINS.md",
+          "bytes": 3333,
+          "lines": 61,
+          "sha256": "df806742042804dfa81fa7025e7894348caad70090506e609886edca012c3b9d",
+          "binary": false,
+          "destination": "Cargo / xtask / distribution packaging"
+        },
+        {
+          "path": "README.en.md",
+          "bytes": 6307,
+          "lines": 114,
+          "sha256": "d756d7b6c72ac99437d4fa7883280d2aac54d2e76e35240c8a0a6e1b16f2e58a",
+          "binary": false,
+          "destination": "Cargo / xtask / distribution packaging"
+        },
+        {
+          "path": "README.md",
+          "bytes": 14037,
+          "lines": 147,
+          "sha256": "5be5e7248f70d180580c6a428b90d5d58d03543a17e6c25f7a7f62614d41df86",
+          "binary": false,
+          "destination": "Cargo / xtask / distribution packaging"
+        },
+        {
+          "path": "THIRD_PARTY.md",
+          "bytes": 4462,
+          "lines": 52,
+          "sha256": "60a9d2cf8bc84d673fee082c46deb232a4c0f21f50454349ca6b148369687910",
+          "binary": false,
+          "destination": "Cargo / xtask / distribution packaging"
+        },
+        {
+          "path": "contrib/frixit/DEPLOYMENT.md",
+          "bytes": 4892,
+          "lines": 97,
+          "sha256": "5e1f78a17ca799383bdd8a87d5cfd5227aed18106fc4cde6f51d65f4a5f02c3a",
+          "binary": false,
+          "destination": "ucc-migrate / xtask / historical tooling"
+        },
+        {
+          "path": "contrib/frixit/README.md",
+          "bytes": 9090,
+          "lines": 113,
+          "sha256": "96477d58d4adce16dbb02155b37477908f25b1db1eedd02944b22ffa8467b651",
+          "binary": false,
+          "destination": "ucc-migrate / xtask / historical tooling"
+        },
+        {
+          "path": "contrib/frixit/capture-gallery.py",
+          "bytes": 2605,
+          "lines": 49,
+          "sha256": "11159cb38152fb152f8e91f27761ca47e9edb8baa95b7e26cc5bb08374430129",
+          "binary": false,
+          "destination": "ucc-migrate / xtask / historical tooling"
+        },
+        {
+          "path": "contrib/frixit/deploy-system.py",
+          "bytes": 10299,
+          "lines": 209,
+          "sha256": "8a8466df08f6b26c9a51bf4d2d9a1d7d546fc9464c5b75f4c3fcfa07dd16fd59",
+          "binary": false,
+          "destination": "ucc-migrate / xtask / historical tooling"
+        },
+        {
+          "path": "contrib/frixit/desktop-transition.py",
+          "bytes": 5269,
+          "lines": 115,
+          "sha256": "577a86b0fa7571195eb982843119811005a35a45289909f39ab57f116b880859",
+          "binary": false,
+          "destination": "ucc-migrate / xtask / historical tooling"
+        },
+        {
+          "path": "contrib/frixit/drivers/README.md",
+          "bytes": 5299,
+          "lines": 90,
+          "sha256": "c443ff4d471651b01faa788158499c3738cb2830b79bc711171f842b68a7b959",
+          "binary": false,
+          "destination": "driver companion (retain)"
+        },
+        {
+          "path": "contrib/frixit/drivers/ite8291-global-brightness.patch",
+          "bytes": 2395,
+          "lines": 55,
+          "sha256": "3e94acb77d2f097884d56fefb6d9dc8b5845a1fbef182da6ab1135054132bdde",
+          "binary": false,
+          "destination": "driver companion (retain)"
+        },
+        {
+          "path": "contrib/frixit/drivers/linux-7.3-acpi-and-lightbar.patch",
+          "bytes": 6779,
+          "lines": 234,
+          "sha256": "b64734bb488318de8a141c4415061b82c39a65589bd529e1949fd1e2441039b7",
+          "binary": false,
+          "destination": "driver companion (retain)"
+        },
+        {
+          "path": "contrib/frixit/drivers/update-hook.patch",
+          "bytes": 3952,
+          "lines": 96,
+          "sha256": "274795d0159053bddd2af5a2556e1d55048e70d803a2f1b5c01199e3c48194e9",
+          "binary": false,
+          "destination": "driver companion (retain)"
+        },
+        {
+          "path": "contrib/frixit/fan-max-performance-85.json",
+          "bytes": 1066,
+          "lines": 90,
+          "sha256": "dfc218dd28b9ac5146e43e4b6d1590f52532a5459287fe5428a733ab8ebd6318",
+          "binary": false,
+          "destination": "ucc-migrate / xtask / historical tooling"
+        },
+        {
+          "path": "contrib/frixit/keyboard-layout.json",
+          "bytes": 16935,
+          "lines": 1042,
+          "sha256": "d9d8dd1c5749744108206cfb5bf510932cf37e97118076d0b81fb9c3a3b2e867",
+          "binary": false,
+          "destination": "ucc-migrate / xtask / historical tooling"
+        },
+        {
+          "path": "contrib/frixit/migrate-controlcenter.py",
+          "bytes": 8364,
+          "lines": 167,
+          "sha256": "54768e7d8c949273e28110026f940ebabe357c7acf25575720dad0ccb7c08c09",
+          "binary": false,
+          "destination": "ucc-migrate / xtask / historical tooling"
+        },
+        {
+          "path": "contrib/frixit/prepare-deployment.py",
+          "bytes": 8063,
+          "lines": 138,
+          "sha256": "860e3f0d26d467f9f195c542650ec39c2deff55172b6903f97f31793180c3c62",
+          "binary": false,
+          "destination": "ucc-migrate / xtask / historical tooling"
+        },
+        {
+          "path": "contrib/frixit/tcc_import.py",
+          "bytes": 8033,
+          "lines": 151,
+          "sha256": "25aa4fb7b4face51653cab2b80b05b74be67e6632903142decf8e278d6476590",
+          "binary": false,
+          "destination": "ucc-migrate / xtask / historical tooling"
+        },
+        {
+          "path": "contrib/mechrevo/README.md",
+          "bytes": 6256,
+          "lines": 130,
+          "sha256": "9a609a0e280b343704d57a7fa058e89527fbef472de8de7d5c4c7f30c5e8a007",
+          "binary": false,
+          "destination": "ucc-migrate / xtask / historical tooling"
+        },
+        {
+          "path": "contrib/mechrevo/arch/drivers/PKGBUILD",
+          "bytes": 1523,
+          "lines": 35,
+          "sha256": "f3e6f498c12e64505d18adb9263e5659a188d8af2d6ee42f32a81ea61c5f8db1",
+          "binary": false,
+          "destination": "driver companion (retain)"
+        },
+        {
+          "path": "contrib/mechrevo/arch/drivers/dkms.conf",
+          "bytes": 3452,
+          "lines": 88,
+          "sha256": "126095725159e65f572c269995e8240afc5bbd4840289b0c7ea2b2d6b911d3b4",
+          "binary": false,
+          "destination": "driver companion (retain)"
+        },
+        {
+          "path": "contrib/mechrevo/arch/drivers/mechrevo.patch",
+          "bytes": 8987,
+          "lines": 222,
+          "sha256": "066ff7dc74e04f2981bf3151d64c873d88afc7486fa39200ef2898e51362127e",
+          "binary": false,
+          "destination": "driver companion (retain)"
+        },
+        {
+          "path": "contrib/mechrevo/arch/drivers/tuxedo-nvidia-power-active.conf.example",
+          "bytes": 203,
+          "lines": 3,
+          "sha256": "a8b56acf2b8ce183d26a422882ca2d6656bc097a465371cbbacfa5df1248e14b",
+          "binary": false,
+          "destination": "driver companion (retain)"
+        },
+        {
+          "path": "contrib/mechrevo/arch/ucc/PKGBUILD",
+          "bytes": 242,
+          "lines": 5,
+          "sha256": "0f38d8bc50f58ef7e69c829583267b8d3badc48a20db7a819da12c1519bf35d5",
+          "binary": false,
+          "destination": "ucc-migrate / xtask / historical tooling"
+        },
+        {
+          "path": "contrib/mechrevo/migrate-settings.py",
+          "bytes": 5307,
+          "lines": 86,
+          "sha256": "664844bef49e01415fd7da3daa69205a785b2bf52f68c14ab46ea02a95324081",
+          "binary": false,
+          "destination": "ucc-migrate / xtask / historical tooling"
+        },
+        {
+          "path": "contrib/mechrevo/tests/test_migration.py",
+          "bytes": 4085,
+          "lines": 79,
+          "sha256": "51990c867b40d337821a314d5c81bd04e82857e9890a01d44d3831bbef305a19",
+          "binary": false,
+          "destination": "ucc-migrate / xtask / historical tooling"
+        },
+        {
+          "path": "debian/changelog",
+          "bytes": 566,
+          "lines": 16,
+          "sha256": "5158b3e757a0c8c6014d8059814ebe337982ab47c8edd202496d1ec194f57fd4",
+          "binary": false,
+          "destination": "Cargo / xtask / distribution packaging"
+        },
+        {
+          "path": "debian/compat",
+          "bytes": 3,
+          "lines": 1,
+          "sha256": "1a252402972f6057fa53cc172b52b9ffca698e18311facd0f3b06ecaaef79e17",
+          "binary": false,
+          "destination": "Cargo / xtask / distribution packaging"
+        },
+        {
+          "path": "debian/control",
+          "bytes": 1519,
+          "lines": 48,
+          "sha256": "b15f939f3ee01690d72b9f132fbdfc4571a92fd44f6101312c6e311c31042663",
+          "binary": false,
+          "destination": "Cargo / xtask / distribution packaging"
+        },
+        {
+          "path": "debian/copyright",
+          "bytes": 1606,
+          "lines": 40,
+          "sha256": "a4e4dd1e1063d2629fe8deadbc081dfa51415a2bdcf661aaf6a2a26a8693006c",
+          "binary": false,
+          "destination": "Cargo / xtask / distribution packaging"
+        },
+        {
+          "path": "debian/not-installed",
+          "bytes": 238,
+          "lines": 4,
+          "sha256": "fabc9bdd988b07b630fb72bf46ea834a2e0ea1b2ba8dee6f54296fdc37dcefe4",
+          "binary": false,
+          "destination": "Cargo / xtask / distribution packaging"
+        },
+        {
+          "path": "debian/rules",
+          "bytes": 573,
+          "lines": 27,
+          "sha256": "da3711f0f5ba647a0855c7d73182fa0ac4da894699abb9405dad89e675f91654",
+          "binary": false,
+          "destination": "Cargo / xtask / distribution packaging"
+        },
+        {
+          "path": "debian/source/format",
+          "bytes": 13,
+          "lines": 1,
+          "sha256": "e8e18df40bcd69d6aa404282679186d9b8256ac63a5b4e80d7f081e8a0095a2e",
+          "binary": false,
+          "destination": "Cargo / xtask / distribution packaging"
+        },
+        {
+          "path": "debian/ucc.install",
+          "bytes": 1277,
+          "lines": 29,
+          "sha256": "6714e51dea86354e08945777bf0d69aa74ae355056e380241252db5da0cb1717",
+          "binary": false,
+          "destination": "Cargo / xtask / distribution packaging"
+        },
+        {
+          "path": "debian/ucc.lintian-overrides",
+          "bytes": 1144,
+          "lines": 9,
+          "sha256": "75e67447ba2c32d65818a26c4c94d00e3f66d00a4fbd2908e12d7c666b3024a6",
+          "binary": false,
+          "destination": "Cargo / xtask / distribution packaging"
+        },
+        {
+          "path": "default.nix",
+          "bytes": 222,
+          "lines": 8,
+          "sha256": "6d284edaa97132c3b34c94a9be94d54174cac49e664108a6b98ee8c72f666edf",
+          "binary": false,
+          "destination": "Cargo / xtask / distribution packaging"
+        },
+        {
+          "path": "docs/BUILDING.md",
+          "bytes": 16365,
+          "lines": 225,
+          "sha256": "c91fc45f9340c4cae9ff3922f6324157ebdbf2ca8b60f47aa69ebcf8724e5807",
+          "binary": false,
+          "destination": "assets / documentation"
+        },
+        {
+          "path": "docs/COMPARISON.md",
+          "bytes": 9850,
+          "lines": 74,
+          "sha256": "89f9d48a28a246924e87b3ff7c8f0c400f370a7dbac4f5718fb8917c5c9d2c8e",
+          "binary": false,
+          "destination": "assets / documentation"
+        },
+        {
+          "path": "docs/TESTING.md",
+          "bytes": 8794,
+          "lines": 111,
+          "sha256": "6b75a990c69618134bf4638b80b55cbd1054a36db3add31d380bcb330e5087dd",
+          "binary": false,
+          "destination": "assets / documentation"
+        },
+        {
+          "path": "docs/design/references/fluent-ui/README.md",
+          "bytes": 574,
+          "lines": 7,
+          "sha256": "ff88760cf164a3b8903fa98423ea5a7e171f89bff85532503d278e1f550c63b8",
+          "binary": false,
+          "destination": "assets / documentation"
+        },
+        {
+          "path": "docs/design/references/fluent-ui/fan-control-dark.png",
+          "bytes": 1195556,
+          "lines": null,
+          "sha256": "c6efecc3e25878094c886fa9a11f29ff35e5f1957af104db5baad1c09afb32c5",
+          "binary": true,
+          "destination": "assets / documentation"
+        },
+        {
+          "path": "docs/design/references/fluent-ui/keyboard-hardware-light.png",
+          "bytes": 1231157,
+          "lines": null,
+          "sha256": "9bb623c15d09a68ed9afb2e07f4c2d2881faa31c65f2593ef04be646a949c132",
+          "binary": true,
+          "destination": "assets / documentation"
+        },
+        {
+          "path": "docs/design/references/fluent-ui/monitor-dark.png",
+          "bytes": 1336549,
+          "lines": null,
+          "sha256": "572be37410d3909b6758db803b61722741d09448e88dc83d986049c37ce7a0b6",
+          "binary": true,
+          "destination": "assets / documentation"
+        },
+        {
+          "path": "docs/design/references/fluent-ui/overview-light.png",
+          "bytes": 1044947,
+          "lines": null,
+          "sha256": "32030a549aa918b14619ae226b50a641e5baf76b12d72e5b8c545a75d5131daa",
+          "binary": true,
+          "destination": "assets / documentation"
+        },
+        {
+          "path": "docs/design/references/fluent-ui/profiles-light.png",
+          "bytes": 1087954,
+          "lines": null,
+          "sha256": "2c89801d3778adc2887695bdec3da25bfb44e16b99f314eb8c05e9121e74a69a",
+          "binary": true,
+          "destination": "assets / documentation"
+        },
+        {
+          "path": "docs/design/references/fluent-ui/references.json",
+          "bytes": 5532,
+          "lines": 162,
+          "sha256": "4f07028502a09893cb159a6bdfd4a0291dc4621b5e77853a5286f6befc538a71",
+          "binary": false,
+          "destination": "assets / documentation"
+        },
+        {
+          "path": "docs/design/verification/about/README.md",
+          "bytes": 901,
+          "lines": 9,
+          "sha256": "73a6cc2862ab92ff76b36a9add2fbead8d9661f913d6b1be4457ba61f67de4e1",
+          "binary": false,
+          "destination": "assets / documentation"
+        },
+        {
+          "path": "docs/design/verification/fluent-light/README.md",
+          "bytes": 931,
+          "lines": 9,
+          "sha256": "ec62ec286556ddd34fe4e49f40ae4667f70f7a83bacc4c0760fa60db32924c80",
+          "binary": false,
+          "destination": "assets / documentation"
+        },
+        {
+          "path": "docs/design/verification/fluent-light/audit-v2/README.md",
+          "bytes": 924,
+          "lines": 9,
+          "sha256": "49083711044dc5fd20f9b1e832885f601756027ec861658f20151119eac269ab",
+          "binary": false,
+          "destination": "assets / documentation"
+        },
+        {
+          "path": "docs/design/verification/fluent-light/compact-overview/README.md",
+          "bytes": 922,
+          "lines": 9,
+          "sha256": "a1be9e6c04675dde740329fc70e78fea3a8891b1719d1bb357044d8ca62948b3",
+          "binary": false,
+          "destination": "assets / documentation"
+        },
+        {
+          "path": "docs/design/verification/fluent-light/entrance-compact/README.md",
+          "bytes": 965,
+          "lines": 9,
+          "sha256": "3c78b733f31c1cf91be31a7f74891be342d1324d0705e7c098c4948ace883be0",
+          "binary": false,
+          "destination": "assets / documentation"
+        },
+        {
+          "path": "docs/design/verification/fluent-light/main-details/README.md",
+          "bytes": 940,
+          "lines": 9,
+          "sha256": "d6ba8479bf9ea2bb80ed258f76b526ed1d35aa8f740220a22206ca8ca585d096",
+          "binary": false,
+          "destination": "assets / documentation"
+        },
+        {
+          "path": "docs/design/verification/fluent-light/smooth-monitor/README.md",
+          "bytes": 917,
+          "lines": 9,
+          "sha256": "1793c56e40c41791e3f8a6a9e5656aadaa974514dbc74e4bb17cad64ab558124",
+          "binary": false,
+          "destination": "assets / documentation"
+        },
+        {
+          "path": "docs/design/verification/fluent-light/spacing-review.md",
+          "bytes": 949,
+          "lines": 9,
+          "sha256": "d3443d8c7708ecd20bd9b157d86fc71b25df54a8f2a8d9686bfc3150ec21992d",
+          "binary": false,
+          "destination": "assets / documentation"
+        },
+        {
+          "path": "docs/design/verification/fluent-themes/README.md",
+          "bytes": 918,
+          "lines": 9,
+          "sha256": "b2588609d8f0c587191b684839da46fecac46c4a367e4965c2156aa70131c2e7",
+          "binary": false,
+          "destination": "assets / documentation"
+        },
+        {
+          "path": "docs/design/verification/sidebar-footer/README.md",
+          "bytes": 908,
+          "lines": 9,
+          "sha256": "80d7ab5488fd257057456bea375fcb3bd42effbd6e46cfc447ce215f048cb66c",
+          "binary": false,
+          "destination": "assets / documentation"
+        },
+        {
+          "path": "docs/releases/0.3.0.md",
+          "bytes": 3391,
+          "lines": 19,
+          "sha256": "95c7c0e64965354469aa8c913493326d3b3cdf556416c9cf185c79d53d29fb44",
+          "binary": false,
+          "destination": "assets / documentation"
+        },
+        {
+          "path": "docs/superpowers/plans/2026-10-03-fluent-design-audit.md",
+          "bytes": 2305,
+          "lines": 21,
+          "sha256": "22ec83e354323eec950bf1caab5fac9e6fcc449b1017e06d8ed8ea13e75299b9",
+          "binary": false,
+          "destination": "assets / documentation"
+        },
+        {
+          "path": "docs/superpowers/plans/2026-10-03-fluent-light.md",
+          "bytes": 18522,
+          "lines": 174,
+          "sha256": "5e72652f8379d91070a71912505245076193f80682f41a1cfee7cba1903262bf",
+          "binary": false,
+          "destination": "assets / documentation"
+        },
+        {
+          "path": "docs/superpowers/plans/2026-10-03-fluent-themes.md",
+          "bytes": 1559,
+          "lines": 23,
+          "sha256": "00fd32c8d13f8d714e03097bad2d6510771a81c369d3a16524a988f5f4d77985",
+          "binary": false,
+          "destination": "assets / documentation"
+        },
+        {
+          "path": "docs/superpowers/specs/2026-10-03-fluent-light-design.md",
+          "bytes": 13964,
+          "lines": 138,
+          "sha256": "263d70d5245f9cf193f4ebc541b639268f3bb3bd586e69614275dd187e18951b",
+          "binary": false,
+          "destination": "assets / documentation"
+        },
+        {
+          "path": "flake.lock",
+          "bytes": 2033,
+          "lines": 82,
+          "sha256": "e1814ffbee8285a4e88f8adbe9a701a0b3e19f7d08defe78f79dfc496726ef45",
+          "binary": false,
+          "destination": "Cargo / xtask / distribution packaging"
+        },
+        {
+          "path": "flake.nix",
+          "bytes": 1639,
+          "lines": 71,
+          "sha256": "82533f941194cd329a4c2f6166cb7d239a764baf11d061f4b67f45036bf54098",
+          "binary": false,
+          "destination": "Cargo / xtask / distribution packaging"
+        },
+        {
+          "path": "icons/ucc-gui.svg",
+          "bytes": 517,
+          "lines": 10,
+          "sha256": "7876b9db0b7df785df9ea8fb1f81e228d4a2fb330001c711034d8aee30d3aed7",
+          "binary": false,
+          "destination": "assets / documentation"
+        },
+        {
+          "path": "icons/ucc-gui_128.png",
+          "bytes": 3572,
+          "lines": null,
+          "sha256": "0db0729ae410f404b1a748c679c4d586263f9f1092e2866b9cdc73fb62d48e5e",
+          "binary": true,
+          "destination": "assets / documentation"
+        },
+        {
+          "path": "icons/ucc-gui_128.svg",
+          "bytes": 517,
+          "lines": 10,
+          "sha256": "7876b9db0b7df785df9ea8fb1f81e228d4a2fb330001c711034d8aee30d3aed7",
+          "binary": false,
+          "destination": "assets / documentation"
+        },
+        {
+          "path": "icons/ucc-gui_16.png",
+          "bytes": 451,
+          "lines": null,
+          "sha256": "5221212aebf032f493ab9e64329d366fb1c5946cdef0697f4f44b5cbbd56fad5",
+          "binary": true,
+          "destination": "assets / documentation"
+        },
+        {
+          "path": "icons/ucc-gui_16.svg",
+          "bytes": 518,
+          "lines": 10,
+          "sha256": "755eed58242284113398e09bd85f5b840a2b9bc3496ed6c758f04f87571267c3",
+          "binary": false,
+          "destination": "assets / documentation"
+        },
+        {
+          "path": "icons/ucc-gui_24.png",
+          "bytes": 664,
+          "lines": null,
+          "sha256": "7302935cc5b3f25a084bbbe1b88fb4192a7536e0715e3c9b9c56d149ba0a47c1",
+          "binary": true,
+          "destination": "assets / documentation"
+        },
+        {
+          "path": "icons/ucc-gui_24.svg",
+          "bytes": 527,
+          "lines": 10,
+          "sha256": "62b0246e81b31563cce3c7cd6422f4a8161f7122d6ccd17e1aabb0ac8617cda8",
+          "binary": false,
+          "destination": "assets / documentation"
+        },
+        {
+          "path": "icons/ucc-gui_32.png",
+          "bytes": 903,
+          "lines": null,
+          "sha256": "76249960d202bdf026a650946e3cdf1b1ef2e6af0352391b2d24a8f96940c3f9",
+          "binary": true,
+          "destination": "assets / documentation"
+        },
+        {
+          "path": "icons/ucc-gui_32.svg",
+          "bytes": 519,
+          "lines": 10,
+          "sha256": "59d6e9fa9f587d8398a21f34c224bdf4650e8e50d7c195300abc9f0c3afe5975",
+          "binary": false,
+          "destination": "assets / documentation"
+        },
+        {
+          "path": "icons/ucc-gui_48.png",
+          "bytes": 1246,
+          "lines": null,
+          "sha256": "b50c54acbc15b88e17e4c258f5106f26e6870c81de67552c4cee116cdf727dea",
+          "binary": true,
+          "destination": "assets / documentation"
+        },
+        {
+          "path": "icons/ucc-gui_48.svg",
+          "bytes": 534,
+          "lines": 10,
+          "sha256": "b357c0c7f239363e851167d37d5eaf75e49004225c1329ca7f587ff6ee9bf791",
+          "binary": false,
+          "destination": "assets / documentation"
+        },
+        {
+          "path": "icons/ucc-gui_64.png",
+          "bytes": 1790,
+          "lines": null,
+          "sha256": "44bf1cb96e9f94075c03ca2600077aa32f7e79401675d40f476c516fe1861369",
+          "binary": true,
+          "destination": "assets / documentation"
+        },
+        {
+          "path": "icons/ucc-gui_64.svg",
+          "bytes": 515,
+          "lines": 10,
+          "sha256": "2d42e542580e193d43161ed74f7bc0e29807c8c4ea5874c45095828d891363fb",
+          "binary": false,
+          "destination": "assets / documentation"
+        },
+        {
+          "path": "icons/ucc-tray.svg",
+          "bytes": 243,
+          "lines": 4,
+          "sha256": "5023c9402a825d6e91279def504ebcabb959a5ab849327727e89485421b50087",
+          "binary": false,
+          "destination": "assets / documentation"
+        },
+        {
+          "path": "icons/ucc-tray_128.png",
+          "bytes": 2271,
+          "lines": null,
+          "sha256": "85919f448c7da02394c4b50cdaef56fdc80740b74fa5cbac0a8d48f101eca20e",
+          "binary": true,
+          "destination": "assets / documentation"
+        },
+        {
+          "path": "icons/ucc-tray_128.svg",
+          "bytes": 245,
+          "lines": 4,
+          "sha256": "bf8f01fa5f40ccdfb5509d2d473ac9d83278d62be09908778b962abc7c961b25",
+          "binary": false,
+          "destination": "assets / documentation"
+        },
+        {
+          "path": "icons/ucc-tray_16.png",
+          "bytes": 310,
+          "lines": null,
+          "sha256": "591ac10098b5fe141bdab1e07e3f29f59653d92d2d5b2ef240a09c7bd055a53b",
+          "binary": true,
+          "destination": "assets / documentation"
+        },
+        {
+          "path": "icons/ucc-tray_16.svg",
+          "bytes": 238,
+          "lines": 4,
+          "sha256": "6896497ce8e60f2873b1830b675410b3b700c53635e10f40b0a9e0a7788aef38",
+          "binary": false,
+          "destination": "assets / documentation"
+        },
+        {
+          "path": "icons/ucc-tray_24.png",
+          "bytes": 438,
+          "lines": null,
+          "sha256": "ac98c6cc336e8d1f7f17afe7c4ae25614ffe980a5445c83e111201cac72ea52a",
+          "binary": true,
+          "destination": "assets / documentation"
+        },
+        {
+          "path": "icons/ucc-tray_24.svg",
+          "bytes": 242,
+          "lines": 4,
+          "sha256": "34a01fd708c2dff6da846b55f85c16d97b1c0a1b6660da42bd7489399b9eb0ab",
+          "binary": false,
+          "destination": "assets / documentation"
+        },
+        {
+          "path": "icons/ucc-tray_32.png",
+          "bytes": 617,
+          "lines": null,
+          "sha256": "7142235b81176e920fadec66fed20715439fe6687ef1a269fd7b49ea34135286",
+          "binary": true,
+          "destination": "assets / documentation"
+        },
+        {
+          "path": "icons/ucc-tray_32.svg",
+          "bytes": 243,
+          "lines": 4,
+          "sha256": "5023c9402a825d6e91279def504ebcabb959a5ab849327727e89485421b50087",
+          "binary": false,
+          "destination": "assets / documentation"
+        },
+        {
+          "path": "icons/ucc-tray_48.png",
+          "bytes": 884,
+          "lines": null,
+          "sha256": "5dc0037db8b6ba2377fb9c8dbcc2ff7a0ba949e2b203950192972a25d128879d",
+          "binary": true,
+          "destination": "assets / documentation"
+        },
+        {
+          "path": "icons/ucc-tray_48.svg",
+          "bytes": 243,
+          "lines": 4,
+          "sha256": "ccd3e8f50a8c82800f0c0de36ebfdaea0a7028f0dcf2f72c4764371976508075",
+          "binary": false,
+          "destination": "assets / documentation"
+        },
+        {
+          "path": "icons/ucc-tray_64.png",
+          "bytes": 1199,
+          "lines": null,
+          "sha256": "e4a3d52d35a674b499659011d0983c8bcab2e1a0886010cd3e42db7ffb8211b9",
+          "binary": true,
+          "destination": "assets / documentation"
+        },
+        {
+          "path": "icons/ucc-tray_64.svg",
+          "bytes": 243,
+          "lines": 4,
+          "sha256": "04e7f6e142a39d3505b42e6aa22e6ff58ca45650fca23958379f88d200e5e2e6",
+          "binary": false,
+          "destination": "assets / documentation"
+        },
+        {
+          "path": "include/CommonTypes.hpp",
+          "bytes": 1419,
+          "lines": 58,
+          "sha256": "0520abaf2b9f14bde48cacb795d2e7a1390a2edb05d179e72ba9fbe8a3f2f0b6",
+          "binary": false,
+          "destination": "ucc-core / ucc-hardware / ucc-desktop"
+        },
+        {
+          "path": "include/DriverHealth.hpp",
+          "bytes": 2605,
+          "lines": 35,
+          "sha256": "83068873d98313fcdb10ea821c2a226fef5271bdff432de1cadbf813a406e455",
+          "binary": false,
+          "destination": "ucc-core / ucc-hardware / ucc-desktop"
+        },
+        {
+          "path": "include/SysfsNode.hpp",
+          "bytes": 7113,
+          "lines": 298,
+          "sha256": "0013b1118bc920710144684df7217430dd1344cef0f624b1a750591d133345fd",
+          "binary": false,
+          "destination": "ucc-core / ucc-hardware / ucc-desktop"
+        },
+        {
+          "path": "include/Utils.hpp",
+          "bytes": 7704,
+          "lines": 254,
+          "sha256": "c97f287d1232aa3d28ed1d25c5e17d590a369c76f90b7cbe7a28426ff61ffd0a",
+          "binary": false,
+          "destination": "ucc-core / ucc-hardware / ucc-desktop"
+        },
+        {
+          "path": "include/WindowActivation.hpp",
+          "bytes": 890,
+          "lines": 26,
+          "sha256": "90201ab0bc19508a2d09cf6f778981aeeb89bc01b6df991289c269abfed90598",
+          "binary": false,
+          "destination": "ucc-core / ucc-hardware / ucc-desktop"
+        },
+        {
+          "path": "include/version.h.in",
+          "bytes": 600,
+          "lines": 16,
+          "sha256": "85dfb4f7a19d02c8b71e4363ad1d8f9a921d235378cdb1346fb03d1f2c23c8d7",
+          "binary": false,
+          "destination": "ucc-core / ucc-hardware / ucc-desktop"
+        },
+        {
+          "path": "libucc-dbus/AsyncRead.hpp",
+          "bytes": 1888,
+          "lines": 47,
+          "sha256": "d4a9108249bae286b25ade7a46e09eaa88250a78b6169c9e4477997f98aede07",
+          "binary": false,
+          "destination": "ucc-dbus"
+        },
+        {
+          "path": "libucc-dbus/CMakeLists.txt",
+          "bytes": 1212,
+          "lines": 56,
+          "sha256": "74c2bfc1df548dd821a71a3201fecca0a1bb44e4a17510a75e1e94d3ed7b7800",
+          "binary": false,
+          "destination": "ucc-dbus"
+        },
+        {
+          "path": "libucc-dbus/GuiLauncher.hpp",
+          "bytes": 1947,
+          "lines": 57,
+          "sha256": "1ee69982e7a8a5e0b5e41a28f616843768192a829fc0e60e7415d56caf5291ba",
+          "binary": false,
+          "destination": "ucc-dbus"
+        },
+        {
+          "path": "libucc-dbus/PreviewMode.hpp",
+          "bytes": 471,
+          "lines": 17,
+          "sha256": "415829358d15fc7c0480698560430e5e8f7ab99714b4760cafcffe08e5852068",
+          "binary": false,
+          "destination": "ucc-dbus"
+        },
+        {
+          "path": "libucc-dbus/UccdClient.cpp",
+          "bytes": 38506,
+          "lines": 1309,
+          "sha256": "b4f8520c080a9affbe849f6e9dc16195f99f5c27c03de7d0aea85307e8ce4862",
+          "binary": false,
+          "destination": "ucc-dbus"
+        },
+        {
+          "path": "libucc-dbus/UccdClient.hpp",
+          "bytes": 12007,
+          "lines": 280,
+          "sha256": "0b4b8aa5172b0e563c39087e0b398c441075e8b4c9e8c1d79a08fbbeb6484a09",
+          "binary": false,
+          "destination": "ucc-dbus"
+        },
+        {
+          "path": "nix/nixos-module.nix",
+          "bytes": 5926,
+          "lines": 175,
+          "sha256": "34984b1f7f3919473e87f6bd4365ed4cdbca89749e420703dbcf25862e19d99e",
+          "binary": false,
+          "destination": "Cargo / xtask / distribution packaging"
+        },
+        {
+          "path": "nvidia_findings/README.md",
+          "bytes": 4269,
+          "lines": 95,
+          "sha256": "2e6b138648b6b939d90e02a315c7aa986e744bf49f99a3cfc19aa67318d993d8",
+          "binary": false,
+          "destination": "research archive; runtime subset → ucc-hardware"
+        },
+        {
+          "path": "nvidia_findings/clockboost_scan",
+          "bytes": 13464,
+          "lines": null,
+          "sha256": "30b203d1f1aad4281e1afbe668a62f76cd87babcecf0d687250d08c0b6f8337e",
+          "binary": true,
+          "destination": "research archive; runtime subset → ucc-hardware"
+        },
+        {
+          "path": "nvidia_findings/clockboost_scan.c",
+          "bytes": 6862,
+          "lines": 183,
+          "sha256": "c3cd73616fa0a1fb8691e3aba52f1e961ff226f4eaac09227a8166cb70e14634",
+          "binary": false,
+          "destination": "research archive; runtime subset → ucc-hardware"
+        },
+        {
+          "path": "nvidia_findings/deep_fields",
+          "bytes": 27960,
+          "lines": null,
+          "sha256": "2c57a60559ded289ea5c9e39c90d3f45606b7645e1827d6aaeaa82441d3c0724",
+          "binary": true,
+          "destination": "research archive; runtime subset → ucc-hardware"
+        },
+        {
+          "path": "nvidia_findings/deep_fields.c",
+          "bytes": 20025,
+          "lines": 410,
+          "sha256": "5cbd1a8c299d65f3f39fcc8c732e5ee67262385e8cb88aec9ebc5a36e867758d",
+          "binary": false,
+          "destination": "research archive; runtime subset → ucc-hardware"
+        },
+        {
+          "path": "nvidia_findings/deep_fields_output.txt",
+          "bytes": 12491,
+          "lines": 228,
+          "sha256": "4f2d2464e202f6b9daca5c8fbc60cc7de962a9ecef60b2c2efa41d5445bf87ab",
+          "binary": false,
+          "destination": "research archive; runtime subset → ucc-hardware"
+        },
+        {
+          "path": "nvidia_findings/deep_nvapi",
+          "bytes": 30184,
+          "lines": null,
+          "sha256": "53b065d276a23b06b244cfef9d968f24905418e124d96c56e772b704baf036a2",
+          "binary": true,
+          "destination": "research archive; runtime subset → ucc-hardware"
+        },
+        {
+          "path": "nvidia_findings/deep_nvapi.c",
+          "bytes": 18622,
+          "lines": 459,
+          "sha256": "f1b562f14d607ab8d37ceae5bcf4ca0c07f39a5640c0630ee2248fa721b45680",
+          "binary": false,
+          "destination": "research archive; runtime subset → ucc-hardware"
+        },
+        {
+          "path": "nvidia_findings/deep_nvapi_output.txt",
+          "bytes": 69494,
+          "lines": 1440,
+          "sha256": "ec9fec863cefbcc0edbe0fe536b6d9371d4d4ac4468195f92befcd1a99178d49",
+          "binary": false,
+          "destination": "research archive; runtime subset → ucc-hardware"
+        },
+        {
+          "path": "nvidia_findings/deep_nvml_output.txt",
+          "bytes": 156320,
+          "lines": 2612,
+          "sha256": "011b0f936f7d0fbccb16e09426603aa40b76b0d4b6ae76402944e7aa38c26d8d",
+          "binary": false,
+          "destination": "research archive; runtime subset → ucc-hardware"
+        },
+        {
+          "path": "nvidia_findings/deep_nvml_probe",
+          "bytes": 37912,
+          "lines": null,
+          "sha256": "b5f5278caa6bd98413e3adc793c9817fa66ecf2971f4ff751997917c4fe0a799",
+          "binary": true,
+          "destination": "research archive; runtime subset → ucc-hardware"
+        },
+        {
+          "path": "nvidia_findings/deep_nvml_probe.c",
+          "bytes": 27692,
+          "lines": 636,
+          "sha256": "acfec429d5fa54232da28169345789ff1c2f1f1aa33bef4e6c1ac8377484660c",
+          "binary": false,
+          "destination": "research archive; runtime subset → ucc-hardware"
+        },
+        {
+          "path": "nvidia_findings/final_detail",
+          "bytes": 13008,
+          "lines": null,
+          "sha256": "8a30e8a98e7cc4bea0081aeb42ccd2a5599bb877714c0aaa76208081b6e2b49c",
+          "binary": true,
+          "destination": "research archive; runtime subset → ucc-hardware"
+        },
+        {
+          "path": "nvidia_findings/final_detail.c",
+          "bytes": 4724,
+          "lines": 121,
+          "sha256": "7335fe6e3db7fc7c60169b843e1c66d41dc5a9be5971f03a553698f70cbb52a6",
+          "binary": false,
+          "destination": "research archive; runtime subset → ucc-hardware"
+        },
+        {
+          "path": "nvidia_findings/nvapi-symbols.txt",
+          "bytes": 21,
+          "lines": 1,
+          "sha256": "1daff00ecf1a322ae512fbd490c11c7960f200dbe2e568af84c469a66c81caae",
+          "binary": false,
+          "destination": "research archive; runtime subset → ucc-hardware"
+        },
+        {
+          "path": "nvidia_findings/nvidia_undocumented_api_findings.md",
+          "bytes": 18111,
+          "lines": 508,
+          "sha256": "c0d6560e898e6a16feb1ec9d4a7c6850d497902d8673b376359b58db6d823a0b",
+          "binary": false,
+          "destination": "research archive; runtime subset → ucc-hardware"
+        },
+        {
+          "path": "nvidia_findings/nvml-symbols.txt",
+          "bytes": 12324,
+          "lines": 405,
+          "sha256": "3d4af37898e4ae094855dd9690ca822ff963e7419bcebad00d6d02781d40c15f",
+          "binary": false,
+          "destination": "research archive; runtime subset → ucc-hardware"
+        },
+        {
+          "path": "nvidia_findings/nvml_detail",
+          "bytes": 23000,
+          "lines": null,
+          "sha256": "26d490316b3d6ada726ad6f33a56cf6dfa863ff37b67b28946935b43f5eec5b0",
+          "binary": true,
+          "destination": "research archive; runtime subset → ucc-hardware"
+        },
+        {
+          "path": "nvidia_findings/nvml_detail.c",
+          "bytes": 8211,
+          "lines": 218,
+          "sha256": "c3a8a8ab74601378fe0db3b0ef48adb268b51d66510eef4ccf2f18d72d293e8b",
+          "binary": false,
+          "destination": "research archive; runtime subset → ucc-hardware"
+        },
+        {
+          "path": "nvidia_findings/nvml_detail_output.txt",
+          "bytes": 8192,
+          "lines": 112,
+          "sha256": "d72becab0f31c41c9064de6754e12b1f0a45380562be53ae7e1fb7e1cbba6217",
+          "binary": false,
+          "destination": "research archive; runtime subset → ucc-hardware"
+        },
+        {
+          "path": "nvidia_findings/nvml_fine_scan",
+          "bytes": 23680,
+          "lines": null,
+          "sha256": "6e88e27e5fc668ca786883617cfe07b9aef99927443495857cf8751e4a7fdabf",
+          "binary": true,
+          "destination": "research archive; runtime subset → ucc-hardware"
+        },
+        {
+          "path": "nvidia_findings/nvml_fine_scan.c",
+          "bytes": 10528,
+          "lines": 246,
+          "sha256": "d1f5d6cf5159de6ac68fa2fa67ffbd4c530e5855175146926e29ea53bee19be6",
+          "binary": false,
+          "destination": "research archive; runtime subset → ucc-hardware"
+        },
+        {
+          "path": "nvidia_findings/nvml_fine_scan_output.txt",
+          "bytes": 0,
+          "lines": 0,
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "binary": false,
+          "destination": "research archive; runtime subset → ucc-hardware"
+        },
+        {
+          "path": "nvidia_findings/nvml_scan2",
+          "bytes": 19136,
+          "lines": null,
+          "sha256": "0e934757504d7acb811a951903c73ebbf1d49bd837162c7d854e90ccbca493ad",
+          "binary": true,
+          "destination": "research archive; runtime subset → ucc-hardware"
+        },
+        {
+          "path": "nvidia_findings/nvml_scan2.c",
+          "bytes": 5011,
+          "lines": 151,
+          "sha256": "9bf210270b384592af319e661f48afb9e40a5512507ae91bfdb67d963c972120",
+          "binary": false,
+          "destination": "research archive; runtime subset → ucc-hardware"
+        },
+        {
+          "path": "nvidia_findings/nvml_scan2_output.txt",
+          "bytes": 884,
+          "lines": 35,
+          "sha256": "a90c1712bb34488299741fbb680737b3fbe4763e42957e549d2fb4125be805ff",
+          "binary": false,
+          "destination": "research archive; runtime subset → ucc-hardware"
+        },
+        {
+          "path": "nvidia_findings/probe_nvapi",
+          "bytes": 13728,
+          "lines": null,
+          "sha256": "0384b38969a607d29fbb645d46b8e558e72fa936e3eb2b71f9b5280076198b71",
+          "binary": true,
+          "destination": "research archive; runtime subset → ucc-hardware"
+        },
+        {
+          "path": "nvidia_findings/probe_nvapi.c",
+          "bytes": 3708,
+          "lines": 85,
+          "sha256": "715302e820ed2f0c0961a65806647b05c921e8ca4eae6ad8b56db61cd288cc6a",
+          "binary": false,
+          "destination": "research archive; runtime subset → ucc-hardware"
+        },
+        {
+          "path": "nvidia_findings/probe_nvapi_data",
+          "bytes": 17064,
+          "lines": null,
+          "sha256": "538fc7c707b036f1f990dcbb953ea67793769376f576f4eb54a0f3ef6eb96bbc",
+          "binary": true,
+          "destination": "research archive; runtime subset → ucc-hardware"
+        },
+        {
+          "path": "nvidia_findings/probe_nvapi_data.c",
+          "bytes": 11770,
+          "lines": 309,
+          "sha256": "077df4a13c3d62afc8a49cc518fcb73bad0ef869ab13bcbc28a00635ea107e22",
+          "binary": false,
+          "destination": "research archive; runtime subset → ucc-hardware"
+        },
+        {
+          "path": "package.nix",
+          "bytes": 3391,
+          "lines": 122,
+          "sha256": "d843a72bf5bbf1a6a8ec6775503e494c81c51c3d230e05d73ff5b3fd2f25fc64",
+          "binary": false,
+          "destination": "Cargo / xtask / distribution packaging"
+        },
+        {
+          "path": "run-preview.sh",
+          "bytes": 415,
+          "lines": 8,
+          "sha256": "902544786978b8e73345369fab8e04b2411a2107b5d6ae67e2fd5c71a2629511",
+          "binary": false,
+          "destination": "Cargo / xtask / distribution packaging"
+        },
+        {
+          "path": "screenshots/README.md",
+          "bytes": 2453,
+          "lines": 37,
+          "sha256": "b3302d488b02998cba865b766e52ae35cbdca27fd1f65aa492021a5ff5481c2a",
+          "binary": false,
+          "destination": "assets / documentation"
+        },
+        {
+          "path": "screenshots/current/dark/about.png",
+          "bytes": 187368,
+          "lines": null,
+          "sha256": "1dc62e6f591dd2c017202559e68197b8dc18468cf10039923cc7f97cfa82ba16",
+          "binary": true,
+          "destination": "assets / documentation"
+        },
+        {
+          "path": "screenshots/current/dark/battery-processes.png",
+          "bytes": 132074,
+          "lines": null,
+          "sha256": "0d1b199fe629e2581431b8cea77c6bbac8ccddc7eed23e52775a4a01961e60fa",
+          "binary": true,
+          "destination": "assets / documentation"
+        },
+        {
+          "path": "screenshots/current/dark/cooler-settings.png",
+          "bytes": 159147,
+          "lines": null,
+          "sha256": "ffcfc6f2f7286baa1574b18d6072224b7b349ffe848e981e4dd09fe7a5dbc1f3",
+          "binary": true,
+          "destination": "assets / documentation"
+        },
+        {
+          "path": "screenshots/current/dark/driver-warning.png",
+          "bytes": 154417,
+          "lines": null,
+          "sha256": "627619c7e90d288c7470b3518fd7f9e1a3a6ca6954e0264a2149f329f70b901e",
+          "binary": true,
+          "destination": "assets / documentation"
+        },
+        {
+          "path": "screenshots/current/dark/keyboard-hardware.png",
+          "bytes": 152064,
+          "lines": null,
+          "sha256": "8247f3d692305cb17cf59b4f881ffc2a4b90181d0d930dc0b31a246b6f0f2c74",
+          "binary": true,
+          "destination": "assets / documentation"
+        },
+        {
+          "path": "screenshots/current/dark/lightbar.png",
+          "bytes": 144958,
+          "lines": null,
+          "sha256": "d3593d93b134751b2f7c1678c151ae4497d477380ee3b9408ba8840a27fa1340",
+          "binary": true,
+          "destination": "assets / documentation"
+        },
+        {
+          "path": "screenshots/current/dark/monitor.png",
+          "bytes": 196216,
+          "lines": null,
+          "sha256": "a085cc6d240ab29edb62b857bd0cf8032739ca37637dc0a9c8426fcbf49bb438",
+          "binary": true,
+          "destination": "assets / documentation"
+        },
+        {
+          "path": "screenshots/current/dark/overview.png",
+          "bytes": 144288,
+          "lines": null,
+          "sha256": "66335b151eced439dc1a99c9b28a1cdff41ddc171f88cd31c23bae332e4f5660",
+          "binary": true,
+          "destination": "assets / documentation"
+        },
+        {
+          "path": "screenshots/current/dark/power-devices.png",
+          "bytes": 165300,
+          "lines": null,
+          "sha256": "83b3d2fb0bbc044618f8ca05856ad8cc80133913c6ceac4b2479c0e2f2c3af12",
+          "binary": true,
+          "destination": "assets / documentation"
+        },
+        {
+          "path": "screenshots/current/dark/profiles.png",
+          "bytes": 152962,
+          "lines": null,
+          "sha256": "db36dc05d57fc1c07838cd0125db6b7ade51b93f05e167a0fc131d8afd36d3d1",
+          "binary": true,
+          "destination": "assets / documentation"
+        },
+        {
+          "path": "screenshots/current/dark/watercool-settings.png",
+          "bytes": 163797,
+          "lines": null,
+          "sha256": "a093b928922e407e5a942c07f1cc27094f0e99afae2984c28b7d37bf98280f87",
+          "binary": true,
+          "destination": "assets / documentation"
+        },
+        {
+          "path": "screenshots/current/light/about.png",
+          "bytes": 180182,
+          "lines": null,
+          "sha256": "fe0a6ca10ad1248c6c338634712b9f727fd0c42687255f9b142bb0bc471e1d59",
+          "binary": true,
+          "destination": "assets / documentation"
+        },
+        {
+          "path": "screenshots/current/light/battery-processes.png",
+          "bytes": 128298,
+          "lines": null,
+          "sha256": "5d6543145517237d9d0d610fbdbbf7997fb11f93c1910592082d4fa03be2dbd7",
+          "binary": true,
+          "destination": "assets / documentation"
+        },
+        {
+          "path": "screenshots/current/light/cooler-settings.png",
+          "bytes": 149424,
+          "lines": null,
+          "sha256": "7d730831ae631caa777fec64a66a811cc9086ae1302f6decee4c55ea274848e0",
+          "binary": true,
+          "destination": "assets / documentation"
+        },
+        {
+          "path": "screenshots/current/light/driver-warning.png",
+          "bytes": 149148,
+          "lines": null,
+          "sha256": "0dee1460438a3da17a859b2921eb90bcb5ad3d6312f3aab2a2ec59c5f42ec7c8",
+          "binary": true,
+          "destination": "assets / documentation"
+        },
+        {
+          "path": "screenshots/current/light/keyboard-hardware.png",
+          "bytes": 147613,
+          "lines": null,
+          "sha256": "3bd7901482f6c611273bb29cfed1813e3cc4410d000e46ef2c2a65e290cc09e6",
+          "binary": true,
+          "destination": "assets / documentation"
+        },
+        {
+          "path": "screenshots/current/light/lightbar.png",
+          "bytes": 139841,
+          "lines": null,
+          "sha256": "0da42f0c64ab0bdc486581e93b150a57734f379ae96f4819a7197988229b22b9",
+          "binary": true,
+          "destination": "assets / documentation"
+        },
+        {
+          "path": "screenshots/current/light/monitor.png",
+          "bytes": 189838,
+          "lines": null,
+          "sha256": "3e2848a4db0013ad41d2f421e7108e2ed204659b217b091eeb3ce00c48dac132",
+          "binary": true,
+          "destination": "assets / documentation"
+        },
+        {
+          "path": "screenshots/current/light/overview.png",
+          "bytes": 139154,
+          "lines": null,
+          "sha256": "d955f3ae00673f9ccd80bc03bf3970c6dfc07a0dd651959cd5f866d6a0b0f3a4",
+          "binary": true,
+          "destination": "assets / documentation"
+        },
+        {
+          "path": "screenshots/current/light/power-devices.png",
+          "bytes": 160820,
+          "lines": null,
+          "sha256": "461416521a2e8b8f8a80636396bfbcf0ab89c578149e167a86df50cf13e7866e",
+          "binary": true,
+          "destination": "assets / documentation"
+        },
+        {
+          "path": "screenshots/current/light/profiles.png",
+          "bytes": 148193,
+          "lines": null,
+          "sha256": "66ee9cb74d769f6a19f3fa0c1e829844161a7e6be823fe72adf0e9fb38b11707",
+          "binary": true,
+          "destination": "assets / documentation"
+        },
+        {
+          "path": "screenshots/current/light/watercool-settings.png",
+          "bytes": 154123,
+          "lines": null,
+          "sha256": "c4d72aa754cb7b902e13084c0c357a8764d55185fe3f0136252ecf7eaec76ec2",
+          "binary": true,
+          "destination": "assets / documentation"
+        },
+        {
+          "path": "screenshots/current/manifest.json",
+          "bytes": 2462,
+          "lines": 37,
+          "sha256": "2a09a6d1b12c845c4f72883adef3f6306e31064197dda6c916cfadb27d235100",
+          "binary": false,
+          "destination": "assets / documentation"
+        },
+        {
+          "path": "tests/CMakeLists.txt",
+          "bytes": 9821,
+          "lines": 165,
+          "sha256": "5cbcc45f3d8742a96b933bf37e2a4c093b2b02e3f1b23efd5788ac4e443d90a2",
+          "binary": false,
+          "destination": "Rust tests + migration contract fixtures"
+        },
+        {
+          "path": "tests/GuiVisualFixture.hpp",
+          "bytes": 5941,
+          "lines": 51,
+          "sha256": "8032309cfc5c3bce1028a3e8b38aff681c4dc1e79fcefe596e42add8f5d127e3",
+          "binary": false,
+          "destination": "Rust tests + migration contract fixtures"
+        },
+        {
+          "path": "tests/run_gnome_async_test.sh",
+          "bytes": 684,
+          "lines": 13,
+          "sha256": "0af3ef427eb2263723535dfaae1d516b33b28a1e583b1f169f15cc68e52a3606",
+          "binary": false,
+          "destination": "Rust tests + migration contract fixtures"
+        },
+        {
+          "path": "tests/run_gui_audit_test.sh",
+          "bytes": 263,
+          "lines": 7,
+          "sha256": "4d6674688d94322464c0c16e4699e8ee88e5609e89977a1ac9c5c47e6c238685",
+          "binary": false,
+          "destination": "Rust tests + migration contract fixtures"
+        },
+        {
+          "path": "tests/run_private_system_bus.sh",
+          "bytes": 132,
+          "lines": 5,
+          "sha256": "5a0ec56e5a17691d727cbf2869ce17662adae12710bb8c64b6369891a0efdc6a",
+          "binary": false,
+          "destination": "Rust tests + migration contract fixtures"
+        },
+        {
+          "path": "tests/test_app_logging.cpp",
+          "bytes": 6134,
+          "lines": 84,
+          "sha256": "e8cbcc275b6f7f0abad18300782be33789fc0e71fb7869b31df75de2db313369",
+          "binary": false,
+          "destination": "Rust tests + migration contract fixtures"
+        },
+        {
+          "path": "tests/test_aquaris_selection.cpp",
+          "bytes": 650,
+          "lines": 14,
+          "sha256": "d675368cc69e528504695f98979a1db80192716a531dbdabb41d1d8c5346deae",
+          "binary": false,
+          "destination": "Rust tests + migration contract fixtures"
+        },
+        {
+          "path": "tests/test_bluetooth_retry.py",
+          "bytes": 4818,
+          "lines": 76,
+          "sha256": "e81d34d6652b8b8824fc8b9f0c01ae60cc17f2d771dde49d1942feeb0e527220",
+          "binary": false,
+          "destination": "Rust tests + migration contract fixtures"
+        },
+        {
+          "path": "tests/test_bluetooth_startup.py",
+          "bytes": 3777,
+          "lines": 104,
+          "sha256": "f3df0bc382ae7a42eb234bd3ff6c8f59ee64a2373b03b6e92c0e8b1131925cdc",
+          "binary": false,
+          "destination": "Rust tests + migration contract fixtures"
+        },
+        {
+          "path": "tests/test_control_authorization.py",
+          "bytes": 2158,
+          "lines": 41,
+          "sha256": "8cc3fd48f81897604f8afc22348f3306f460c54304e5a0c667ce865066b8cf45",
+          "binary": false,
+          "destination": "Rust tests + migration contract fixtures"
+        },
+        {
+          "path": "tests/test_controlcenter_migration.py",
+          "bytes": 4862,
+          "lines": 74,
+          "sha256": "86b8a9733456c9bf7010974288ac72dd6c1b7d35b8172037be6e79a3e80b692e",
+          "binary": false,
+          "destination": "Rust tests + migration contract fixtures"
+        },
+        {
+          "path": "tests/test_cpu_selection.cpp",
+          "bytes": 5575,
+          "lines": 83,
+          "sha256": "cd7f300f4de5f25e3c5c35186c5d11c2060ff7a04d722951ad6088d2ab57f88b",
+          "binary": false,
+          "destination": "Rust tests + migration contract fixtures"
+        },
+        {
+          "path": "tests/test_deployment.py",
+          "bytes": 7166,
+          "lines": 145,
+          "sha256": "193e8f90906077f1fd30d6b48b17f7656f4f1d304524c3818f3e43be968e5147",
+          "binary": false,
+          "destination": "Rust tests + migration contract fixtures"
+        },
+        {
+          "path": "tests/test_desktop_transition.py",
+          "bytes": 2281,
+          "lines": 51,
+          "sha256": "fb9aa919249e4738d44ff345994f6a6639c9eb2e067ac2fe5f59590dfcd7515b",
+          "binary": false,
+          "destination": "Rust tests + migration contract fixtures"
+        },
+        {
+          "path": "tests/test_device_identification.py",
+          "bytes": 3495,
+          "lines": 83,
+          "sha256": "1761d81a07b9edc2153cdfe557f9b8d7d0971ba1a5ffbf0392e6031e48362d8a",
+          "binary": false,
+          "destination": "Rust tests + migration contract fixtures"
+        },
+        {
+          "path": "tests/test_display_backlight.cpp",
+          "bytes": 4061,
+          "lines": 66,
+          "sha256": "9b82aaf1fed14533cfb12825534ea6c98f03d5e922727d9a8f5826aae820eec8",
+          "binary": false,
+          "destination": "Rust tests + migration contract fixtures"
+        },
+        {
+          "path": "tests/test_display_identity.py",
+          "bytes": 1792,
+          "lines": 36,
+          "sha256": "4c0652c3768898dd3ee4139690a123b4222d8d6f880619d58cb31b1aeebd58b9",
+          "binary": false,
+          "destination": "Rust tests + migration contract fixtures"
+        },
+        {
+          "path": "tests/test_driver_alert.cpp",
+          "bytes": 2091,
+          "lines": 35,
+          "sha256": "c3548fbd0023d309cd40e54c96fa3a7977f316f971a216d97142f60ba856890a",
+          "binary": false,
+          "destination": "Rust tests + migration contract fixtures"
+        },
+        {
+          "path": "tests/test_driver_health.cpp",
+          "bytes": 1911,
+          "lines": 30,
+          "sha256": "4b130fc6d7d0d1598a1eb0cacfafe443b2602067e51c13cabb4be3aaddc24cc4",
+          "binary": false,
+          "destination": "Rust tests + migration contract fixtures"
+        },
+        {
+          "path": "tests/test_fan_curve_editor.cpp",
+          "bytes": 2169,
+          "lines": 51,
+          "sha256": "7acc64fc2d18d888f7e74d3e22f8255d8e6ea3e8799c199f5ef6a095678f4ee6",
+          "binary": false,
+          "destination": "Rust tests + migration contract fixtures"
+        },
+        {
+          "path": "tests/test_fan_profile.cpp",
+          "bytes": 4683,
+          "lines": 196,
+          "sha256": "44a7968da3c97fc8b80013c733afeb9b3b4ed65ce56b0be1c0e9643ee8dafd85",
+          "binary": false,
+          "destination": "Rust tests + migration contract fixtures"
+        },
+        {
+          "path": "tests/test_gnome_async.js",
+          "bytes": 4226,
+          "lines": 80,
+          "sha256": "441c2ad1e3b964e88425a1aa94b36999ab8d34a14ec79592519673517b170679",
+          "binary": false,
+          "destination": "Rust tests + migration contract fixtures"
+        },
+        {
+          "path": "tests/test_gnome_launch.cjs",
+          "bytes": 1273,
+          "lines": 21,
+          "sha256": "9a7352691a62d1801323c343d20b7fb267a638909426377bde6f39b4be00ca1d",
+          "binary": false,
+          "destination": "Rust tests + migration contract fixtures"
+        },
+        {
+          "path": "tests/test_gnome_refresh.cjs",
+          "bytes": 3806,
+          "lines": 77,
+          "sha256": "5b7e3dc4a84c217f5a74eab83b6ca6fa7053b8d65d53c9f00574767101470583",
+          "binary": false,
+          "destination": "Rust tests + migration contract fixtures"
+        },
+        {
+          "path": "tests/test_gpu_sysfs.cpp",
+          "bytes": 2467,
+          "lines": 44,
+          "sha256": "2454038a56bf1a842edfda9b41701da72f98ad4a3a03a3721128564e28b72944",
+          "binary": false,
+          "destination": "Rust tests + migration contract fixtures"
+        },
+        {
+          "path": "tests/test_gui_audit.cpp",
+          "bytes": 67463,
+          "lines": 1013,
+          "sha256": "57ba6d3def27edcf3d4d797e2a83e013237f8dd6a01a913827fcc9c58d0cf751",
+          "binary": false,
+          "destination": "Rust tests + migration contract fixtures"
+        },
+        {
+          "path": "tests/test_gui_instance.cpp",
+          "bytes": 3784,
+          "lines": 98,
+          "sha256": "8f36a298b26733c5e42e2a6271ecaabdf2fd063dbcf88a1ece13af429560a0ee",
+          "binary": false,
+          "destination": "Rust tests + migration contract fixtures"
+        },
+        {
+          "path": "tests/test_import_check.py",
+          "bytes": 3181,
+          "lines": 63,
+          "sha256": "4e65c3bb9620dace27cda7cd27d1794441ed43fc9ff66b56fcf16d3c2ff29a86",
+          "binary": false,
+          "destination": "Rust tests + migration contract fixtures"
+        },
+        {
+          "path": "tests/test_ite8291_brightness.py",
+          "bytes": 5057,
+          "lines": 110,
+          "sha256": "92620a7bff14e16fcdd0c51959369c0a57104979d5fc16bf95f0093933bd42f0",
+          "binary": false,
+          "destination": "Rust tests + migration contract fixtures"
+        },
+        {
+          "path": "tests/test_keyboard_controller.cpp",
+          "bytes": 2009,
+          "lines": 42,
+          "sha256": "9ff20c9c688acbd7a07ff7932df138c5a0778fc4ef6d6ec01fb7eadb5fcb89b4",
+          "binary": false,
+          "destination": "Rust tests + migration contract fixtures"
+        },
+        {
+          "path": "tests/test_lightbar.cpp",
+          "bytes": 8304,
+          "lines": 107,
+          "sha256": "c6800c12da197d489ee7959cfe8132875c92ce102facf902581f30b2d72f841e",
+          "binary": false,
+          "destination": "Rust tests + migration contract fixtures"
+        },
+        {
+          "path": "tests/test_metrics_history.cpp",
+          "bytes": 5397,
+          "lines": 190,
+          "sha256": "b0c07ce4bd97b4de4b3f191ff643ce370c2a5851fcb8b86ffe8ec8e09696fb33",
+          "binary": false,
+          "destination": "Rust tests + migration contract fixtures"
+        },
+        {
+          "path": "tests/test_notification_monitor.cpp",
+          "bytes": 1236,
+          "lines": 20,
+          "sha256": "2f81bb4dbdd2f60fcab690ba42cfa59823cccc1a13f3cee37b5204e0f344bee1",
+          "binary": false,
+          "destination": "Rust tests + migration contract fixtures"
+        },
+        {
+          "path": "tests/test_power_devices.cpp",
+          "bytes": 6540,
+          "lines": 98,
+          "sha256": "54e46c5072bb49e07fed7533209d2896e742575c40f6ad60f6de7b28f51cb559",
+          "binary": false,
+          "destination": "Rust tests + migration contract fixtures"
+        },
+        {
+          "path": "tests/test_power_policy.cpp",
+          "bytes": 6496,
+          "lines": 120,
+          "sha256": "d7ab259d42830031ed3ac154cfdae0295f617964b64b4cab21abb8aae1298994",
+          "binary": false,
+          "destination": "Rust tests + migration contract fixtures"
+        },
+        {
+          "path": "tests/test_prepare_deployment.py",
+          "bytes": 1624,
+          "lines": 35,
+          "sha256": "621543be3ee451488503fcf842d3af3c6c3ea2a39d19dfd9960726dcdb9aa6a0",
+          "binary": false,
+          "destination": "Rust tests + migration contract fixtures"
+        },
+        {
+          "path": "tests/test_process_terminator.cpp",
+          "bytes": 3549,
+          "lines": 54,
+          "sha256": "62e0119fe3edd355e7a2058eaa19a62dc07345f15fb791b6825b6d05039c5422",
+          "binary": false,
+          "destination": "Rust tests + migration contract fixtures"
+        },
+        {
+          "path": "tests/test_profile_manager.cpp",
+          "bytes": 8567,
+          "lines": 222,
+          "sha256": "7b194ac5ba397119696261451a60e066791ba605c2bb92370e6b8632b65f1c7c",
+          "binary": false,
+          "destination": "Rust tests + migration contract fixtures"
+        },
+        {
+          "path": "tests/test_refresh_advisor.cpp",
+          "bytes": 15453,
+          "lines": 348,
+          "sha256": "a316cdc6156c5ef1731dd943d51cb865193c17b559b88214445f227dc6f3d2b1",
+          "binary": false,
+          "destination": "Rust tests + migration contract fixtures"
+        },
+        {
+          "path": "tests/test_session_telemetry.cpp",
+          "bytes": 4353,
+          "lines": 43,
+          "sha256": "b71cbe70b0f998590e31e47a000473bfc5f2d765cfa3a3817e875ff2b8429fc1",
+          "binary": false,
+          "destination": "Rust tests + migration contract fixtures"
+        },
+        {
+          "path": "tests/test_settings_manager.cpp",
+          "bytes": 6150,
+          "lines": 171,
+          "sha256": "e706b3291f95de83e6a6dcdec82e204433ba9a569da51e48a2c5b5721df05999",
+          "binary": false,
+          "destination": "Rust tests + migration contract fixtures"
+        },
+        {
+          "path": "tests/test_sleep_install.py",
+          "bytes": 4251,
+          "lines": 91,
+          "sha256": "3480de4b083bd6c56961bf5e4d467060a6bdbc9b0430041c1d5192d2b8f4a8bd",
+          "binary": false,
+          "destination": "Rust tests + migration contract fixtures"
+        },
+        {
+          "path": "tests/test_sleep_state.cpp",
+          "bytes": 6638,
+          "lines": 182,
+          "sha256": "8b5e99d1391b9a62743fa464781016747bedd8c767bca18fcfea930e04cdcb7b",
+          "binary": false,
+          "destination": "Rust tests + migration contract fixtures"
+        },
+        {
+          "path": "tests/test_state_utils.cpp",
+          "bytes": 1056,
+          "lines": 45,
+          "sha256": "9b654521d06038d1d7470c781895705f135dabe344c4a1cb7a45d96d10f8d01c",
+          "binary": false,
+          "destination": "Rust tests + migration contract fixtures"
+        },
+        {
+          "path": "tests/test_system_monitor.cpp",
+          "bytes": 6759,
+          "lines": 155,
+          "sha256": "db1e76747d1a8ae70db2df445c335cc1f967b7fcfa1bf5d85e4fca127b2c6a85",
+          "binary": false,
+          "destination": "Rust tests + migration contract fixtures"
+        },
+        {
+          "path": "tests/test_tcc_import.py",
+          "bytes": 4864,
+          "lines": 79,
+          "sha256": "0d6afa26e57db6541a96cf48fd7dd725e97ab5a1464c96aaf10b3dca0d0fb889",
+          "binary": false,
+          "destination": "Rust tests + migration contract fixtures"
+        },
+        {
+          "path": "tests/test_watercooler_override.py",
+          "bytes": 6452,
+          "lines": 136,
+          "sha256": "74e0b976861f7a19d1a7c69325fc88bd6d3ca81090ddc03a585a42fcac4b34f4",
+          "binary": false,
+          "destination": "Rust tests + migration contract fixtures"
+        },
+        {
+          "path": "treefmt.nix",
+          "bytes": 668,
+          "lines": 29,
+          "sha256": "9fc226b9a00c831a36260a447cb0a2cacb8f20280ff7d8e52eb806c9ff1af275",
+          "binary": false,
+          "destination": "Cargo / xtask / distribution packaging"
+        },
+        {
+          "path": "ucc-cli/CMakeLists.txt",
+          "bytes": 1038,
+          "lines": 56,
+          "sha256": "c7e7d35849ed42d0ed8ce2d53276f5604e238311ee21c021cda5f102a397dc12",
+          "binary": false,
+          "destination": "ucc-cli"
+        },
+        {
+          "path": "ucc-cli/main.cpp",
+          "bytes": 71474,
+          "lines": 2159,
+          "sha256": "7d42ae380edfe18d60ab02f9c5b5347bbff2a7b9ed2631bab66e2766b44479c0",
+          "binary": false,
+          "destination": "ucc-cli"
+        },
+        {
+          "path": "ucc-cli/ucc-cli.1",
+          "bytes": 7781,
+          "lines": 351,
+          "sha256": "e8dd51fb9a6f7ef159741d9b30dcbebff7bb58acec57a9251d92bfc30f2b9e79",
+          "binary": false,
+          "destination": "ucc-cli"
+        },
+        {
+          "path": "ucc-cli/ucc-cli.bash",
+          "bytes": 6693,
+          "lines": 183,
+          "sha256": "09369fff0ef62e96bced0630d976bbb2facb7eaddfc91fa61762642b407bb9d0",
+          "binary": false,
+          "destination": "ucc-cli"
+        },
+        {
+          "path": "ucc-desktop/CMakeLists.txt",
+          "bytes": 781,
+          "lines": 14,
+          "sha256": "15cea42e437524eb73bd7eb48dfd7d6a6e7f09daea456632353c10058b9565cf",
+          "binary": false,
+          "destination": "ucc-desktop + ucc-desktop-tray"
+        },
+        {
+          "path": "ucc-desktop/DesktopTray.cpp",
+          "bytes": 12608,
+          "lines": 167,
+          "sha256": "aafcde09b05e5c217a37535ebe74460c3f2f0f495851edebbf0eeb7a9328707e",
+          "binary": false,
+          "destination": "ucc-desktop + ucc-desktop-tray"
+        },
+        {
+          "path": "ucc-desktop/DesktopTray.hpp",
+          "bytes": 1473,
+          "lines": 46,
+          "sha256": "c249f9c39b72b1acf3fa7e985640d248ef567125d22c419e27f8875acb22b960",
+          "binary": false,
+          "destination": "ucc-desktop + ucc-desktop-tray"
+        },
+        {
+          "path": "ucc-desktop/ProcessTerminator.cpp",
+          "bytes": 4486,
+          "lines": 74,
+          "sha256": "7aa07344dd67665bbb5553dd4970c57f2c541305a1f7927aaef7c864d711d475",
+          "binary": false,
+          "destination": "ucc-desktop + ucc-desktop-tray"
+        },
+        {
+          "path": "ucc-desktop/ProcessTerminator.hpp",
+          "bytes": 937,
+          "lines": 31,
+          "sha256": "56c09726402165b582083e1dace2fd463b0ef32c88bfaf88b2f9b1de9ec13f77",
+          "binary": false,
+          "destination": "ucc-desktop + ucc-desktop-tray"
+        },
+        {
+          "path": "ucc-desktop/SessionProcessesWidget.cpp",
+          "bytes": 6161,
+          "lines": 58,
+          "sha256": "3d6d2610e586d4a419bb64898a24d40a833ae5f6c6b959ba5117a9594d1f7626",
+          "binary": false,
+          "destination": "ucc-desktop + ucc-desktop-tray"
+        },
+        {
+          "path": "ucc-desktop/SessionProcessesWidget.hpp",
+          "bytes": 1004,
+          "lines": 33,
+          "sha256": "196988d0fcb26ce0b35e168876ac4ce8cc443edcd2ca8a4c166346fdc6244355",
+          "binary": false,
+          "destination": "ucc-desktop + ucc-desktop-tray"
+        },
+        {
+          "path": "ucc-desktop/SessionTelemetry.cpp",
+          "bytes": 6773,
+          "lines": 116,
+          "sha256": "f3592345edfc4996a428d75753f0b96b12fc9f22646b7a4082055eebae8d6482",
+          "binary": false,
+          "destination": "ucc-desktop + ucc-desktop-tray"
+        },
+        {
+          "path": "ucc-desktop/SessionTelemetry.hpp",
+          "bytes": 1741,
+          "lines": 60,
+          "sha256": "89b6abb9c56fabca526a56ea6f4e22229d0c4ef3ff31e169fb35d7a6630d0229",
+          "binary": false,
+          "destination": "ucc-desktop + ucc-desktop-tray"
+        },
+        {
+          "path": "ucc-desktop/main.cpp",
+          "bytes": 1281,
+          "lines": 18,
+          "sha256": "29a4ccdda645bca26b87eafdbf283428e4b801dd4b6483c4c8104bf69421359f",
+          "binary": false,
+          "destination": "ucc-desktop + ucc-desktop-tray"
+        },
+        {
+          "path": "ucc-desktop/ucc-desktop-tray.desktop",
+          "bytes": 246,
+          "lines": 10,
+          "sha256": "8efad19c6cdf175cfbc29de06f9744c92c4aa14863755493140119bb35875dc4",
+          "binary": false,
+          "destination": "ucc-desktop + ucc-desktop-tray"
+        },
+        {
+          "path": "ucc-gnome/extension.js",
+          "bytes": 45594,
+          "lines": 1214,
+          "sha256": "35f2e4e01a83a9e10338a8b2b9c9effcbd41b407cff4a5362b3de1d47578b4f9",
+          "binary": false,
+          "destination": "shell integration decision (M1/M11)"
+        },
+        {
+          "path": "ucc-gnome/metadata.json",
+          "bytes": 407,
+          "lines": 9,
+          "sha256": "fe331498e356577a926455cafabaf03f59bb028c46b69f1f8ade2063f1163bcc",
+          "binary": false,
+          "destination": "shell integration decision (M1/M11)"
+        },
+        {
+          "path": "ucc-gnome/stylesheet.css",
+          "bytes": 4764,
+          "lines": 273,
+          "sha256": "cfdc10eb042cde967a41348017e94de4fa2bdf5bf37df4be4395d56ae4b730d5",
+          "binary": false,
+          "destination": "shell integration decision (M1/M11)"
+        },
+        {
+          "path": "ucc-gnome/uccdClient.js",
+          "bytes": 12531,
+          "lines": 318,
+          "sha256": "09e514c7af22fd5c127d7101bae1c24c2ca675be95385f8c3a209a1d5f4cec51",
+          "binary": false,
+          "destination": "shell integration decision (M1/M11)"
+        },
+        {
+          "path": "ucc-gui/CMakeLists.txt",
+          "bytes": 2764,
+          "lines": 127,
+          "sha256": "69a5514714efc3d768885dd9e4886e4c20b1ed78a852f3a8f10e1f1a10a992b8",
+          "binary": false,
+          "destination": "ucc-gui"
+        },
+        {
+          "path": "ucc-gui/inc/AboutPage.hpp",
+          "bytes": 134,
+          "lines": 6,
+          "sha256": "66098b9a6d04b00cc4b71fa05b442010f3c8b7c3848d4d49761036d3b7bdf6ab",
+          "binary": false,
+          "destination": "ucc-gui"
+        },
+        {
+          "path": "ucc-gui/inc/AppLogging.hpp",
+          "bytes": 349,
+          "lines": 14,
+          "sha256": "d705e6dbe06937f71b11ea7b3dee2f1fedcc3159c3bd2ac2b85ccb0f8bbffe4f",
+          "binary": false,
+          "destination": "ucc-gui"
+        },
+        {
+          "path": "ucc-gui/inc/AssignKeyZones.hpp",
+          "bytes": 184,
+          "lines": 9,
+          "sha256": "071c96aac2e7b6a559356c094ef504d04bcfa75accb5860be06df9d1229bf3e7",
+          "binary": false,
+          "destination": "ucc-gui"
+        },
+        {
+          "path": "ucc-gui/inc/BatterySettingsWidget.hpp",
+          "bytes": 7029,
+          "lines": 107,
+          "sha256": "63092b845291aff1fe338ca2f320f62cd0930d4f3b59b0e065905c23cbb4cebf",
+          "binary": false,
+          "destination": "ucc-gui"
+        },
+        {
+          "path": "ucc-gui/inc/ColorPickerWidget.hpp",
+          "bytes": 2600,
+          "lines": 98,
+          "sha256": "2b960edba01d55457c99911daa14e8de5e569ec877fad31e856a3ad39d4c041d",
+          "binary": false,
+          "destination": "ucc-gui"
+        },
+        {
+          "path": "ucc-gui/inc/CpuCoreSelectionWidget.hpp",
+          "bytes": 8091,
+          "lines": 141,
+          "sha256": "7c41f9884073f5ddc42f2a6eb21fc8908688ea0e590573582580b1e378a332ce",
+          "binary": false,
+          "destination": "ucc-gui"
+        },
+        {
+          "path": "ucc-gui/inc/DashboardTab.hpp",
+          "bytes": 5352,
+          "lines": 158,
+          "sha256": "07284204247277a7755364aea6090ae0f5c84fa54502c30725309db08cd827ea",
+          "binary": false,
+          "destination": "ucc-gui"
+        },
+        {
+          "path": "ucc-gui/inc/DesktopPreferences.hpp",
+          "bytes": 1401,
+          "lines": 21,
+          "sha256": "093731ac75533b63543037ff3b9be513f0f8b853454f3f988af536414084c035",
+          "binary": false,
+          "destination": "ucc-gui"
+        },
+        {
+          "path": "ucc-gui/inc/DetectLayout.hpp",
+          "bytes": 153,
+          "lines": 13,
+          "sha256": "9b7cdeb7fb58364f410f9d8e88801ee573951b58e683e3e08f6e03121fb6f7b1",
+          "binary": false,
+          "destination": "ucc-gui"
+        },
+        {
+          "path": "ucc-gui/inc/FanControlTab.hpp",
+          "bytes": 5998,
+          "lines": 168,
+          "sha256": "b555f7e8a92998b269ad69554f23b7888f7c1d83f53fcbfcc9bf5fb8fbb3bd9c",
+          "binary": false,
+          "destination": "ucc-gui"
+        },
+        {
+          "path": "ucc-gui/inc/FanCurveEditorWidget.hpp",
+          "bytes": 2379,
+          "lines": 76,
+          "sha256": "3f202f8aabb18c3afe417bb58a26d99ab2cf8d5b7069b78b3530f02eca2d28a9",
+          "binary": false,
+          "destination": "ucc-gui"
+        },
+        {
+          "path": "ucc-gui/inc/FluentEntrance.hpp",
+          "bytes": 616,
+          "lines": 23,
+          "sha256": "7a45c658d687e2576f34b449bbb96a565113ff9b870468b26711bd908cf869a1",
+          "binary": false,
+          "destination": "ucc-gui"
+        },
+        {
+          "path": "ucc-gui/inc/FluentSidebar.hpp",
+          "bytes": 423,
+          "lines": 15,
+          "sha256": "6dcf79104cebd658292e18c6c046345bc2ec36dcd6175fa533383c0e698dce9d",
+          "binary": false,
+          "destination": "ucc-gui"
+        },
+        {
+          "path": "ucc-gui/inc/FluentTheme.hpp",
+          "bytes": 960,
+          "lines": 36,
+          "sha256": "e0dbb36dfb99f8b7e7eefa2abd089ee3d2c4291ef7e658382856a59efda9a825",
+          "binary": false,
+          "destination": "ucc-gui"
+        },
+        {
+          "path": "ucc-gui/inc/FluentToggle.hpp",
+          "bytes": 1268,
+          "lines": 22,
+          "sha256": "a669b6a9f08536315f21a630abc1a61e3646c209ea42603b8a7f7c58e33d1cc4",
+          "binary": false,
+          "destination": "ucc-gui"
+        },
+        {
+          "path": "ucc-gui/inc/GuiInstance.hpp",
+          "bytes": 636,
+          "lines": 26,
+          "sha256": "a7000e1860b5959964421a36890690e47d0568bdd0e9c9c539e826e8627dc8fa",
+          "binary": false,
+          "destination": "ucc-gui"
+        },
+        {
+          "path": "ucc-gui/inc/HardwareTab.hpp",
+          "bytes": 1966,
+          "lines": 75,
+          "sha256": "e42814425e856e2503a97f2cd81c25f96c6c7030e03bf14b36cbd7f226bbfd34",
+          "binary": false,
+          "destination": "ucc-gui"
+        },
+        {
+          "path": "ucc-gui/inc/KeyboardVisualizerWidget.hpp",
+          "bytes": 3691,
+          "lines": 140,
+          "sha256": "1fad340412d1e3847b7e779396566071852654e68528e98ae3854fd7385609db",
+          "binary": false,
+          "destination": "ucc-gui"
+        },
+        {
+          "path": "ucc-gui/inc/LCTWaterCoolerController.hpp",
+          "bytes": 3051,
+          "lines": 108,
+          "sha256": "1111c1709fbd09ebd539f6957810e5e725e3167b74a3dd4b001afbdef4bea4dd",
+          "binary": false,
+          "destination": "ucc-gui"
+        },
+        {
+          "path": "ucc-gui/inc/LightbarTab.hpp",
+          "bytes": 849,
+          "lines": 33,
+          "sha256": "d136608b012fd065b17dde2f6f9d3023a75030f1c6cdc1f3772db56d4f61f5f9",
+          "binary": false,
+          "destination": "ucc-gui"
+        },
+        {
+          "path": "ucc-gui/inc/MainWindow.hpp",
+          "bytes": 9690,
+          "lines": 275,
+          "sha256": "ce344014a7607690965bd7b3b4ffb0c1c57a56ce48708ab6c82fd6205bc565c9",
+          "binary": false,
+          "destination": "ucc-gui"
+        },
+        {
+          "path": "ucc-gui/inc/MonitorTab.hpp",
+          "bytes": 10042,
+          "lines": 298,
+          "sha256": "ef91c4d4a571ed2a76ec40a88f8cad6ae85d81a3db1a04b1626c6d5438e975d3",
+          "binary": false,
+          "destination": "ucc-gui"
+        },
+        {
+          "path": "ucc-gui/inc/NotificationCenter.hpp",
+          "bytes": 780,
+          "lines": 29,
+          "sha256": "8a0f723b70eb7689df3254dbf64cdac3efdf368d35ab86ba1d7d28dbaa606153",
+          "binary": false,
+          "destination": "ucc-gui"
+        },
+        {
+          "path": "ucc-gui/inc/PowerDevicesTab.hpp",
+          "bytes": 815,
+          "lines": 36,
+          "sha256": "607fa52943d455a2c02dd5b3f171777b2913fc2ec10266f4c8651a84eb8313e8",
+          "binary": false,
+          "destination": "ucc-gui"
+        },
+        {
+          "path": "ucc-gui/inc/ProfileManager.hpp",
+          "bytes": 6829,
+          "lines": 169,
+          "sha256": "01e4527f5d4eacc6073657d65f4ca515701bb4a3dd2cb3453538c480055891c3",
+          "binary": false,
+          "destination": "ucc-gui"
+        },
+        {
+          "path": "ucc-gui/inc/PumpCurveEditorWidget.hpp",
+          "bytes": 2731,
+          "lines": 83,
+          "sha256": "ae21c90e3109eaba2c013db96bfa2cd741a7627ebf707fab34fe22db25aef79e",
+          "binary": false,
+          "destination": "ucc-gui"
+        },
+        {
+          "path": "ucc-gui/inc/SystemMonitor.hpp",
+          "bytes": 9223,
+          "lines": 213,
+          "sha256": "d722263f694902cc5da409c6f5c4a21ccb129ed846b9dbc653ffd8459e9d1efb",
+          "binary": false,
+          "destination": "ucc-gui"
+        },
+        {
+          "path": "ucc-gui/qml/FanControlTab.qml",
+          "bytes": 1092,
+          "lines": 43,
+          "sha256": "a225b280eb8f13a62060907c0fc5f475563c1e1ddf829929d9cdb3be134214df",
+          "binary": false,
+          "destination": "ucc-gui"
+        },
+        {
+          "path": "ucc-gui/qml/FanCurveEditor.qml",
+          "bytes": 5900,
+          "lines": 179,
+          "sha256": "9004d788e9f637cbe2fc974115b36d4e11a8f4c3dd1bf69ab536ff9ae7f1c25e",
+          "binary": false,
+          "destination": "ucc-gui"
+        },
+        {
+          "path": "ucc-gui/qml/main.qml",
+          "bytes": 18349,
+          "lines": 469,
+          "sha256": "3c67231d24abe5504801c9ece2b2a4d658ae3fc4a1300ced0092d42e0ea0f7cc",
+          "binary": false,
+          "destination": "ucc-gui"
+        },
+        {
+          "path": "ucc-gui/resources.qrc",
+          "bytes": 57,
+          "lines": 4,
+          "sha256": "7f8efa6b130c08944f1f6a264b202d83ca9d1adb3d5b424f03c91654462822f7",
+          "binary": false,
+          "destination": "ucc-gui"
+        },
+        {
+          "path": "ucc-gui/resources/fluent.qrc",
+          "bytes": 511,
+          "lines": 4,
+          "sha256": "602fe0fdfa4166750f77266f9b2f99be550157a02dd49599458e2181744d47eb",
+          "binary": false,
+          "destination": "ucc-gui"
+        },
+        {
+          "path": "ucc-gui/resources/legal.qrc",
+          "bytes": 213,
+          "lines": 1,
+          "sha256": "19c22db1b455f67897625781fc9702f10b3a28f547e0d18c0048ddf6bed4770c",
+          "binary": false,
+          "destination": "ucc-gui"
+        },
+        {
+          "path": "ucc-gui/resources/theme/check-dark.svg",
+          "bytes": 216,
+          "lines": 1,
+          "sha256": "3c4f3aaab576ae37fd9fabb1822d89323d1163e5fa486c511b4479e4894aea43",
+          "binary": false,
+          "destination": "ucc-gui"
+        },
+        {
+          "path": "ucc-gui/resources/theme/check-light.svg",
+          "bytes": 216,
+          "lines": 1,
+          "sha256": "a5796c62a18d4c82cab9f672329d103dec9b69f2f8ab77dbd07a2d224394e39e",
+          "binary": false,
+          "destination": "ucc-gui"
+        },
+        {
+          "path": "ucc-gui/resources/theme/down-dark.svg",
+          "bytes": 211,
+          "lines": 1,
+          "sha256": "e48a0529003bd1d166e38355c2fdfdcdf39b97f6e3a6b7de898ac4e072a9c893",
+          "binary": false,
+          "destination": "ucc-gui"
+        },
+        {
+          "path": "ucc-gui/resources/theme/down-light.svg",
+          "bytes": 211,
+          "lines": 1,
+          "sha256": "34f4faec634df8e5081bc538674652a0f5e25dacddc583124531aa5eed178cd2",
+          "binary": false,
+          "destination": "ucc-gui"
+        },
+        {
+          "path": "ucc-gui/resources/theme/up-dark.svg",
+          "bytes": 211,
+          "lines": 1,
+          "sha256": "fff464b8041f58966214321c173b50e970faf8114b1984a8388ff7ec443eb7d9",
+          "binary": false,
+          "destination": "ucc-gui"
+        },
+        {
+          "path": "ucc-gui/resources/theme/up-light.svg",
+          "bytes": 211,
+          "lines": 1,
+          "sha256": "cf93ae5169e7f1abc93bea33f1c64ca1cebacb6bd9786302e783c7db21ceb49d",
+          "binary": false,
+          "destination": "ucc-gui"
+        },
+        {
+          "path": "ucc-gui/src/AboutPage.cpp",
+          "bytes": 10840,
+          "lines": 152,
+          "sha256": "f246a499297ad1942aa8f406e042630e8b11f5c841d09fae22b3cc80c1e23a58",
+          "binary": false,
+          "destination": "ucc-gui"
+        },
+        {
+          "path": "ucc-gui/src/AppLogging.cpp",
+          "bytes": 4814,
+          "lines": 96,
+          "sha256": "f6d26dcc4471803a5b68330b5774fc6542d162d4db0fcded21000c89b5d26d28",
+          "binary": false,
+          "destination": "ucc-gui"
+        },
+        {
+          "path": "ucc-gui/src/AssignKeyZones.cpp",
+          "bytes": 26265,
+          "lines": 934,
+          "sha256": "91cf420b7436396c1003eaa32f6935b1e64572c6a6281b5a4757ae69322c3988",
+          "binary": false,
+          "destination": "ucc-gui"
+        },
+        {
+          "path": "ucc-gui/src/DashboardTab.cpp",
+          "bytes": 29372,
+          "lines": 701,
+          "sha256": "4bc8e8d8edbd1e044f62d67795cff28122eec26da398750ffd2d3568e1cccc2b",
+          "binary": false,
+          "destination": "ucc-gui"
+        },
+        {
+          "path": "ucc-gui/src/DetectLayout.cpp",
+          "bytes": 10122,
+          "lines": 259,
+          "sha256": "9b1675eef19ff2128aa616c54a4d78a07ed5c97cc96a200baba7a35e0f9081c2",
+          "binary": false,
+          "destination": "ucc-gui"
+        },
+        {
+          "path": "ucc-gui/src/FanControlTab.cpp",
+          "bytes": 26150,
+          "lines": 671,
+          "sha256": "9b8fe2913da70c3c9ed8334b4a49cbbc06e7129e78a4b3f6400226b7dca648b5",
+          "binary": false,
+          "destination": "ucc-gui"
+        },
+        {
+          "path": "ucc-gui/src/FanCurveEditorWidget.cpp",
+          "bytes": 16534,
+          "lines": 462,
+          "sha256": "14edd3ed08fb5a892a2f745a4940643fc8d04ab07c1beebe76a138b0bf1eb3f4",
+          "binary": false,
+          "destination": "ucc-gui"
+        },
+        {
+          "path": "ucc-gui/src/FluentEntrance.cpp",
+          "bytes": 3797,
+          "lines": 82,
+          "sha256": "7eaa55ef515d76dc1b450fc9a9cd6eeb9021cf11ba55ca72d1c56cd064f71581",
+          "binary": false,
+          "destination": "ucc-gui"
+        },
+        {
+          "path": "ucc-gui/src/FluentSidebar.cpp",
+          "bytes": 2803,
+          "lines": 61,
+          "sha256": "82596e011233a6756f8679cd151aa53a434ac373bb279bfa9e94f689e65cf02c",
+          "binary": false,
+          "destination": "ucc-gui"
+        },
+        {
+          "path": "ucc-gui/src/FluentTheme.cpp",
+          "bytes": 15843,
+          "lines": 265,
+          "sha256": "38f30dd30ae77184ec78c958a7d159fc8e325e0e22f1dcc0875fd09e1a8d4c6b",
+          "binary": false,
+          "destination": "ucc-gui"
+        },
+        {
+          "path": "ucc-gui/src/GuiInstance.cpp",
+          "bytes": 2509,
+          "lines": 73,
+          "sha256": "f92fefde14670c3e41ae82e22edae6989209c8d3918762e6597c820ae45adf91",
+          "binary": false,
+          "destination": "ucc-gui"
+        },
+        {
+          "path": "ucc-gui/src/HardwareTab.cpp",
+          "bytes": 5929,
+          "lines": 174,
+          "sha256": "2824ae9811b3fa32f9aabdbd831ea50c88e92a9c861a17fe4e36c32d30897434",
+          "binary": false,
+          "destination": "ucc-gui"
+        },
+        {
+          "path": "ucc-gui/src/KeyboardTab.cpp",
+          "bytes": 22498,
+          "lines": 598,
+          "sha256": "3199fae3039ff29e5a504f06fbc0fe394c58d2a47e3c6ea8845b9de7b7efba90",
+          "binary": false,
+          "destination": "ucc-gui"
+        },
+        {
+          "path": "ucc-gui/src/KeyboardVisualizerWidget.cpp",
+          "bytes": 19797,
+          "lines": 498,
+          "sha256": "c4039f30d6351238435b3430bc59d176fb09b04f30210031d54cd8e35c2e3fcf",
+          "binary": false,
+          "destination": "ucc-gui"
+        },
+        {
+          "path": "ucc-gui/src/LCTWaterCoolerController.cpp",
+          "bytes": 8903,
+          "lines": 306,
+          "sha256": "7b7ed9debd3a85ab5b775fa9170b69996e06e94c84d602b39d3eac86e9411ca7",
+          "binary": false,
+          "destination": "ucc-gui"
+        },
+        {
+          "path": "ucc-gui/src/LightbarTab.cpp",
+          "bytes": 8650,
+          "lines": 107,
+          "sha256": "7f40a4fb10af74515bc966c7834e0f0867c517f66a619e195e3d5af9916e724e",
+          "binary": false,
+          "destination": "ucc-gui"
+        },
+        {
+          "path": "ucc-gui/src/MainWindow.cpp",
+          "bytes": 120793,
+          "lines": 3129,
+          "sha256": "02c939752b0cd6834adcfba66d978bc51a955633b8b5211b7de74cc4012e17be",
+          "binary": false,
+          "destination": "ucc-gui"
+        },
+        {
+          "path": "ucc-gui/src/MonitorTab.cpp",
+          "bytes": 68055,
+          "lines": 2088,
+          "sha256": "ac17ec09bc9d866dc29b794b2b94723abbd32daf3c5ed33dd76272c204dc4a88",
+          "binary": false,
+          "destination": "ucc-gui"
+        },
+        {
+          "path": "ucc-gui/src/NotificationCenter.cpp",
+          "bytes": 5433,
+          "lines": 92,
+          "sha256": "dc50d2959371607947ddcdbca41ccf17e8b0c05876e231a808ce211022c72952",
+          "binary": false,
+          "destination": "ucc-gui"
+        },
+        {
+          "path": "ucc-gui/src/PowerDevicesTab.cpp",
+          "bytes": 11188,
+          "lines": 184,
+          "sha256": "3f2e8a08f8e6ca8376b66988dc8663f9a65db68048ceff7ba7cabb7a9c374e45",
+          "binary": false,
+          "destination": "ucc-gui"
+        },
+        {
+          "path": "ucc-gui/src/ProfileManager.cpp",
+          "bytes": 25450,
+          "lines": 882,
+          "sha256": "a0bd6889d015a8e699a924bec612078e312689217255a3eeb8106c43030fca17",
+          "binary": false,
+          "destination": "ucc-gui"
+        },
+        {
+          "path": "ucc-gui/src/PumpCurveEditorWidget.cpp",
+          "bytes": 14131,
+          "lines": 396,
+          "sha256": "86370b8bf5052ef16c1db4341830f43af618551b7b3f3418d168f90a28f5e409",
+          "binary": false,
+          "destination": "ucc-gui"
+        },
+        {
+          "path": "ucc-gui/src/SystemMonitor.cpp",
+          "bytes": 12812,
+          "lines": 352,
+          "sha256": "f521d4323ea19fd58cb679e3a17d1af9b4a7208c69f0635e4b196778a7bb21fc",
+          "binary": false,
+          "destination": "ucc-gui"
+        },
+        {
+          "path": "ucc-gui/src/main.cpp",
+          "bytes": 4902,
+          "lines": 134,
+          "sha256": "8f50593d8ab34f1fe4778b61a60ac71b993bd2a0fa7a9a30878dde1c1a9f2205",
+          "binary": false,
+          "destination": "ucc-gui"
+        },
+        {
+          "path": "ucc-gui/ucc-gui.desktop",
+          "bytes": 514,
+          "lines": 14,
+          "sha256": "f5308fc7f35e35afb500a611d83bd9f80df4d37ba27a0cc3338556ba08f0ae1c",
+          "binary": false,
+          "destination": "ucc-gui"
+        },
+        {
+          "path": "ucc-session/CMakeLists.txt",
+          "bytes": 604,
+          "lines": 8,
+          "sha256": "9d6215bef713e5ae076f7327819be5d04c98a55e4e9e8221ef19908136452df4",
+          "binary": false,
+          "destination": "ucc-session-agent + ucc-desktop"
+        },
+        {
+          "path": "ucc-session/DriverAlert.hpp",
+          "bytes": 1961,
+          "lines": 39,
+          "sha256": "f6d6a69aa8172b4c2ff2a9371c8c6ae3125cdfcb7265991b8e0344d12e3fab8b",
+          "binary": false,
+          "destination": "ucc-session-agent + ucc-desktop"
+        },
+        {
+          "path": "ucc-session/NotificationMonitor.hpp",
+          "bytes": 2312,
+          "lines": 48,
+          "sha256": "d827cdb0f3578320739de430dc1873021a0284cdd0ef3f3ba716c412ccc3b6ad",
+          "binary": false,
+          "destination": "ucc-session-agent + ucc-desktop"
+        },
+        {
+          "path": "ucc-session/PowerSourceAlert.hpp",
+          "bytes": 1865,
+          "lines": 43,
+          "sha256": "01a473d23d1e5cbbbc4d440b379d25b4a1301200a8d2ff1597118cdaf43e19dd",
+          "binary": false,
+          "destination": "ucc-session-agent + ucc-desktop"
+        },
+        {
+          "path": "ucc-session/RefreshAdvisor.cpp",
+          "bytes": 17911,
+          "lines": 444,
+          "sha256": "bf6fbdaa3eac1e7a6d6e7c483281f052b4a5cb34fb607fa134a65fc6585d3ff5",
+          "binary": false,
+          "destination": "ucc-session-agent + ucc-desktop"
+        },
+        {
+          "path": "ucc-session/RefreshAdvisor.hpp",
+          "bytes": 2803,
+          "lines": 80,
+          "sha256": "d786b306baab65236908554f6961f4d14929d9e34ddcae968d2db9d3254dc61b",
+          "binary": false,
+          "destination": "ucc-session-agent + ucc-desktop"
+        },
+        {
+          "path": "ucc-session/SessionSignals.hpp",
+          "bytes": 1321,
+          "lines": 29,
+          "sha256": "fca85ceeba041b1e725c76eabd3bb83c4e9d58ae034d26556dd325c0a6c94696",
+          "binary": false,
+          "destination": "ucc-session-agent + ucc-desktop"
+        },
+        {
+          "path": "ucc-session/main.cpp",
+          "bytes": 4296,
+          "lines": 71,
+          "sha256": "953652bfd0a6c582b1795f58eb2f9a1af138e624639ebe75da4d8366ec67e3f0",
+          "binary": false,
+          "destination": "ucc-session-agent + ucc-desktop"
+        },
+        {
+          "path": "ucc-session/ucc-session-agent.desktop",
+          "bytes": 275,
+          "lines": 10,
+          "sha256": "ea8cd09c37df3a6fcd1eaba73a916584872fa7d3a3cd231dc52dc53bdb67143c",
+          "binary": false,
+          "destination": "ucc-session-agent + ucc-desktop"
+        },
+        {
+          "path": "ucc-tray/CMakeLists.txt",
+          "bytes": 1573,
+          "lines": 59,
+          "sha256": "88e254283f221e30455e63b1dda8916e61845b057cea25f001c2d5f1342879b7",
+          "binary": false,
+          "destination": "shell integration decision (M1/M11)"
+        },
+        {
+          "path": "ucc-tray/applet/CMakeLists.txt",
+          "bytes": 767,
+          "lines": 32,
+          "sha256": "5899ecc5bc942fbab38657106daa80de875172e84283b9cfa019175c887fa2e2",
+          "binary": false,
+          "destination": "shell integration decision (M1/M11)"
+        },
+        {
+          "path": "ucc-tray/applet/DashboardTab.qml",
+          "bytes": 8174,
+          "lines": 211,
+          "sha256": "7296324471bd92cd08ea18c77ba24dbd851b595e5c1f4bd351f72f9511cdfd6c",
+          "binary": false,
+          "destination": "shell integration decision (M1/M11)"
+        },
+        {
+          "path": "ucc-tray/applet/HardwareTab.qml",
+          "bytes": 3899,
+          "lines": 116,
+          "sha256": "d82f06397f0736e4c43d75395da0d108c7203b2f3d60e72bfd90d2b28c86c94a",
+          "binary": false,
+          "destination": "shell integration decision (M1/M11)"
+        },
+        {
+          "path": "ucc-tray/applet/PowerProfileTab.qml",
+          "bytes": 6799,
+          "lines": 170,
+          "sha256": "af3a78282a9e71f4927df2c5c5a2fcd6ad8bb6494ac08d8a012cee2646b23e32",
+          "binary": false,
+          "destination": "shell integration decision (M1/M11)"
+        },
+        {
+          "path": "ucc-tray/applet/WaterCoolerTab.qml",
+          "bytes": 9084,
+          "lines": 245,
+          "sha256": "2ac22e10a11d51edf8310d34357c4038badfd0466c5cd9db50216065fb60b3fa",
+          "binary": false,
+          "destination": "shell integration decision (M1/M11)"
+        },
+        {
+          "path": "ucc-tray/applet/main.qml",
+          "bytes": 6483,
+          "lines": 192,
+          "sha256": "00a96d9fdf7d083acfe824a2ada795b4227972775fb0e93dc8500165b8577815",
+          "binary": false,
+          "destination": "shell integration decision (M1/M11)"
+        },
+        {
+          "path": "ucc-tray/applet/metadata.json",
+          "bytes": 564,
+          "lines": 19,
+          "sha256": "7d7112156f355e4c6c52541e226ff1ffc4b4d6d4cd34e2caf02cc9c8d2b280ad",
+          "binary": false,
+          "destination": "shell integration decision (M1/M11)"
+        },
+        {
+          "path": "ucc-tray/src/CMakeLists.txt",
+          "bytes": 1943,
+          "lines": 70,
+          "sha256": "fad11c0012495fb6b7a14bd653d34c6db6c0a38286d1e6c9f6a4b8f6765788e3",
+          "binary": false,
+          "destination": "shell integration decision (M1/M11)"
+        },
+        {
+          "path": "ucc-tray/src/TrayBackend.cpp",
+          "bytes": 28457,
+          "lines": 906,
+          "sha256": "9cc27734fad76c894c04c4dd816017fdf6fa37110f06e9ff616287288f524779",
+          "binary": false,
+          "destination": "shell integration decision (M1/M11)"
+        },
+        {
+          "path": "ucc-tray/src/TrayBackend.hpp",
+          "bytes": 14040,
+          "lines": 355,
+          "sha256": "4be5d9ce6927bb0d892136114cc77a79084b5c6a1cea4025e62256035ccb5b97",
+          "binary": false,
+          "destination": "shell integration decision (M1/M11)"
+        },
+        {
+          "path": "ucc-tray/src/plugin.cpp",
+          "bytes": 326,
+          "lines": 16,
+          "sha256": "64dee017ff438181df4a0c46411f326cc8a65ef0736cd3fa83874a926f10310e",
+          "binary": false,
+          "destination": "shell integration decision (M1/M11)"
+        },
+        {
+          "path": "ucc-tray/src/plugin.h",
+          "bytes": 354,
+          "lines": 17,
+          "sha256": "b83f76a6f1c39d0e7a487a4c98946f2572c15fec30c39aded1d478e5a68acb71",
+          "binary": false,
+          "destination": "shell integration decision (M1/M11)"
+        },
+        {
+          "path": "ucc.install",
+          "bytes": 3263,
+          "lines": 87,
+          "sha256": "6c19981ee813b5ab5af3c625371a4671934c7c4d20eab5eb5d58d3b7de098f75",
+          "binary": false,
+          "destination": "Cargo / xtask / distribution packaging"
+        },
+        {
+          "path": "ucc.spec",
+          "bytes": 5054,
+          "lines": 142,
+          "sha256": "dcd81ae24ee11394bfd0dda705252a25e383d07141cc2df1a3c16d214b8aa1f0",
+          "binary": false,
+          "destination": "Cargo / xtask / distribution packaging"
+        },
+        {
+          "path": "uccd/.gitignore",
+          "bytes": 164,
+          "lines": 19,
+          "sha256": "daf834cbf6cf72d9f520e06d7f0e81bfc7da6834e879644f21b12083b3a1bb12",
+          "binary": false,
+          "destination": "ucc-hardware / uccd / packaging"
+        },
+        {
+          "path": "uccd/3rdparty/CMakeLists.txt",
+          "bytes": 116,
+          "lines": 2,
+          "sha256": "3e7a141d4969dcb88d7bcbec254ef657f7f746525c05ff5e36fa4eff475ba508",
+          "binary": false,
+          "destination": "ucc-hardware / ioctl ABI; N-API → archive"
+        },
+        {
+          "path": "uccd/3rdparty/tuxedo_io_lib/targets/clevo.h",
+          "bytes": 7028,
+          "lines": 238,
+          "sha256": "91c7fc6b286d9b25abfd5d006eee9736ddfbbf4de45c49d17114307c1b44f650",
+          "binary": false,
+          "destination": "ucc-hardware / ioctl ABI; N-API → archive"
+        },
+        {
+          "path": "uccd/3rdparty/tuxedo_io_lib/targets/dummy.h",
+          "bytes": 3543,
+          "lines": 107,
+          "sha256": "36e3b5a4e517a1f830713d2d6bbc63346ebe29566ecff211c3d9cc9d544e6260",
+          "binary": false,
+          "destination": "ucc-hardware / ioctl ABI; N-API → archive"
+        },
+        {
+          "path": "uccd/3rdparty/tuxedo_io_lib/targets/interface.h",
+          "bytes": 2468,
+          "lines": 56,
+          "sha256": "3f5b378ef663d72c15b3c735e9a6a3ed776b31f9e263e0fde22e7435f9572611",
+          "binary": false,
+          "destination": "ucc-hardware / ioctl ABI; N-API → archive"
+        },
+        {
+          "path": "uccd/3rdparty/tuxedo_io_lib/targets/uniwill.h",
+          "bytes": 9201,
+          "lines": 378,
+          "sha256": "97b3ae5f0914cedac70cb1892622068af01f55ac39016a783b8c1a242d1533c8",
+          "binary": false,
+          "destination": "ucc-hardware / ioctl ABI; N-API → archive"
+        },
+        {
+          "path": "uccd/3rdparty/tuxedo_io_lib/tuxedo_io.h",
+          "bytes": 3941,
+          "lines": 146,
+          "sha256": "3fba8ac057f41d3ac37b83d144b5ccba6b72948a1d65308ad9e1e9f7f3b685d4",
+          "binary": false,
+          "destination": "ucc-hardware / ioctl ABI; N-API → archive"
+        },
+        {
+          "path": "uccd/3rdparty/tuxedo_io_lib/tuxedo_io_api.hh",
+          "bytes": 4950,
+          "lines": 141,
+          "sha256": "e355debed37be67e1432767403baed1d663ce61db525a07a7744e3dbe5383644",
+          "binary": false,
+          "destination": "ucc-hardware / ioctl ABI; N-API → archive"
+        },
+        {
+          "path": "uccd/3rdparty/tuxedo_io_lib/tuxedo_io_ioctl.h",
+          "bytes": 4163,
+          "lines": 112,
+          "sha256": "3d8ac02ef846a8242eaf83e5192fbe44ebc2ed184cba36d0203cd65d711a3bde",
+          "binary": false,
+          "destination": "ucc-hardware / ioctl ABI; N-API → archive"
+        },
+        {
+          "path": "uccd/3rdparty/tuxedo_io_napi.cc",
+          "bytes": 10854,
+          "lines": 369,
+          "sha256": "60e39beb7d92625c3b1571a69b077ca003163ee7cb9250bb4e76a9d8b92cfece",
+          "binary": false,
+          "destination": "ucc-hardware / ioctl ABI; N-API → archive"
+        },
+        {
+          "path": "uccd/CMakeLists.txt",
+          "bytes": 3274,
+          "lines": 127,
+          "sha256": "62d7c497adc007b21c6da568b2f27172f08148026d87eaa14d895b01732b5500",
+          "binary": false,
+          "destination": "ucc-hardware / uccd / packaging"
+        },
+        {
+          "path": "uccd/com.uniwill.uccd.conf",
+          "bytes": 1052,
+          "lines": 22,
+          "sha256": "7042b9fcb145e6ba28ea6d7c6247c9e97c03dd7a922b8473c68fddfb6e63af79",
+          "binary": false,
+          "destination": "ucc-hardware / uccd / packaging"
+        },
+        {
+          "path": "uccd/com.uniwill.uccd.policy",
+          "bytes": 2034,
+          "lines": 54,
+          "sha256": "280481f1a3753157f9d9c483bea3a20587cf16d653846bd09b5a7125659dee6c",
+          "binary": false,
+          "destination": "ucc-hardware / uccd / packaging"
+        },
+        {
+          "path": "uccd/com.uniwill.uccd.service",
+          "bytes": 93,
+          "lines": 4,
+          "sha256": "0a1d60a72f8fbc993b950e594f7b54f798df1e5ac8fd0fff9d895baa71474c50",
+          "binary": false,
+          "destination": "ucc-hardware / uccd / packaging"
+        },
+        {
+          "path": "uccd/inc/AquarisSelection.hpp",
+          "bytes": 616,
+          "lines": 18,
+          "sha256": "a640fcf793111d2c6d9fffb0b39f8134ca280f1701b3b5c5d86b2b2ead7e3000",
+          "binary": false,
+          "destination": "ucc-cooler"
+        },
+        {
+          "path": "uccd/inc/AutosaveManager.hpp",
+          "bytes": 5107,
+          "lines": 203,
+          "sha256": "3f1cfc52cce3484c962f130020303ddb1c853005edf27f026e2dcfe750c2c5ef",
+          "binary": false,
+          "destination": "ucc-core + ucc-config"
+        },
+        {
+          "path": "uccd/inc/CpuController.hpp",
+          "bytes": 18094,
+          "lines": 547,
+          "sha256": "49ab642afdb0f25a242a0730a212a5c2c258f5ab7b71acf0e8c40e7c6637ec6d",
+          "binary": false,
+          "destination": "ucc-hardware / uccd / packaging"
+        },
+        {
+          "path": "uccd/inc/CpuTopology.hpp",
+          "bytes": 2532,
+          "lines": 56,
+          "sha256": "0cddf5df75e099d212fbb29a63fe38d49a6f01a585e3dcb06df8e525d9e78587",
+          "binary": false,
+          "destination": "ucc-hardware / uccd / packaging"
+        },
+        {
+          "path": "uccd/inc/DisplayBacklight.hpp",
+          "bytes": 5088,
+          "lines": 135,
+          "sha256": "55fcf048b4a0e8c1aadeedaef0c264948a58e1d6c12694f749b7ffdfd5b432fe",
+          "binary": false,
+          "destination": "ucc-hardware / uccd / packaging"
+        },
+        {
+          "path": "uccd/inc/FnLockController.hpp",
+          "bytes": 2064,
+          "lines": 78,
+          "sha256": "09119d7dbcfdbe00299e22d7d98119e4e9cb846b329a1bb3fecbc7743485db25",
+          "binary": false,
+          "destination": "ucc-hardware / uccd / packaging"
+        },
+        {
+          "path": "uccd/inc/GpuSysfs.hpp",
+          "bytes": 3315,
+          "lines": 67,
+          "sha256": "2c15324cd8e7a70ae97eea62569fcedd6a6f926141d5fcdc9c2badddc3af3e58",
+          "binary": false,
+          "destination": "ucc-telemetry + ucc-hardware"
+        },
+        {
+          "path": "uccd/inc/KeyboardBacklightController.hpp",
+          "bytes": 16068,
+          "lines": 545,
+          "sha256": "6b0a9856ec950105bc5add05bfd2b1cc5bbc38f44c55f7716fc7742faff0f708",
+          "binary": false,
+          "destination": "ucc-lighting + ucc-hardware"
+        },
+        {
+          "path": "uccd/inc/LightbarController.hpp",
+          "bytes": 10919,
+          "lines": 201,
+          "sha256": "5381c383606ee147f0194bdbab24750ecc48f3fd119748ae3077492be5ebdcaf",
+          "binary": false,
+          "destination": "ucc-lighting + ucc-hardware"
+        },
+        {
+          "path": "uccd/inc/MetricsHistoryStore.hpp",
+          "bytes": 8110,
+          "lines": 276,
+          "sha256": "fda1604c95319dc8c8dc615301d8799578ddd4e302e6e23613ddc91d90a151c9",
+          "binary": false,
+          "destination": "ucc-telemetry + ucc-hardware"
+        },
+        {
+          "path": "uccd/inc/NvmlWrapper.hpp",
+          "bytes": 18436,
+          "lines": 437,
+          "sha256": "b6da8a8115b2b0e27a1a341da9cb3393704015697a3008acabecbf247c568701",
+          "binary": false,
+          "destination": "ucc-telemetry + ucc-hardware"
+        },
+        {
+          "path": "uccd/inc/PolkitAuthority.hpp",
+          "bytes": 5738,
+          "lines": 158,
+          "sha256": "70e45123844ecad567960376291faa9197397b268308db2717b6e1eb17e941f4",
+          "binary": false,
+          "destination": "ucc-hardware / uccd / packaging"
+        },
+        {
+          "path": "uccd/inc/PowerDeviceController.hpp",
+          "bytes": 13176,
+          "lines": 231,
+          "sha256": "7427fdadbc9632fe8e4031fc77077a78148004fe0c96d648a996e188114c4091",
+          "binary": false,
+          "destination": "ucc-hardware / uccd / packaging"
+        },
+        {
+          "path": "uccd/inc/PowerPolicy.hpp",
+          "bytes": 3888,
+          "lines": 97,
+          "sha256": "66fa1cede8500e140ef838a714cc7b59c2a087ffb82314c7ec0c6b83894e5d45",
+          "binary": false,
+          "destination": "ucc-hardware / uccd / packaging"
+        },
+        {
+          "path": "uccd/inc/PowerSupplyController.hpp",
+          "bytes": 8419,
+          "lines": 290,
+          "sha256": "7c5f16b658345d795941514f14e4a7f86109a7e978c3aeaf469cc6ac0f3be590",
+          "binary": false,
+          "destination": "ucc-hardware / uccd / packaging"
+        },
+        {
+          "path": "uccd/inc/ProfileManager.hpp",
+          "bytes": 33230,
+          "lines": 1057,
+          "sha256": "59b591d52c4f14b6a5209f77eaa14da20dc4e23fdd9894d7d85d1e43d9fb657f",
+          "binary": false,
+          "destination": "ucc-core + ucc-config"
+        },
+        {
+          "path": "uccd/inc/SettingsManager.hpp",
+          "bytes": 13753,
+          "lines": 354,
+          "sha256": "5ed518df797a11682d5c8a7e82c8fe0c4cb1005cddd6f46ccb4aa20e23b92c23",
+          "binary": false,
+          "destination": "ucc-core + ucc-config"
+        },
+        {
+          "path": "uccd/inc/SleepState.hpp",
+          "bytes": 5840,
+          "lines": 186,
+          "sha256": "98e7e0e244737a9c47e3465b687880fc263f52899eea676cadc2f84b296b9cd1",
+          "binary": false,
+          "destination": "ucc-sleep + ucc-config"
+        },
+        {
+          "path": "uccd/inc/StateUtils.hpp",
+          "bytes": 1688,
+          "lines": 48,
+          "sha256": "9951f74d56912cd533724a6565522863e807edb518d59b27eae5eab99a226732",
+          "binary": false,
+          "destination": "ucc-hardware / uccd / packaging"
+        },
+        {
+          "path": "uccd/inc/SystemInfo.hpp",
+          "bytes": 2547,
+          "lines": 78,
+          "sha256": "bf81e6b16dfd3c200be387bfbaba4649b9f17d2ad18552c7ad813fefac7aa1e6",
+          "binary": false,
+          "destination": "ucc-hardware / uccd / packaging"
+        },
+        {
+          "path": "uccd/inc/TccSettings.hpp",
+          "bytes": 2525,
+          "lines": 74,
+          "sha256": "19a9e35ea4d0cd45af6db2281450ec0252a758057cda9683c7a2b69ab7a54e98",
+          "binary": false,
+          "destination": "ucc-core + ucc-config"
+        },
+        {
+          "path": "uccd/inc/UccDBusService.hpp",
+          "bytes": 23230,
+          "lines": 671,
+          "sha256": "587315d7ef01e154e575b7f21c955c45eeb31e500e3cee0d9c2e2c72ba76cdef",
+          "binary": false,
+          "destination": "uccd + ucc-dbus + ucc-core"
+        },
+        {
+          "path": "uccd/inc/profiles/DefaultProfiles.hpp",
+          "bytes": 2531,
+          "lines": 90,
+          "sha256": "39e67d111d7336d7251ceb721ef9aec678e8ab7df6246d7dcf6b7f4573ea93a1",
+          "binary": false,
+          "destination": "ucc-core + ucc-config"
+        },
+        {
+          "path": "uccd/inc/profiles/FanProfile.hpp",
+          "bytes": 7606,
+          "lines": 240,
+          "sha256": "5256bce30e913f83efd31a7ed44af9897f6bb5f750d57a7e565196e6e5cb3f29",
+          "binary": false,
+          "destination": "ucc-core + ucc-config"
+        },
+        {
+          "path": "uccd/inc/profiles/UccProfile.hpp",
+          "bytes": 7548,
+          "lines": 277,
+          "sha256": "d486368bb44d964d52661da85a4fe64203d7b4c178a4a6f6afdd75daeeff4758",
+          "binary": false,
+          "destination": "ucc-core + ucc-config"
+        },
+        {
+          "path": "uccd/inc/workers/CpuWorker.hpp",
+          "bytes": 20097,
+          "lines": 532,
+          "sha256": "dbb3b8efe8813966539b472aa69503989405e4d3b6cb13feabbc4f06c70488e4",
+          "binary": false,
+          "destination": "ucc-hardware / uccd / packaging"
+        },
+        {
+          "path": "uccd/inc/workers/DaemonWorker.hpp",
+          "bytes": 7304,
+          "lines": 256,
+          "sha256": "a860c9c16618b03e06d52ee6c11adc6d60a3d087a62d5f36b1585d2c594cabef",
+          "binary": false,
+          "destination": "ucc-hardware / uccd / packaging"
+        },
+        {
+          "path": "uccd/inc/workers/DisplayWorker.hpp",
+          "bytes": 4963,
+          "lines": 161,
+          "sha256": "c885d7ffb213c2aae23263beca2d99b7d17032a7c5fb2b969e5f4467a44a1820",
+          "binary": false,
+          "destination": "ucc-hardware / uccd / packaging"
+        },
+        {
+          "path": "uccd/inc/workers/FanControlWorker.hpp",
+          "bytes": 18884,
+          "lines": 600,
+          "sha256": "a8002e2232a69f17157af46f6bcc5e64403e783c1e426cf5747a4108eb014759",
+          "binary": false,
+          "destination": "ucc-cooling"
+        },
+        {
+          "path": "uccd/inc/workers/HardwareMonitorWorker.hpp",
+          "bytes": 15658,
+          "lines": 422,
+          "sha256": "03b56294bff895a171f9b7e072aaf0af525eeaf6f6824f1da599ed89d26047d8",
+          "binary": false,
+          "destination": "ucc-telemetry + ucc-hardware"
+        },
+        {
+          "path": "uccd/inc/workers/LCTWaterCoolerWorker.hpp",
+          "bytes": 9455,
+          "lines": 305,
+          "sha256": "b1d1c3f9593547674f95ebfab4c6cb4bb132879a89c921a1db475a11a7668e76",
+          "binary": false,
+          "destination": "ucc-cooler"
+        },
+        {
+          "path": "uccd/inc/workers/ProfileSettingsWorker.hpp",
+          "bytes": 9878,
+          "lines": 288,
+          "sha256": "47fb34fd6cae3e411ee81ba7b018725115a519e8973fa6ac68fece2cf41f1a22",
+          "binary": false,
+          "destination": "ucc-hardware / uccd / packaging"
+        },
+        {
+          "path": "uccd/src/NvmlWrapper.cpp",
+          "bytes": 31653,
+          "lines": 913,
+          "sha256": "7381b49d25920c5a8f207e6de73f473d0e0afd1c7f2b2d428ef11abe53853d50",
+          "binary": false,
+          "destination": "ucc-telemetry + ucc-hardware"
+        },
+        {
+          "path": "uccd/src/SystemInfo.cpp",
+          "bytes": 20822,
+          "lines": 583,
+          "sha256": "a72e751b14f0be312a8eb086ade7e3a6135207bd8a735df8efe06b4f0fa5e4a7",
+          "binary": false,
+          "destination": "ucc-hardware / uccd / packaging"
+        },
+        {
+          "path": "uccd/src/UccDBusService.cpp",
+          "bytes": 179770,
+          "lines": 4869,
+          "sha256": "02004c98f4c2f10aa0c9ee51099ecc444ca6658cbcc23f7d06cdbb5729e24809",
+          "binary": false,
+          "destination": "uccd + ucc-dbus + ucc-core"
+        },
+        {
+          "path": "uccd/src/hardware-helper.cpp",
+          "bytes": 1223,
+          "lines": 32,
+          "sha256": "d151933e6c806eac97691eea09e86740f372105a576d12edba31fb0f591b9864",
+          "binary": false,
+          "destination": "ucc-hardware / uccd / packaging"
+        },
+        {
+          "path": "uccd/src/import-check.cpp",
+          "bytes": 4899,
+          "lines": 107,
+          "sha256": "99125537c708188c73f44c3f856736df4fe8430ec638f83380d9985e54bfe7db",
+          "binary": false,
+          "destination": "ucc-hardware / uccd / packaging"
+        },
+        {
+          "path": "uccd/src/profiles/DefaultProfiles.cpp",
+          "bytes": 9544,
+          "lines": 288,
+          "sha256": "7a7796b16d8381cc4d748037068ed7beae456f5e243caa73c04cbbbf49d68080",
+          "binary": false,
+          "destination": "ucc-core + ucc-config"
+        },
+        {
+          "path": "uccd/src/profiles/FanProfiles.cpp",
+          "bytes": 9296,
+          "lines": 281,
+          "sha256": "3cd931e3e0bebe15162454acaa22d16c609d1c7dcd703a7a4903e91f55afccec",
+          "binary": false,
+          "destination": "ucc-core + ucc-config"
+        },
+        {
+          "path": "uccd/src/profiles/UccProfile.cpp",
+          "bytes": 2009,
+          "lines": 63,
+          "sha256": "5cc4f12ed63220f2fae450ec591c169b0adfe38cc519a33ab8b797d7514d40a4",
+          "binary": false,
+          "destination": "ucc-core + ucc-config"
+        },
+        {
+          "path": "uccd/src/sleep-helper.cpp",
+          "bytes": 3569,
+          "lines": 116,
+          "sha256": "ff6786a710cfef0bc6f4f2ed448454b0d6d07e7c131f885c7467bbdbb972c68b",
+          "binary": false,
+          "destination": "ucc-sleep + ucc-config"
+        },
+        {
+          "path": "uccd/src/uccd.cpp",
+          "bytes": 12558,
+          "lines": 467,
+          "sha256": "340c4ab7b121fbd4c4b2865526c2db1c36ab34322effe2b804b0a17060584cbe",
+          "binary": false,
+          "destination": "uccd + ucc-dbus + ucc-core"
+        },
+        {
+          "path": "uccd/src/workers/DisplayWorker.cpp",
+          "bytes": 17622,
+          "lines": 592,
+          "sha256": "0e2cb1ecfdeca345ef40cd65c8d4762c6bfd1310d7736764e3f135262eafa75e",
+          "binary": false,
+          "destination": "ucc-hardware / uccd / packaging"
+        },
+        {
+          "path": "uccd/src/workers/HardwareMonitorWorker.cpp",
+          "bytes": 31497,
+          "lines": 1005,
+          "sha256": "de2038d5c9fcdf22fb9dd9ecfb16f008fb285d46fe210848b614c7025623cf31",
+          "binary": false,
+          "destination": "ucc-telemetry + ucc-hardware"
+        },
+        {
+          "path": "uccd/src/workers/LCTWaterCoolerWorker.cpp",
+          "bytes": 47353,
+          "lines": 1377,
+          "sha256": "3f7e847675b5ebc30442f8b1fbc708db7cb4d927e240c02cb8284b79c7e28595",
+          "binary": false,
+          "destination": "ucc-cooler"
+        },
+        {
+          "path": "uccd/src/workers/ProfileSettingsWorker.cpp",
+          "bytes": 21211,
+          "lines": 710,
+          "sha256": "401243b67a746e6f54275096ed605527d05b0d607f6717d7ff3091368d98cd7c",
+          "binary": false,
+          "destination": "ucc-hardware / uccd / packaging"
+        },
+        {
+          "path": "uccd/uccd-pre-sleep.service",
+          "bytes": 504,
+          "lines": 20,
+          "sha256": "ef297961864be078398491ba9fb4c58ad126547c89f532485fefd51e709a72b2",
+          "binary": false,
+          "destination": "ucc-hardware / uccd / packaging"
+        },
+        {
+          "path": "uccd/uccd-sleep.service",
+          "bytes": 504,
+          "lines": 20,
+          "sha256": "ef297961864be078398491ba9fb4c58ad126547c89f532485fefd51e709a72b2",
+          "binary": false,
+          "destination": "ucc-hardware / uccd / packaging"
+        },
+        {
+          "path": "uccd/uccd.service",
+          "bytes": 1323,
+          "lines": 43,
+          "sha256": "2449822e11ea70e41dc719a9914b8699ac8ec5fd24039b79e86303aa0fc32ed2",
+          "binary": false,
+          "destination": "ucc-hardware / uccd / packaging"
+        }
+      ]
+    },
+    {
+      "repository": "ControlCenter-Python",
+      "commit": "ba6fd4ae793bcd345ac39cdef0b4103841eee2e7",
+      "files": [
+        {
+          "path": ".gitignore",
+          "bytes": 54,
+          "lines": 5,
+          "sha256": "573309bd7b05248b870bfeed821b541cc4486cfbabd4a8ca7455c1d86989a2b7",
+          "binary": false,
+          "destination": "historical reference; behavior parity and offline import"
+        },
+        {
+          "path": "Data/.gitkeep",
+          "bytes": 0,
+          "lines": 0,
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "binary": false,
+          "destination": "historical reference; behavior parity and offline import"
+        },
+        {
+          "path": "LICENSE",
+          "bytes": 11358,
+          "lines": 202,
+          "sha256": "cfc7749b96f63bd31c3c42b5c471bf756814053e847c10f3eb003417bc523d30",
+          "binary": false,
+          "destination": "historical reference; behavior parity and offline import"
+        },
+        {
+          "path": "NOTICE",
+          "bytes": 607,
+          "lines": 11,
+          "sha256": "5a61087a4374846e3c06076598e47cbb94778fa7a15c2bda0e7ab3257550c57d",
+          "binary": false,
+          "destination": "historical reference; behavior parity and offline import"
+        },
+        {
+          "path": "README.md",
+          "bytes": 4005,
+          "lines": 44,
+          "sha256": "e9cd1b971fcc2cd27c5a66eb4bee7ef20947b9d7bd7ce0e33275e2e7cc6c8337",
+          "binary": false,
+          "destination": "historical reference; behavior parity and offline import"
+        },
+        {
+          "path": "SOURCE_PROVENANCE.json",
+          "bytes": 5799,
+          "lines": 70,
+          "sha256": "f10e1156973b1f22839b38d516100148d36f58e9e890dbe8c8726b271d9a9f6a",
+          "binary": false,
+          "destination": "historical reference; behavior parity and offline import"
+        },
+        {
+          "path": "SOURCE_SNAPSHOT.json",
+          "bytes": 433,
+          "lines": 12,
+          "sha256": "da7e8bebf8b62eb9b645cda40c8ca3f7e2d64b247c2297d09768ae5af88ce45b",
+          "binary": false,
+          "destination": "historical reference; behavior parity and offline import"
+        },
+        {
+          "path": "THIRD_PARTY.md",
+          "bytes": 1311,
+          "lines": 20,
+          "sha256": "a9d36a6adbff7c42cfc35c9eb474456a3e7b8faab94a4bf6a4ddda1c5ed5c800",
+          "binary": false,
+          "destination": "historical reference; behavior parity and offline import"
+        },
+        {
+          "path": "daemon/.gitignore",
+          "bytes": 109,
+          "lines": 10,
+          "sha256": "ed7b84e816359d17276a801802de5c362c2c572ce3e50a8670c8362b08351380",
+          "binary": false,
+          "destination": "historical reference; behavior parity and offline import"
+        },
+        {
+          "path": "daemon/.python-version",
+          "bytes": 5,
+          "lines": 1,
+          "sha256": "a876e0b10411037a012498b9fe18d9bc1df32ed8b722a13564dc944ddcfd9135",
+          "binary": false,
+          "destination": "historical reference; behavior parity and offline import"
+        },
+        {
+          "path": "daemon/README.md",
+          "bytes": 539,
+          "lines": 10,
+          "sha256": "667004a43d824b13f8b6bc258b6316d04d5d5c2bf0aca181ae1d3e99e0655d7a",
+          "binary": false,
+          "destination": "historical reference; behavior parity and offline import"
+        },
+        {
+          "path": "daemon/api/__init__.py",
+          "bytes": 90,
+          "lines": 2,
+          "sha256": "1f8619f866f8892cee346819fd1de966c62a575f0544a55661b16420f7c22c54",
+          "binary": false,
+          "destination": "historical reference; behavior parity and offline import"
+        },
+        {
+          "path": "daemon/api/models.py",
+          "bytes": 476,
+          "lines": 16,
+          "sha256": "38f04f946723c2bdd053015c7cbe516d9c81b09a101d01213e7c7aac081655de",
+          "binary": false,
+          "destination": "historical reference; behavior parity and offline import"
+        },
+        {
+          "path": "daemon/api/server.py",
+          "bytes": 5660,
+          "lines": 142,
+          "sha256": "d008af9e51125a2653eeb39ea364f0c4970b124f30bd39ec816068d1156afdf4",
+          "binary": false,
+          "destination": "historical reference; behavior parity and offline import"
+        },
+        {
+          "path": "daemon/core/__init__.py",
+          "bytes": 90,
+          "lines": 2,
+          "sha256": "1f8619f866f8892cee346819fd1de966c62a575f0544a55661b16420f7c22c54",
+          "binary": false,
+          "destination": "historical reference; behavior parity and offline import"
+        },
+        {
+          "path": "daemon/core/config.py",
+          "bytes": 545,
+          "lines": 21,
+          "sha256": "0893396c2dc19d51ee79cbb443c4bd7ef19b6efc3e57a5ca86d88bf7579cca5f",
+          "binary": false,
+          "destination": "historical reference; behavior parity and offline import"
+        },
+        {
+          "path": "daemon/core/engine.py",
+          "bytes": 4764,
+          "lines": 122,
+          "sha256": "8be6dad0d5d3d048d9d55ea39cece373099c723d548faffa186af37fc9920dc6",
+          "binary": false,
+          "destination": "historical reference; behavior parity and offline import"
+        },
+        {
+          "path": "daemon/core/hardware.py",
+          "bytes": 7145,
+          "lines": 195,
+          "sha256": "26105ec9cd8ddb23c074b4c99f4eb728d4d0bb19456da70219b8108018acb6ff",
+          "binary": false,
+          "destination": "historical reference; behavior parity and offline import"
+        },
+        {
+          "path": "daemon/core/paths.py",
+          "bytes": 998,
+          "lines": 25,
+          "sha256": "c8cfe500c0819810c1770e440a04b0a099e351889013c0d5aafba232a619c0b5",
+          "binary": false,
+          "destination": "historical reference; behavior parity and offline import"
+        },
+        {
+          "path": "daemon/core/scanner.py",
+          "bytes": 7185,
+          "lines": 168,
+          "sha256": "79b5162b3c9730588bbdd86ffeeaaaf648d86f365a42f2dfd6d78600e21e692e",
+          "binary": false,
+          "destination": "historical reference; behavior parity and offline import"
+        },
+        {
+          "path": "daemon/lightbar",
+          "bytes": 11979,
+          "lines": 341,
+          "sha256": "3b14ff75bd5a750f5fd7488d9facef7c489e980a6ac9f0f8fc04c0e136852e87",
+          "binary": false,
+          "destination": "historical reference; behavior parity and offline import"
+        },
+        {
+          "path": "daemon/main.py",
+          "bytes": 4653,
+          "lines": 131,
+          "sha256": "5673873106db91d729f7701ad28aaf9732a881790ff156344ab90b4309e0cf94",
+          "binary": false,
+          "destination": "historical reference; behavior parity and offline import"
+        },
+        {
+          "path": "daemon/pyproject.toml",
+          "bytes": 325,
+          "lines": 15,
+          "sha256": "a4b20cd9fd5265d1ad6e85eb6c3c213f5c37cb75ccc229fa4e81da27120ec7b9",
+          "binary": false,
+          "destination": "historical reference; behavior parity and offline import"
+        },
+        {
+          "path": "daemon/tests/test_power.py",
+          "bytes": 13084,
+          "lines": 322,
+          "sha256": "3293742adc382ce1cc3d4694682dc57b43b8fcede6251ff592dfced71643c035",
+          "binary": false,
+          "destination": "historical reference; behavior parity and offline import"
+        },
+        {
+          "path": "daemon/tray.py",
+          "bytes": 30673,
+          "lines": 803,
+          "sha256": "2676a5ebfd3fadc7528cb520ad164eb6f8632b7b696efabe7fd53e8970735adf",
+          "binary": false,
+          "destination": "historical reference; behavior parity and offline import"
+        },
+        {
+          "path": "daemon/tray_gtk.py",
+          "bytes": 33887,
+          "lines": 907,
+          "sha256": "1a2e67aa2297a5617b7c25315673fcb76d9983abd790883b327112705333809c",
+          "binary": false,
+          "destination": "historical reference; behavior parity and offline import"
+        },
+        {
+          "path": "daemon/uv.lock",
+          "bytes": 29057,
+          "lines": 278,
+          "sha256": "6c6e6c4173dd1c9ba1c1db3c7da3e69115ce78f90c940ab28f5f2ed74e4ac897",
+          "binary": false,
+          "destination": "historical reference; behavior parity and offline import"
+        },
+        {
+          "path": "gui/.gitignore",
+          "bytes": 35,
+          "lines": 4,
+          "sha256": "3c546bed4ca4d0eb365773b5f82cc6cb3ba7f96022a513789d90bc3da1d420ce",
+          "binary": false,
+          "destination": "historical reference; behavior parity and offline import"
+        },
+        {
+          "path": "gui/README.md",
+          "bytes": 539,
+          "lines": 10,
+          "sha256": "8c07eab1822de3f4af9aaa13714089d97be51da594694e8641580c9ee477107d",
+          "binary": false,
+          "destination": "historical reference; behavior parity and offline import"
+        },
+        {
+          "path": "gui/__init__.py",
+          "bytes": 159,
+          "lines": 5,
+          "sha256": "3ba22e13424664f2e5387847d3265d847083baa4c4cc3fa8d7c3fe4927dcba8f",
+          "binary": false,
+          "destination": "historical reference; behavior parity and offline import"
+        },
+        {
+          "path": "gui/assets/icon.png",
+          "bytes": 15274,
+          "lines": null,
+          "sha256": "2b946bc8f9dc170fcd9c37cfc2aed729f8c896bda4e238edd37b819ba6b67882",
+          "binary": true,
+          "destination": "historical reference; behavior parity and offline import"
+        },
+        {
+          "path": "gui/assets/keyboard.svg",
+          "bytes": 109155,
+          "lines": 2362,
+          "sha256": "4e50a65e94b4c9054e068685b1b8c9b78b57ac9fdf2c2581e9238c84aea3d4a6",
+          "binary": false,
+          "destination": "historical reference; behavior parity and offline import"
+        },
+        {
+          "path": "gui/core/__init__.py",
+          "bytes": 115,
+          "lines": 3,
+          "sha256": "988b01e20ce40fc78961414eac0d14b7bbe37c6208196fd453f1f22d80a0f9d6",
+          "binary": false,
+          "destination": "historical reference; behavior parity and offline import"
+        },
+        {
+          "path": "gui/core/config.py",
+          "bytes": 511,
+          "lines": 20,
+          "sha256": "ff393e026575209ce262372b7dfae4a02ecec0a16ca3cb2f59cc7aca6fded6b8",
+          "binary": false,
+          "destination": "historical reference; behavior parity and offline import"
+        },
+        {
+          "path": "gui/core/daemon.py",
+          "bytes": 2494,
+          "lines": 90,
+          "sha256": "58da0adc0e59a2da99b5e8d1379b394259b054a102640773c17b8b298b419725",
+          "binary": false,
+          "destination": "historical reference; behavior parity and offline import"
+        },
+        {
+          "path": "gui/core/display.py",
+          "bytes": 3004,
+          "lines": 88,
+          "sha256": "e3f583e64be6d5a9b1660128753f3f9cf79f2ca221e2e0408035d9d485f37c79",
+          "binary": false,
+          "destination": "historical reference; behavior parity and offline import"
+        },
+        {
+          "path": "gui/core/gui_settings.py",
+          "bytes": 835,
+          "lines": 37,
+          "sha256": "9e384db5dea907d5b1716c1e04dc4c75a0b21168d44b66f662404b881dc71b3e",
+          "binary": false,
+          "destination": "historical reference; behavior parity and offline import"
+        },
+        {
+          "path": "gui/core/lightbar.py",
+          "bytes": 3251,
+          "lines": 105,
+          "sha256": "81f012eac5ef2ba0ac7c69ed9ae87bb9a821c3c8aeb381119b36bd74cbaecff3",
+          "binary": false,
+          "destination": "historical reference; behavior parity and offline import"
+        },
+        {
+          "path": "gui/core/metrics.py",
+          "bytes": 3997,
+          "lines": 123,
+          "sha256": "7f5734944f6da602996e23a8fa1237c06a10c6be4c392e5bc271805b16e3fa57",
+          "binary": false,
+          "destination": "historical reference; behavior parity and offline import"
+        },
+        {
+          "path": "gui/core/paths.py",
+          "bytes": 1212,
+          "lines": 29,
+          "sha256": "df972425a75b6bfc041dc6e0d928c02128dc7df86ba0f54da9b7fab34c68881e",
+          "binary": false,
+          "destination": "historical reference; behavior parity and offline import"
+        },
+        {
+          "path": "gui/core/poller.py",
+          "bytes": 4060,
+          "lines": 121,
+          "sha256": "99270cdfa2ab4325df5964a31bc8623999df911fe50505a0a530367fd69a726d",
+          "binary": false,
+          "destination": "historical reference; behavior parity and offline import"
+        },
+        {
+          "path": "gui/install-autostart.sh",
+          "bytes": 8883,
+          "lines": 190,
+          "sha256": "268195a06b63c6709c7458f305d8d34ae6951546a27dfb5e553899b8bab4bf0b",
+          "binary": false,
+          "destination": "historical reference; behavior parity and offline import"
+        },
+        {
+          "path": "gui/kbd_control.py",
+          "bytes": 8071,
+          "lines": 239,
+          "sha256": "171b1b24762514164f168e34131de8eb7c8f4a5c26af3b396cf4570348c50fb8",
+          "binary": false,
+          "destination": "historical reference; behavior parity and offline import"
+        },
+        {
+          "path": "gui/main.py",
+          "bytes": 3630,
+          "lines": 100,
+          "sha256": "086de5645b625c3eec70aea64270520e32379e43c748d2f563023fafdea5312f",
+          "binary": false,
+          "destination": "historical reference; behavior parity and offline import"
+        },
+        {
+          "path": "gui/ui/__init__.py",
+          "bytes": 115,
+          "lines": 3,
+          "sha256": "1cd0999b33eeae6accc04a616c6c3e9dc37dd9f16a5edbc52fec8e6fd4fc99bf",
+          "binary": false,
+          "destination": "historical reference; behavior parity and offline import"
+        },
+        {
+          "path": "gui/ui/app_icon.py",
+          "bytes": 2267,
+          "lines": 60,
+          "sha256": "fc45f887f992c3f8859c93a082cdd801eb8226755772aa92f4cc970c627310f6",
+          "binary": false,
+          "destination": "historical reference; behavior parity and offline import"
+        },
+        {
+          "path": "gui/ui/main_window.py",
+          "bytes": 9597,
+          "lines": 247,
+          "sha256": "08bf06b66e7c0b65b4e552159e0fc5ec985942a42132199ccd2e9bbcce9d6779",
+          "binary": false,
+          "destination": "historical reference; behavior parity and offline import"
+        },
+        {
+          "path": "gui/ui/styles.py",
+          "bytes": 12021,
+          "lines": 365,
+          "sha256": "30e322c77a9302a71d91846124283d42314cde79877484f0abad7ed523a06202",
+          "binary": false,
+          "destination": "historical reference; behavior parity and offline import"
+        },
+        {
+          "path": "gui/ui/tabs/__init__.py",
+          "bytes": 127,
+          "lines": 3,
+          "sha256": "bf464ed802569de10dc51c63eef2f1a8189e5b9ab46af785351b3de8231c4a50",
+          "binary": false,
+          "destination": "historical reference; behavior parity and offline import"
+        },
+        {
+          "path": "gui/ui/tabs/dashboard.py",
+          "bytes": 13570,
+          "lines": 323,
+          "sha256": "86a69a66bde98b267905685708d9aed9f1b211754682acf64b423b689c2b6565",
+          "binary": false,
+          "destination": "historical reference; behavior parity and offline import"
+        },
+        {
+          "path": "gui/ui/tabs/devices.py",
+          "bytes": 9246,
+          "lines": 249,
+          "sha256": "df42f6907d94adb18ff7ba2bc0bb8e79afe97ed66fc9da5c600f00a88394736f",
+          "binary": false,
+          "destination": "historical reference; behavior parity and offline import"
+        },
+        {
+          "path": "gui/ui/tabs/keyboard_tab.py",
+          "bytes": 39329,
+          "lines": 989,
+          "sha256": "8e99597d567e7c5086c8508f32ee42cfa4391e17366ec1912aed1c07da065608",
+          "binary": false,
+          "destination": "historical reference; behavior parity and offline import"
+        },
+        {
+          "path": "gui/ui/tabs/lightbar.py",
+          "bytes": 14350,
+          "lines": 367,
+          "sha256": "a883f37e14ddf00248f2115056b7a505d9aa119eb5454ee415c3299a8396bfda",
+          "binary": false,
+          "destination": "historical reference; behavior parity and offline import"
+        },
+        {
+          "path": "gui/ui/tabs/power_settings.py",
+          "bytes": 9405,
+          "lines": 229,
+          "sha256": "5da58fd4cf7978ced35c98fc0ede2f312b8a04e40180e58c0f8d8d0c388209d0",
+          "binary": false,
+          "destination": "historical reference; behavior parity and offline import"
+        },
+        {
+          "path": "gui/ui/tabs/settings_tab.py",
+          "bytes": 10451,
+          "lines": 258,
+          "sha256": "02ba4bf27ccb01198164d7d3de442b1412bfd8c4cb9139ffe979d25f1a2553a0",
+          "binary": false,
+          "destination": "historical reference; behavior parity and offline import"
+        },
+        {
+          "path": "gui/ui/theme.py",
+          "bytes": 5192,
+          "lines": 154,
+          "sha256": "60f5bd22044e0c1fab40760d9a0dd1db0aeaccfa55e1a74ec5177330955a594e",
+          "binary": false,
+          "destination": "historical reference; behavior parity and offline import"
+        },
+        {
+          "path": "gui/ui/widgets.py",
+          "bytes": 6991,
+          "lines": 211,
+          "sha256": "11181d7ddeb97396b58383e5ddbcb6d3fd61b589ed54d11ab4717d517169e2d9",
+          "binary": false,
+          "destination": "historical reference; behavior parity and offline import"
+        },
+        {
+          "path": "launch.sh",
+          "bytes": 2177,
+          "lines": 42,
+          "sha256": "e8c548875868407c0d338d41005a414d164ccdfc316854fa687874a254db74b7",
+          "binary": false,
+          "destination": "historical reference; behavior parity and offline import"
+        }
+      ]
+    }
+  ],
+  "dbus": {
+    "service": "com.uniwill.uccd",
+    "path": "/com/uniwill/uccd",
+    "interface": "com.uniwill.uccd",
+    "methods": [
+      {
+        "name": "GetDeviceName",
+        "cpp_return": "QString",
+        "cpp_arguments": "",
+        "in_signature": "",
+        "out_signature": "s",
+        "explicit_polkit_check": [],
+        "source_line": 367
+      },
+      {
+        "name": "GetSystemInfoJSON",
+        "cpp_return": "QString",
+        "cpp_arguments": "",
+        "in_signature": "",
+        "out_signature": "s",
+        "explicit_polkit_check": [],
+        "source_line": 373
+      },
+      {
+        "name": "IsDeviceSupported",
+        "cpp_return": "bool",
+        "cpp_arguments": "",
+        "in_signature": "",
+        "out_signature": "b",
+        "explicit_polkit_check": [],
+        "source_line": 379
+      },
+      {
+        "name": "GetDisplayModesJSON",
+        "cpp_return": "QString",
+        "cpp_arguments": "",
+        "in_signature": "",
+        "out_signature": "s",
+        "explicit_polkit_check": [],
+        "source_line": 384
+      },
+      {
+        "name": "GetIsX11",
+        "cpp_return": "bool",
+        "cpp_arguments": "",
+        "in_signature": "",
+        "out_signature": "b",
+        "explicit_polkit_check": [],
+        "source_line": 390
+      },
+      {
+        "name": "TuxedoWmiAvailable",
+        "cpp_return": "bool",
+        "cpp_arguments": "",
+        "in_signature": "",
+        "out_signature": "b",
+        "explicit_polkit_check": [],
+        "source_line": 395
+      },
+      {
+        "name": "FanHwmonAvailable",
+        "cpp_return": "bool",
+        "cpp_arguments": "",
+        "in_signature": "",
+        "out_signature": "b",
+        "explicit_polkit_check": [],
+        "source_line": 400
+      },
+      {
+        "name": "UccdVersion",
+        "cpp_return": "QString",
+        "cpp_arguments": "",
+        "in_signature": "",
+        "out_signature": "s",
+        "explicit_polkit_check": [],
+        "source_line": 405
+      },
+      {
+        "name": "GetFanDataCPU",
+        "cpp_return": "QVariantMap",
+        "cpp_arguments": "",
+        "in_signature": "",
+        "out_signature": "a{sv}",
+        "explicit_polkit_check": [],
+        "source_line": 414
+      },
+      {
+        "name": "GetFanDataGPU1",
+        "cpp_return": "QVariantMap",
+        "cpp_arguments": "",
+        "in_signature": "",
+        "out_signature": "a{sv}",
+        "explicit_polkit_check": [],
+        "source_line": 424
+      },
+      {
+        "name": "GetFanDataGPU2",
+        "cpp_return": "QVariantMap",
+        "cpp_arguments": "",
+        "in_signature": "",
+        "out_signature": "a{sv}",
+        "explicit_polkit_check": [],
+        "source_line": 434
+      },
+      {
+        "name": "WebcamSWAvailable",
+        "cpp_return": "bool",
+        "cpp_arguments": "",
+        "in_signature": "",
+        "out_signature": "b",
+        "explicit_polkit_check": [],
+        "source_line": 445
+      },
+      {
+        "name": "GetWebcamSWStatus",
+        "cpp_return": "bool",
+        "cpp_arguments": "",
+        "in_signature": "",
+        "out_signature": "b",
+        "explicit_polkit_check": [],
+        "source_line": 450
+      },
+      {
+        "name": "GetForceYUV420OutputSwitchAvailable",
+        "cpp_return": "bool",
+        "cpp_arguments": "",
+        "in_signature": "",
+        "out_signature": "b",
+        "explicit_polkit_check": [],
+        "source_line": 455
+      },
+      {
+        "name": "GetDisplayBrightness",
+        "cpp_return": "int",
+        "cpp_arguments": "",
+        "in_signature": "",
+        "out_signature": "i",
+        "explicit_polkit_check": [],
+        "source_line": 482
+      },
+      {
+        "name": "GetKeyboardBacklightControlSupported",
+        "cpp_return": "bool",
+        "cpp_arguments": "",
+        "in_signature": "",
+        "out_signature": "b",
+        "explicit_polkit_check": [],
+        "source_line": 475
+      },
+      {
+        "name": "SetDisplayBrightness",
+        "cpp_return": "bool",
+        "cpp_arguments": "int brightness",
+        "in_signature": "i",
+        "out_signature": "b",
+        "explicit_polkit_check": [
+          "CONTROL"
+        ],
+        "source_line": 487
+      },
+      {
+        "name": "SetDisplayRefreshRate",
+        "cpp_return": "bool",
+        "cpp_arguments": "const QString &display, int refreshRate",
+        "in_signature": "si",
+        "out_signature": "b",
+        "explicit_polkit_check": [
+          "CONTROL"
+        ],
+        "source_line": 460
+      },
+      {
+        "name": "GetDGpuInfoValuesJSON",
+        "cpp_return": "QString",
+        "cpp_arguments": "",
+        "in_signature": "",
+        "out_signature": "s",
+        "explicit_polkit_check": [],
+        "source_line": 498
+      },
+      {
+        "name": "GetIGpuInfoValuesJSON",
+        "cpp_return": "QString",
+        "cpp_arguments": "",
+        "in_signature": "",
+        "out_signature": "s",
+        "explicit_polkit_check": [],
+        "source_line": 505
+      },
+      {
+        "name": "GetCpuPowerValuesJSON",
+        "cpp_return": "QString",
+        "cpp_arguments": "",
+        "in_signature": "",
+        "out_signature": "s",
+        "explicit_polkit_check": [],
+        "source_line": 512
+      },
+      {
+        "name": "GetPrimeState",
+        "cpp_return": "QString",
+        "cpp_arguments": "",
+        "in_signature": "",
+        "out_signature": "s",
+        "explicit_polkit_check": [],
+        "source_line": 521
+      },
+      {
+        "name": "ConsumeModeReapplyPending",
+        "cpp_return": "bool",
+        "cpp_arguments": "",
+        "in_signature": "",
+        "out_signature": "b",
+        "explicit_polkit_check": [],
+        "source_line": 527
+      },
+      {
+        "name": "GetActiveProfileJSON",
+        "cpp_return": "QString",
+        "cpp_arguments": "",
+        "in_signature": "",
+        "out_signature": "s",
+        "explicit_polkit_check": [],
+        "source_line": 534
+      },
+      {
+        "name": "GetPowerState",
+        "cpp_return": "QString",
+        "cpp_arguments": "",
+        "in_signature": "",
+        "out_signature": "s",
+        "explicit_polkit_check": [],
+        "source_line": 1168
+      },
+      {
+        "name": "GetPowerPolicyJSON",
+        "cpp_return": "QString",
+        "cpp_arguments": "",
+        "in_signature": "",
+        "out_signature": "s",
+        "explicit_polkit_check": [
+          "READ"
+        ],
+        "source_line": 1185
+      },
+      {
+        "name": "GetPowerDeviceSettingsJSON",
+        "cpp_return": "QString",
+        "cpp_arguments": "",
+        "in_signature": "",
+        "out_signature": "s",
+        "explicit_polkit_check": [
+          "READ"
+        ],
+        "source_line": 1193
+      },
+      {
+        "name": "GetPowerDeviceStatusJSON",
+        "cpp_return": "QString",
+        "cpp_arguments": "",
+        "in_signature": "",
+        "out_signature": "s",
+        "explicit_polkit_check": [
+          "READ"
+        ],
+        "source_line": 1199
+      },
+      {
+        "name": "SetPowerDeviceSettingsJSON",
+        "cpp_return": "bool",
+        "cpp_arguments": "const QString &json",
+        "in_signature": "s",
+        "out_signature": "b",
+        "explicit_polkit_check": [
+          "CONTROL"
+        ],
+        "source_line": 1205
+      },
+      {
+        "name": "ScanPowerDevices",
+        "cpp_return": "bool",
+        "cpp_arguments": "",
+        "in_signature": "",
+        "out_signature": "b",
+        "explicit_polkit_check": [
+          "CONTROL"
+        ],
+        "source_line": 1222
+      },
+      {
+        "name": "GetLightbarSettingsJSON",
+        "cpp_return": "QString",
+        "cpp_arguments": "",
+        "in_signature": "",
+        "out_signature": "s",
+        "explicit_polkit_check": [
+          "READ"
+        ],
+        "source_line": 1229
+      },
+      {
+        "name": "GetLightbarStatusJSON",
+        "cpp_return": "QString",
+        "cpp_arguments": "",
+        "in_signature": "",
+        "out_signature": "s",
+        "explicit_polkit_check": [
+          "READ"
+        ],
+        "source_line": 1243
+      },
+      {
+        "name": "GetDriverHealthJSON",
+        "cpp_return": "QString",
+        "cpp_arguments": "",
+        "in_signature": "",
+        "out_signature": "s",
+        "explicit_polkit_check": [
+          "READ"
+        ],
+        "source_line": 1235
+      },
+      {
+        "name": "SetLightbarSettingsJSON",
+        "cpp_return": "bool",
+        "cpp_arguments": "const QString &json",
+        "in_signature": "s",
+        "out_signature": "b",
+        "explicit_polkit_check": [
+          "CONTROL"
+        ],
+        "source_line": 1249
+      },
+      {
+        "name": "TriggerLightbarAnimation",
+        "cpp_return": "bool",
+        "cpp_arguments": "bool force",
+        "in_signature": "b",
+        "out_signature": "b",
+        "explicit_polkit_check": [
+          "CONTROL"
+        ],
+        "source_line": 1265
+      },
+      {
+        "name": "SetManualPowerMode",
+        "cpp_return": "bool",
+        "cpp_arguments": "const QString &mode",
+        "in_signature": "s",
+        "out_signature": "b",
+        "explicit_polkit_check": [
+          "CONTROL"
+        ],
+        "source_line": 1271
+      },
+      {
+        "name": "RegisterPowerRequest",
+        "cpp_return": "bool",
+        "cpp_arguments": "const QString &name, const QString &reason, const QString &mode",
+        "in_signature": "sss",
+        "out_signature": "b",
+        "explicit_polkit_check": [
+          "CONTROL"
+        ],
+        "source_line": 1277
+      },
+      {
+        "name": "UnregisterPowerRequest",
+        "cpp_return": "bool",
+        "cpp_arguments": "const QString &name",
+        "in_signature": "s",
+        "out_signature": "b",
+        "explicit_polkit_check": [
+          "CONTROL"
+        ],
+        "source_line": 1288
+      },
+      {
+        "name": "SetTempProfile",
+        "cpp_return": "bool",
+        "cpp_arguments": "const QString &profileName",
+        "in_signature": "s",
+        "out_signature": "b",
+        "explicit_polkit_check": [
+          "CONTROL"
+        ],
+        "source_line": 733
+      },
+      {
+        "name": "SetActiveProfile",
+        "cpp_return": "bool",
+        "cpp_arguments": "const QString &id",
+        "in_signature": "s",
+        "out_signature": "b",
+        "explicit_polkit_check": [
+          "CONTROL"
+        ],
+        "source_line": 741
+      },
+      {
+        "name": "ApplyProfile",
+        "cpp_return": "bool",
+        "cpp_arguments": "const QString &profileJSON",
+        "in_signature": "s",
+        "out_signature": "b",
+        "explicit_polkit_check": [
+          "CONTROL"
+        ],
+        "source_line": 748
+      },
+      {
+        "name": "GetProfilesJSON",
+        "cpp_return": "QString",
+        "cpp_arguments": "",
+        "in_signature": "",
+        "out_signature": "s",
+        "explicit_polkit_check": [],
+        "source_line": 757
+      },
+      {
+        "name": "GetCustomProfilesJSON",
+        "cpp_return": "QString",
+        "cpp_arguments": "",
+        "in_signature": "",
+        "out_signature": "s",
+        "explicit_polkit_check": [],
+        "source_line": 763
+      },
+      {
+        "name": "SetFanProfileCPU",
+        "cpp_return": "bool",
+        "cpp_arguments": "const QString &pointsJSON",
+        "in_signature": "s",
+        "out_signature": "b",
+        "explicit_polkit_check": [
+          "CONTROL"
+        ],
+        "source_line": 540
+      },
+      {
+        "name": "SetFanProfileDGPU",
+        "cpp_return": "bool",
+        "cpp_arguments": "const QString &pointsJSON",
+        "in_signature": "s",
+        "out_signature": "b",
+        "explicit_polkit_check": [
+          "CONTROL"
+        ],
+        "source_line": 582
+      },
+      {
+        "name": "ApplyFanProfiles",
+        "cpp_return": "bool",
+        "cpp_arguments": "const QString &fanProfilesJSON",
+        "in_signature": "s",
+        "out_signature": "b",
+        "explicit_polkit_check": [
+          "CONTROL"
+        ],
+        "source_line": 624
+      },
+      {
+        "name": "RevertFanProfiles",
+        "cpp_return": "bool",
+        "cpp_arguments": "",
+        "in_signature": "",
+        "out_signature": "b",
+        "explicit_polkit_check": [
+          "CONTROL"
+        ],
+        "source_line": 704
+      },
+      {
+        "name": "GetDefaultProfilesJSON",
+        "cpp_return": "QString",
+        "cpp_arguments": "",
+        "in_signature": "",
+        "out_signature": "s",
+        "explicit_polkit_check": [],
+        "source_line": 771
+      },
+      {
+        "name": "GetCpuFrequencyLimitsJSON",
+        "cpp_return": "QString",
+        "cpp_arguments": "",
+        "in_signature": "",
+        "out_signature": "s",
+        "explicit_polkit_check": [],
+        "source_line": 777
+      },
+      {
+        "name": "GetDefaultValuesProfileJSON",
+        "cpp_return": "QString",
+        "cpp_arguments": "",
+        "in_signature": "",
+        "out_signature": "s",
+        "explicit_polkit_check": [],
+        "source_line": 787
+      },
+      {
+        "name": "AddCustomProfile",
+        "cpp_return": "bool",
+        "cpp_arguments": "const QString &profileJSON",
+        "in_signature": "s",
+        "out_signature": "b",
+        "explicit_polkit_check": [
+          "CONTROL"
+        ],
+        "source_line": 793
+      },
+      {
+        "name": "SaveCustomProfile",
+        "cpp_return": "bool",
+        "cpp_arguments": "const QString &profileJSON",
+        "in_signature": "s",
+        "out_signature": "b",
+        "explicit_polkit_check": [
+          "CONTROL"
+        ],
+        "source_line": 927
+      },
+      {
+        "name": "DeleteCustomProfile",
+        "cpp_return": "bool",
+        "cpp_arguments": "const QString &profileId",
+        "in_signature": "s",
+        "out_signature": "b",
+        "explicit_polkit_check": [
+          "CONTROL"
+        ],
+        "source_line": 841
+      },
+      {
+        "name": "UpdateCustomProfile",
+        "cpp_return": "bool",
+        "cpp_arguments": "const QString &profileJSON",
+        "in_signature": "s",
+        "out_signature": "b",
+        "explicit_polkit_check": [
+          "CONTROL"
+        ],
+        "source_line": 867
+      },
+      {
+        "name": "GetFanProfile",
+        "cpp_return": "QString",
+        "cpp_arguments": "const QString &name",
+        "in_signature": "s",
+        "out_signature": "s",
+        "explicit_polkit_check": [],
+        "source_line": 1135
+      },
+      {
+        "name": "GetFanProfileNames",
+        "cpp_return": "QString",
+        "cpp_arguments": "",
+        "in_signature": "",
+        "out_signature": "s",
+        "explicit_polkit_check": [],
+        "source_line": 1140
+      },
+      {
+        "name": "SetFanProfile",
+        "cpp_return": "bool",
+        "cpp_arguments": "const QString &name, const QString &json",
+        "in_signature": "ss",
+        "out_signature": "b",
+        "explicit_polkit_check": [
+          "CONTROL"
+        ],
+        "source_line": 1154
+      },
+      {
+        "name": "GetSettingsJSON",
+        "cpp_return": "QString",
+        "cpp_arguments": "",
+        "in_signature": "",
+        "out_signature": "s",
+        "explicit_polkit_check": [],
+        "source_line": 1162
+      },
+      {
+        "name": "SetStateMap",
+        "cpp_return": "bool",
+        "cpp_arguments": "const QString &state, const QString &profileId",
+        "in_signature": "ss",
+        "out_signature": "b",
+        "explicit_polkit_check": [
+          "CONTROL"
+        ],
+        "source_line": 1295
+      },
+      {
+        "name": "SetBatchStateMap",
+        "cpp_return": "bool",
+        "cpp_arguments": "const QString &stateMapJSON",
+        "in_signature": "s",
+        "out_signature": "b",
+        "explicit_polkit_check": [
+          "CONTROL"
+        ],
+        "source_line": 1360
+      },
+      {
+        "name": "ODMProfilesAvailable",
+        "cpp_return": "QStringList",
+        "cpp_arguments": "",
+        "in_signature": "",
+        "out_signature": "as",
+        "explicit_polkit_check": [],
+        "source_line": 1437
+      },
+      {
+        "name": "ODMPowerLimitsJSON",
+        "cpp_return": "QString",
+        "cpp_arguments": "",
+        "in_signature": "",
+        "out_signature": "s",
+        "explicit_polkit_check": [],
+        "source_line": 1446
+      },
+      {
+        "name": "GetKeyboardBacklightCapabilitiesJSON",
+        "cpp_return": "QString",
+        "cpp_arguments": "",
+        "in_signature": "",
+        "out_signature": "s",
+        "explicit_polkit_check": [],
+        "source_line": 1454
+      },
+      {
+        "name": "GetKeyboardBacklightStatesJSON",
+        "cpp_return": "QString",
+        "cpp_arguments": "",
+        "in_signature": "",
+        "out_signature": "s",
+        "explicit_polkit_check": [],
+        "source_line": 1460
+      },
+      {
+        "name": "SetKeyboardBacklightStatesJSON",
+        "cpp_return": "bool",
+        "cpp_arguments": "const QString &keyboardBacklightStatesJSON",
+        "in_signature": "s",
+        "out_signature": "b",
+        "explicit_polkit_check": [
+          "CONTROL"
+        ],
+        "source_line": 1466
+      },
+      {
+        "name": "GetCustomKeyboardProfilesJSON",
+        "cpp_return": "QString",
+        "cpp_arguments": "",
+        "in_signature": "",
+        "out_signature": "s",
+        "explicit_polkit_check": [],
+        "source_line": 1584
+      },
+      {
+        "name": "SaveCustomKeyboardProfile",
+        "cpp_return": "bool",
+        "cpp_arguments": "const QString &id, const QString &name, const QString &json",
+        "in_signature": "sss",
+        "out_signature": "b",
+        "explicit_polkit_check": [
+          "CONTROL"
+        ],
+        "source_line": 1599
+      },
+      {
+        "name": "DeleteCustomKeyboardProfile",
+        "cpp_return": "bool",
+        "cpp_arguments": "const QString &id",
+        "in_signature": "s",
+        "out_signature": "b",
+        "explicit_polkit_check": [
+          "CONTROL"
+        ],
+        "source_line": 1617
+      },
+      {
+        "name": "GetCustomFanProfilesJSON",
+        "cpp_return": "QString",
+        "cpp_arguments": "",
+        "in_signature": "",
+        "out_signature": "s",
+        "explicit_polkit_check": [],
+        "source_line": 1633
+      },
+      {
+        "name": "SaveCustomFanProfile",
+        "cpp_return": "bool",
+        "cpp_arguments": "const QString &id, const QString &name, const QString &json",
+        "in_signature": "sss",
+        "out_signature": "b",
+        "explicit_polkit_check": [
+          "CONTROL"
+        ],
+        "source_line": 1647
+      },
+      {
+        "name": "DeleteCustomFanProfile",
+        "cpp_return": "bool",
+        "cpp_arguments": "const QString &id",
+        "in_signature": "s",
+        "out_signature": "b",
+        "explicit_polkit_check": [
+          "CONTROL"
+        ],
+        "source_line": 1660
+      },
+      {
+        "name": "GetFansMinSpeed",
+        "cpp_return": "int",
+        "cpp_arguments": "",
+        "in_signature": "",
+        "out_signature": "i",
+        "explicit_polkit_check": [],
+        "source_line": 1679
+      },
+      {
+        "name": "GetFansOffAvailable",
+        "cpp_return": "bool",
+        "cpp_arguments": "",
+        "in_signature": "",
+        "out_signature": "b",
+        "explicit_polkit_check": [],
+        "source_line": 1684
+      },
+      {
+        "name": "GetChargingProfilesAvailable",
+        "cpp_return": "QString",
+        "cpp_arguments": "",
+        "in_signature": "",
+        "out_signature": "s",
+        "explicit_polkit_check": [],
+        "source_line": 1691
+      },
+      {
+        "name": "GetCurrentChargingProfile",
+        "cpp_return": "QString",
+        "cpp_arguments": "",
+        "in_signature": "",
+        "out_signature": "s",
+        "explicit_polkit_check": [],
+        "source_line": 1697
+      },
+      {
+        "name": "SetChargingProfile",
+        "cpp_return": "bool",
+        "cpp_arguments": "const QString &profileDescriptor",
+        "in_signature": "s",
+        "out_signature": "b",
+        "explicit_polkit_check": [
+          "CONTROL"
+        ],
+        "source_line": 1703
+      },
+      {
+        "name": "GetChargingPrioritiesAvailable",
+        "cpp_return": "QString",
+        "cpp_arguments": "",
+        "in_signature": "",
+        "out_signature": "s",
+        "explicit_polkit_check": [],
+        "source_line": 1718
+      },
+      {
+        "name": "GetCurrentChargingPriority",
+        "cpp_return": "QString",
+        "cpp_arguments": "",
+        "in_signature": "",
+        "out_signature": "s",
+        "explicit_polkit_check": [],
+        "source_line": 1724
+      },
+      {
+        "name": "SetChargingPriority",
+        "cpp_return": "bool",
+        "cpp_arguments": "const QString &priorityDescriptor",
+        "in_signature": "s",
+        "out_signature": "b",
+        "explicit_polkit_check": [
+          "CONTROL"
+        ],
+        "source_line": 1730
+      },
+      {
+        "name": "GetChargeStartAvailableThresholds",
+        "cpp_return": "QString",
+        "cpp_arguments": "",
+        "in_signature": "",
+        "out_signature": "s",
+        "explicit_polkit_check": [],
+        "source_line": 1745
+      },
+      {
+        "name": "GetChargeEndAvailableThresholds",
+        "cpp_return": "QString",
+        "cpp_arguments": "",
+        "in_signature": "",
+        "out_signature": "s",
+        "explicit_polkit_check": [],
+        "source_line": 1751
+      },
+      {
+        "name": "GetChargeStartThreshold",
+        "cpp_return": "int",
+        "cpp_arguments": "",
+        "in_signature": "",
+        "out_signature": "i",
+        "explicit_polkit_check": [],
+        "source_line": 1757
+      },
+      {
+        "name": "GetChargeEndThreshold",
+        "cpp_return": "int",
+        "cpp_arguments": "",
+        "in_signature": "",
+        "out_signature": "i",
+        "explicit_polkit_check": [],
+        "source_line": 1762
+      },
+      {
+        "name": "SetChargeStartThreshold",
+        "cpp_return": "bool",
+        "cpp_arguments": "int value",
+        "in_signature": "i",
+        "out_signature": "b",
+        "explicit_polkit_check": [
+          "MANAGE_HARDWARE"
+        ],
+        "source_line": 1767
+      },
+      {
+        "name": "SetChargeEndThreshold",
+        "cpp_return": "bool",
+        "cpp_arguments": "int value",
+        "in_signature": "i",
+        "out_signature": "b",
+        "explicit_polkit_check": [
+          "MANAGE_HARDWARE"
+        ],
+        "source_line": 1782
+      },
+      {
+        "name": "GetChargeType",
+        "cpp_return": "QString",
+        "cpp_arguments": "",
+        "in_signature": "",
+        "out_signature": "s",
+        "explicit_polkit_check": [],
+        "source_line": 1797
+      },
+      {
+        "name": "SetChargeType",
+        "cpp_return": "bool",
+        "cpp_arguments": "const QString &type",
+        "in_signature": "s",
+        "out_signature": "b",
+        "explicit_polkit_check": [
+          "MANAGE_HARDWARE"
+        ],
+        "source_line": 1803
+      },
+      {
+        "name": "GetFnLockSupported",
+        "cpp_return": "bool",
+        "cpp_arguments": "",
+        "in_signature": "",
+        "out_signature": "b",
+        "explicit_polkit_check": [],
+        "source_line": 1820
+      },
+      {
+        "name": "GetFnLockStatus",
+        "cpp_return": "bool",
+        "cpp_arguments": "",
+        "in_signature": "",
+        "out_signature": "b",
+        "explicit_polkit_check": [],
+        "source_line": 1825
+      },
+      {
+        "name": "SetFnLockStatus",
+        "cpp_return": "void",
+        "cpp_arguments": "bool status",
+        "in_signature": "b",
+        "out_signature": "",
+        "explicit_polkit_check": [
+          "CONTROL"
+        ],
+        "source_line": 1830
+      },
+      {
+        "name": "SetSensorDataCollectionStatus",
+        "cpp_return": "void",
+        "cpp_arguments": "bool status",
+        "in_signature": "b",
+        "out_signature": "",
+        "explicit_polkit_check": [
+          "CONTROL"
+        ],
+        "source_line": 1838
+      },
+      {
+        "name": "GetSensorDataCollectionStatus",
+        "cpp_return": "bool",
+        "cpp_arguments": "",
+        "in_signature": "",
+        "out_signature": "b",
+        "explicit_polkit_check": [],
+        "source_line": 1844
+      },
+      {
+        "name": "SetDGpuD0Metrics",
+        "cpp_return": "void",
+        "cpp_arguments": "bool status",
+        "in_signature": "b",
+        "out_signature": "",
+        "explicit_polkit_check": [
+          "CONTROL"
+        ],
+        "source_line": 1849
+      },
+      {
+        "name": "GetNVIDIAPowerCTRLDefaultPowerLimit",
+        "cpp_return": "int",
+        "cpp_arguments": "",
+        "in_signature": "",
+        "out_signature": "i",
+        "explicit_polkit_check": [],
+        "source_line": 1857
+      },
+      {
+        "name": "GetNVIDIAPowerCTRLMaxPowerLimit",
+        "cpp_return": "int",
+        "cpp_arguments": "",
+        "in_signature": "",
+        "out_signature": "i",
+        "explicit_polkit_check": [],
+        "source_line": 1862
+      },
+      {
+        "name": "GetNVIDIAPowerCTRLAvailable",
+        "cpp_return": "bool",
+        "cpp_arguments": "",
+        "in_signature": "",
+        "out_signature": "b",
+        "explicit_polkit_check": [],
+        "source_line": 1867
+      },
+      {
+        "name": "SetNVIDIAPowerOffset",
+        "cpp_return": "bool",
+        "cpp_arguments": "int offset",
+        "in_signature": "i",
+        "out_signature": "b",
+        "explicit_polkit_check": [
+          "CONTROL"
+        ],
+        "source_line": 1872
+      },
+      {
+        "name": "GetAvailableGovernors",
+        "cpp_return": "QString",
+        "cpp_arguments": "",
+        "in_signature": "",
+        "out_signature": "s",
+        "explicit_polkit_check": [],
+        "source_line": 1881
+      },
+      {
+        "name": "GetAvailableEPPs",
+        "cpp_return": "QString",
+        "cpp_arguments": "",
+        "in_signature": "",
+        "out_signature": "s",
+        "explicit_polkit_check": [],
+        "source_line": 1901
+      },
+      {
+        "name": "GetCpuCoreCount",
+        "cpp_return": "int",
+        "cpp_arguments": "",
+        "in_signature": "",
+        "out_signature": "i",
+        "explicit_polkit_check": [],
+        "source_line": 1921
+      },
+      {
+        "name": "GetCpuTopologyJSON",
+        "cpp_return": "QString",
+        "cpp_arguments": "",
+        "in_signature": "",
+        "out_signature": "s",
+        "explicit_polkit_check": [],
+        "source_line": 1927
+      },
+      {
+        "name": "GetWaterCoolerAvailable",
+        "cpp_return": "bool",
+        "cpp_arguments": "",
+        "in_signature": "",
+        "out_signature": "b",
+        "explicit_polkit_check": [],
+        "source_line": 1935
+      },
+      {
+        "name": "GetWaterCoolerConnected",
+        "cpp_return": "bool",
+        "cpp_arguments": "",
+        "in_signature": "",
+        "out_signature": "b",
+        "explicit_polkit_check": [],
+        "source_line": 1940
+      },
+      {
+        "name": "GetWaterCoolerFanSpeed",
+        "cpp_return": "int",
+        "cpp_arguments": "",
+        "in_signature": "",
+        "out_signature": "i",
+        "explicit_polkit_check": [],
+        "source_line": 1945
+      },
+      {
+        "name": "GetWaterCoolerPumpLevel",
+        "cpp_return": "int",
+        "cpp_arguments": "",
+        "in_signature": "",
+        "out_signature": "i",
+        "explicit_polkit_check": [],
+        "source_line": 1948
+      },
+      {
+        "name": "EnableWaterCooler",
+        "cpp_return": "bool",
+        "cpp_arguments": "bool enable",
+        "in_signature": "b",
+        "out_signature": "b",
+        "explicit_polkit_check": [
+          "CONTROL"
+        ],
+        "source_line": 1951
+      },
+      {
+        "name": "IsWaterCoolerEnabled",
+        "cpp_return": "bool",
+        "cpp_arguments": "",
+        "in_signature": "",
+        "out_signature": "b",
+        "explicit_polkit_check": [],
+        "source_line": 1976
+      },
+      {
+        "name": "SetWaterCoolerFanSpeed",
+        "cpp_return": "bool",
+        "cpp_arguments": "int dutyCyclePercent",
+        "in_signature": "i",
+        "out_signature": "b",
+        "explicit_polkit_check": [
+          "CONTROL"
+        ],
+        "source_line": 1983
+      },
+      {
+        "name": "SetWaterCoolerPumpVoltage",
+        "cpp_return": "bool",
+        "cpp_arguments": "int voltage",
+        "in_signature": "i",
+        "out_signature": "b",
+        "explicit_polkit_check": [
+          "CONTROL"
+        ],
+        "source_line": 2002
+      },
+      {
+        "name": "SetWaterCoolerLEDColor",
+        "cpp_return": "bool",
+        "cpp_arguments": "int red, int green, int blue, int mode",
+        "in_signature": "iiii",
+        "out_signature": "b",
+        "explicit_polkit_check": [
+          "CONTROL"
+        ],
+        "source_line": 2022
+      },
+      {
+        "name": "TurnOffWaterCoolerLED",
+        "cpp_return": "bool",
+        "cpp_arguments": "",
+        "in_signature": "",
+        "out_signature": "b",
+        "explicit_polkit_check": [
+          "CONTROL"
+        ],
+        "source_line": 2039
+      },
+      {
+        "name": "TurnOffWaterCoolerFan",
+        "cpp_return": "bool",
+        "cpp_arguments": "",
+        "in_signature": "",
+        "out_signature": "b",
+        "explicit_polkit_check": [
+          "CONTROL"
+        ],
+        "source_line": 2049
+      },
+      {
+        "name": "TurnOffWaterCoolerPump",
+        "cpp_return": "bool",
+        "cpp_arguments": "",
+        "in_signature": "",
+        "out_signature": "b",
+        "explicit_polkit_check": [
+          "CONTROL"
+        ],
+        "source_line": 2059
+      },
+      {
+        "name": "IsWaterCoolerAutoControlEnabled",
+        "cpp_return": "bool",
+        "cpp_arguments": "",
+        "in_signature": "",
+        "out_signature": "b",
+        "explicit_polkit_check": [],
+        "source_line": 2088
+      },
+      {
+        "name": "SetWaterCoolerAutoControl",
+        "cpp_return": "bool",
+        "cpp_arguments": "bool enabled",
+        "in_signature": "b",
+        "out_signature": "b",
+        "explicit_polkit_check": [
+          "CONTROL"
+        ],
+        "source_line": 2080
+      },
+      {
+        "name": "GetWaterCoolerSupported",
+        "cpp_return": "bool",
+        "cpp_arguments": "",
+        "in_signature": "",
+        "out_signature": "b",
+        "explicit_polkit_check": [],
+        "source_line": 2097
+      },
+      {
+        "name": "GetCTGPAdjustmentSupported",
+        "cpp_return": "bool",
+        "cpp_arguments": "",
+        "in_signature": "",
+        "out_signature": "b",
+        "explicit_polkit_check": [],
+        "source_line": 2102
+      },
+      {
+        "name": "GetHwpDynamicBoostSupported",
+        "cpp_return": "bool",
+        "cpp_arguments": "",
+        "in_signature": "",
+        "out_signature": "b",
+        "explicit_polkit_check": [],
+        "source_line": 2107
+      },
+      {
+        "name": "GetMonitorDataSince",
+        "cpp_return": "QByteArray",
+        "cpp_arguments": "qlonglong sinceTimestampMs",
+        "in_signature": "x",
+        "out_signature": "ay",
+        "explicit_polkit_check": [],
+        "source_line": 2114
+      },
+      {
+        "name": "SetMonitorHistoryHorizon",
+        "cpp_return": "void",
+        "cpp_arguments": "int seconds",
+        "in_signature": "i",
+        "out_signature": "",
+        "explicit_polkit_check": [
+          "CONTROL"
+        ],
+        "source_line": 2123
+      },
+      {
+        "name": "GetMonitorHistoryHorizon",
+        "cpp_return": "int",
+        "cpp_arguments": "",
+        "in_signature": "",
+        "out_signature": "i",
+        "explicit_polkit_check": [],
+        "source_line": 2130
+      },
+      {
+        "name": "GetCpuFrequencyMHz",
+        "cpp_return": "int",
+        "cpp_arguments": "",
+        "in_signature": "",
+        "out_signature": "i",
+        "explicit_polkit_check": [],
+        "source_line": 2135
+      }
+    ],
+    "signals": [
+      {
+        "name": "ProfileChanged",
+        "cpp_arguments": "const QString &profileId, const QString &keyboardProfileId, const QString &fanProfileId"
+      },
+      {
+        "name": "ModeReapplyPendingChanged",
+        "cpp_arguments": "bool pending"
+      },
+      {
+        "name": "PowerStateChanged",
+        "cpp_arguments": "const QString &state"
+      },
+      {
+        "name": "PowerPolicyChanged",
+        "cpp_arguments": "const QString &json"
+      },
+      {
+        "name": "PowerDeviceStatusChanged",
+        "cpp_arguments": "const QString &json"
+      },
+      {
+        "name": "LightbarSettingsChanged",
+        "cpp_arguments": "const QString &json"
+      },
+      {
+        "name": "WaterCoolerStatusChanged",
+        "cpp_arguments": "const QString &status"
+      }
+    ]
+  }
+}
