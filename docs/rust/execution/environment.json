@@ -1,0 +1,15 @@
+{
+  "kernel": "Linux frixit-linux 7.3.1-1-cachyos #1 SMP PREEMPT_DYNAMIC Sat, 31 Oct 2026 15:33:05 +0000 x86_64 GNU/Linux",
+  "os_release": "NAME=\"CachyOS Linux\"\nPRETTY_NAME=\"CachyOS\"\nID=cachyos\nID_LIKE=arch\nBUILD_ID=rolling\nANSI_COLOR=\"38;2;23;147;209\"\nHOME_URL=\"https://cachyos.org/\"\nDOCUMENTATION_URL=\"https://wiki.cachyos.org/\"\nSUPPORT_URL=\"https://discuss.cachyos.org/\"\nBUG_REPORT_URL=\"https://github.com/cachyos\"\nPRIVACY_POLICY_URL=\"https://terms.archlinux.org/docs/privacy-policy/\"\nLOGO=cachyos",
+  "rustc": "rustc 1.99.1 (58cf8f9c3 2026-10-13)",
+  "cargo": "cargo 1.99.1 (5f94df478 2026-08-27)",
+  "gcc": "gcc (GCC) 16.2.1 20260810",
+  "clang": "clang version 23.1.4",
+  "cmake": "cmake version 4.4.5",
+  "ninja": "1.13.2",
+  "ctest": "ctest version 4.4.5",
+  "desktop_session": "Hyprland",
+  "session_type": "wayland",
+  "gpus": "00:02.0 VGA compatible controller: Intel Corporation Arrow Lake-S [Intel Graphics] (rev 06)\n02:00.0 VGA compatible controller: NVIDIA Corporation GB203M / GN22 [GeForce RTX 5080 Max-Q / Mobile] (rev a1)\n80:14.5 Non-VGA unclassified device: Intel Corporation Device 7f2f (rev 10)",
+  "nvidia_smi": "NVIDIA GeForce RTX 5080 Laptop GPU, 615.78.08"
+}

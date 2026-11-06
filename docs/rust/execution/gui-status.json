@@ -1,0 +1,233 @@
+{
+  "schema_version": 1,
+  "total_pages": 10,
+  "reference_gallery_total_images": 22,
+  "light_gallery_images": 11,
+  "dark_gallery_images": 11,
+  "driver_warning_verified": true,
+  "pages": {
+    "Overview": {
+      "title": "Overview (DashboardTab)",
+      "class": "ucc::DashboardTab",
+      "controls": [
+        "powerModeSelector",
+        "profileQuickSwitch",
+        "fanPresetSummary",
+        "coolerStatusBadge",
+        "driverHealthBanner",
+        "telemetryOverviewCards"
+      ],
+      "actions": [
+        "quickProfileApply",
+        "dismissDriverBanner",
+        "openCoolerSettings"
+      ],
+      "visual_tested": true,
+      "input_tested": true,
+      "themes_verified": true,
+      "light_image": "artifacts/rust-migration/gallery-reference/light/overview.png",
+      "dark_image": "artifacts/rust-migration/gallery-reference/dark/overview.png"
+    },
+    "Profiles": {
+      "title": "Profiles (ProfileManager / ProfilesTab)",
+      "class": "ucc::ProfileManager",
+      "controls": [
+        "profileNameCombo",
+        "btnNewProfile",
+        "btnDeleteProfile",
+        "btnSaveProfile",
+        "btnApplyProfile",
+        "btnRevertProfile",
+        "tdpSliders",
+        "odmProfileSelector"
+      ],
+      "actions": [
+        "SaveCustomProfile",
+        "ApplyProfile",
+        "DeleteCustomProfile",
+        "AddCustomProfile",
+        "SetTempProfile"
+      ],
+      "visual_tested": true,
+      "input_tested": true,
+      "themes_verified": true,
+      "light_image": "artifacts/rust-migration/gallery-reference/light/profiles.png",
+      "dark_image": "artifacts/rust-migration/gallery-reference/dark/profiles.png"
+    },
+    "CPU": {
+      "title": "CPU (CpuTab / PowerDevicesTab)",
+      "class": "ucc::PowerDevicesTab",
+      "controls": [
+        "enabledCoresCheckboxes",
+        "governorSelector",
+        "eppSelector",
+        "turboBoostSwitch",
+        "freqLimitsSliders"
+      ],
+      "actions": [
+        "applyCoreSelection",
+        "setGovernor",
+        "setEpp",
+        "toggleTurbo"
+      ],
+      "visual_tested": true,
+      "input_tested": true,
+      "themes_verified": true,
+      "light_image": "artifacts/rust-migration/gallery-reference/light/power-devices.png",
+      "dark_image": "artifacts/rust-migration/gallery-reference/dark/power-devices.png"
+    },
+    "Cooling": {
+      "title": "Cooling (FanControlTab)",
+      "class": "ucc::FanControlTab",
+      "controls": [
+        "cpuFanCurveEditor",
+        "dgpuFanCurveEditor",
+        "sameSpeedCheckbox",
+        "btnApplyFan",
+        "btnRevertFan",
+        "hysteresisSpinBox"
+      ],
+      "actions": [
+        "ApplyFanProfiles",
+        "RevertFanProfiles",
+        "SetFanProfileCPU",
+        "SetFanProfileDGPU"
+      ],
+      "visual_tested": true,
+      "input_tested": true,
+      "themes_verified": true,
+      "light_image": "artifacts/rust-migration/gallery-reference/light/cooler-settings.png",
+      "dark_image": "artifacts/rust-migration/gallery-reference/dark/cooler-settings.png"
+    },
+    "WaterCooling": {
+      "title": "Water Cooling (LCTWaterCoolerController)",
+      "class": "ucc::LCTWaterCoolerController",
+      "controls": [
+        "wcFanSpeedSlider",
+        "wcPumpVoltageCombo",
+        "wcLedColorPicker",
+        "wcAutoControlToggle",
+        "wcStatusIndicator"
+      ],
+      "actions": [
+        "setWaterCoolerFan",
+        "setWaterCoolerPump",
+        "setWaterCoolerLed",
+        "setWaterCoolerAuto"
+      ],
+      "visual_tested": true,
+      "input_tested": true,
+      "themes_verified": true,
+      "light_image": "artifacts/rust-migration/gallery-reference/light/watercool-settings.png",
+      "dark_image": "artifacts/rust-migration/gallery-reference/dark/watercool-settings.png"
+    },
+    "Monitor": {
+      "title": "Monitor (MonitorTab / SystemMonitor)",
+      "class": "ucc::MonitorTab",
+      "controls": [
+        "liveTelemetryChart",
+        "pauseResumeButton",
+        "historyHorizonCombo",
+        "sensorLegendToggles",
+        "metricsTable"
+      ],
+      "actions": [
+        "toggleMonitoring",
+        "scrollHistory",
+        "pauseMonitoring",
+        "resumeMonitoring"
+      ],
+      "visual_tested": true,
+      "input_tested": true,
+      "themes_verified": true,
+      "light_image": "artifacts/rust-migration/gallery-reference/light/monitor.png",
+      "dark_image": "artifacts/rust-migration/gallery-reference/dark/monitor.png"
+    },
+    "Keyboard": {
+      "title": "Keyboard (KeyboardTab / KeyboardVisualizerWidget)",
+      "class": "ucc::KeyboardTab",
+      "controls": [
+        "brightnessSlider",
+        "colorPicker",
+        "perKeyCanvas",
+        "zoneSelector",
+        "effectSelector",
+        "btnSaveKbdProfile"
+      ],
+      "actions": [
+        "SetKeyboardBacklightStatesJSON",
+        "SaveCustomKeyboardProfile",
+        "DeleteCustomKeyboardProfile"
+      ],
+      "visual_tested": true,
+      "input_tested": true,
+      "themes_verified": true,
+      "light_image": "artifacts/rust-migration/gallery-reference/light/keyboard-hardware.png",
+      "dark_image": "artifacts/rust-migration/gallery-reference/dark/keyboard-hardware.png"
+    },
+    "Lightbar": {
+      "title": "Lightbar (LightbarTab)",
+      "class": "ucc::LightbarTab",
+      "controls": [
+        "lightbarModeCombo",
+        "brightnessSlider",
+        "colorPicker",
+        "speedSlider",
+        "powerModeProfiles"
+      ],
+      "actions": [
+        "SetLightbarSettingsJSON",
+        "TriggerLightbarAnimation"
+      ],
+      "visual_tested": true,
+      "input_tested": true,
+      "themes_verified": true,
+      "light_image": "artifacts/rust-migration/gallery-reference/light/lightbar.png",
+      "dark_image": "artifacts/rust-migration/gallery-reference/dark/lightbar.png"
+    },
+    "PowerDevices": {
+      "title": "Power Devices (PowerDevicesTab / SessionProcessesWidget)",
+      "class": "ucc::PowerDevicesTab",
+      "controls": [
+        "chargingThresholdSlider",
+        "chargingProfileCombo",
+        "batteryHealthGauge",
+        "gpuProcessesList",
+        "btnTerminateProcess"
+      ],
+      "actions": [
+        "SetPowerDeviceSettingsJSON",
+        "SetDisplayRefreshRate",
+        "terminateGpuProcess"
+      ],
+      "visual_tested": true,
+      "input_tested": true,
+      "themes_verified": true,
+      "light_image": "artifacts/rust-migration/gallery-reference/light/battery-processes.png",
+      "dark_image": "artifacts/rust-migration/gallery-reference/dark/battery-processes.png"
+    },
+    "About": {
+      "title": "About (AboutPage)",
+      "class": "ucc::AboutPage",
+      "controls": [
+        "versionLabel",
+        "creditsBrowser",
+        "btnViewNotices",
+        "btnViewLicense",
+        "loggingOptInCheck",
+        "notificationBell"
+      ],
+      "actions": [
+        "toggleLogging",
+        "openLogFolder",
+        "viewLicenses",
+        "viewNotificationHistory"
+      ],
+      "visual_tested": true,
+      "input_tested": true,
+      "themes_verified": true,
+      "light_image": "artifacts/rust-migration/gallery-reference/light/about.png",
+      "dark_image": "artifacts/rust-migration/gallery-reference/dark/about.png"
+    }
+  }
+}

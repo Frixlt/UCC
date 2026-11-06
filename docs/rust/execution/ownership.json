@@ -1,0 +1,31 @@
+{
+  "schema_version": 1,
+  "rules": {
+    "Cargo.toml": "W1 in foundation / designated ticket owner",
+    "Cargo.lock": "Single owner per wave",
+    "contracts": "W1 + R1 review before dependent implementation",
+    "fixtures": "R2 tests owner",
+    "execution_registries": "Coordinator only"
+  },
+  "paths": {
+    "backend": {
+      "role": "W1",
+      "worktree": ".worktrees/w1",
+      "branch": "rust/w1"
+    },
+    "frontend": {
+      "role": "W2",
+      "worktree": ".worktrees/w2",
+      "branch": "rust/w2"
+    },
+    "tests": {
+      "role": "R2",
+      "worktree": ".worktrees/r2",
+      "branch": "rust/r2-tests"
+    },
+    "review": {
+      "role": "R1",
+      "read_only": true
+    }
+  }
+}

@@ -1,0 +1,35 @@
+{
+  "schema_version": 1,
+  "differences": [
+    {
+      "id": "DIFF-01",
+      "title": "Duplicate keyboardBacklightStates key in legacy serializer",
+      "status": "documented",
+      "rationale": "Legacy code emits duplicate keys causing parser issues; Rust implementation serializes valid unique keys with regression test."
+    },
+    {
+      "id": "DIFF-02",
+      "title": "Missing SetWebcam method on DBus",
+      "status": "documented",
+      "rationale": "Legacy exposes WebcamSWAvailable and GetWebcamSWStatus but lacked SetWebcam; will add typed method while preserving old queries."
+    },
+    {
+      "id": "DIFF-03",
+      "title": "GNOME Enabled vs Supported mismatch",
+      "status": "documented",
+      "rationale": "Legacy extension checks supported but treats as enabled; clean Rust adapter separates capability from active state."
+    },
+    {
+      "id": "DIFF-04",
+      "title": "False positive bool return code on write errors",
+      "status": "documented",
+      "rationale": "Legacy sometimes returned true when IO failed silently; Rust returns explicit false/Result on write failures."
+    },
+    {
+      "id": "DIFF-05",
+      "title": "YCbCr / YUV420 color format parsing",
+      "status": "documented",
+      "rationale": "Fix parser edge cases when detecting force YUV420 output switches."
+    }
+  ]
+}
