@@ -122,7 +122,7 @@ pub struct ProfileCpu {
     pub max_freq_khz: Option<u32>,
     #[serde(default)]
     pub governor: String,
-    #[serde(default)]
+    #[serde(default, alias = "epp")]
     pub energy_performance_preference: String,
     #[serde(rename = "noTurbo", default)]
     pub no_turbo: bool,
