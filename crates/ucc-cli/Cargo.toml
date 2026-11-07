@@ -8,6 +8,11 @@ authors.workspace = true
 [dependencies]
 ucc-core = { workspace = true }
 ucc-dbus = { workspace = true }
+zbus = { workspace = true }
 tokio = { workspace = true }
 serde_json = { workspace = true }
 thiserror = { workspace = true }
+
+[[test]]
+name = "cli_daemon_integration"
+path = "tests/cli_daemon_integration.rs"

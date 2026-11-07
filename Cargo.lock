@@ -3563,6 +3563,7 @@ dependencies = [
  "tokio",
  "ucc-core",
  "ucc-dbus",
+ "zbus 5.19.0",
 ]
 
 [[package]]
