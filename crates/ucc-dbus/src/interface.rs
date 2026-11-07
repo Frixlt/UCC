@@ -242,6 +242,15 @@ macro_rules! impl_uccd_methods {
                 self.backend.get_webcam_sw_status()
             }
 
+            #[zbus(name = "SetWebcam")]
+            pub async fn set_webcam(&self, #[zbus(header)] header: zbus::message::Header<'_>, #[zbus(connection)] conn: &zbus::Connection, enabled: bool) -> bool {
+                let sender = header.sender().map(|s| s.as_str());
+                if !self.authorizer.check_auth(conn, sender, AuthAction::Control).await {
+                    return false;
+                }
+                self.backend.set_webcam(enabled)
+            }
+
             #[zbus(name = "GetForceYUV420OutputSwitchAvailable")]
             pub async fn get_force_yuv420_output_switch_available(&self, #[zbus(header)] header: zbus::message::Header<'_>, #[zbus(connection)] conn: &zbus::Connection) -> bool {
                 let sender = header.sender().map(|s| s.as_str());

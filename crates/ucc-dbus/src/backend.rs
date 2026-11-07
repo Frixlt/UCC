@@ -44,6 +44,9 @@ pub trait UccdBackend: Send + Sync + 'static {
     fn get_webcam_sw_status(&self) -> bool {
         false
     }
+    fn set_webcam(&self, _enabled: bool) -> bool {
+        true
+    }
     fn get_force_yuv420_output_switch_available(&self) -> bool {
         false
     }

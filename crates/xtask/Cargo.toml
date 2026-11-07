@@ -7,3 +7,5 @@ authors.workspace = true
 
 [dependencies]
 thiserror = { workspace = true }
+ucc-cli = { path = "../ucc-cli" }
+clap_complete = "4.5"

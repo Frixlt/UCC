@@ -76,6 +76,9 @@ pub mod primary {
         #[zbus(name = "GetWebcamSWStatus")]
         fn get_webcam_sw_status(&self) -> zbus::Result<bool>;
 
+        #[zbus(name = "SetWebcam")]
+        fn set_webcam(&self, enabled: bool) -> zbus::Result<bool>;
+
         #[zbus(name = "GetForceYUV420OutputSwitchAvailable")]
         fn get_force_yuv420_output_switch_available(&self) -> zbus::Result<bool>;
 
@@ -481,6 +484,9 @@ pub mod legacy {
 
         #[zbus(name = "GetWebcamSWStatus")]
         fn get_webcam_sw_status(&self) -> zbus::Result<bool>;
+
+        #[zbus(name = "SetWebcam")]
+        fn set_webcam(&self, enabled: bool) -> zbus::Result<bool>;
 
         #[zbus(name = "GetForceYUV420OutputSwitchAvailable")]
         fn get_force_yuv420_output_switch_available(&self) -> zbus::Result<bool>;
