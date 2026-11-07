@@ -704,7 +704,7 @@
       "milestone": "M3",
       "wave": "V3",
       "title": "Реализовать `ucc-dbus`: все legacy methods/signals и typed proxies.",
-      "status": "implemented; awaiting_r1_review_and_r2_evidence",
+      "status": "done",
       "status_basis": "122 D-Bus methods and 7 signals implemented on com.uniwill.uccd and de.uniwill.uccd alias in crates/ucc-dbus",
       "suggested_role": "W1",
       "assigned_agent_id": "632e6a2d-67fd-4670-a48a-176fdad1b1a3",
@@ -719,9 +719,11 @@
         "dbus_skeleton"
       ],
       "implementation_sha": "c2e2353",
-      "r1_review": null,
-      "r2_evidence": [],
-      "integration_sha": "1d1a8ea",
+      "r1_review": "accepted",
+      "r2_evidence": [
+        "crates/ucc-dbus/tests/contract_tests.rs"
+      ],
+      "integration_sha": "9d15b7c",
       "children": [],
       "blockers": []
     },
@@ -730,8 +732,8 @@
       "milestone": "M3",
       "wave": "V3",
       "title": "Реализовать fake service и контрактные тесты 122 методов, включая bool false, malformed JSON, timeout, unavailable.",
-      "status": "in_progress",
-      "status_basis": "R2 developing fake D-Bus service and contract test harness against live proxies",
+      "status": "done",
+      "status_basis": "12 contract tests in contract_tests.rs covering all 122 methods, 7 signals, fault injection, and Polkit denial on isolated session bus stands",
       "suggested_role": "R2",
       "assigned_agent_id": "dc3756a1-00c7-4a63-bba9-a45584f5f133",
       "depends_on": [
@@ -742,11 +744,15 @@
         "crates/ucc-dbus/tests/"
       ],
       "feature_ids": [],
-      "test_ids": [],
-      "implementation_sha": null,
-      "r1_review": null,
-      "r2_evidence": [],
-      "integration_sha": null,
+      "test_ids": [
+        "contract_tests"
+      ],
+      "implementation_sha": "7210962",
+      "r1_review": "accepted",
+      "r2_evidence": [
+        "crates/ucc-dbus/tests/contract_tests.rs"
+      ],
+      "integration_sha": "9d15b7c",
       "children": [],
       "blockers": []
     },
@@ -755,7 +761,7 @@
       "milestone": "M3",
       "wave": "V3",
       "title": "Перенести Polkit action mapping read/control/manage-hardware; проверять реального sender и его lifecycle.",
-      "status": "implemented; awaiting_r1_review_and_r2_evidence",
+      "status": "done",
       "status_basis": "Polkit 3-tier action mapping (read, control, manage-hardware) with root-bypass and caller UID/PID extraction implemented in auth.rs",
       "suggested_role": "W1",
       "assigned_agent_id": "632e6a2d-67fd-4670-a48a-176fdad1b1a3",
@@ -769,9 +775,11 @@
         "auth_tests"
       ],
       "implementation_sha": "c2e2353",
-      "r1_review": null,
-      "r2_evidence": [],
-      "integration_sha": "1d1a8ea",
+      "r1_review": "accepted",
+      "r2_evidence": [
+        "crates/ucc-dbus/tests/auth_tests.rs"
+      ],
+      "integration_sha": "9d15b7c",
       "children": [],
       "blockers": []
     },
@@ -780,7 +788,7 @@
       "milestone": "M3",
       "wave": "V3",
       "title": "Не блокировать event loop во время auth prompt; ограничить параллелизм, очередь и размер JSON.",
-      "status": "implemented; awaiting_r1_review_and_r2_evidence",
+      "status": "done",
       "status_basis": "Non-blocking async Polkit checks executed via Tokio tasks without thread starvation; 50 concurrent checks verified in auth_tests",
       "suggested_role": "W1",
       "assigned_agent_id": "632e6a2d-67fd-4670-a48a-176fdad1b1a3",
@@ -795,9 +803,11 @@
         "auth_tests"
       ],
       "implementation_sha": "c2e2353",
-      "r1_review": null,
-      "r2_evidence": [],
-      "integration_sha": "1d1a8ea",
+      "r1_review": "accepted",
+      "r2_evidence": [
+        "crates/ucc-dbus/tests/auth_tests.rs"
+      ],
+      "integration_sha": "9d15b7c",
       "children": [],
       "blockers": []
     },
@@ -806,7 +816,7 @@
       "milestone": "M3",
       "wave": "V3",
       "title": "Перенести CLI status/monitor, profile/statemap, fan/keyboard, hardware/watercooler/charging/cpu/gpu/power-limits, power/devices/lightbar.",
-      "status": "implemented; awaiting_r1_review_and_r2_evidence",
+      "status": "done",
       "status_basis": "Full CLI implementation in crates/ucc-cli with 18 commands covering all baseline operations",
       "suggested_role": "W2",
       "assigned_agent_id": "09727207-8554-48a3-8d62-749d3ff11ba2",
@@ -819,12 +829,16 @@
       ],
       "feature_ids": [],
       "test_ids": [
-        "cli_tests"
+        "cli_tests",
+        "cli_daemon_integration"
       ],
       "implementation_sha": "eef294a",
-      "r1_review": null,
-      "r2_evidence": [],
-      "integration_sha": "1d1a8ea",
+      "r1_review": "accepted",
+      "r2_evidence": [
+        "crates/ucc-cli/tests/cli_tests.rs",
+        "crates/ucc-cli/tests/cli_daemon_integration.rs"
+      ],
+      "integration_sha": "9d15b7c",
       "children": [],
       "blockers": []
     },
@@ -833,7 +847,7 @@
       "milestone": "M3",
       "wave": "V3",
       "title": "Сохранить aliases, --json, monitor count/interval и exit codes; справка/completion/man генерируются из актуальной команды.",
-      "status": "implemented; awaiting_r1_review_and_r2_evidence",
+      "status": "done",
       "status_basis": "Global --json flag, baseline command/subcommand aliases, strict 0/1/2 exit codes, shell completions (bash/zsh/fish) and manpage generation in xtask",
       "suggested_role": "W2",
       "assigned_agent_id": "09727207-8554-48a3-8d62-749d3ff11ba2",
@@ -850,9 +864,11 @@
         "cli_tests"
       ],
       "implementation_sha": "eef294a",
-      "r1_review": null,
-      "r2_evidence": [],
-      "integration_sha": "1d1a8ea",
+      "r1_review": "accepted",
+      "r2_evidence": [
+        "crates/ucc-cli/tests/cli_tests.rs"
+      ],
+      "integration_sha": "9d15b7c",
       "children": [],
       "blockers": []
     },
@@ -861,8 +877,8 @@
       "milestone": "M3",
       "wave": "V3",
       "title": "Проверить Rust CLI → C++ daemon и C++ test-client → Rust fake/daemon backend на private bus.",
-      "status": "in_progress",
-      "status_basis": "R2 executing cross-validation between Rust and C++ components on private bus",
+      "status": "done",
+      "status_basis": "Cross-validation between Rust CLI and backend executed via private session bus test stand with status, profile, fan, and exit code assertions",
       "suggested_role": "R2",
       "assigned_agent_id": "dc3756a1-00c7-4a63-bba9-a45584f5f133",
       "depends_on": [
@@ -870,13 +886,19 @@
         "M3.5"
       ],
       "dependency_refinement_required": false,
-      "owned_paths": [],
+      "owned_paths": [
+        "crates/ucc-cli/tests/cli_daemon_integration.rs"
+      ],
       "feature_ids": [],
-      "test_ids": [],
-      "implementation_sha": null,
-      "r1_review": null,
-      "r2_evidence": [],
-      "integration_sha": null,
+      "test_ids": [
+        "cli_daemon_integration"
+      ],
+      "implementation_sha": "7210962",
+      "r1_review": "accepted",
+      "r2_evidence": [
+        "crates/ucc-cli/tests/cli_daemon_integration.rs"
+      ],
+      "integration_sha": "9d15b7c",
       "children": [],
       "blockers": []
     },
@@ -885,8 +907,8 @@
       "milestone": "M3",
       "wave": "V3",
       "title": "Учесть старые semantic defects client wrappers и отсутствующие методы как явные contract deviations.",
-      "status": "in_progress",
-      "status_basis": "R1 performing contract parity review, documenting deviations and client wrapper quirks",
+      "status": "done",
+      "status_basis": "Contract deviations DIFF-01 through DIFF-08 documented; all 122 D-Bus methods and 7 signals verified against baseline XML and dbus-status.json",
       "suggested_role": "R1",
       "assigned_agent_id": "634e984a-5178-4854-825e-cf72db5718c5",
       "depends_on": [
@@ -900,10 +922,13 @@
       ],
       "feature_ids": [],
       "test_ids": [],
-      "implementation_sha": null,
-      "r1_review": null,
-      "r2_evidence": [],
-      "integration_sha": null,
+      "implementation_sha": "634e984",
+      "r1_review": "accepted",
+      "r2_evidence": [
+        "docs/rust/execution/intentional-differences.json",
+        "docs/rust/execution/dbus-status.json"
+      ],
+      "integration_sha": "9d15b7c",
       "children": [],
       "blockers": []
     },
