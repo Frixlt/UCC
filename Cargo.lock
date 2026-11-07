@@ -976,8 +976,10 @@ version = "0.3.0"
 dependencies = [
  "nix",
  "thiserror",
+ "tokio",
  "tracing",
  "ucc-core",
+ "zbus",
 ]
 
 [[package]]
