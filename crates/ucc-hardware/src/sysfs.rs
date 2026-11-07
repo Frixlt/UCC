@@ -187,26 +187,24 @@ impl SysfsRoot {
         let res = (|| -> io::Result<()> {
             let mut file = OpenOptions::new()
                 .write(true)
-                .truncate(true)
                 .custom_flags(libc::O_NOFOLLOW)
                 .open(&full_path)?;
 
             #[cfg(target_os = "linux")]
             {
                 if let Ok(canon_root) = fs::canonicalize(&self.root_path) {
-                    if let Ok(proc_link) = fs::read_link(format!("/proc/self/fd/{}", file.as_raw_fd())) {
-                        if let Ok(canon_fd) = fs::canonicalize(&proc_link) {
-                            if !canon_fd.starts_with(&canon_root) {
-                                return Err(io::Error::new(
-                                    io::ErrorKind::PermissionDenied,
-                                    "Symlink escape detected via descriptor target",
-                                ));
-                            }
-                        }
+                    let proc_link = fs::read_link(format!("/proc/self/fd/{}", file.as_raw_fd()))?;
+                    let canon_fd = fs::canonicalize(&proc_link)?;
+                    if !canon_fd.starts_with(&canon_root) {
+                        return Err(io::Error::new(
+                            io::ErrorKind::PermissionDenied,
+                            "Symlink escape detected via descriptor target",
+                        ));
                     }
                 }
             }
 
+            let _ = file.set_len(0);
             file.write_all(data.as_bytes())?;
             file.flush()?;
             Ok(())

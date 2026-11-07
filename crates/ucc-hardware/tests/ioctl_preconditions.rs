@@ -161,6 +161,8 @@ fn test_uniwill_fan_speed_preconditions_and_fail_closed() {
 #[test]
 fn test_uniwill_tdp_limits_validation() {
     let mock = MockHardwareIo::new();
+    mock.set_i32_read(requests::R_UW_TDP0_MIN, 45);
+    mock.set_i32_read(requests::R_UW_TDP0_MAX, 115);
 
     // 1. Valid TDP within explicit hardware boundary (45W..115W)
     assert!(set_uniwill_tdp(&mock, 0, 75, Some((45, 115))).is_ok());

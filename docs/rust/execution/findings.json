@@ -557,6 +557,38 @@
       "files": ["crates/ucc-cli/tests/full_audit_cli.rs"],
       "status": "resolved",
       "resolution": "Use async Mutex test serialization and graceful fallback for C++ parity binary in clean checkout."
+    },
+    {
+      "id": "FINDING-RECHECK-E1-01",
+      "priority": "P1",
+      "title": "NVML index order relies on audit environment override in production runtime",
+      "files": ["crates/ucc-hardware/src/nvml.rs"],
+      "status": "resolved",
+      "resolution": "Removed audit env check from runtime nvml.rs. Added direct PCI BDF handle resolution via nvmlDeviceGetHandleByPciBusId_v2 with safe multi-GPU suspended fallback to prevent probing sleeping devices."
+    },
+    {
+      "id": "FINDING-RECHECK-E1-02",
+      "priority": "P1",
+      "title": "SysfsRoot truncates external file before destination verification",
+      "files": ["crates/ucc-hardware/src/sysfs.rs"],
+      "status": "resolved",
+      "resolution": "Opened file without O_TRUNC, strictly verified /proc/self/fd/{fd} descriptor containment within canonical root, and performed truncation only after destination verification."
+    },
+    {
+      "id": "FINDING-RECHECK-E1-03",
+      "priority": "P1",
+      "title": "Caller-supplied TDP range bypasses unreadable hardware driver limits",
+      "files": ["crates/ucc-hardware/src/ioctl.rs"],
+      "status": "resolved",
+      "resolution": "Made driver limits mandatory (read_uniwill_tdp_limits fails closed), intersecting caller limits with physical boundaries."
+    },
+    {
+      "id": "FINDING-RECHECK-E1-04",
+      "priority": "P1",
+      "title": "Concurrent first queries leak NVML initialization reference",
+      "files": ["crates/ucc-hardware/src/nvml.rs"],
+      "status": "resolved",
+      "resolution": "Serialized library initialization in ensure_active_and_initialized with Mutex, ensuring exactly one nvmlInit_v2 and matched nvmlShutdown on Drop."
     }
   ]
 }

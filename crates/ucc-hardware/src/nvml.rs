@@ -5,11 +5,11 @@
 //! is never inadvertently woken from D3cold sleep by background telemetry queries.
 
 use libloading::Library;
-use std::ffi::{c_char, c_uint, c_ulonglong, c_void, CStr};
+use std::ffi::{c_char, c_uint, c_ulonglong, c_void, CStr, CString};
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 use thiserror::Error;
 
 pub const NVML_SUCCESS: c_uint = 0;
@@ -169,6 +169,7 @@ pub struct NvmlTelemetry {
 pub struct NvmlWrapper {
     _lib: Library,
     init_ok: Arc<AtomicBool>,
+    init_lock: Mutex<()>,
     device_count: Arc<AtomicU32>,
     power_guard: NvidiaPowerGuard,
 
@@ -177,6 +178,8 @@ pub struct NvmlWrapper {
     fn_shutdown: unsafe extern "C" fn() -> c_uint,
     fn_device_get_count: unsafe extern "C" fn(*mut c_uint) -> c_uint,
     fn_device_get_handle_by_index: unsafe extern "C" fn(c_uint, *mut *mut c_void) -> c_uint,
+    fn_device_get_handle_by_pci_bus_id:
+        Option<unsafe extern "C" fn(*const c_char, *mut *mut c_void) -> c_uint>,
     fn_device_get_name: unsafe extern "C" fn(*mut c_void, *mut c_char, c_uint) -> c_uint,
     fn_device_get_temperature: unsafe extern "C" fn(*mut c_void, c_uint, *mut c_uint) -> c_uint,
     fn_device_get_power_usage: unsafe extern "C" fn(*mut c_void, *mut c_uint) -> c_uint,
@@ -205,6 +208,13 @@ impl NvmlWrapper {
                 c_uint,
                 *mut *mut c_void,
             ) -> c_uint = *lib.get(b"nvmlDeviceGetHandleByIndex_v2")?;
+            let fn_device_get_handle_by_pci_bus_id: Option<
+                unsafe extern "C" fn(*const c_char, *mut *mut c_void) -> c_uint,
+            > = lib
+                .get(b"nvmlDeviceGetHandleByPciBusId_v2")
+                .or_else(|_| lib.get(b"nvmlDeviceGetHandleByPciBusId"))
+                .ok()
+                .map(|s| *s);
             let fn_device_get_name: unsafe extern "C" fn(
                 *mut c_void,
                 *mut c_char,
@@ -261,12 +271,14 @@ impl NvmlWrapper {
             Ok(Self {
                 _lib: lib,
                 init_ok,
+                init_lock: Mutex::new(()),
                 device_count,
                 power_guard,
                 fn_init,
                 fn_shutdown,
                 fn_device_get_count,
                 fn_device_get_handle_by_index,
+                fn_device_get_handle_by_pci_bus_id,
                 fn_device_get_name,
                 fn_device_get_temperature,
                 fn_device_get_power_usage,
@@ -291,6 +303,12 @@ impl NvmlWrapper {
         } else if !self.power_guard.is_dgpu_awake() {
             return Err(NvmlError::GpuSuspended);
         }
+
+        if self.init_ok.load(Ordering::SeqCst) && self.device_count.load(Ordering::SeqCst) > 0 {
+            return Ok(());
+        }
+
+        let _guard = self.init_lock.lock().unwrap();
 
         if !self.init_ok.load(Ordering::SeqCst) {
             unsafe {
@@ -320,32 +338,64 @@ impl NvmlWrapper {
 
     fn nvml_index_for_sysfs_device(&self, sysfs_idx: u32) -> u32 {
         let count = self.device_count.load(Ordering::SeqCst);
-        if count == 0 {
+        if count <= 1 {
             return sysfs_idx;
         }
-        if std::env::var("UCC_AUDIT_REVERSED_NVML_INDEX").is_ok() {
-            count.saturating_sub(1).saturating_sub(sysfs_idx)
-        } else {
-            sysfs_idx
+        if let Ok(devices) = self.power_guard.find_nvidia_devices() {
+            if devices.len() > 1 {
+                let has_suspended = devices
+                    .iter()
+                    .any(|p| self.power_guard.get_runtime_status(p) == GpuRuntimeStatus::Suspended);
+                if has_suspended {
+                    return count.saturating_sub(1).saturating_sub(sysfs_idx);
+                }
+            }
         }
+        sysfs_idx
     }
 
-    /// Query minimum and maximum power limits in milliwatts
-    pub fn get_power_limit_constraints(&self, index: u32) -> Result<(u32, u32), NvmlError> {
-        self.ensure_active_and_initialized(Some(index))?;
-        if index >= self.device_count.load(Ordering::SeqCst) {
+    fn get_device_handle(&self, sysfs_idx: u32) -> Result<*mut c_void, NvmlError> {
+        if sysfs_idx >= self.device_count.load(Ordering::SeqCst) {
             return Err(NvmlError::NoGpuFound);
         }
 
-        let nvml_idx = self.nvml_index_for_sysfs_device(index);
+        // Primary: resolve NVML handle directly via PCI BDF to respect hardware device identity
+        if let Some(fn_by_pci) = self.fn_device_get_handle_by_pci_bus_id {
+            if let Ok(devices) = self.power_guard.find_nvidia_devices() {
+                if let Some(dev_path) = devices.get(sysfs_idx as usize) {
+                    if let Some(bdf_os) = dev_path.file_name() {
+                        if let Some(bdf_str) = bdf_os.to_str() {
+                            if let Ok(c_bdf) = CString::new(bdf_str) {
+                                let mut handle: *mut c_void = std::ptr::null_mut();
+                                let ret = unsafe { fn_by_pci(c_bdf.as_ptr(), &mut handle) };
+                                if ret == NVML_SUCCESS && !handle.is_null() {
+                                    return Ok(handle);
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
 
+        // Fallback: index-based resolution when BDF matching is unavailable in driver
+        let nvml_idx = self.nvml_index_for_sysfs_device(sysfs_idx);
         unsafe {
             let mut handle: *mut c_void = std::ptr::null_mut();
             let ret = (self.fn_device_get_handle_by_index)(nvml_idx, &mut handle);
             if ret != NVML_SUCCESS {
                 return Err(NvmlError::NvmlCall(ret));
             }
+            Ok(handle)
+        }
+    }
 
+    /// Query minimum and maximum power limits in milliwatts
+    pub fn get_power_limit_constraints(&self, index: u32) -> Result<(u32, u32), NvmlError> {
+        self.ensure_active_and_initialized(Some(index))?;
+        let handle = self.get_device_handle(index)?;
+
+        unsafe {
             let mut min_mw: c_uint = 0;
             let mut max_mw: c_uint = 0;
             let ret = (self.fn_device_get_power_management_limit_constraints)(
@@ -364,19 +414,9 @@ impl NvmlWrapper {
     pub fn get_telemetry(&self, index: u32) -> Result<NvmlTelemetry, NvmlError> {
         // GUARD: check if dGPU is suspended in D3cold before waking it!
         self.ensure_active_and_initialized(Some(index))?;
-        if index >= self.device_count.load(Ordering::SeqCst) {
-            return Err(NvmlError::NoGpuFound);
-        }
-
-        let nvml_idx = self.nvml_index_for_sysfs_device(index);
+        let handle = self.get_device_handle(index)?;
 
         unsafe {
-            let mut handle: *mut c_void = std::ptr::null_mut();
-            let ret = (self.fn_device_get_handle_by_index)(nvml_idx, &mut handle);
-            if ret != NVML_SUCCESS {
-                return Err(NvmlError::NvmlCall(ret));
-            }
-
             // Name
             let mut name_buf = [0 as c_char; 64];
             let _ = (self.fn_device_get_name)(handle, name_buf.as_mut_ptr(), 64);
@@ -419,19 +459,9 @@ impl NvmlWrapper {
     /// Set power limit in milliwatts
     pub fn set_power_limit(&self, index: u32, power_mw: u32) -> Result<(), NvmlError> {
         self.ensure_active_and_initialized(Some(index))?;
-        if index >= self.device_count.load(Ordering::SeqCst) {
-            return Err(NvmlError::NoGpuFound);
-        }
-
-        let nvml_idx = self.nvml_index_for_sysfs_device(index);
+        let handle = self.get_device_handle(index)?;
 
         unsafe {
-            let mut handle: *mut c_void = std::ptr::null_mut();
-            let ret = (self.fn_device_get_handle_by_index)(nvml_idx, &mut handle);
-            if ret != NVML_SUCCESS {
-                return Err(NvmlError::NvmlCall(ret));
-            }
-
             let ret = (self.fn_device_set_power_management_limit)(handle, power_mw);
             if ret != NVML_SUCCESS {
                 return Err(NvmlError::NvmlCall(ret));

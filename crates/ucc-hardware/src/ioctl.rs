@@ -598,14 +598,15 @@ pub fn set_uniwill_tdp(
     if index > 2 {
         return Err(IoctlError::PreconditionFailed("Uniwill TDP index must be 0..=2 (PL1, PL2, PL4)"));
     }
-    let dev_limits = read_uniwill_tdp_limits(hw, index);
-    let (min, max) = match (limits, dev_limits) {
-        (Some(lim), Ok(d_lim)) if d_lim.0 > 0 && d_lim.1 > 0 && d_lim.0 <= d_lim.1 => {
-            (lim.0.max(d_lim.0), lim.1.min(d_lim.1))
-        }
-        (Some(lim), _) => lim,
-        (None, Ok(d_lim)) => d_lim,
-        (None, Err(e)) => return Err(e),
+    let d_lim = read_uniwill_tdp_limits(hw, index)?;
+    if d_lim.0 <= 0 || d_lim.1 <= 0 || d_lim.0 > d_lim.1 {
+        return Err(IoctlError::PreconditionFailed(
+            "Hardware device reported invalid TDP limits",
+        ));
+    }
+    let (min, max) = match limits {
+        Some(lim) => (lim.0.max(d_lim.0), lim.1.min(d_lim.1)),
+        None => d_lim,
     };
     if min <= 0 || max <= 0 || min > max || !(min..=max).contains(&watts) {
         return Err(IoctlError::PreconditionFailed(
