@@ -153,6 +153,74 @@ pub struct ProfileKeyboard {
     pub keyboard_profile_data: String,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(untagged)]
+enum OdmPowerLimitsSerde {
+    Object {
+        #[serde(rename = "tdpValues", default)]
+        tdp_values: Vec<u32>,
+    },
+    Array(Vec<u32>),
+}
+
+fn deserialize_odm_power_limits<'de, D>(deserializer: D) -> Result<Vec<u32>, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    let opt = Option::<OdmPowerLimitsSerde>::deserialize(deserializer)?;
+    match opt {
+        Some(OdmPowerLimitsSerde::Object { tdp_values }) => Ok(tdp_values),
+        Some(OdmPowerLimitsSerde::Array(vals)) => Ok(vals),
+        None => Ok(Vec::new()),
+    }
+}
+
+fn serialize_odm_power_limits<S>(limits: &Vec<u32>, serializer: S) -> Result<S::Ok, S::Error>
+where
+    S: serde::Serializer,
+{
+    use serde::ser::SerializeMap;
+    let mut map = serializer.serialize_map(Some(1))?;
+    map.serialize_entry("tdpValues", limits)?;
+    map.end()
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(untagged)]
+enum OdmProfileSerde {
+    Object {
+        name: String,
+    },
+    String(String),
+}
+
+fn deserialize_odm_profile<'de, D>(deserializer: D) -> Result<Option<String>, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    let opt = Option::<OdmProfileSerde>::deserialize(deserializer)?;
+    match opt {
+        Some(OdmProfileSerde::Object { name }) => Ok(Some(name)),
+        Some(OdmProfileSerde::String(s)) => Ok(Some(s)),
+        None => Ok(None),
+    }
+}
+
+fn serialize_odm_profile<S>(name: &Option<String>, serializer: S) -> Result<S::Ok, S::Error>
+where
+    S: serde::Serializer,
+{
+    use serde::ser::SerializeMap;
+    match name {
+        Some(n) => {
+            let mut map = serializer.serialize_map(Some(1))?;
+            map.serialize_entry("name", n)?;
+            map.end()
+        }
+        None => serializer.serialize_none(),
+    }
+}
+
 /// Complete UCC system performance and hardware configuration profile.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -171,9 +239,21 @@ pub struct UccProfile {
     pub fan: ProfileFanControl,
     #[serde(default)]
     pub keyboard: ProfileKeyboard,
-    #[serde(default, rename = "odmProfileName", skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        rename = "odmProfile",
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_odm_profile",
+        serialize_with = "serialize_odm_profile"
+    )]
     pub odm_profile_name: Option<String>,
-    #[serde(default, rename = "odmPowerLimits", skip_serializing_if = "Vec::is_empty")]
+    #[serde(
+        default,
+        rename = "odmPowerLimits",
+        skip_serializing_if = "Vec::is_empty",
+        deserialize_with = "deserialize_odm_power_limits",
+        serialize_with = "serialize_odm_power_limits"
+    )]
     pub odm_power_limits: Vec<u32>,
     #[serde(default, rename = "nvidiaCTGPOffset", skip_serializing_if = "Option::is_none")]
     pub nvidia_ctgp_offset: Option<i32>,

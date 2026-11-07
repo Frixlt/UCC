@@ -149,6 +149,28 @@ pub fn write_atomic(target_path: impl AsRef<Path>, content: &[u8]) -> Result<(),
     Ok(())
 }
 
+/// Scans `dir` for any orphaned temporary files (`.*.tmp.*`) left from interrupted writes
+/// or crashes, and removes them.
+/// Returns the number of removed temporary files.
+pub fn cleanup_temp_files(dir: impl AsRef<Path>) -> Result<usize, std::io::Error> {
+    let dir = dir.as_ref();
+    if !dir.is_dir() {
+        return Ok(0);
+    }
+    let mut count = 0;
+    for entry in fs::read_dir(dir)? {
+        let entry = entry?;
+        let name = entry.file_name();
+        let name_str = name.to_string_lossy();
+        if name_str.starts_with('.') && name_str.contains(".tmp.") {
+            if fs::remove_file(entry.path()).is_ok() {
+                count += 1;
+            }
+        }
+    }
+    Ok(count)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
