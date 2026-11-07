@@ -10,3 +10,6 @@ ucc-core = { workspace = true }
 ucc-dbus = { workspace = true }
 tokio = { workspace = true }
 thiserror = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+iced = { version = "0.13.1", features = ["canvas", "tokio"] }

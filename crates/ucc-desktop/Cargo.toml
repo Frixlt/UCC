@@ -10,4 +10,8 @@ ucc-core = { workspace = true }
 ucc-dbus = { workspace = true }
 nix = { workspace = true }
 tokio = { workspace = true }
+tracing = { workspace = true }
 thiserror = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+ksni = { version = "0.3.7", features = ["tokio"] }
