@@ -4,19 +4,11 @@ use crate::error::ValidationError;
 use crate::fan::{FanCurve, FanPoint, PumpPoint, PumpVoltage};
 use serde::{Deserialize, Serialize};
 
-const fn default_true() -> bool {
-    true
-}
-
-fn default_fan_profile() -> String {
-    "fan-balanced".to_string()
-}
-
 /// Display resolution and refresh rate settings for a profile.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ProfileDisplay {
-    #[serde(default = "default_hundred")]
+    #[serde(default = "default_brightness")]
     pub brightness: i32,
     #[serde(default)]
     pub use_brightness: bool,
@@ -30,14 +22,6 @@ pub struct ProfileDisplay {
     pub y_resolution: i32,
     #[serde(default)]
     pub use_resolution: bool,
-}
-
-const fn default_hundred() -> i32 {
-    100
-}
-
-const fn default_neg_one() -> i32 {
-    -1
 }
 
 impl Default for ProfileDisplay {
@@ -100,13 +84,13 @@ pub struct ProfileFanControl {
     pub manual_pump_voltage: Option<i32>,
     #[serde(default)]
     pub enable_water_cooler: bool,
-    #[serde(rename = "tableCPU", default, skip_serializing_if = "Vec::is_empty")]
+    #[serde(rename = "tableCPU", default)]
     pub table_cpu: Vec<FanPoint>,
-    #[serde(rename = "tableGPU", default, skip_serializing_if = "Vec::is_empty")]
+    #[serde(rename = "tableGPU", default)]
     pub table_gpu: Vec<FanPoint>,
-    #[serde(rename = "tablePump", default, skip_serializing_if = "Vec::is_empty")]
+    #[serde(rename = "tablePump", default)]
     pub table_pump: Vec<PumpPoint>,
-    #[serde(rename = "tableWaterCoolerFan", default, skip_serializing_if = "Vec::is_empty")]
+    #[serde(rename = "tableWaterCoolerFan", default)]
     pub table_water_cooler_fan: Vec<FanPoint>,
 }
 
@@ -169,81 +153,71 @@ pub struct ProfileKeyboard {
     pub keyboard_profile_data: String,
 }
 
-mod odm_profile_serde {
-    use serde::{Deserialize, Deserializer, Serialize, Serializer};
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(untagged)]
+enum OdmPowerLimitsSerde {
+    Object {
+        #[serde(rename = "tdpValues", default)]
+        tdp_values: Vec<u32>,
+    },
+    Array(Vec<u32>),
+}
 
-    #[derive(Serialize, Deserialize)]
-    struct OdmProfileObj {
-        #[serde(default)]
-        name: Option<String>,
-    }
-
-    #[derive(Serialize, Deserialize)]
-    #[serde(untagged)]
-    enum Helper {
-        Obj(OdmProfileObj),
-        Str(String),
-    }
-
-    pub fn serialize<S>(val: &Option<String>, serializer: S) -> Result<S::Ok, S::Error>
-    where
-        S: Serializer,
-    {
-        match val {
-            Some(s) => OdmProfileObj { name: Some(s.clone()) }.serialize(serializer),
-            None => serializer.serialize_none(),
-        }
-    }
-
-    pub fn deserialize<'de, D>(deserializer: D) -> Result<Option<String>, D::Error>
-    where
-        D: Deserializer<'de>,
-    {
-        let opt: Option<Helper> = Option::deserialize(deserializer)?;
-        Ok(opt.and_then(|h| match h {
-            Helper::Obj(o) => o.name,
-            Helper::Str(s) => Some(s),
-        }))
+fn deserialize_odm_power_limits<'de, D>(deserializer: D) -> Result<Vec<u32>, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    let opt = Option::<OdmPowerLimitsSerde>::deserialize(deserializer)?;
+    match opt {
+        Some(OdmPowerLimitsSerde::Object { tdp_values }) => Ok(tdp_values),
+        Some(OdmPowerLimitsSerde::Array(vals)) => Ok(vals),
+        None => Ok(Vec::new()),
     }
 }
 
-mod odm_power_limits_serde {
-    use serde::{Deserialize, Deserializer, Serialize, Serializer};
+fn serialize_odm_power_limits<S>(limits: &Vec<u32>, serializer: S) -> Result<S::Ok, S::Error>
+where
+    S: serde::Serializer,
+{
+    use serde::ser::SerializeMap;
+    let mut map = serializer.serialize_map(Some(1))?;
+    map.serialize_entry("tdpValues", limits)?;
+    map.end()
+}
 
-    #[derive(Serialize, Deserialize)]
-    struct OdmPowerLimitsObj {
-        #[serde(rename = "tdpValues", default)]
-        tdp_values: Vec<u32>,
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(untagged)]
+enum OdmProfileSerde {
+    Object {
+        name: String,
+    },
+    String(String),
+}
+
+fn deserialize_odm_profile<'de, D>(deserializer: D) -> Result<Option<String>, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    let opt = Option::<OdmProfileSerde>::deserialize(deserializer)?;
+    match opt {
+        Some(OdmProfileSerde::Object { name }) => Ok(Some(name)),
+        Some(OdmProfileSerde::String(s)) => Ok(Some(s)),
+        None => Ok(None),
     }
+}
 
-    #[derive(Serialize, Deserialize)]
-    #[serde(untagged)]
-    enum Helper {
-        Obj(OdmPowerLimitsObj),
-        Arr(Vec<u32>),
-    }
-
-    pub fn serialize<S>(val: &Vec<u32>, serializer: S) -> Result<S::Ok, S::Error>
-    where
-        S: Serializer,
-    {
-        if val.is_empty() {
-            serializer.serialize_none()
-        } else {
-            OdmPowerLimitsObj { tdp_values: val.clone() }.serialize(serializer)
+fn serialize_odm_profile<S>(name: &Option<String>, serializer: S) -> Result<S::Ok, S::Error>
+where
+    S: serde::Serializer,
+{
+    use serde::ser::SerializeMap;
+    match name {
+        Some(n) => {
+            let mut map = serializer.serialize_map(Some(1))?;
+            map.serialize_entry("name", n)?;
+            map.end()
         }
-    }
-
-    pub fn deserialize<'de, D>(deserializer: D) -> Result<Vec<u32>, D::Error>
-    where
-        D: Deserializer<'de>,
-    {
-        let opt: Option<Helper> = Option::deserialize(deserializer)?;
-        Ok(match opt {
-            Some(Helper::Obj(o)) => o.tdp_values,
-            Some(Helper::Arr(a)) => a,
-            None => Vec::new(),
-        })
+        None => serializer.serialize_none(),
     }
 }
 
@@ -265,15 +239,25 @@ pub struct UccProfile {
     pub fan: ProfileFanControl,
     #[serde(default)]
     pub keyboard: ProfileKeyboard,
-    #[serde(default, rename = "odmProfile", with = "odm_profile_serde", skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        rename = "odmProfile",
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_odm_profile",
+        serialize_with = "serialize_odm_profile"
+    )]
     pub odm_profile_name: Option<String>,
-    #[serde(default, rename = "odmPowerLimits", with = "odm_power_limits_serde", skip_serializing_if = "Vec::is_empty")]
+    #[serde(
+        default,
+        rename = "odmPowerLimits",
+        skip_serializing_if = "Vec::is_empty",
+        deserialize_with = "deserialize_odm_power_limits",
+        serialize_with = "serialize_odm_power_limits"
+    )]
     pub odm_power_limits: Vec<u32>,
     #[serde(default, rename = "nvidiaCTGPOffset", skip_serializing_if = "Option::is_none")]
     pub nvidia_ctgp_offset: Option<i32>,
-    #[serde(default, rename = "selectedKeyboardProfile", skip_serializing_if = "Option::is_none")]
-    pub selected_keyboard_profile: Option<String>,
-    #[serde(default, flatten)]
+    #[serde(default)]
     pub charging: ChargingPolicy,
 }
 
@@ -291,7 +275,6 @@ impl UccProfile {
             odm_profile_name: None,
             odm_power_limits: Vec::new(),
             nvidia_ctgp_offset: None,
-            selected_keyboard_profile: None,
             charging: ChargingPolicy::default(),
         }
     }
@@ -309,4 +292,17 @@ impl UccProfile {
         self.charging.validate()?;
         Ok(())
     }
+}
+
+const fn default_brightness() -> i32 {
+    100
+}
+const fn default_neg_one() -> i32 {
+    -1
+}
+const fn default_true() -> bool {
+    true
+}
+fn default_fan_profile() -> String {
+    "fan-balanced".to_string()
 }

@@ -1,4 +1,112 @@
 {
   "schema_version": 1,
-  "findings": []
+  "findings": [
+    {
+      "id": "FINDING-V2-01",
+      "priority": "P0",
+      "title": "Incompatible duplicate domain models between W1 and W2 in ucc-core",
+      "files": [
+        "crates/ucc-core/src/profile.rs",
+        "crates/ucc-core/src/models.rs",
+        "crates/ucc-core/src/lib.rs"
+      ],
+      "trigger": "Merging branches rust/w1 and rust/w2",
+      "expected": "Single authoritative domain model in crates/ucc-core shared across workspace",
+      "actual": "W1 and W2 defined conflicting structs (UccProfile vs Profile, ProfileCpu vs CpuSettings, etc.)",
+      "consequence": "Compilation failure and unresolvable merge conflict upon branch integration",
+      "suggested_direction": "Adopt W1 domain models in ucc-core, remove W2 models.rs, and adapt ucc-config to use W1 types",
+      "status": "resolved",
+      "resolution": "W2 removed duplicate models.rs, merged rust/migration, and ucc-config now cleanly uses ucc-core domain models"
+    },
+    {
+      "id": "FINDING-V2-02",
+      "priority": "P1",
+      "title": "Profile ID and count divergence in defaults.rs (M2.4 violation)",
+      "files": [
+        "crates/ucc-config/src/defaults.rs"
+      ],
+      "trigger": "Loading existing /etc/ucc/settings or querying D-Bus GetDefaultProfilesJSON",
+      "expected": "4 canonical built-in profile IDs preserved exactly: 'Max Energy Save [Built-in]', 'Quiet [Built-in]', 'Office [Built-in]', 'High Performance [Built-in]'",
+      "actual": "W2 created 3 profiles with custom IDs: 'quiet', 'balanced', 'performance', dropping Max Energy Save",
+      "consequence": "Existing settings referencing canonical IDs fail to map, D-Bus clients break",
+      "suggested_direction": "Restore all 4 canonical profile IDs in defaults.rs matching C++ DefaultProfileIDs",
+      "status": "resolved",
+      "resolution": "Restored all 4 canonical profile IDs in defaults.rs, alias resolution added for backward compatibility"
+    },
+    {
+      "id": "FINDING-V2-03",
+      "priority": "P1",
+      "title": "Wire JSON key casing mismatch on uppercase acronyms",
+      "files": [
+        "crates/ucc-core/src/profile.rs",
+        "crates/ucc-core/src/models.rs"
+      ],
+      "trigger": "Serializing/deserializing profile fan curves with naive camelCase",
+      "expected": "Wire JSON keys retain exact casing: tableCPU, tableGPU, autoControlWC",
+      "actual": "Default camelCase serializes as tableCpu, tableGpu, autoControlWc",
+      "consequence": "Silent data drop of fan curve tables when communicating with legacy GUI/daemon",
+      "suggested_direction": "Explicit #[serde(rename = '...')] on tableCPU, tableGPU, autoControlWC",
+      "status": "resolved",
+      "resolution": "Added explicit serde rename attributes for tableCPU, tableGPU, autoControlWC, odmPowerLimits, nvidiaCTGPOffset"
+    },
+    {
+      "id": "FINDING-V2-04",
+      "priority": "P1",
+      "title": "Pump table step index vs discrete PumpVoltage wire code confusion",
+      "files": [
+        "crates/ucc-core/src/fan.rs",
+        "crates/ucc-hardware/src/cooler.rs"
+      ],
+      "trigger": "Passing pump curve speed value directly as voltage code",
+      "expected": "Table speed (0..4) translated via pumpSpeedToVoltage mapping (0=Off, 1=V7, 2=V8, 3=V11, 4=V12)",
+      "actual": "Raw index 1 represents 12V which is strictly forbidden on LCT coolers in production",
+      "consequence": "Hardware safety violation if curve index is sent directly to ioctl/UART",
+      "suggested_direction": "Use W1 pump_speed_to_voltage translation function consistently across config and hardware",
+      "status": "resolved",
+      "resolution": "Implemented bidirectional pump_speed_to_voltage and voltage_to_pump_speed translators in ucc-core::fan"
+    },
+    {
+      "id": "FINDING-V2-05",
+      "priority": "P2",
+      "title": "Non-existent C++ conceptual file paths in task seed references",
+      "files": [
+        "docs/rust/GEMINI_START_HERE.md",
+        "docs/rust/execution/backlog.json"
+      ],
+      "trigger": "Agents navigating to referenced C++ paths",
+      "expected": "Direct references to real repository files",
+      "actual": "References point to non-existent uccd/src/config/ProfileState.h and Config.h",
+      "consequence": "Agent confusion and file-not-found errors",
+      "suggested_direction": "Map references to uccd/inc/TccSettings.hpp, PowerPolicy.hpp, SettingsManager.hpp",
+      "status": "open"
+    },
+    {
+      "id": "FINDING-V2-06",
+      "priority": "P2",
+      "title": "Personal machine profile IDs in generic test fixture settings.json",
+      "files": [
+        "artifacts/rust-migration/fixtures/settings.json"
+      ],
+      "trigger": "Running tests expecting pristine generic settings defaults",
+      "expected": "Generic settings with empty stateMap (per TccSettings.hpp:72)",
+      "actual": "settings.json duplicates personal-import-settings.json with frixit-* IDs and frixit-mechrevo layout",
+      "consequence": "Test confusion between pristine defaults and personal migration fixtures",
+      "suggested_direction": "Keep personal IDs in personal-import-settings.json, make settings.json pristine",
+      "status": "open"
+    },
+    {
+      "id": "FINDING-V2-07",
+      "priority": "P3",
+      "title": "Missing explicit feature_id tags on methods in dbus-status.json",
+      "files": [
+        "docs/rust/execution/dbus-status.json"
+      ],
+      "trigger": "Automated cross-checking of D-Bus methods to F01-F44 matrix",
+      "expected": "Each method tagged with corresponding feature_id (F01..F43)",
+      "actual": "122 methods present without feature_id annotations",
+      "consequence": "Requires manual cross-correlation during audit",
+      "suggested_direction": "Enrich dbus-status.json with feature_id mappings from parity reviewer report",
+      "status": "open"
+    }
+  ]
 }

@@ -107,9 +107,13 @@ impl ConfigManager {
     }
 
     /// Loads settings from disk or returns defaults if no configuration file exists.
+    /// If the configuration file is corrupted, attempts to recover from the `.bak` backup file.
     pub fn load(&self) -> Result<UccSettings, ConfigError> {
         match self.resolve_read_path() {
-            Some(path) => Self::load_from_path(&path),
+            Some(path) => {
+                let (settings, _recovered) = Self::load_with_recovery(&path)?;
+                Ok(settings)
+            }
             None => Ok(create_default_settings()),
         }
     }
@@ -118,6 +122,42 @@ impl ConfigManager {
     pub fn load_from_path(path: &Path) -> Result<UccSettings, ConfigError> {
         let content = fs::read_to_string(path)?;
         let settings = UccSettings::from_json(&content)?;
+        Ok(settings)
+    }
+
+    /// Loads settings from `path`. If `path` is corrupted (syntax error, truncated write,
+    /// invalid types) or unreadable, attempts recovery by reading from `<path>.bak`.
+    /// Returns `Ok((settings, was_recovered))` where `was_recovered == true` indicates that
+    /// the configuration was successfully restored from `.bak`.
+    pub fn load_with_recovery(path: &Path) -> Result<(UccSettings, bool), ConfigError> {
+        match Self::load_from_path(path) {
+            Ok(settings) => Ok((settings, false)),
+            Err(primary_err) => {
+                let bak_path = PathBuf::from(format!("{}.bak", path.display()));
+                if bak_path.exists() {
+                    match Self::load_from_path(&bak_path) {
+                        Ok(settings) => Ok((settings, true)),
+                        Err(_) => Err(primary_err),
+                    }
+                } else {
+                    Err(primary_err)
+                }
+            }
+        }
+    }
+
+    /// Recovers settings from `<path>.bak` and writes them back to `path` atomically.
+    pub fn restore_from_backup(path: &Path) -> Result<UccSettings, ConfigError> {
+        let bak_path = PathBuf::from(format!("{}.bak", path.display()));
+        if !bak_path.exists() {
+            return Err(ConfigError::Io(std::io::Error::new(
+                std::io::ErrorKind::NotFound,
+                format!("Backup file {} does not exist", bak_path.display()),
+            )));
+        }
+        let settings = Self::load_from_path(&bak_path)?;
+        let json = settings.to_json_pretty()?;
+        write_atomic(path, json.as_bytes())?;
         Ok(settings)
     }
 

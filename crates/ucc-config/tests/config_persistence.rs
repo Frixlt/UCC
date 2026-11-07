@@ -12,9 +12,13 @@ use ucc_config::{
 static ENV_LOCK: Mutex<()> = Mutex::new(());
 
 fn get_fixture_path(name: &str) -> PathBuf {
-    Path::new(env!("CARGO_MANIFEST_DIR"))
-        .join("../../artifacts/rust-migration/fixtures")
-        .join(name)
+    for prefix in &["../../artifacts/rust-migration/fixtures", "../../../../artifacts/rust-migration/fixtures"] {
+        let p = Path::new(env!("CARGO_MANIFEST_DIR")).join(prefix).join(name);
+        if p.exists() {
+            return p;
+        }
+    }
+    Path::new("/home/frixit/Рабочий стол/fork control center/UCC-Revorked/artifacts/rust-migration/fixtures").join(name)
 }
 
 fn create_unique_temp_dir(prefix: &str) -> PathBuf {
