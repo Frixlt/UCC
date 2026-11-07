@@ -110,14 +110,23 @@ impl CpuLimits {
 
 /// CPU settings as configured within a UCC system profile.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Default)]
+#[serde(rename_all = "camelCase")]
 pub struct ProfileCpu {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub online_cores: Option<u32>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub enabled_cores: Option<Vec<u32>>,
+    #[serde(rename = "scalingMinFrequency", default, skip_serializing_if = "Option::is_none")]
     pub min_freq_khz: Option<u32>,
+    #[serde(rename = "scalingMaxFrequency", default, skip_serializing_if = "Option::is_none")]
     pub max_freq_khz: Option<u32>,
+    #[serde(default)]
     pub governor: String,
+    #[serde(default)]
     pub energy_performance_preference: String,
+    #[serde(rename = "noTurbo", default)]
     pub no_turbo: bool,
+    #[serde(rename = "hwpDynamicBoost", default)]
     pub hwp_dynamic_boost: bool,
 }
 

@@ -178,21 +178,44 @@ impl PumpPoint {
     }
 }
 
+/// Translates a tablePump discrete speed step index (0..4) into the corresponding `PumpVoltage`.
+/// Matching C++ `FanProfile.hpp`:
+/// - 0 -> `PumpVoltage::Off` (hardware code 4)
+/// - 1 -> `PumpVoltage::V7` (hardware code 2)
+/// - 2 -> `PumpVoltage::V8` (hardware code 3)
+/// - 3 -> `PumpVoltage::V11` (hardware code 0)
+/// - 4 -> `PumpVoltage::V12` (hardware code 1)
+pub fn pump_speed_to_voltage(speed_idx: u8) -> Result<PumpVoltage, ValidationError> {
+    match speed_idx {
+        0 => Ok(PumpVoltage::Off),
+        1 => Ok(PumpVoltage::V7),
+        2 => Ok(PumpVoltage::V8),
+        3 => Ok(PumpVoltage::V11),
+        4 => Ok(PumpVoltage::V12),
+        other => Err(ValidationError::InvalidPumpSpeedLevel(other)),
+    }
+}
+
+/// Translates a `PumpVoltage` to the tablePump discrete speed step index (0..4).
+pub const fn voltage_to_pump_speed(voltage: PumpVoltage) -> u8 {
+    match voltage {
+        PumpVoltage::Off => 0,
+        PumpVoltage::V7 => 1,
+        PumpVoltage::V8 => 2,
+        PumpVoltage::V11 => 3,
+        PumpVoltage::V12 => 4,
+    }
+}
+
 /// Step-wise (floor) lookup for pump speed based on temperature, matching C++ `FanProfile::getPumpSpeedForTemp`.
 pub fn get_pump_speed_for_temp(table: &[PumpPoint], temp: i32) -> PumpVoltage {
-    const PUMP_SPEED_TO_VOLTAGE: [PumpVoltage; 5] = [
-        PumpVoltage::Off,
-        PumpVoltage::V7,
-        PumpVoltage::V8,
-        PumpVoltage::V11,
-        PumpVoltage::V12,
-    ];
-
     let mut result = PumpVoltage::Off;
     for entry in table {
         if temp >= entry.temp {
-            let idx = (entry.speed as usize).min(4);
-            result = PUMP_SPEED_TO_VOLTAGE[idx];
+            let speed_clamped = entry.speed.min(4);
+            if let Ok(voltage) = pump_speed_to_voltage(speed_clamped) {
+                result = voltage;
+            }
         } else {
             break;
         }
@@ -202,12 +225,17 @@ pub fn get_pump_speed_for_temp(table: &[PumpPoint], temp: i32) -> PumpVoltage {
 
 /// Full fan profile containing CPU, GPU, pump, and water cooler fan curves.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Default)]
+#[serde(rename_all = "camelCase")]
 pub struct FanProfile {
     pub id: String,
     pub name: String,
+    #[serde(rename = "tableCPU", default, skip_serializing_if = "Vec::is_empty")]
     pub table_cpu: Vec<FanPoint>,
+    #[serde(rename = "tableGPU", default, skip_serializing_if = "Vec::is_empty")]
     pub table_gpu: Vec<FanPoint>,
+    #[serde(rename = "tablePump", default, skip_serializing_if = "Vec::is_empty")]
     pub table_pump: Vec<PumpPoint>,
+    #[serde(rename = "tableWaterCoolerFan", default, skip_serializing_if = "Vec::is_empty")]
     pub table_water_cooler_fan: Vec<FanPoint>,
 }
 
