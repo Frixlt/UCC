@@ -937,19 +937,26 @@
       "milestone": "M4",
       "wave": "V4",
       "title": "Ввести traits HardwareIo, Sysfs, ProcessRunner, Clock, GpuBackend и тестовые реализации с write journal.",
-      "status": "planned",
-      "status_basis": "No Rust implementation or test result is claimed.",
-      "suggested_role": null,
-      "assigned_agent_id": null,
+      "status": "done",
+      "status_basis": "Core hardware abstraction traits (HardwareIo, Sysfs, ProcessRunner, Clock, GpuBackend) and mock implementations with write journal implemented and verified by 5 unit/integration tests in crates/ucc-hardware/tests/hardware_traits.rs",
+      "suggested_role": "W1",
+      "assigned_agent_id": "632e6a2d-67fd-4670-a48a-176fdad1b1a3",
       "depends_on": [],
-      "dependency_refinement_required": true,
-      "owned_paths": [],
+      "dependency_refinement_required": false,
+      "owned_paths": [
+        "crates/ucc-hardware/src/traits.rs",
+        "crates/ucc-hardware/tests/hardware_traits.rs"
+      ],
       "feature_ids": [],
-      "test_ids": [],
-      "implementation_sha": null,
-      "r1_review": null,
-      "r2_evidence": [],
-      "integration_sha": null,
+      "test_ids": [
+        "hardware_traits"
+      ],
+      "implementation_sha": "799f07c",
+      "r1_review": "accepted",
+      "r2_evidence": [
+        "crates/ucc-hardware/tests/hardware_traits.rs"
+      ],
+      "integration_sha": "ef4ddba",
       "children": [],
       "blockers": []
     },
@@ -958,19 +965,26 @@
       "milestone": "M4",
       "wave": "V4",
       "title": "Перенести Clevo/Uniwill detection, `/dev/tuxedo_io`, descriptors, capabilities и exact DMI quirks.",
-      "status": "planned",
-      "status_basis": "No Rust implementation or test result is claimed.",
-      "suggested_role": null,
-      "assigned_agent_id": null,
+      "status": "done",
+      "status_basis": "Vendor detection via driver capabilities (R_HWCHECK_CL/R_HWCHECK_UW), strict 4-tuple Mechrevo DMI quirks, supported SKU whitelist, Aquaris water cooler check, and cTGP/HWP hiding implemented and verified in crates/ucc-hardware/tests/vendor_detection.rs",
+      "suggested_role": "W1",
+      "assigned_agent_id": "632e6a2d-67fd-4670-a48a-176fdad1b1a3",
       "depends_on": [],
-      "dependency_refinement_required": true,
-      "owned_paths": [],
+      "dependency_refinement_required": false,
+      "owned_paths": [
+        "crates/ucc-hardware/src/detection.rs",
+        "crates/ucc-hardware/tests/vendor_detection.rs"
+      ],
       "feature_ids": [],
-      "test_ids": [],
-      "implementation_sha": null,
-      "r1_review": null,
-      "r2_evidence": [],
-      "integration_sha": null,
+      "test_ids": [
+        "vendor_detection"
+      ],
+      "implementation_sha": "799f07c",
+      "r1_review": "accepted",
+      "r2_evidence": [
+        "crates/ucc-hardware/tests/vendor_detection.rs"
+      ],
+      "integration_sha": "ef4ddba",
       "children": [],
       "blockers": []
     },
@@ -979,19 +993,27 @@
       "milestone": "M4",
       "wave": "V4",
       "title": "Реализовать ioctl запросы с точным encoding, включая существующее использование pointer-sized `_IOR/_IOW`, не заменяя его автоматически `size_of::<i32>()`.",
-      "status": "planned",
-      "status_basis": "No Rust implementation or test result is claimed.",
-      "suggested_role": null,
-      "assigned_agent_id": null,
+      "status": "done",
+      "status_basis": "Exact 8-byte pointer-sized ioctl encoding verified against C++ driver ABI; safe wrappers with bounds checks, fan index bounds, TDP limits, fail-closed handling implemented and verified in crates/ucc-hardware/tests/ioctl_preconditions.rs and ioctl_abi.rs",
+      "suggested_role": "W1",
+      "assigned_agent_id": "632e6a2d-67fd-4670-a48a-176fdad1b1a3",
       "depends_on": [],
-      "dependency_refinement_required": true,
-      "owned_paths": [],
+      "dependency_refinement_required": false,
+      "owned_paths": [
+        "crates/ucc-hardware/src/ioctl.rs",
+        "crates/ucc-hardware/tests/ioctl_preconditions.rs"
+      ],
       "feature_ids": [],
-      "test_ids": [],
-      "implementation_sha": null,
-      "r1_review": null,
-      "r2_evidence": [],
-      "integration_sha": null,
+      "test_ids": [
+        "ioctl_preconditions",
+        "ioctl_abi"
+      ],
+      "implementation_sha": "799f07c",
+      "r1_review": "accepted",
+      "r2_evidence": [
+        "crates/ucc-hardware/tests/ioctl_preconditions.rs"
+      ],
+      "integration_sha": "ef4ddba",
       "children": [],
       "blockers": []
     },
@@ -1000,19 +1022,27 @@
       "milestone": "M4",
       "wave": "V4",
       "title": "Перенести CPU discovery, sparse topology, CPUID affinity guard, selection и enable-before-disable.",
-      "status": "planned",
-      "status_basis": "No Rust implementation or test result is claimed.",
-      "suggested_role": null,
-      "assigned_agent_id": null,
+      "status": "done",
+      "status_basis": "CPU topology discovery, sparse core numbering, offline core protection, CPUID affinity guard, and enable-before-disable scheduling implemented and verified by 7 integration tests in crates/ucc-hardware/tests/cpu_topology_and_control.rs",
+      "suggested_role": "W2",
+      "assigned_agent_id": "09727207-8554-48a3-8d62-749d3ff11ba2",
       "depends_on": [],
-      "dependency_refinement_required": true,
-      "owned_paths": [],
+      "dependency_refinement_required": false,
+      "owned_paths": [
+        "crates/ucc-hardware/src/cpu/topology.rs",
+        "crates/ucc-hardware/src/cpu/controller.rs",
+        "crates/ucc-hardware/tests/cpu_topology_and_control.rs"
+      ],
       "feature_ids": [],
-      "test_ids": [],
-      "implementation_sha": null,
-      "r1_review": null,
-      "r2_evidence": [],
-      "integration_sha": null,
+      "test_ids": [
+        "cpu_topology_and_control"
+      ],
+      "implementation_sha": "77425f9",
+      "r1_review": "accepted",
+      "r2_evidence": [
+        "crates/ucc-hardware/tests/cpu_topology_and_control.rs"
+      ],
+      "integration_sha": "ef4ddba",
       "children": [],
       "blockers": []
     },
@@ -1021,19 +1051,26 @@
       "milestone": "M4",
       "wave": "V4",
       "title": "Перенести governor/EPP/min-max/turbo/HWP, defaults/reapply/restore и ошибки записи.",
-      "status": "planned",
-      "status_basis": "No Rust implementation or test result is claimed.",
-      "suggested_role": null,
-      "assigned_agent_id": null,
+      "status": "done",
+      "status_basis": "CpuWorker lifecycle, scaling drivers (intel_pstate, amd-pstate, acpi-cpufreq), EPP quirks, periodic reapply on external override, and clean shutdown restoration implemented and verified in crates/ucc-hardware/tests/cpu_topology_and_control.rs",
+      "suggested_role": "W2",
+      "assigned_agent_id": "09727207-8554-48a3-8d62-749d3ff11ba2",
       "depends_on": [],
-      "dependency_refinement_required": true,
-      "owned_paths": [],
+      "dependency_refinement_required": false,
+      "owned_paths": [
+        "crates/ucc-hardware/src/cpu/worker.rs",
+        "crates/ucc-hardware/tests/cpu_topology_and_control.rs"
+      ],
       "feature_ids": [],
-      "test_ids": [],
-      "implementation_sha": null,
-      "r1_review": null,
-      "r2_evidence": [],
-      "integration_sha": null,
+      "test_ids": [
+        "cpu_topology_and_control"
+      ],
+      "implementation_sha": "77425f9",
+      "r1_review": "accepted",
+      "r2_evidence": [
+        "crates/ucc-hardware/tests/cpu_topology_and_control.rs"
+      ],
+      "integration_sha": "ef4ddba",
       "children": [],
       "blockers": []
     },
@@ -1042,19 +1079,27 @@
       "milestone": "M4",
       "wave": "V4",
       "title": "Перенести devices scan/merge, whitelist paths/values, отсутствующие devices и независимые три колонки.",
-      "status": "planned",
-      "status_basis": "No Rust implementation or test result is claimed.",
-      "suggested_role": null,
-      "assigned_agent_id": null,
+      "status": "done",
+      "status_basis": "Device scanner with 3 independent power columns (ac_val, type_c_val, bat_val), whitelist regex validation for PCI/USB/WiFi/service/sys, path traversal prevention, and disconnected device preservation implemented in crates/ucc-hardware/tests/power_devices_and_tunables.rs",
+      "suggested_role": "W2",
+      "assigned_agent_id": "09727207-8554-48a3-8d62-749d3ff11ba2",
       "depends_on": [],
-      "dependency_refinement_required": true,
-      "owned_paths": [],
+      "dependency_refinement_required": false,
+      "owned_paths": [
+        "crates/ucc-hardware/src/devices/whitelist.rs",
+        "crates/ucc-hardware/src/devices/controller.rs",
+        "crates/ucc-hardware/tests/power_devices_and_tunables.rs"
+      ],
       "feature_ids": [],
-      "test_ids": [],
-      "implementation_sha": null,
-      "r1_review": null,
-      "r2_evidence": [],
-      "integration_sha": null,
+      "test_ids": [
+        "power_devices_and_tunables"
+      ],
+      "implementation_sha": "77425f9",
+      "r1_review": "accepted",
+      "r2_evidence": [
+        "crates/ucc-hardware/tests/power_devices_and_tunables.rs"
+      ],
+      "integration_sha": "ef4ddba",
       "children": [],
       "blockers": []
     },
@@ -1063,19 +1108,26 @@
       "milestone": "M4",
       "wave": "V4",
       "title": "Перенести ASPM/Wi-Fi/system tunables/nvidia-powerd/persistence ordering без shell interpolation.",
-      "status": "planned",
-      "status_basis": "No Rust implementation or test result is claimed.",
-      "suggested_role": null,
-      "assigned_agent_id": null,
+      "status": "done",
+      "status_basis": "Zero-shell-interpolation process runner execution, PCIe ASPM policy control, NVIDIA Power Guard & Blackwell keep-awake guard, and persistence mode ordering implemented and verified in crates/ucc-hardware/tests/power_devices_and_tunables.rs",
+      "suggested_role": "W2",
+      "assigned_agent_id": "09727207-8554-48a3-8d62-749d3ff11ba2",
       "depends_on": [],
-      "dependency_refinement_required": true,
-      "owned_paths": [],
+      "dependency_refinement_required": false,
+      "owned_paths": [
+        "crates/ucc-hardware/src/devices/controller.rs",
+        "crates/ucc-hardware/tests/power_devices_and_tunables.rs"
+      ],
       "feature_ids": [],
-      "test_ids": [],
-      "implementation_sha": null,
-      "r1_review": null,
-      "r2_evidence": [],
-      "integration_sha": null,
+      "test_ids": [
+        "power_devices_and_tunables"
+      ],
+      "implementation_sha": "77425f9",
+      "r1_review": "accepted",
+      "r2_evidence": [
+        "crates/ucc-hardware/tests/power_devices_and_tunables.rs"
+      ],
+      "integration_sha": "ef4ddba",
       "children": [],
       "blockers": []
     },

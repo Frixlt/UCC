@@ -3,9 +3,9 @@
   "objective": "Complete Frixit Control Center Rust migration",
   "baseline_sha": "45921b0b7021448a81575a840b2b77d93da8b298",
   "integration_branch": "rust/migration",
-  "integration_base_sha": "9d15b7c",
+  "integration_base_sha": "ef4ddba",
   "wave": "V4",
-  "status": "in_progress",
+  "status": "wave_v4_completed; ready_for_v5",
   "execution_mode": "concurrent_subagents_2_plus_2",
   "execution_mode_note": "4 autonomous subagents active: W1, W2, R1, R2 running concurrently in dedicated worktrees",
   "verification_mode": "independent_peer_review",
@@ -13,7 +13,7 @@
   "roles": {
     "W1": {"role": "rust_backend", "worktree": ".worktrees/w1", "branch": "rust/w1", "current_ticket": "M4.1/M4.2/M4.3", "conversation_id": "632e6a2d-67fd-4670-a48a-176fdad1b1a3"},
     "W2": {"role": "rust_frontend", "worktree": ".worktrees/w2", "branch": "rust/w2", "current_ticket": "M4.4/M4.5/M4.6/M4.7", "conversation_id": "09727207-8554-48a3-8d62-749d3ff11ba2"},
-    "R1": {"role": "parity_reviewer", "worktree": null, "branch": null, "current_ticket": "M4.8-parity-audit", "conversation_id": "634e984a-5178-4854-825e-cf72db5718c5"},
+    "R1": {"role": "parity_reviewer", "worktree": null, "branch": null, "current_ticket": "M4.8-parity-audit", "conversation_id": "3ad6bb52-962c-403d-b103-37ec3fe14949"},
     "R2": {"role": "test_engineer", "worktree": ".worktrees/r2", "branch": "rust/r2-tests", "current_ticket": "M4.8-test-matrix", "conversation_id": "dc3756a1-00c7-4a63-bba9-a45584f5f133"}
   },
   "open_decisions": [
