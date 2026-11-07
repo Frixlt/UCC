@@ -30,3 +30,6 @@ __pycache__/
 /artifacts/
 /.superpowers/
 /.worktrees/
+/audit-cpp-build/
+/fake-nvml/
+rust-dbus-*.xml

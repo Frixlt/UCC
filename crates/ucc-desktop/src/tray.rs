@@ -98,8 +98,9 @@ impl Tray for UccTray {
             MenuItem::RadioGroup(RadioGroup {
                 selected: current_profile,
                 select: Box::new(move |this: &mut Self, idx: usize| {
-                    this.active_profile.store(idx, Ordering::SeqCst);
-                    let _ = profile_tx.send(TrayAction::SelectProfile(idx));
+                    if profile_tx.send(TrayAction::SelectProfile(idx)).is_ok() {
+                        this.active_profile.store(idx, Ordering::SeqCst);
+                    }
                 }),
                 options: profiles
                     .into_iter()
@@ -117,9 +118,10 @@ impl Tray for UccTray {
                     "Fan: Max (click for Auto)".into()
                 },
                 activate: Box::new(move |this: &mut Self| {
-                    let new_val = !this.fan_auto.load(Ordering::SeqCst);
-                    this.fan_auto.store(new_val, Ordering::SeqCst);
-                    let _ = fan_tx.send(TrayAction::ToggleFanAuto);
+                    if fan_tx.send(TrayAction::ToggleFanAuto).is_ok() {
+                        let new_val = !this.fan_auto.load(Ordering::SeqCst);
+                        this.fan_auto.store(new_val, Ordering::SeqCst);
+                    }
                 }),
                 ..Default::default()
             }),

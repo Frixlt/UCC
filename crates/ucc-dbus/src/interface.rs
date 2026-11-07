@@ -936,21 +936,23 @@ macro_rules! impl_uccd_methods {
             }
 
             #[zbus(name = "SetFnLockStatus")]
-            pub async fn set_fn_lock_status(&self, #[zbus(header)] header: zbus::message::Header<'_>, #[zbus(connection)] conn: &zbus::Connection, status: bool) {
+            pub async fn set_fn_lock_status(&self, #[zbus(header)] header: zbus::message::Header<'_>, #[zbus(connection)] conn: &zbus::Connection, status: bool) -> zbus::fdo::Result<()> {
                 let sender = header.sender().map(|s| s.as_str());
                 if !self.authorizer.check_auth(conn, sender, AuthAction::Control).await {
-                    return;
+                    return Err(zbus::fdo::Error::AccessDenied("Polkit authorization denied".into()));
                 }
                 self.backend.set_fn_lock_status(status);
+                Ok(())
             }
 
             #[zbus(name = "SetSensorDataCollectionStatus")]
-            pub async fn set_sensor_data_collection_status(&self, #[zbus(header)] header: zbus::message::Header<'_>, #[zbus(connection)] conn: &zbus::Connection, status: bool) {
+            pub async fn set_sensor_data_collection_status(&self, #[zbus(header)] header: zbus::message::Header<'_>, #[zbus(connection)] conn: &zbus::Connection, status: bool) -> zbus::fdo::Result<()> {
                 let sender = header.sender().map(|s| s.as_str());
                 if !self.authorizer.check_auth(conn, sender, AuthAction::Control).await {
-                    return;
+                    return Err(zbus::fdo::Error::AccessDenied("Polkit authorization denied".into()));
                 }
                 self.backend.set_sensor_data_collection_status(status);
+                Ok(())
             }
 
             #[zbus(name = "GetSensorDataCollectionStatus")]
@@ -963,12 +965,13 @@ macro_rules! impl_uccd_methods {
             }
 
             #[zbus(name = "SetDGpuD0Metrics")]
-            pub async fn set_dgpu_d0_metrics(&self, #[zbus(header)] header: zbus::message::Header<'_>, #[zbus(connection)] conn: &zbus::Connection, status: bool) {
+            pub async fn set_dgpu_d0_metrics(&self, #[zbus(header)] header: zbus::message::Header<'_>, #[zbus(connection)] conn: &zbus::Connection, status: bool) -> zbus::fdo::Result<()> {
                 let sender = header.sender().map(|s| s.as_str());
                 if !self.authorizer.check_auth(conn, sender, AuthAction::Control).await {
-                    return;
+                    return Err(zbus::fdo::Error::AccessDenied("Polkit authorization denied".into()));
                 }
                 self.backend.set_dgpu_d0_metrics(status);
+                Ok(())
             }
 
             #[zbus(name = "GetNVIDIAPowerCTRLDefaultPowerLimit")]
@@ -1206,12 +1209,13 @@ macro_rules! impl_uccd_methods {
             }
 
             #[zbus(name = "SetMonitorHistoryHorizon")]
-            pub async fn set_monitor_history_horizon(&self, #[zbus(header)] header: zbus::message::Header<'_>, #[zbus(connection)] conn: &zbus::Connection, seconds: i32) {
+            pub async fn set_monitor_history_horizon(&self, #[zbus(header)] header: zbus::message::Header<'_>, #[zbus(connection)] conn: &zbus::Connection, seconds: i32) -> zbus::fdo::Result<()> {
                 let sender = header.sender().map(|s| s.as_str());
                 if !self.authorizer.check_auth(conn, sender, AuthAction::Control).await {
-                    return;
+                    return Err(zbus::fdo::Error::AccessDenied("Polkit authorization denied".into()));
                 }
                 self.backend.set_monitor_history_horizon(seconds);
+                Ok(())
             }
 
             #[zbus(name = "GetMonitorHistoryHorizon")]

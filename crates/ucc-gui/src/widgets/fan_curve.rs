@@ -83,6 +83,13 @@ impl canvas::Program<FanCurveMessage> for FanCurveCanvas {
         bounds: Rectangle,
         cursor: Cursor,
     ) -> (canvas::event::Status, Option<FanCurveMessage>) {
+        if let canvas::Event::Mouse(mouse::Event::ButtonReleased(mouse::Button::Left)) = event {
+            if state.dragged_idx.is_some() {
+                state.dragged_idx = None;
+                return (canvas::event::Status::Captured, None);
+            }
+        }
+
         let cursor_pos = match cursor.position_in(bounds) {
             Some(pos) => Point {
                 x: pos.x + bounds.x,
@@ -115,7 +122,15 @@ impl canvas::Program<FanCurveMessage> for FanCurveCanvas {
             }
             canvas::Event::Mouse(mouse::Event::CursorMoved { .. }) => {
                 if let Some(idx) = state.dragged_idx {
-                    let (new_temp, mut new_speed) = Self::screen_to_curve(cursor_pos, bounds);
+                    let (mut new_temp, mut new_speed) = Self::screen_to_curve(cursor_pos, bounds);
+
+                    // Temperature monotonic constraint: cannot cross neighbor temperatures
+                    if idx > 0 {
+                        new_temp = new_temp.max(self.points[idx - 1].temp_c + 1.0);
+                    }
+                    if idx + 1 < self.points.len() {
+                        new_temp = new_temp.min(self.points[idx + 1].temp_c - 1.0);
+                    }
 
                     // Monotonic constraint: speed cannot be less than previous or greater than next
                     if idx > 0 {

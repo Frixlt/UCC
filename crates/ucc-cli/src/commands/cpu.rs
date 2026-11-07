@@ -66,10 +66,9 @@ pub async fn run_cpu(client: &CliClient, action: &Option<CpuAction>, json_mode: 
             Ok(())
         }
         Some(CpuAction::Governor { name }) => {
-            if let Some(ref gov) = name {
-                // If setting governor, send request or apply
-                let res = client.proxy().set_manual_power_mode(gov).await.unwrap_or(false);
-                ok(res)
+            if let Some(ref _gov) = name {
+                eprintln!("Error: Setting CPU governor directly via D-Bus is unsupported; configure via profile");
+                Err(1)
             } else {
                 let govs_raw = client.proxy().get_available_governors().await.map_err(|_| 1)?;
                 let val: Value = serde_json::from_str(&govs_raw).unwrap_or(Value::Array(vec![]));
@@ -84,8 +83,8 @@ pub async fn run_cpu(client: &CliClient, action: &Option<CpuAction>, json_mode: 
         }
         Some(CpuAction::Epp { preference }) => {
             if let Some(ref _epp) = preference {
-                // EPP setting
-                ok(true)
+                eprintln!("Error: Setting CPU EPP directly via D-Bus is unsupported; configure via profile");
+                Err(1)
             } else {
                 let epps_raw = client.proxy().get_available_epps().await.map_err(|_| 1)?;
                 let val: Value = serde_json::from_str(&epps_raw).unwrap_or(Value::Array(vec![]));
@@ -98,9 +97,9 @@ pub async fn run_cpu(client: &CliClient, action: &Option<CpuAction>, json_mode: 
                 Ok(())
             }
         }
-        Some(CpuAction::Frequency { min, max }) => {
-            println!("Setting CPU frequency: {} - {} MHz", min, max);
-            ok(true)
+        Some(CpuAction::Frequency { min: _, max: _ }) => {
+            eprintln!("Error: Setting CPU frequency directly via D-Bus is unsupported; configure via profile");
+            Err(1)
         }
     }
 }

@@ -277,6 +277,206 @@
       "suggested_direction": "Implement parser and serializer for ycbcr420Workaround matching C++ structure",
       "status": "resolved",
       "resolution": "Implemented YCbCr card/port parsing and serialization in legacy.rs; verified by legacy_manager_preserves_ycbcr_port_values."
+    },
+    {
+      "id": "FINDING-V4-A01",
+      "priority": "P0",
+      "title": "Safe ioctl pre-validation rejects invalid direction and string ioctls in read_i32",
+      "files": ["crates/ucc-hardware/src/ioctl.rs"],
+      "status": "resolved",
+      "resolution": "Added pre-validation in ioctl.rs checking IOC_READ/IOC_WRITE/IOC_NONE and size bounds before syscall."
+    },
+    {
+      "id": "FINDING-V4-A02",
+      "priority": "P0",
+      "title": "Clevo fan speed packing preserves other fans and uses 0..255 range",
+      "files": ["crates/ucc-hardware/src/ioctl.rs"],
+      "status": "resolved",
+      "resolution": "Implemented 3-fan read/pack protocol in set_clevo_fan_speed per clevo.h:72-101."
+    },
+    {
+      "id": "FINDING-V4-A03",
+      "priority": "P0",
+      "title": "Uniwill fan speed scales raw 0..200 range correctly",
+      "files": ["crates/ucc-hardware/src/ioctl.rs"],
+      "status": "resolved",
+      "resolution": "Implemented raw 0..200 scaling with round/ceil matching uniwill.h:95-100, 338."
+    },
+    {
+      "id": "FINDING-V4-A04",
+      "priority": "P0",
+      "title": "Uniwill TDP limit validation fails closed if missing or out of bounds",
+      "files": ["crates/ucc-hardware/src/ioctl.rs"],
+      "status": "resolved",
+      "resolution": "Queries device limits if not provided, rejects out-of-bounds TDP requests with IoctlError::OutOfRange."
+    },
+    {
+      "id": "FINDING-V4-A05",
+      "priority": "P0",
+      "title": "SysfsRoot rejects symlink escapes outside the sandboxed root",
+      "files": ["crates/ucc-hardware/src/sysfs.rs"],
+      "status": "resolved",
+      "resolution": "Verified canonicalize(target).starts_with(canonicalize(root_path)) in SysfsRoot::resolve."
+    },
+    {
+      "id": "FINDING-V4-A06",
+      "priority": "P1",
+      "title": "Whitelist short PCI/USB paths do not panic on invalid slices",
+      "files": ["crates/ucc-hardware/src/devices/whitelist.rs"],
+      "status": "resolved",
+      "resolution": "Replaced manual indexing with strip_prefix/strip_suffix to eliminate slice panics."
+    },
+    {
+      "id": "FINDING-V4-A07",
+      "priority": "P1",
+      "title": "CPU controller propagates sysfs write errors to caller",
+      "files": ["crates/ucc-hardware/src/cpu/controller.rs", "crates/ucc-hardware/src/cpu/worker.rs"],
+      "status": "resolved",
+      "resolution": "Return std::io::Result from write methods and propagate as Err(String) in apply_cpu_profile."
+    },
+    {
+      "id": "FINDING-V4-A08",
+      "priority": "P1",
+      "title": "CpuWorker detects governor/EPP drift and intel_pstate performance lock",
+      "files": ["crates/ucc-hardware/src/cpu/worker.rs"],
+      "status": "resolved",
+      "resolution": "Implemented comprehensive validate_cpu_freq checking scaling_governor, EPP, and no_turbo."
+    },
+    {
+      "id": "FINDING-V4-A09",
+      "priority": "P1",
+      "title": "Sentinel <= -1 CPU frequency/power values deserialize to None",
+      "files": ["crates/ucc-core/src/cpu.rs"],
+      "status": "resolved",
+      "resolution": "Added cpu_sentinel_serde mapping values <= -1 to None across CPU telemetry structs."
+    },
+    {
+      "id": "FINDING-V4-A10",
+      "priority": "P1",
+      "title": "Restore from backup respects read-only preview mode",
+      "files": ["crates/ucc-config/src/manager.rs"],
+      "status": "resolved",
+      "resolution": "Added is_read_only_preview check before restoring settings from backup."
+    },
+    {
+      "id": "FINDING-V4-A11",
+      "priority": "P1",
+      "title": "Backup replacement preserves valid existing backup",
+      "files": ["crates/ucc-config/src/persistence.rs"],
+      "status": "resolved",
+      "resolution": "Checked target_is_valid before rotating/overwriting existing backups in atomic saves."
+    },
+    {
+      "id": "FINDING-V4-A12",
+      "priority": "P1",
+      "title": "NvidiaPowerGuard isolates wake check to the specific target GPU index",
+      "files": ["crates/ucc-hardware/src/nvml.rs"],
+      "status": "resolved",
+      "resolution": "Added is_gpu_index_awake checking only the target GPU device state."
+    },
+    {
+      "id": "FINDING-V4-A13",
+      "priority": "P1",
+      "title": "NVML device enumeration failure recovers safely on subsequent call",
+      "files": ["crates/ucc-hardware/src/nvml.rs"],
+      "status": "resolved",
+      "resolution": "Synchronized device count initialization with mutex and re-enumerates on transient error."
+    },
+    {
+      "id": "FINDING-FULL-01",
+      "priority": "P1",
+      "title": "CLI CPU frequency/governor/EPP commands do not report false success when unsupported",
+      "files": ["crates/ucc-cli/src/commands/cpu.rs"],
+      "status": "resolved",
+      "resolution": "Commands exit 1 with descriptive error when direct D-Bus mutation is unsupported."
+    },
+    {
+      "id": "FINDING-FULL-02",
+      "priority": "P1",
+      "title": "CLI fan set converts tableCPU/tableGPU to cpu/gpu and uses ApplyFanProfiles",
+      "files": ["crates/ucc-cli/src/commands/fan.rs"],
+      "status": "resolved",
+      "resolution": "Remapped table keys to baseline apply format before calling ApplyFanProfiles."
+    },
+    {
+      "id": "FINDING-FULL-03",
+      "priority": "P1",
+      "title": "CLI correctly decodes nested {timestamp, data} dictionaries in fan telemetry",
+      "files": ["crates/ucc-cli/src/client.rs"],
+      "status": "resolved",
+      "resolution": "Implemented extract_variant_i32 supporting nested dictionaries and structures from D-Bus."
+    },
+    {
+      "id": "FINDING-FULL-04",
+      "priority": "P1",
+      "title": "CLI status verifies UCC API responsiveness before reporting connected",
+      "files": ["crates/ucc-cli/src/client.rs"],
+      "status": "resolved",
+      "resolution": "Added timed probe of get_device_name ensuring bus name owner implements UCC interface."
+    },
+    {
+      "id": "FINDING-FULL-05",
+      "priority": "P1",
+      "title": "D-Bus void handlers return AccessDenied error reply on authorization failure",
+      "files": ["crates/ucc-dbus/src/interface.rs"],
+      "status": "resolved",
+      "resolution": "Void methods return zbus::fdo::Result<()> and return Err(AccessDenied) when unauthorized."
+    },
+    {
+      "id": "FINDING-FULL-06",
+      "priority": "P1",
+      "title": "ConfigManager::load performs domain validation on loaded profiles",
+      "files": ["crates/ucc-config/src/manager.rs"],
+      "status": "resolved",
+      "resolution": "Run profile.validate() on loaded profiles, rejecting out-of-bounds fan speeds (e.g. 200%)."
+    },
+    {
+      "id": "FINDING-FULL-07",
+      "priority": "P1",
+      "title": "Legacy DTO rejects negative core IDs",
+      "files": ["crates/ucc-core/src/dto.rs"],
+      "status": "resolved",
+      "resolution": "Reject negative core IDs with InvalidCoreSelection instead of discarding."
+    },
+    {
+      "id": "FINDING-FULL-08",
+      "priority": "P1",
+      "title": "Legacy DTO odmPowerLimits.tdpValues preserves zero entries without shifting channels",
+      "files": ["crates/ucc-core/src/dto.rs"],
+      "status": "resolved",
+      "resolution": "Preserve 0 values in tdpValues with .max(0) as u32 without dropping elements."
+    },
+    {
+      "id": "FINDING-FULL-09",
+      "priority": "P1",
+      "title": "GUI profile switch to empty fan curve clears prior curve and saves empty curve",
+      "files": ["crates/ucc-gui/src/app.rs"],
+      "status": "resolved",
+      "resolution": "Unconditionally overwrite local fan points on profile select."
+    },
+    {
+      "id": "FINDING-FULL-10",
+      "priority": "P1",
+      "title": "Canvas fan curve drag constrains temperature strictly between neighbors",
+      "files": ["crates/ucc-gui/src/widgets/fan_curve.rs"],
+      "status": "resolved",
+      "resolution": "Constrained point temperature strictly within (temp[i-1]+1 ..= temp[i+1]-1)."
+    },
+    {
+      "id": "FINDING-FULL-11",
+      "priority": "P1",
+      "title": "Canvas mouse release outside bounds cancels active drag",
+      "files": ["crates/ucc-gui/src/widgets/fan_curve.rs"],
+      "status": "resolved",
+      "resolution": "ButtonReleased resets dragged_idx regardless of cursor position."
+    },
+    {
+      "id": "FINDING-FULL-12",
+      "priority": "P1",
+      "title": "Desktop tray does not update local state when backend channel is closed",
+      "files": ["crates/ucc-desktop/src/tray.rs"],
+      "status": "resolved",
+      "resolution": "Only update local state when send over mpsc channel succeeds."
     }
   ]
 }

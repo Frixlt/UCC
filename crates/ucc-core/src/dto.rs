@@ -191,10 +191,17 @@ impl LegacyProfileDto {
         };
 
         let cpu = if let Some(c) = self.cpu {
+            if let Some(ref cores) = c.enabled_cores {
+                if cores.iter().any(|&x| x < 0) {
+                    return Err(crate::ValidationError::InvalidCoreSelection(
+                        "Negative core ID is not allowed in enabledCores".to_string(),
+                    ));
+                }
+            }
             ProfileCpu {
                 online_cores: c.online_cores.and_then(|v| if v > 0 { Some(v as u32) } else { None }),
                 enabled_cores: c.enabled_cores.map(|cores| {
-                    cores.into_iter().filter(|&x| x >= 0).map(|x| x as u32).collect()
+                    cores.into_iter().map(|x| x as u32).collect()
                 }),
                 min_freq_khz: c.scaling_min_frequency.and_then(|v| if v > 0 { Some(v as u32) } else { None }),
                 max_freq_khz: c.scaling_max_frequency.and_then(|v| if v > 0 { Some(v as u32) } else { None }),
@@ -266,7 +273,7 @@ impl LegacyProfileDto {
         };
 
         let odm_power_limits = self.odm_power_limits
-            .map(|l| l.tdp_values.into_iter().filter(|&x| x > 0).map(|x| x as u32).collect())
+            .map(|l| l.tdp_values.into_iter().map(|x| x.max(0) as u32).collect())
             .unwrap_or_default();
 
         let charge_type = match self.charge_type.as_deref() {

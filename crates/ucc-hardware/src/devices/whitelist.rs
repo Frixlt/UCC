@@ -110,10 +110,12 @@ pub fn is_valid_path(device_type: &str, path: &str) -> bool {
             // Must match /sys/bus/pci/devices/[0-9a-fA-F]{4}:[0-9a-fA-F]{2}:[0-9a-fA-F]{2}\.[0-7]/power/control
             let prefix = "/sys/bus/pci/devices/";
             let suffix = "/power/control";
-            if !path.starts_with(prefix) || !path.ends_with(suffix) {
+            let Some(rest) = path.strip_prefix(prefix) else {
                 return false;
-            }
-            let bdf = &path[prefix.len()..path.len() - suffix.len()];
+            };
+            let Some(bdf) = rest.strip_suffix(suffix) else {
+                return false;
+            };
             if bdf.len() != 12 {
                 return false;
             }
@@ -130,10 +132,12 @@ pub fn is_valid_path(device_type: &str, path: &str) -> bool {
             // Must match /sys/bus/usb/devices/[A-Za-z0-9_.:-]+/power/control
             let prefix = "/sys/bus/usb/devices/";
             let suffix = "/power/control";
-            if !path.starts_with(prefix) || !path.ends_with(suffix) {
+            let Some(rest) = path.strip_prefix(prefix) else {
                 return false;
-            }
-            let id = &path[prefix.len()..path.len() - suffix.len()];
+            };
+            let Some(id) = rest.strip_suffix(suffix) else {
+                return false;
+            };
             !id.is_empty()
                 && id.chars().all(|c| c.is_ascii_alphanumeric() || matches!(c, '_' | '.' | ':' | '-'))
         }

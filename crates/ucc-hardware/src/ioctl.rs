@@ -166,6 +166,21 @@ impl TuxedoIoDevice {
     /// Caller must ensure that `request` is a valid ioctl request code whose ABI expects
     /// a pointer to an `int32_t`.
     pub unsafe fn read_i32(&self, request: u64) -> Result<i32, IoctlError> {
+        let dir = (request >> 30) & 3;
+        if dir != IOC_READ as u64 {
+            return Err(IoctlError::PreconditionFailed(
+                "Cannot invoke read_i32 with non-read ioctl request",
+            ));
+        }
+        if request == requests::R_MOD_VERSION
+            || request == requests::R_UW_HW_IF_STR
+            || request == requests::R_CL_HW_IF_STR
+        {
+            return Err(IoctlError::PreconditionFailed(
+                "Cannot invoke read_i32 with a string ioctl request",
+            ));
+        }
+
         let mut val: i32 = 0;
         let ret = libc::ioctl(self.file.as_raw_fd(), request, &mut val);
         if ret < 0 {
@@ -183,6 +198,12 @@ impl TuxedoIoDevice {
     /// Caller must ensure that `request` is a valid ioctl request code whose ABI expects
     /// a pointer to an `int32_t`.
     pub unsafe fn write_i32(&self, request: u64, mut val: i32) -> Result<(), IoctlError> {
+        let dir = (request >> 30) & 3;
+        if dir != IOC_WRITE as u64 {
+            return Err(IoctlError::PreconditionFailed(
+                "Cannot invoke write_i32 with non-write ioctl request",
+            ));
+        }
         let ret = libc::ioctl(self.file.as_raw_fd(), request, &mut val);
         if ret < 0 {
             return Err(IoctlError::IoctlFailed {
@@ -198,6 +219,12 @@ impl TuxedoIoDevice {
     /// # Safety
     /// Caller must ensure that `request` is an `_IO` request code taking no arguments.
     pub unsafe fn call_none(&self, request: u64) -> Result<(), IoctlError> {
+        let dir = (request >> 30) & 3;
+        if dir != IOC_NONE as u64 {
+            return Err(IoctlError::PreconditionFailed(
+                "Cannot invoke call_none with argument-bearing ioctl request",
+            ));
+        }
         let ret = libc::ioctl(self.file.as_raw_fd(), request);
         if ret < 0 {
             return Err(IoctlError::IoctlFailed {
@@ -234,6 +261,25 @@ impl TuxedoIoDevice {
     /// # Safety
     /// Caller must ensure `request` expects a char buffer of at least `max_len` bytes.
     pub unsafe fn read_str(&self, request: u64, max_len: usize) -> Result<String, IoctlError> {
+        let is_string_req = request == requests::R_MOD_VERSION
+            || request == requests::R_UW_HW_IF_STR
+            || request == requests::R_CL_HW_IF_STR;
+        if !is_string_req {
+            return Err(IoctlError::PreconditionFailed(
+                "Cannot invoke read_str with non-string ioctl request",
+            ));
+        }
+        let required_len = if request == requests::R_CL_HW_IF_STR {
+            Self::CLEVO_IF_STR_BUFFER_LEN
+        } else {
+            Self::VERSION_BUFFER_LEN
+        };
+        if max_len < required_len {
+            return Err(IoctlError::PreconditionFailed(
+                "Buffer length is smaller than kernel ABI requires",
+            ));
+        }
+
         let mut buffer = vec![0u8; max_len.max(1)];
         let ret = libc::ioctl(self.file.as_raw_fd(), request, buffer.as_mut_ptr());
         if ret < 0 {
@@ -242,12 +288,10 @@ impl TuxedoIoDevice {
                 source: nix::Error::last(),
             });
         }
-        // Safely extract null-terminated string or convert full valid UTF-8 slice without panicking
-        let s = match CStr::from_bytes_until_nul(&buffer) {
-            Ok(c) => c.to_str()?.to_string(),
-            Err(_) => std::str::from_utf8(&buffer)?.trim_end_matches('\0').to_string(),
-        };
-        Ok(s)
+        let c_str = CStr::from_bytes_until_nul(&buffer).map_err(|_| {
+            IoctlError::PreconditionFailed("String from ioctl is missing NUL terminator")
+        })?;
+        Ok(c_str.to_str()?.to_string())
     }
 
     /// Low-level raw ioctl invocation with caller-managed buffer pointers and invariants.
@@ -348,7 +392,7 @@ impl crate::traits::HardwareIo for TuxedoIoDevice {
 
 use crate::traits::HardwareIo;
 
-/// Sets Clevo fan speed with fail-closed bounds checking.
+/// Sets Clevo fan speed with fail-closed bounds checking and 3-fan payload packing per C++ clevo.h:72-101.
 pub fn set_clevo_fan_speed(hw: &dyn HardwareIo, fan_idx: usize, percent: u8) -> Result<(), IoctlError> {
     if !hw.is_available() {
         return Err(IoctlError::DeviceUnavailable);
@@ -359,9 +403,48 @@ pub fn set_clevo_fan_speed(hw: &dyn HardwareIo, fan_idx: usize, percent: u8) -> 
     if percent > 100 {
         return Err(IoctlError::PreconditionFailed("Fan speed percentage cannot exceed 100"));
     }
-    // Argument encoding: (fan_idx << 8) | percent
-    let arg = ((fan_idx as i32) << 8) | (percent as i32);
-    hw.write_i32(requests::W_CL_FANSPEED, arg)
+
+    let mut fan_speeds_raw = [0i32; 3];
+    for (i, slot) in fan_speeds_raw.iter_mut().enumerate() {
+        if i == fan_idx {
+            *slot = (percent as f64 * 255.0 / 100.0).round() as i32;
+        } else {
+            let req = match i {
+                0 => requests::R_CL_FANINFO1,
+                1 => requests::R_CL_FANINFO2,
+                2 => requests::R_CL_FANINFO3,
+                _ => unreachable!(),
+            };
+            let info = hw.read_i32(req)?;
+            *slot = info & 0xff;
+        }
+    }
+
+    let val = (fan_speeds_raw[0] & 0xff)
+        | ((fan_speeds_raw[1] & 0xff) << 8)
+        | ((fan_speeds_raw[2] & 0xff) << 16);
+
+    hw.write_i32(requests::W_CL_FANSPEED, val)
+}
+
+/// Reads Clevo fan speed as a percentage (0..=100) per C++ clevo.h:103-112.
+pub fn read_clevo_fan_speed_percent(hw: &dyn HardwareIo, fan_idx: usize) -> Result<u8, IoctlError> {
+    if !hw.is_available() {
+        return Err(IoctlError::DeviceUnavailable);
+    }
+    if fan_idx >= 3 {
+        return Err(IoctlError::PreconditionFailed("Clevo fan index must be 0..=2"));
+    }
+    let req = match fan_idx {
+        0 => requests::R_CL_FANINFO1,
+        1 => requests::R_CL_FANINFO2,
+        2 => requests::R_CL_FANINFO3,
+        _ => unreachable!(),
+    };
+    let info = hw.read_i32(req)?;
+    let raw = info & 0xff;
+    let pct = (raw as f64 * 100.0 / 255.0).round() as u8;
+    Ok(pct.min(100))
 }
 
 /// Sets Clevo fans to automatic control.
@@ -377,7 +460,7 @@ pub fn set_clevo_fans_auto(hw: &dyn HardwareIo) -> Result<(), IoctlError> {
     hw.write_i32(requests::W_CL_FANAUTO, argument)
 }
 
-/// Sets Uniwill fan speed with fail-closed bounds checking.
+/// Sets Uniwill fan speed with fail-closed bounds checking and 200 raw scaling per C++ uniwill.h:95-117.
 pub fn set_uniwill_fan_speed(hw: &dyn HardwareIo, fan_idx: usize, percent: u8) -> Result<(), IoctlError> {
     if !hw.is_available() {
         return Err(IoctlError::DeviceUnavailable);
@@ -388,12 +471,24 @@ pub fn set_uniwill_fan_speed(hw: &dyn HardwareIo, fan_idx: usize, percent: u8) -
     if percent > 100 {
         return Err(IoctlError::PreconditionFailed("Fan speed percentage cannot exceed 100"));
     }
+    let raw = (200.0 * percent as f64 / 100.0).round() as i32;
     let req = if fan_idx == 0 {
         requests::W_UW_FANSPEED
     } else {
         requests::W_UW_FANSPEED2
     };
-    hw.write_i32(req, percent as i32)
+    hw.write_i32(req, raw)
+}
+
+/// Reads Uniwill fan speed as a percentage (0..=100) per C++ uniwill.h:119-149.
+pub fn read_uniwill_fan_speed_percent(hw: &dyn HardwareIo, fan_idx: usize) -> Result<u8, IoctlError> {
+    let raw = read_uniwill_fan_speed(hw, fan_idx)?;
+    if raw <= 0 {
+        Ok(0)
+    } else {
+        let pct = ((raw as f64) * 100.0 / 200.0).ceil() as u8;
+        Ok(pct.min(100))
+    }
 }
 
 /// Sets Uniwill fans to automatic control mode.
@@ -417,12 +512,14 @@ pub fn set_uniwill_tdp(
     if index > 2 {
         return Err(IoctlError::PreconditionFailed("Uniwill TDP index must be 0..=2 (PL1, PL2, PL4)"));
     }
-    if let Some((min, max)) = limits {
-        if min > max || !(min..=max).contains(&watts) {
-            return Err(IoctlError::PreconditionFailed("TDP wattage is outside validated hardware boundary limits"));
-        }
-    } else if !(0..=500).contains(&watts) {
-        return Err(IoctlError::PreconditionFailed("TDP wattage is outside safe physical envelope"));
+    let (min, max) = match limits {
+        Some(lim) => lim,
+        None => read_uniwill_tdp_limits(hw, index)?,
+    };
+    if min <= 0 || max <= 0 || min > max || !(min..=max).contains(&watts) {
+        return Err(IoctlError::PreconditionFailed(
+            "TDP wattage is outside validated device hardware limits",
+        ));
     }
 
     let req = match index {
@@ -512,5 +609,10 @@ pub fn read_uniwill_tdp_limits(hw: &dyn HardwareIo, index: usize) -> Result<(i32
     };
     let min = hw.read_i32(req_min)?;
     let max = hw.read_i32(req_max)?;
+    if min <= 0 || max <= 0 || min > max {
+        return Err(IoctlError::PreconditionFailed(
+            "Invalid or missing TDP hardware boundaries",
+        ));
+    }
     Ok((min, max))
 }

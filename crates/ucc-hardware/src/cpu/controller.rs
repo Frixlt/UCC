@@ -418,7 +418,7 @@ impl CpuController {
     }
 
     /// Set maximum scaling frequency for all online cores.
-    pub fn set_governor_scaling_max_frequency(&self, set_max_frequency: Option<i64>) {
+    pub fn set_governor_scaling_max_frequency(&self, set_max_frequency: Option<i64>) -> Result<(), std::io::Error> {
         let mut scaling_driver_str: Option<String> = None;
         let mut acpi_fallback = false;
 
@@ -442,7 +442,7 @@ impl CpuController {
             }
 
             if let Some(effective) = self.compute_effective_max_freq(core, set_max_frequency, acpi_fallback) {
-                let _ = core.write_scaling_max_freq(effective);
+                core.write_scaling_max_freq(effective)?;
             }
         }
 
@@ -463,10 +463,11 @@ impl CpuController {
                 let _ = self.write_boost(enable_boost);
             }
         }
+        Ok(())
     }
 
     /// Set minimum scaling frequency for all online cores.
-    pub fn set_governor_scaling_min_frequency(&self, set_min_frequency: Option<i64>) {
+    pub fn set_governor_scaling_min_frequency(&self, set_min_frequency: Option<i64>) -> Result<(), std::io::Error> {
         for core in &self.cores {
             if !core.cpufreq_path.join("scaling_min_freq").exists()
                 || !core.cpufreq_path.join("scaling_max_freq").exists()
@@ -481,39 +482,42 @@ impl CpuController {
             }
 
             if let Some(effective) = self.compute_effective_min_freq(core, set_min_frequency) {
-                let _ = core.write_scaling_min_freq(effective);
+                core.write_scaling_min_freq(effective)?;
             }
         }
+        Ok(())
     }
 
     /// Set scaling governor on all online cores.
-    pub fn set_governor(&self, governor: Option<&str>) {
-        let Some(gov) = governor else { return };
+    pub fn set_governor(&self, governor: Option<&str>) -> Result<(), std::io::Error> {
+        let Some(gov) = governor else { return Ok(()) };
         for core in &self.cores {
             if core.core_index != 0 && !core.read_online().unwrap_or(false) {
                 continue;
             }
             if let Some(avail) = core.read_scaling_available_governors() {
                 if avail.iter().any(|g| g == gov) {
-                    let _ = core.write_scaling_governor(gov);
+                    core.write_scaling_governor(gov)?;
                 }
             }
         }
+        Ok(())
     }
 
     /// Set energy performance preference on all online cores.
-    pub fn set_energy_performance_preference(&self, preference: Option<&str>) {
-        let Some(pref) = preference else { return };
+    pub fn set_energy_performance_preference(&self, preference: Option<&str>) -> Result<(), std::io::Error> {
+        let Some(pref) = preference else { return Ok(()) };
         for core in &self.cores {
             if core.core_index != 0 && !core.read_online().unwrap_or(false) {
                 continue;
             }
             if let Some(avail) = core.read_energy_performance_available_preferences() {
                 if avail.iter().any(|p| p == pref) {
-                    let _ = core.write_energy_performance_preference(pref);
+                    core.write_energy_performance_preference(pref)?;
                 }
             }
         }
+        Ok(())
     }
 
     pub fn read_intel_pstate_no_turbo(&self) -> Option<bool> {

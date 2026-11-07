@@ -104,7 +104,22 @@ impl NvidiaPowerGuard {
                 }
             }
         }
+        devices.sort();
         Ok(devices)
+    }
+
+    /// Checks whether the NVIDIA device at given index (sorted by BDF) is awake (active)
+    pub fn is_device_awake(&self, index: u32) -> bool {
+        match self.find_nvidia_devices() {
+            Ok(devices) => {
+                if let Some(dev_path) = devices.get(index as usize) {
+                    self.get_runtime_status(dev_path) == GpuRuntimeStatus::Active
+                } else {
+                    false
+                }
+            }
+            Err(_) => false,
+        }
     }
 
     /// Checks the runtime PM status of an NVIDIA device
@@ -235,9 +250,9 @@ impl NvmlWrapper {
             if power_guard.is_dgpu_awake() {
                 let ret = fn_init();
                 if ret == NVML_SUCCESS {
-                    init_ok.store(true, Ordering::SeqCst);
                     let mut count: c_uint = 0;
-                    if fn_device_get_count(&mut count) == NVML_SUCCESS {
+                    if fn_device_get_count(&mut count) == NVML_SUCCESS && count > 0 {
+                        init_ok.store(true, Ordering::SeqCst);
                         device_count.store(count, Ordering::SeqCst);
                     }
                 }
@@ -268,20 +283,30 @@ impl NvmlWrapper {
         self.device_count.load(Ordering::SeqCst)
     }
 
-    fn ensure_active_and_initialized(&self) -> Result<(), NvmlError> {
-        if !self.power_guard.is_dgpu_awake() {
+    fn ensure_active_and_initialized(&self, index: Option<u32>) -> Result<(), NvmlError> {
+        if let Some(idx) = index {
+            if !self.power_guard.is_device_awake(idx) {
+                return Err(NvmlError::GpuSuspended);
+            }
+        } else if !self.power_guard.is_dgpu_awake() {
             return Err(NvmlError::GpuSuspended);
         }
-        if !self.init_ok.load(Ordering::SeqCst) {
+
+        if !self.init_ok.load(Ordering::SeqCst) || self.device_count.load(Ordering::SeqCst) == 0 {
             unsafe {
                 let ret = (self.fn_init)();
                 if ret != NVML_SUCCESS {
                     return Err(NvmlError::NvmlCall(ret));
                 }
-                self.init_ok.store(true, Ordering::SeqCst);
                 let mut count: c_uint = 0;
-                if (self.fn_device_get_count)(&mut count) == NVML_SUCCESS {
+                let count_ret = (self.fn_device_get_count)(&mut count);
+                if count_ret == NVML_SUCCESS && count > 0 {
                     self.device_count.store(count, Ordering::SeqCst);
+                    self.init_ok.store(true, Ordering::SeqCst);
+                } else if count_ret != NVML_SUCCESS {
+                    return Err(NvmlError::NvmlCall(count_ret));
+                } else {
+                    return Err(NvmlError::NoGpuFound);
                 }
             }
         }
@@ -290,7 +315,7 @@ impl NvmlWrapper {
 
     /// Query minimum and maximum power limits in milliwatts
     pub fn get_power_limit_constraints(&self, index: u32) -> Result<(u32, u32), NvmlError> {
-        self.ensure_active_and_initialized()?;
+        self.ensure_active_and_initialized(Some(index))?;
         if index >= self.device_count.load(Ordering::SeqCst) {
             return Err(NvmlError::NoGpuFound);
         }
@@ -319,7 +344,7 @@ impl NvmlWrapper {
     /// Read telemetry for a GPU index, strictly respecting the power guard
     pub fn get_telemetry(&self, index: u32) -> Result<NvmlTelemetry, NvmlError> {
         // GUARD: check if dGPU is suspended in D3cold before waking it!
-        self.ensure_active_and_initialized()?;
+        self.ensure_active_and_initialized(Some(index))?;
         if index >= self.device_count.load(Ordering::SeqCst) {
             return Err(NvmlError::NoGpuFound);
         }
@@ -372,7 +397,7 @@ impl NvmlWrapper {
 
     /// Set power limit in milliwatts
     pub fn set_power_limit(&self, index: u32, power_mw: u32) -> Result<(), NvmlError> {
-        self.ensure_active_and_initialized()?;
+        self.ensure_active_and_initialized(Some(index))?;
         if index >= self.device_count.load(Ordering::SeqCst) {
             return Err(NvmlError::NoGpuFound);
         }

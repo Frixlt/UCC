@@ -209,17 +209,15 @@ impl ControlCenterApp {
                     self.active_profile_id = profile.id.clone();
 
                     // Update fan curve points from the selected profile
-                    if !profile.fan.table_cpu.is_empty() {
-                        self.fan_points = profile
-                            .fan
-                            .table_cpu
-                            .iter()
-                            .map(|p| CurvePoint {
-                                temp_c: p.temp as f32,
-                                speed_pct: p.speed as f32,
-                            })
-                            .collect();
-                    }
+                    self.fan_points = profile
+                        .fan
+                        .table_cpu
+                        .iter()
+                        .map(|p| CurvePoint {
+                            temp_c: p.temp as f32,
+                            speed_pct: p.speed as f32,
+                        })
+                        .collect();
 
                     self.status_message = Some(format!("Switched to profile: {}", profile.name));
                 }

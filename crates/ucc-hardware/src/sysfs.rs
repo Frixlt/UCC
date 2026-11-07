@@ -154,7 +154,19 @@ impl SysfsRoot {
             target
         };
 
-        Ok(self.root_path.join(relative))
+        let joined = self.root_path.join(relative);
+
+        // Strict symlink boundary enforcement:
+        // Ensure resolved canonical path does NOT escape the canonical root.
+        if let Ok(canon_root) = fs::canonicalize(&self.root_path) {
+            if let Ok(canon_target) = fs::canonicalize(&joined) {
+                if !canon_target.starts_with(&canon_root) {
+                    return Err(SysfsError::UnsafePath(joined));
+                }
+            }
+        }
+
+        Ok(joined)
     }
 
     /// Reads raw string content from a sysfs node.

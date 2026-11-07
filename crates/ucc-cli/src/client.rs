@@ -66,6 +66,65 @@ pub struct ChargingMetrics {
     pub end_threshold: Option<i32>,
 }
 
+fn extract_variant_i32(v: &zbus::zvariant::OwnedValue) -> Option<i32> {
+    if let Ok(val) = v.downcast_ref::<i32>() {
+        return Some(val);
+    }
+    if let Ok(val) = v.downcast_ref::<u32>() {
+        return Some(val as i32);
+    }
+    if let Ok(val) = v.downcast_ref::<i64>() {
+        return Some(val as i32);
+    }
+    if let Ok(val) = v.downcast_ref::<u64>() {
+        return Some(val as i32);
+    }
+    if let Ok(val) = v.downcast_ref::<u8>() {
+        return Some(val as i32);
+    }
+    if let Ok(val) = v.downcast_ref::<i16>() {
+        return Some(val as i32);
+    }
+    if let Ok(val) = v.downcast_ref::<u16>() {
+        return Some(val as i32);
+    }
+    if let Ok(map) = <std::collections::HashMap<String, zbus::zvariant::OwnedValue>>::try_from(v.clone()) {
+        if let Some(data_val) = map.get("data") {
+            return extract_variant_i32(data_val);
+        }
+    }
+    if let Ok(map) = <std::collections::HashMap<String, i32>>::try_from(v.clone()) {
+        if let Some(&data_val) = map.get("data") {
+            return Some(data_val);
+        }
+    }
+    if let zbus::zvariant::Value::Dict(ref dict) = **v {
+        for (k, val) in dict.iter() {
+            if let Ok(key_str) = <&str>::try_from(k) {
+                if key_str == "data" {
+                    if let Ok(i) = i32::try_from(val) {
+                        return Some(i);
+                    }
+                    if let Ok(u) = u32::try_from(val) {
+                        return Some(u as i32);
+                    }
+                    if let Ok(ov) = zbus::zvariant::OwnedValue::try_from(val) {
+                        return extract_variant_i32(&ov);
+                    }
+                }
+            }
+        }
+    }
+    if let zbus::zvariant::Value::Structure(ref s) = **v {
+        if let Some(last) = s.fields().last() {
+            if let Ok(val) = i32::try_from(last) {
+                return Some(val);
+            }
+        }
+    }
+    None
+}
+
 pub struct CliClient {
     _conn: Connection,
     proxy: UccdProxy<'static>,
@@ -126,6 +185,17 @@ impl CliClient {
             }
         };
 
+        // Verify that the destination actually exposes UCC API and is responsive
+        let api_check = tokio::time::timeout(
+            std::time::Duration::from_secs(2),
+            proxy.get_device_name(),
+        ).await;
+
+        if !matches!(api_check, Ok(Ok(_))) {
+            eprintln!("{}", DAEMON_CONNECT_ERR);
+            return Err(2);
+        }
+
         Ok(Self {
             _conn: conn,
             proxy,
@@ -178,12 +248,12 @@ impl CliClient {
 
         // Temperature and fan speed from GetFanDataCPU or sensors
         if let Ok(raw_fan) = self.proxy.get_fan_data_cpu().await {
-            if let Some(temp) = raw_fan.get("temp").and_then(|v| v.downcast_ref::<i32>().ok()) {
+            if let Some(temp) = raw_fan.get("temp").and_then(extract_variant_i32) {
                 if temp >= 0 {
                     m.temperature = Some(temp);
                 }
             }
-            if let Some(spd) = raw_fan.get("speed").and_then(|v| v.downcast_ref::<i32>().ok()) {
+            if let Some(spd) = raw_fan.get("speed").and_then(extract_variant_i32) {
                 if spd >= 0 {
                     m.fan_percent = Some(spd);
                     m.fan_rpm = Some(spd * 60);
@@ -243,10 +313,10 @@ impl CliClient {
 
         // Fan speeds from GPU1 and GPU2
         let gpu1_spd = self.proxy.get_fan_data_gpu1().await.ok().and_then(|map| {
-            map.get("speed").and_then(|v| v.downcast_ref::<i32>().ok())
+            map.get("speed").and_then(extract_variant_i32)
         });
         let gpu2_spd = self.proxy.get_fan_data_gpu2().await.ok().and_then(|map| {
-            map.get("speed").and_then(|v| v.downcast_ref::<i32>().ok())
+            map.get("speed").and_then(extract_variant_i32)
         });
 
         match (gpu1_spd, gpu2_spd) {

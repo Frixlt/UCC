@@ -157,6 +157,9 @@ impl ConfigManager {
     pub fn load_from_path(path: &Path) -> Result<UccSettings, ConfigError> {
         let content = fs::read_to_string(path)?;
         let settings = UccSettings::from_json(&content)?;
+        for profile in settings.profiles.values() {
+            profile.validate()?;
+        }
         Ok(settings)
     }
 
@@ -183,6 +186,10 @@ impl ConfigManager {
     /// Recovers settings from `<path>.bak` or `<path>.backup` and writes them back to `path` atomically,
     /// strictly preserving the valid backup file.
     pub fn restore_from_backup(path: &Path) -> Result<UccSettings, ConfigError> {
+        if is_read_only_preview() {
+            return Err(ConfigError::ReadOnlyPreview);
+        }
+
         for bak_path in Self::backup_paths(path) {
             if bak_path.exists() {
                 if let Ok(settings) = Self::load_from_path(&bak_path) {

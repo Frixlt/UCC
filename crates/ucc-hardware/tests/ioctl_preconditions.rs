@@ -38,6 +38,10 @@ fn test_exact_pointer_sized_ioctl_encoding() {
 #[test]
 fn test_clevo_fan_speed_preconditions_and_fail_closed() {
     let mock = MockHardwareIo::new();
+    // Clevo driver reads existing speed of other fans before writing packed 3-fan payload
+    mock.set_i32_read(requests::R_CL_FANINFO1, 0);
+    mock.set_i32_read(requests::R_CL_FANINFO2, 0);
+    mock.set_i32_read(requests::R_CL_FANINFO3, 0);
 
     // 1. Valid bounds: fan_idx 0..=2, percent 0..=100
     assert!(set_clevo_fan_speed(&mock, 0, 0).is_ok());
@@ -58,7 +62,7 @@ fn test_clevo_fan_speed_preconditions_and_fail_closed() {
         j[1],
         HardwareIoWrite::WriteI32 {
             request: requests::W_CL_FANSPEED,
-            val: 306, // (1 << 8) | 50
+            val: 0x8000, // (128 << 8)
             ..
         }
     ));
@@ -66,7 +70,7 @@ fn test_clevo_fan_speed_preconditions_and_fail_closed() {
         j[2],
         HardwareIoWrite::WriteI32 {
             request: requests::W_CL_FANSPEED,
-            val: 612, // (2 << 8) | 100
+            val: 0xff0000, // (255 << 16)
             ..
         }
     ));
@@ -105,9 +109,9 @@ fn test_clevo_fans_auto() {
 fn test_uniwill_fan_speed_preconditions_and_fail_closed() {
     let mock = MockHardwareIo::new();
 
-    // 1. Valid: fan 0 (CPU)
+    // 1. Valid: fan 0 (CPU) scaled to MAX_FAN_SPEED = 200 (60% -> 120)
     assert!(set_uniwill_fan_speed(&mock, 0, 60).is_ok());
-    // Valid: fan 1 (GPU)
+    // Valid: fan 1 (GPU) scaled to MAX_FAN_SPEED = 200 (80% -> 160)
     assert!(set_uniwill_fan_speed(&mock, 1, 80).is_ok());
 
     let j = mock.journal();
@@ -116,7 +120,7 @@ fn test_uniwill_fan_speed_preconditions_and_fail_closed() {
         j[0],
         HardwareIoWrite::WriteI32 {
             request: requests::W_UW_FANSPEED,
-            val: 60,
+            val: 120,
             ..
         }
     ));
@@ -124,7 +128,7 @@ fn test_uniwill_fan_speed_preconditions_and_fail_closed() {
         j[1],
         HardwareIoWrite::WriteI32 {
             request: requests::W_UW_FANSPEED2,
-            val: 80,
+            val: 160,
             ..
         }
     ));
@@ -185,14 +189,16 @@ fn test_uniwill_tdp_limits_validation() {
     assert!(matches!(res, Err(IoctlError::PreconditionFailed(_))));
     assert!(mock.journal().is_empty());
 
-    // 5. Physical safe envelope bounds (0..=500W) when no explicit limits provided
+    // 5. Automatic hardware limit querying when None provided
+    mock.set_i32_read(requests::R_UW_TDP1_MIN, 35);
+    mock.set_i32_read(requests::R_UW_TDP1_MAX, 160);
     assert!(set_uniwill_tdp(&mock, 1, 150, None).is_ok());
     assert!(matches!(
-        set_uniwill_tdp(&mock, 1, -5, None),
+        set_uniwill_tdp(&mock, 1, 30, None),
         Err(IoctlError::PreconditionFailed(_))
     ));
     assert!(matches!(
-        set_uniwill_tdp(&mock, 1, 550, None),
+        set_uniwill_tdp(&mock, 1, 170, None),
         Err(IoctlError::PreconditionFailed(_))
     ));
 }

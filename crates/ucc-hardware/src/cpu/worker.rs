@@ -73,12 +73,12 @@ impl CpuWorker {
         let _ = self.cpu_ctrl.write_intel_hwp_dynamic_boost(cpu.hwp_dynamic_boost);
 
         // 3. Reset frequency bounds on selected cores to avoid clamp conflicts
-        self.cpu_ctrl.set_governor_scaling_min_frequency(None);
-        self.cpu_ctrl.set_governor_scaling_max_frequency(None);
+        let _ = self.cpu_ctrl.set_governor_scaling_min_frequency(None);
+        let _ = self.cpu_ctrl.set_governor_scaling_max_frequency(None);
 
         if !self.no_epp_write_quirk {
             if let Some(ref default_epp) = self.system_default_epp {
-                self.cpu_ctrl.set_energy_performance_preference(Some(default_epp));
+                let _ = self.cpu_ctrl.set_energy_performance_preference(Some(default_epp));
             }
         }
 
@@ -91,7 +91,9 @@ impl CpuWorker {
 
         if let Some(gov) = desired_governor {
             if self.is_governor_available(gov) {
-                self.cpu_ctrl.set_governor(Some(gov));
+                self.cpu_ctrl
+                    .set_governor(Some(gov))
+                    .map_err(|e| format!("Failed to apply CPU governor '{gov}': {e}"))?;
             } else if self.warned_governors.insert(gov.to_string()) {
                 warn!("CpuWorker: Governor '{}' is not available on this system", gov);
             }
@@ -101,7 +103,7 @@ impl CpuWorker {
         if !self.no_epp_write_quirk && !cpu.energy_performance_preference.is_empty() {
             let epp = &cpu.energy_performance_preference;
             if self.is_epp_available(epp) {
-                self.cpu_ctrl.set_energy_performance_preference(Some(epp));
+                let _ = self.cpu_ctrl.set_energy_performance_preference(Some(epp));
 
                 // Verification check: detect EPP write rejection quirks
                 if !self.cpu_ctrl.cores.is_empty() {
@@ -124,8 +126,12 @@ impl CpuWorker {
         }
 
         // 6. Write requested scaling frequencies
-        self.cpu_ctrl.set_governor_scaling_min_frequency(cpu.min_freq_khz.map(|f| f as i64));
-        self.cpu_ctrl.set_governor_scaling_max_frequency(cpu.max_freq_khz.map(|f| f as i64));
+        self.cpu_ctrl
+            .set_governor_scaling_min_frequency(cpu.min_freq_khz.map(|f| f as i64))
+            .map_err(|e| format!("Failed to set scaling min frequency: {e}"))?;
+        self.cpu_ctrl
+            .set_governor_scaling_max_frequency(cpu.max_freq_khz.map(|f| f as i64))
+            .map_err(|e| format!("Failed to set scaling max frequency: {e}"))?;
 
         // 7. Ensure turbo settings remain applied after frequency bounds writes
         let _ = self.cpu_ctrl.write_intel_pstate_no_turbo(cpu.no_turbo);
@@ -143,12 +149,12 @@ impl CpuWorker {
         let _ = self.cpu_ctrl.use_cores(None);
 
         // Reset frequency limits to full hardware boundaries
-        self.cpu_ctrl.set_governor_scaling_min_frequency(None);
-        self.cpu_ctrl.set_governor_scaling_max_frequency(None);
+        let _ = self.cpu_ctrl.set_governor_scaling_min_frequency(None);
+        let _ = self.cpu_ctrl.set_governor_scaling_max_frequency(None);
 
         if !self.no_epp_write_quirk {
             if let Some(ref default_epp) = self.system_default_epp {
-                self.cpu_ctrl.set_energy_performance_preference(Some(default_epp));
+                let _ = self.cpu_ctrl.set_energy_performance_preference(Some(default_epp));
             }
         }
 
@@ -168,6 +174,58 @@ impl CpuWorker {
                 if is_online != should_be_online {
                     return false;
                 }
+            }
+        }
+
+        // Validate governor drift per C++ CpuWorker.hpp:482-494
+        let expected_governor = if !cpu.governor.is_empty() {
+            Some(cpu.governor.as_str())
+        } else {
+            self.system_default_governor.as_deref()
+        };
+        if let Some(gov) = expected_governor {
+            if self.is_governor_available(gov) {
+                for core in &self.cpu_ctrl.cores {
+                    if core.core_index == 0 || core.read_online().unwrap_or(false) {
+                        if let Some(cur_gov) = core.read_scaling_governor() {
+                            if cur_gov != gov {
+                                debug!(
+                                    "CpuWorker: Core {} scaling governor '{}' != expected '{}'",
+                                    core.core_index, cur_gov, gov
+                                );
+                                return false;
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        // Validate EPP drift per C++ CpuWorker.hpp:496-512
+        if !self.no_epp_write_quirk
+            && !cpu.energy_performance_preference.is_empty()
+            && self.is_epp_available(&cpu.energy_performance_preference)
+        {
+            let epp = &cpu.energy_performance_preference;
+            for core in &self.cpu_ctrl.cores {
+                if core.core_index == 0 || core.read_online().unwrap_or(false) {
+                    if let Some(ref current_epp) = core.read_energy_performance_preference() {
+                        if current_epp != epp && !self.intel_pstate_performance_owns_epp(core, epp, current_epp) {
+                            debug!(
+                                "CpuWorker: Core {} EPP '{}' != expected '{}'",
+                                core.core_index, current_epp, epp
+                            );
+                            return false;
+                        }
+                    }
+                }
+            }
+        }
+
+        // Validate intel_pstate no_turbo drift per C++ CpuWorker.hpp:515-527
+        if let Some(cur_no_turbo) = self.cpu_ctrl.read_intel_pstate_no_turbo() {
+            if cur_no_turbo != cpu.no_turbo {
+                return false;
             }
         }
 

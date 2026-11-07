@@ -108,17 +108,42 @@ impl CpuLimits {
     }
 }
 
+pub mod cpu_sentinel_serde {
+    use serde::{Deserialize, Deserializer, Serializer};
+
+    pub fn deserialize<'de, D>(deserializer: D) -> Result<Option<u32>, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        let opt = Option::<i64>::deserialize(deserializer)?;
+        match opt {
+            Some(v) if v >= 0 => Ok(Some(v as u32)),
+            _ => Ok(None),
+        }
+    }
+
+    pub fn serialize<S>(value: &Option<u32>, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        match value {
+            Some(v) => serializer.serialize_some(v),
+            None => serializer.serialize_none(),
+        }
+    }
+}
+
 /// CPU settings as configured within a UCC system profile.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Default)]
 #[serde(rename_all = "camelCase")]
 pub struct ProfileCpu {
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(default, with = "cpu_sentinel_serde", skip_serializing_if = "Option::is_none")]
     pub online_cores: Option<u32>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub enabled_cores: Option<Vec<u32>>,
-    #[serde(rename = "scalingMinFrequency", default, skip_serializing_if = "Option::is_none")]
+    #[serde(rename = "scalingMinFrequency", default, with = "cpu_sentinel_serde", skip_serializing_if = "Option::is_none")]
     pub min_freq_khz: Option<u32>,
-    #[serde(rename = "scalingMaxFrequency", default, skip_serializing_if = "Option::is_none")]
+    #[serde(rename = "scalingMaxFrequency", default, with = "cpu_sentinel_serde", skip_serializing_if = "Option::is_none")]
     pub max_freq_khz: Option<u32>,
     #[serde(default)]
     pub governor: String,

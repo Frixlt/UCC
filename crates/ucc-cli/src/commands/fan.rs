@@ -136,7 +136,27 @@ pub async fn run_fan(client: &CliClient, action: &FanAction, json_mode: bool) ->
                 }
             };
 
-            let res = client.proxy().set_fan_profile(id, &profile_content).await.unwrap_or(false);
+            // Remap keys: tableCPU->cpu, tableGPU->gpu, etc. per C++ baseline cmdFanSet
+            let val = match serde_json::from_str::<Value>(&profile_content) {
+                Ok(v) if v.is_object() => v,
+                _ => {
+                    eprintln!("Error: Invalid fan profile JSON");
+                    return Err(1);
+                }
+            };
+
+            let mut dst = serde_json::Map::new();
+            if let Some(v) = val.get("tableCPU") { dst.insert("cpu".into(), v.clone()); }
+            if let Some(v) = val.get("tableGPU") { dst.insert("gpu".into(), v.clone()); }
+            if let Some(v) = val.get("tablePump") { dst.insert("pump".into(), v.clone()); }
+            if let Some(v) = val.get("tableWaterCoolerFan") { dst.insert("waterCoolerFan".into(), v.clone()); }
+            if let Some(v) = val.get("cpu") { dst.insert("cpu".into(), v.clone()); }
+            if let Some(v) = val.get("gpu") { dst.insert("gpu".into(), v.clone()); }
+            if let Some(v) = val.get("pump") { dst.insert("pump".into(), v.clone()); }
+            if let Some(v) = val.get("waterCoolerFan") { dst.insert("waterCoolerFan".into(), v.clone()); }
+
+            let apply_json = serde_json::to_string(&Value::Object(dst)).unwrap_or_default();
+            let res = client.proxy().apply_fan_profiles(&apply_json).await.unwrap_or(false);
             ok(res)
         }
         FanAction::Apply { json } => {
