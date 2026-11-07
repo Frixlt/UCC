@@ -84,3 +84,22 @@ fn test_pointer_size_encoding() {
     assert_eq!(extract_size(R_MOD_VERSION), 8);
     assert_eq!(extract_size(W_UW_FANAUTO), 0); // _IO has 0 size
 }
+
+#[test]
+fn test_version_buffer_len_and_utf8_conversion() {
+    use std::ffi::CStr;
+    assert_eq!(ucc_hardware::ioctl::TuxedoIoDevice::VERSION_BUFFER_LEN, 20);
+
+    // Buffer with NUL
+    let buf_nul = b"1.2.3\0garbage";
+    let c = CStr::from_bytes_until_nul(buf_nul).unwrap();
+    assert_eq!(c.to_str().unwrap(), "1.2.3");
+
+    // Buffer without NUL (valid UTF-8)
+    let buf_no_nul = b"1.2.3.4.5.6.7.8.9.0";
+    let s = match CStr::from_bytes_until_nul(buf_no_nul) {
+        Ok(c) => c.to_str().unwrap().to_string(),
+        Err(_) => std::str::from_utf8(buf_no_nul).unwrap().trim_end_matches('\0').to_string(),
+    };
+    assert_eq!(s, "1.2.3.4.5.6.7.8.9.0");
+}

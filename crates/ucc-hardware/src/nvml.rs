@@ -86,9 +86,20 @@ impl NvidiaPowerGuard {
             let entry = entry?;
             let path = entry.path();
             let vendor_path = path.join("vendor");
+            let class_path = path.join("class");
             if vendor_path.exists() {
                 if let Ok(content) = fs::read_to_string(&vendor_path) {
                     if content.trim().eq_ignore_ascii_case(NVIDIA_PCI_VENDOR_ID) {
+                        // Check PCI class to ensure this is a display/3D graphics device, not audio (0x0403xx)
+                        if class_path.exists() {
+                            if let Ok(class_str) = fs::read_to_string(&class_path) {
+                                let c = class_str.trim().to_ascii_lowercase();
+                                // Base class 0x03 indicates Display controller (VGA 0x0300, 3D 0x0302, etc.)
+                                if !c.starts_with("0x03") && !c.starts_with("03") {
+                                    continue;
+                                }
+                            }
+                        }
                         devices.push(path);
                     }
                 }
@@ -114,13 +125,18 @@ impl NvidiaPowerGuard {
         }
     }
 
-    /// Returns true only if at least one NVIDIA device is active (awake).
-    /// If all NVIDIA devices are suspended or none exist, returns false.
+    /// Returns true only if at least one NVIDIA display/graphics device is active (awake).
+    /// If all NVIDIA graphics devices are suspended or none exist, returns false.
     pub fn is_dgpu_awake(&self) -> bool {
         match self.find_nvidia_devices() {
-            Ok(devices) => devices
-                .iter()
-                .any(|d| self.get_runtime_status(d) == GpuRuntimeStatus::Active),
+            Ok(devices) => {
+                if devices.is_empty() {
+                    return false;
+                }
+                devices
+                    .iter()
+                    .any(|d| self.get_runtime_status(d) == GpuRuntimeStatus::Active)
+            }
             Err(_) => false,
         }
     }
@@ -143,7 +159,9 @@ pub struct NvmlWrapper {
     power_guard: NvidiaPowerGuard,
 
     // Function pointers
+    fn_init: unsafe extern "C" fn() -> c_uint,
     fn_shutdown: unsafe extern "C" fn() -> c_uint,
+    fn_device_get_count: unsafe extern "C" fn(*mut c_uint) -> c_uint,
     fn_device_get_handle_by_index: unsafe extern "C" fn(c_uint, *mut *mut c_void) -> c_uint,
     fn_device_get_name: unsafe extern "C" fn(*mut c_void, *mut c_char, c_uint) -> c_uint,
     fn_device_get_temperature: unsafe extern "C" fn(*mut c_void, c_uint, *mut c_uint) -> c_uint,
@@ -210,21 +228,30 @@ impl NvmlWrapper {
                 *mut NvmlMemory,
             ) -> c_uint = *lib.get(b"nvmlDeviceGetMemoryInfo")?;
 
-            let ret = fn_init();
-            if ret != NVML_SUCCESS {
-                return Err(NvmlError::NvmlCall(ret));
-            }
+            let init_ok = Arc::new(AtomicBool::new(false));
+            let mut device_count: u32 = 0;
 
-            let mut count: c_uint = 0;
-            let count_ret = fn_device_get_count(&mut count);
-            let device_count = if count_ret == NVML_SUCCESS { count } else { 0 };
+            // Strict D3cold guard: do NOT invoke native nvmlInit during construction
+            // if the discrete GPU is suspended, avoiding waking the hardware.
+            if power_guard.is_dgpu_awake() {
+                let ret = fn_init();
+                if ret == NVML_SUCCESS {
+                    init_ok.store(true, Ordering::SeqCst);
+                    let mut count: c_uint = 0;
+                    if fn_device_get_count(&mut count) == NVML_SUCCESS {
+                        device_count = count;
+                    }
+                }
+            }
 
             Ok(Self {
                 _lib: lib,
-                init_ok: Arc::new(AtomicBool::new(true)),
+                init_ok,
                 device_count,
                 power_guard,
+                fn_init,
                 fn_shutdown,
+                fn_device_get_count,
                 fn_device_get_handle_by_index,
                 fn_device_get_name,
                 fn_device_get_temperature,
@@ -242,14 +269,30 @@ impl NvmlWrapper {
         self.device_count
     }
 
+    fn ensure_active_and_initialized(&self) -> Result<(), NvmlError> {
+        if !self.power_guard.is_dgpu_awake() {
+            return Err(NvmlError::GpuSuspended);
+        }
+        if !self.init_ok.load(Ordering::SeqCst) {
+            unsafe {
+                let ret = (self.fn_init)();
+                if ret != NVML_SUCCESS {
+                    return Err(NvmlError::NvmlCall(ret));
+                }
+                self.init_ok.store(true, Ordering::SeqCst);
+                let mut count: c_uint = 0;
+                let _ = (self.fn_device_get_count)(&mut count);
+            }
+        }
+        Ok(())
+    }
+
     /// Query minimum and maximum power limits in milliwatts
     pub fn get_power_limit_constraints(&self, index: u32) -> Result<(u32, u32), NvmlError> {
         if index >= self.device_count {
             return Err(NvmlError::NoGpuFound);
         }
-        if !self.power_guard.is_dgpu_awake() {
-            return Err(NvmlError::GpuSuspended);
-        }
+        self.ensure_active_and_initialized()?;
 
         unsafe {
             let mut handle: *mut c_void = std::ptr::null_mut();
@@ -279,9 +322,7 @@ impl NvmlWrapper {
         }
 
         // GUARD: check if dGPU is suspended in D3cold before waking it!
-        if !self.power_guard.is_dgpu_awake() {
-            return Err(NvmlError::GpuSuspended);
-        }
+        self.ensure_active_and_initialized()?;
 
         unsafe {
             let mut handle: *mut c_void = std::ptr::null_mut();
@@ -334,9 +375,7 @@ impl NvmlWrapper {
         if index >= self.device_count {
             return Err(NvmlError::NoGpuFound);
         }
-        if !self.power_guard.is_dgpu_awake() {
-            return Err(NvmlError::GpuSuspended);
-        }
+        self.ensure_active_and_initialized()?;
 
         unsafe {
             let mut handle: *mut c_void = std::ptr::null_mut();

@@ -40,6 +40,30 @@
       "status": "documented",
       "legacy_defect": "Settings parser looped over display modes assuming non-empty vector, causing parsing edge cases when checking force YUV420 output switches.",
       "rust_target_behavior": "Guard against empty display mode lists and safely parse color formats."
+    },
+    {
+      "id": "DIFF-06",
+      "title": "Client wrapper collapsing D-Bus transport and auth errors into boolean false",
+      "affected_features": ["F03", "F06", "F07", "F11", "F14", "F17", "F18", "F20", "F26", "F43"],
+      "status": "documented",
+      "legacy_defect": "Legacy UccdClient wrapped D-Bus method calls with callMethod<bool>(...).value_or(false), masking connection loss, Polkit denials, timeouts, and invalid signatures as a generic false return.",
+      "rust_target_behavior": "Expose Result<bool, zbus::Error> in typed proxies and CLI to distinguish logical rejection (Ok(false)) from communication, authorization, or timeout failures (Err)."
+    },
+    {
+      "id": "DIFF-07",
+      "title": "Hidden hardcoded 1500 ms async call timeout in AsyncRead",
+      "affected_features": ["F28", "F30"],
+      "status": "documented",
+      "legacy_defect": "Legacy AsyncRead.hpp enforced a hardcoded 1500 ms timeout via asyncCall(message, 1500), causing silent telemetry drop on slow EC or sysfs responses.",
+      "rust_target_behavior": "Use Tokio async background sampling with lockless snapshot caching (ADR-02), eliminating blocking D-Bus timeouts on sensor telemetry reads."
+    },
+    {
+      "id": "DIFF-08",
+      "title": "Daemon returning boolean false on malformed JSON or authorization failure instead of D-Bus error reply",
+      "affected_features": ["F05", "F06", "F07", "F11", "F18", "F20"],
+      "status": "documented",
+      "legacy_defect": "Legacy UccDBusService returned bool false for malformed JSON, out-of-bounds parameters, or failed Polkit checks, treating error conditions as valid replies containing false.",
+      "rust_target_behavior": "Return typed zbus::fdo::Error or structured Result on validation/authorization failure while maintaining backwards wire compatibility where callers require boolean return."
     }
   ]
 }

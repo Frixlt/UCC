@@ -16,7 +16,15 @@
     "R1": {"role": "parity_reviewer", "worktree": null, "branch": null, "current_ticket": "M3.8-contract-review", "conversation_id": "634e984a-5178-4854-825e-cf72db5718c5"},
     "R2": {"role": "test_engineer", "worktree": ".worktrees/r2", "branch": "rust/r2-tests", "current_ticket": "M3.2/M3.7", "conversation_id": "dc3756a1-00c7-4a63-bba9-a45584f5f133"}
   },
-  "open_decisions": [],
+  "open_decisions": [
+    "ADR-03: User decision on external GNOME/Plasma JS/QML shell adapters vs pure Rust standalone SNI applet (M1.9 pending_user_decision)"
+  ],
+  "unconfirmed_statuses_revised": {
+    "M1.3": "prototype_implemented; pending_runtime_accessibility_verification",
+    "M1.4": "prototype_implemented; pending_runtime_wayland_verification",
+    "M1.5": "prototype_implemented; pending_runtime_compositor_verification",
+    "M1.9": "pending_user_decision"
+  },
   "environment_blockers": [
     "test_gnome_async.js: gjs not installed in Hyprland session",
     "test_ite8291_brightness.py: external tuxedo-drivers source tree argument not bundled"

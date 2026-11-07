@@ -62,7 +62,8 @@
       },
       "source_specific_assertions": [],
       "r1_verdict": null,
-      "r2_verdict": null
+      "r2_verdict": null,
+      "feature_id": "F01"
     },
     {
       "id": "DB-M002",
@@ -119,7 +120,8 @@
       },
       "source_specific_assertions": [],
       "r1_verdict": null,
-      "r2_verdict": null
+      "r2_verdict": null,
+      "feature_id": "F01"
     },
     {
       "id": "DB-M003",
@@ -176,7 +178,8 @@
       },
       "source_specific_assertions": [],
       "r1_verdict": null,
-      "r2_verdict": null
+      "r2_verdict": null,
+      "feature_id": "F01"
     },
     {
       "id": "DB-M004",
@@ -233,7 +236,8 @@
       },
       "source_specific_assertions": [],
       "r1_verdict": null,
-      "r2_verdict": null
+      "r2_verdict": null,
+      "feature_id": "F23"
     },
     {
       "id": "DB-M005",
@@ -290,7 +294,8 @@
       },
       "source_specific_assertions": [],
       "r1_verdict": null,
-      "r2_verdict": null
+      "r2_verdict": null,
+      "feature_id": "F23"
     },
     {
       "id": "DB-M006",
@@ -347,7 +352,8 @@
       },
       "source_specific_assertions": [],
       "r1_verdict": null,
-      "r2_verdict": null
+      "r2_verdict": null,
+      "feature_id": "F01"
     },
     {
       "id": "DB-M007",
@@ -404,7 +410,8 @@
       },
       "source_specific_assertions": [],
       "r1_verdict": null,
-      "r2_verdict": null
+      "r2_verdict": null,
+      "feature_id": "F01"
     },
     {
       "id": "DB-M008",
@@ -461,7 +468,8 @@
       },
       "source_specific_assertions": [],
       "r1_verdict": null,
-      "r2_verdict": null
+      "r2_verdict": null,
+      "feature_id": "F01"
     },
     {
       "id": "DB-M009",
@@ -518,7 +526,8 @@
       },
       "source_specific_assertions": [],
       "r1_verdict": null,
-      "r2_verdict": null
+      "r2_verdict": null,
+      "feature_id": "F28"
     },
     {
       "id": "DB-M010",
@@ -575,7 +584,8 @@
       },
       "source_specific_assertions": [],
       "r1_verdict": null,
-      "r2_verdict": null
+      "r2_verdict": null,
+      "feature_id": "F28"
     },
     {
       "id": "DB-M011",
@@ -632,7 +642,8 @@
       },
       "source_specific_assertions": [],
       "r1_verdict": null,
-      "r2_verdict": null
+      "r2_verdict": null,
+      "feature_id": "F28"
     },
     {
       "id": "DB-M012",
@@ -689,7 +700,8 @@
       },
       "source_specific_assertions": [],
       "r1_verdict": null,
-      "r2_verdict": null
+      "r2_verdict": null,
+      "feature_id": "F27"
     },
     {
       "id": "DB-M013",
@@ -746,7 +758,8 @@
       },
       "source_specific_assertions": [],
       "r1_verdict": null,
-      "r2_verdict": null
+      "r2_verdict": null,
+      "feature_id": "F27"
     },
     {
       "id": "DB-M014",
@@ -803,7 +816,8 @@
       },
       "source_specific_assertions": [],
       "r1_verdict": null,
-      "r2_verdict": null
+      "r2_verdict": null,
+      "feature_id": "F22"
     },
     {
       "id": "DB-M015",
@@ -860,7 +874,8 @@
       },
       "source_specific_assertions": [],
       "r1_verdict": null,
-      "r2_verdict": null
+      "r2_verdict": null,
+      "feature_id": "F22"
     },
     {
       "id": "DB-M016",
@@ -917,7 +932,8 @@
       },
       "source_specific_assertions": [],
       "r1_verdict": null,
-      "r2_verdict": null
+      "r2_verdict": null,
+      "feature_id": "F18"
     },
     {
       "id": "DB-M017",
@@ -976,7 +992,8 @@
       },
       "source_specific_assertions": [],
       "r1_verdict": null,
-      "r2_verdict": null
+      "r2_verdict": null,
+      "feature_id": "F22"
     },
     {
       "id": "DB-M018",
@@ -1035,7 +1052,8 @@
       },
       "source_specific_assertions": [],
       "r1_verdict": null,
-      "r2_verdict": null
+      "r2_verdict": null,
+      "feature_id": "F23"
     },
     {
       "id": "DB-M019",
@@ -1092,7 +1110,8 @@
       },
       "source_specific_assertions": [],
       "r1_verdict": null,
-      "r2_verdict": null
+      "r2_verdict": null,
+      "feature_id": "F28"
     },
     {
       "id": "DB-M020",
@@ -1149,7 +1168,8 @@
       },
       "source_specific_assertions": [],
       "r1_verdict": null,
-      "r2_verdict": null
+      "r2_verdict": null,
+      "feature_id": "F28"
     },
     {
       "id": "DB-M021",
@@ -1206,7 +1226,8 @@
       },
       "source_specific_assertions": [],
       "r1_verdict": null,
-      "r2_verdict": null
+      "r2_verdict": null,
+      "feature_id": "F28"
     },
     {
       "id": "DB-M022",
@@ -1263,7 +1284,8 @@
       },
       "source_specific_assertions": [],
       "r1_verdict": null,
-      "r2_verdict": null
+      "r2_verdict": null,
+      "feature_id": "F28"
     },
     {
       "id": "DB-M023",
@@ -1320,7 +1342,8 @@
       },
       "source_specific_assertions": [],
       "r1_verdict": null,
-      "r2_verdict": null
+      "r2_verdict": null,
+      "feature_id": "F10"
     },
     {
       "id": "DB-M024",
@@ -1377,7 +1400,8 @@
       },
       "source_specific_assertions": [],
       "r1_verdict": null,
-      "r2_verdict": null
+      "r2_verdict": null,
+      "feature_id": "F07"
     },
     {
       "id": "DB-M025",
@@ -1434,7 +1458,8 @@
       },
       "source_specific_assertions": [],
       "r1_verdict": null,
-      "r2_verdict": null
+      "r2_verdict": null,
+      "feature_id": "F02"
     },
     {
       "id": "DB-M026",
@@ -1493,7 +1518,8 @@
       },
       "source_specific_assertions": [],
       "r1_verdict": null,
-      "r2_verdict": null
+      "r2_verdict": null,
+      "feature_id": "F03"
     },
     {
       "id": "DB-M027",
@@ -1552,7 +1578,8 @@
       },
       "source_specific_assertions": [],
       "r1_verdict": null,
-      "r2_verdict": null
+      "r2_verdict": null,
+      "feature_id": "F11"
     },
     {
       "id": "DB-M028",
@@ -1611,7 +1638,8 @@
       },
       "source_specific_assertions": [],
       "r1_verdict": null,
-      "r2_verdict": null
+      "r2_verdict": null,
+      "feature_id": "F11"
     },
     {
       "id": "DB-M029",
@@ -1670,7 +1698,8 @@
       },
       "source_specific_assertions": [],
       "r1_verdict": null,
-      "r2_verdict": null
+      "r2_verdict": null,
+      "feature_id": "F11"
     },
     {
       "id": "DB-M030",
@@ -1729,7 +1758,8 @@
       },
       "source_specific_assertions": [],
       "r1_verdict": null,
-      "r2_verdict": null
+      "r2_verdict": null,
+      "feature_id": "F11"
     },
     {
       "id": "DB-M031",
@@ -1788,7 +1818,8 @@
       },
       "source_specific_assertions": [],
       "r1_verdict": null,
-      "r2_verdict": null
+      "r2_verdict": null,
+      "feature_id": "F20"
     },
     {
       "id": "DB-M032",
@@ -1847,7 +1878,8 @@
       },
       "source_specific_assertions": [],
       "r1_verdict": null,
-      "r2_verdict": null
+      "r2_verdict": null,
+      "feature_id": "F20"
     },
     {
       "id": "DB-M033",
@@ -1906,7 +1938,8 @@
       },
       "source_specific_assertions": [],
       "r1_verdict": null,
-      "r2_verdict": null
+      "r2_verdict": null,
+      "feature_id": "F01"
     },
     {
       "id": "DB-M034",
@@ -1965,7 +1998,8 @@
       },
       "source_specific_assertions": [],
       "r1_verdict": null,
-      "r2_verdict": null
+      "r2_verdict": null,
+      "feature_id": "F20"
     },
     {
       "id": "DB-M035",
@@ -2024,7 +2058,8 @@
       },
       "source_specific_assertions": [],
       "r1_verdict": null,
-      "r2_verdict": null
+      "r2_verdict": null,
+      "feature_id": "F20"
     },
     {
       "id": "DB-M036",
@@ -2083,7 +2118,8 @@
       },
       "source_specific_assertions": [],
       "r1_verdict": null,
-      "r2_verdict": null
+      "r2_verdict": null,
+      "feature_id": "F03"
     },
     {
       "id": "DB-M037",
@@ -2142,7 +2178,8 @@
       },
       "source_specific_assertions": [],
       "r1_verdict": null,
-      "r2_verdict": null
+      "r2_verdict": null,
+      "feature_id": "F05"
     },
     {
       "id": "DB-M038",
@@ -2201,7 +2238,8 @@
       },
       "source_specific_assertions": [],
       "r1_verdict": null,
-      "r2_verdict": null
+      "r2_verdict": null,
+      "feature_id": "F05"
     },
     {
       "id": "DB-M039",
@@ -2260,7 +2298,8 @@
       },
       "source_specific_assertions": [],
       "r1_verdict": null,
-      "r2_verdict": null
+      "r2_verdict": null,
+      "feature_id": "F07"
     },
     {
       "id": "DB-M040",
@@ -2319,7 +2358,8 @@
       },
       "source_specific_assertions": [],
       "r1_verdict": null,
-      "r2_verdict": null
+      "r2_verdict": null,
+      "feature_id": "F07"
     },
     {
       "id": "DB-M041",
@@ -2378,7 +2418,8 @@
       },
       "source_specific_assertions": [],
       "r1_verdict": null,
-      "r2_verdict": null
+      "r2_verdict": null,
+      "feature_id": "F07"
     },
     {
       "id": "DB-M042",
@@ -2435,7 +2476,8 @@
       },
       "source_specific_assertions": [],
       "r1_verdict": null,
-      "r2_verdict": null
+      "r2_verdict": null,
+      "feature_id": "F07"
     },
     {
       "id": "DB-M043",
@@ -2492,7 +2534,8 @@
       },
       "source_specific_assertions": [],
       "r1_verdict": null,
-      "r2_verdict": null
+      "r2_verdict": null,
+      "feature_id": "F07"
     },
     {
       "id": "DB-M044",
@@ -2551,7 +2594,8 @@
       },
       "source_specific_assertions": [],
       "r1_verdict": null,
-      "r2_verdict": null
+      "r2_verdict": null,
+      "feature_id": "F14"
     },
     {
       "id": "DB-M045",
@@ -2610,7 +2654,8 @@
       },
       "source_specific_assertions": [],
       "r1_verdict": null,
-      "r2_verdict": null
+      "r2_verdict": null,
+      "feature_id": "F14"
     },
     {
       "id": "DB-M046",
@@ -2669,7 +2714,8 @@
       },
       "source_specific_assertions": [],
       "r1_verdict": null,
-      "r2_verdict": null
+      "r2_verdict": null,
+      "feature_id": "F14"
     },
     {
       "id": "DB-M047",
@@ -2728,7 +2774,8 @@
       },
       "source_specific_assertions": [],
       "r1_verdict": null,
-      "r2_verdict": null
+      "r2_verdict": null,
+      "feature_id": "F14"
     },
     {
       "id": "DB-M048",
@@ -2785,7 +2832,8 @@
       },
       "source_specific_assertions": [],
       "r1_verdict": null,
-      "r2_verdict": null
+      "r2_verdict": null,
+      "feature_id": "F07"
     },
     {
       "id": "DB-M049",
@@ -2842,7 +2890,8 @@
       },
       "source_specific_assertions": [],
       "r1_verdict": null,
-      "r2_verdict": null
+      "r2_verdict": null,
+      "feature_id": "F08"
     },
     {
       "id": "DB-M050",
@@ -2899,7 +2948,8 @@
       },
       "source_specific_assertions": [],
       "r1_verdict": null,
-      "r2_verdict": null
+      "r2_verdict": null,
+      "feature_id": "F07"
     },
     {
       "id": "DB-M051",
@@ -2958,7 +3008,8 @@
       },
       "source_specific_assertions": [],
       "r1_verdict": null,
-      "r2_verdict": null
+      "r2_verdict": null,
+      "feature_id": "F07"
     },
     {
       "id": "DB-M052",
@@ -3017,7 +3068,8 @@
       },
       "source_specific_assertions": [],
       "r1_verdict": null,
-      "r2_verdict": null
+      "r2_verdict": null,
+      "feature_id": "F07"
     },
     {
       "id": "DB-M053",
@@ -3076,7 +3128,8 @@
       },
       "source_specific_assertions": [],
       "r1_verdict": null,
-      "r2_verdict": null
+      "r2_verdict": null,
+      "feature_id": "F07"
     },
     {
       "id": "DB-M054",
@@ -3135,7 +3188,8 @@
       },
       "source_specific_assertions": [],
       "r1_verdict": null,
-      "r2_verdict": null
+      "r2_verdict": null,
+      "feature_id": "F07"
     },
     {
       "id": "DB-M055",
@@ -3192,7 +3246,8 @@
       },
       "source_specific_assertions": [],
       "r1_verdict": null,
-      "r2_verdict": null
+      "r2_verdict": null,
+      "feature_id": "F14"
     },
     {
       "id": "DB-M056",
@@ -3249,7 +3304,8 @@
       },
       "source_specific_assertions": [],
       "r1_verdict": null,
-      "r2_verdict": null
+      "r2_verdict": null,
+      "feature_id": "F14"
     },
     {
       "id": "DB-M057",
@@ -3308,7 +3364,8 @@
       },
       "source_specific_assertions": [],
       "r1_verdict": null,
-      "r2_verdict": null
+      "r2_verdict": null,
+      "feature_id": "F14"
     },
     {
       "id": "DB-M058",
@@ -3365,7 +3422,8 @@
       },
       "source_specific_assertions": [],
       "r1_verdict": null,
-      "r2_verdict": null
+      "r2_verdict": null,
+      "feature_id": "F07"
     },
     {
       "id": "DB-M059",
@@ -3424,7 +3482,8 @@
       },
       "source_specific_assertions": [],
       "r1_verdict": null,
-      "r2_verdict": null
+      "r2_verdict": null,
+      "feature_id": "F06"
     },
     {
       "id": "DB-M060",
@@ -3483,7 +3542,8 @@
       },
       "source_specific_assertions": [],
       "r1_verdict": null,
-      "r2_verdict": null
+      "r2_verdict": null,
+      "feature_id": "F06"
     },
     {
       "id": "DB-M061",
@@ -3540,7 +3600,8 @@
       },
       "source_specific_assertions": [],
       "r1_verdict": null,
-      "r2_verdict": null
+      "r2_verdict": null,
+      "feature_id": "F07"
     },
     {
       "id": "DB-M062",
@@ -3597,7 +3658,8 @@
       },
       "source_specific_assertions": [],
       "r1_verdict": null,
-      "r2_verdict": null
+      "r2_verdict": null,
+      "feature_id": "F07"
     },
     {
       "id": "DB-M063",
@@ -3654,7 +3716,8 @@
       },
       "source_specific_assertions": [],
       "r1_verdict": null,
-      "r2_verdict": null
+      "r2_verdict": null,
+      "feature_id": "F18"
     },
     {
       "id": "DB-M064",
@@ -3711,7 +3774,8 @@
       },
       "source_specific_assertions": [],
       "r1_verdict": null,
-      "r2_verdict": null
+      "r2_verdict": null,
+      "feature_id": "F18"
     },
     {
       "id": "DB-M065",
@@ -3770,7 +3834,8 @@
       },
       "source_specific_assertions": [],
       "r1_verdict": null,
-      "r2_verdict": null
+      "r2_verdict": null,
+      "feature_id": "F18"
     },
     {
       "id": "DB-M066",
@@ -3827,7 +3892,8 @@
       },
       "source_specific_assertions": [],
       "r1_verdict": null,
-      "r2_verdict": null
+      "r2_verdict": null,
+      "feature_id": "F18"
     },
     {
       "id": "DB-M067",
@@ -3886,7 +3952,8 @@
       },
       "source_specific_assertions": [],
       "r1_verdict": null,
-      "r2_verdict": null
+      "r2_verdict": null,
+      "feature_id": "F18"
     },
     {
       "id": "DB-M068",
@@ -3945,7 +4012,8 @@
       },
       "source_specific_assertions": [],
       "r1_verdict": null,
-      "r2_verdict": null
+      "r2_verdict": null,
+      "feature_id": "F18"
     },
     {
       "id": "DB-M069",
@@ -4002,7 +4070,8 @@
       },
       "source_specific_assertions": [],
       "r1_verdict": null,
-      "r2_verdict": null
+      "r2_verdict": null,
+      "feature_id": "F14"
     },
     {
       "id": "DB-M070",
@@ -4061,7 +4130,8 @@
       },
       "source_specific_assertions": [],
       "r1_verdict": null,
-      "r2_verdict": null
+      "r2_verdict": null,
+      "feature_id": "F14"
     },
     {
       "id": "DB-M071",
@@ -4120,7 +4190,8 @@
       },
       "source_specific_assertions": [],
       "r1_verdict": null,
-      "r2_verdict": null
+      "r2_verdict": null,
+      "feature_id": "F14"
     },
     {
       "id": "DB-M072",
@@ -4177,7 +4248,8 @@
       },
       "source_specific_assertions": [],
       "r1_verdict": null,
-      "r2_verdict": null
+      "r2_verdict": null,
+      "feature_id": "F14"
     },
     {
       "id": "DB-M073",
@@ -4234,7 +4306,8 @@
       },
       "source_specific_assertions": [],
       "r1_verdict": null,
-      "r2_verdict": null
+      "r2_verdict": null,
+      "feature_id": "F14"
     },
     {
       "id": "DB-M074",
@@ -4291,7 +4364,8 @@
       },
       "source_specific_assertions": [],
       "r1_verdict": null,
-      "r2_verdict": null
+      "r2_verdict": null,
+      "feature_id": "F26"
     },
     {
       "id": "DB-M075",
@@ -4348,7 +4422,8 @@
       },
       "source_specific_assertions": [],
       "r1_verdict": null,
-      "r2_verdict": null
+      "r2_verdict": null,
+      "feature_id": "F26"
     },
     {
       "id": "DB-M076",
@@ -4407,7 +4482,8 @@
       },
       "source_specific_assertions": [],
       "r1_verdict": null,
-      "r2_verdict": null
+      "r2_verdict": null,
+      "feature_id": "F26"
     },
     {
       "id": "DB-M077",
@@ -4464,7 +4540,8 @@
       },
       "source_specific_assertions": [],
       "r1_verdict": null,
-      "r2_verdict": null
+      "r2_verdict": null,
+      "feature_id": "F26"
     },
     {
       "id": "DB-M078",
@@ -4521,7 +4598,8 @@
       },
       "source_specific_assertions": [],
       "r1_verdict": null,
-      "r2_verdict": null
+      "r2_verdict": null,
+      "feature_id": "F26"
     },
     {
       "id": "DB-M079",
@@ -4580,7 +4658,8 @@
       },
       "source_specific_assertions": [],
       "r1_verdict": null,
-      "r2_verdict": null
+      "r2_verdict": null,
+      "feature_id": "F26"
     },
     {
       "id": "DB-M080",
@@ -4637,7 +4716,8 @@
       },
       "source_specific_assertions": [],
       "r1_verdict": null,
-      "r2_verdict": null
+      "r2_verdict": null,
+      "feature_id": "F26"
     },
     {
       "id": "DB-M081",
@@ -4694,7 +4774,8 @@
       },
       "source_specific_assertions": [],
       "r1_verdict": null,
-      "r2_verdict": null
+      "r2_verdict": null,
+      "feature_id": "F26"
     },
     {
       "id": "DB-M082",
@@ -4751,7 +4832,8 @@
       },
       "source_specific_assertions": [],
       "r1_verdict": null,
-      "r2_verdict": null
+      "r2_verdict": null,
+      "feature_id": "F26"
     },
     {
       "id": "DB-M083",
@@ -4808,7 +4890,8 @@
       },
       "source_specific_assertions": [],
       "r1_verdict": null,
-      "r2_verdict": null
+      "r2_verdict": null,
+      "feature_id": "F26"
     },
     {
       "id": "DB-M084",
@@ -4867,7 +4950,8 @@
       },
       "source_specific_assertions": [],
       "r1_verdict": null,
-      "r2_verdict": null
+      "r2_verdict": null,
+      "feature_id": "F26"
     },
     {
       "id": "DB-M085",
@@ -4926,7 +5010,8 @@
       },
       "source_specific_assertions": [],
       "r1_verdict": null,
-      "r2_verdict": null
+      "r2_verdict": null,
+      "feature_id": "F26"
     },
     {
       "id": "DB-M086",
@@ -4983,7 +5068,8 @@
       },
       "source_specific_assertions": [],
       "r1_verdict": null,
-      "r2_verdict": null
+      "r2_verdict": null,
+      "feature_id": "F26"
     },
     {
       "id": "DB-M087",
@@ -5042,7 +5128,8 @@
       },
       "source_specific_assertions": [],
       "r1_verdict": null,
-      "r2_verdict": null
+      "r2_verdict": null,
+      "feature_id": "F26"
     },
     {
       "id": "DB-M088",
@@ -5099,7 +5186,8 @@
       },
       "source_specific_assertions": [],
       "r1_verdict": null,
-      "r2_verdict": null
+      "r2_verdict": null,
+      "feature_id": "F27"
     },
     {
       "id": "DB-M089",
@@ -5156,7 +5244,8 @@
       },
       "source_specific_assertions": [],
       "r1_verdict": null,
-      "r2_verdict": null
+      "r2_verdict": null,
+      "feature_id": "F27"
     },
     {
       "id": "DB-M090",
@@ -5215,7 +5304,8 @@
       },
       "source_specific_assertions": [],
       "r1_verdict": null,
-      "r2_verdict": null
+      "r2_verdict": null,
+      "feature_id": "F27"
     },
     {
       "id": "DB-M091",
@@ -5274,7 +5364,8 @@
       },
       "source_specific_assertions": [],
       "r1_verdict": null,
-      "r2_verdict": null
+      "r2_verdict": null,
+      "feature_id": "F30"
     },
     {
       "id": "DB-M092",
@@ -5331,7 +5422,8 @@
       },
       "source_specific_assertions": [],
       "r1_verdict": null,
-      "r2_verdict": null
+      "r2_verdict": null,
+      "feature_id": "F30"
     },
     {
       "id": "DB-M093",
@@ -5390,7 +5482,8 @@
       },
       "source_specific_assertions": [],
       "r1_verdict": null,
-      "r2_verdict": null
+      "r2_verdict": null,
+      "feature_id": "F29"
     },
     {
       "id": "DB-M094",
@@ -5447,7 +5540,8 @@
       },
       "source_specific_assertions": [],
       "r1_verdict": null,
-      "r2_verdict": null
+      "r2_verdict": null,
+      "feature_id": "F13"
     },
     {
       "id": "DB-M095",
@@ -5504,7 +5598,8 @@
       },
       "source_specific_assertions": [],
       "r1_verdict": null,
-      "r2_verdict": null
+      "r2_verdict": null,
+      "feature_id": "F13"
     },
     {
       "id": "DB-M096",
@@ -5561,7 +5656,8 @@
       },
       "source_specific_assertions": [],
       "r1_verdict": null,
-      "r2_verdict": null
+      "r2_verdict": null,
+      "feature_id": "F13"
     },
     {
       "id": "DB-M097",
@@ -5620,7 +5716,8 @@
       },
       "source_specific_assertions": [],
       "r1_verdict": null,
-      "r2_verdict": null
+      "r2_verdict": null,
+      "feature_id": "F13"
     },
     {
       "id": "DB-M098",
@@ -5677,7 +5774,8 @@
       },
       "source_specific_assertions": [],
       "r1_verdict": null,
-      "r2_verdict": null
+      "r2_verdict": null,
+      "feature_id": "F08"
     },
     {
       "id": "DB-M099",
@@ -5734,7 +5832,8 @@
       },
       "source_specific_assertions": [],
       "r1_verdict": null,
-      "r2_verdict": null
+      "r2_verdict": null,
+      "feature_id": "F08"
     },
     {
       "id": "DB-M100",
@@ -5791,7 +5890,8 @@
       },
       "source_specific_assertions": [],
       "r1_verdict": null,
-      "r2_verdict": null
+      "r2_verdict": null,
+      "feature_id": "F09"
     },
     {
       "id": "DB-M101",
@@ -5848,7 +5948,8 @@
       },
       "source_specific_assertions": [],
       "r1_verdict": null,
-      "r2_verdict": null
+      "r2_verdict": null,
+      "feature_id": "F09"
     },
     {
       "id": "DB-M102",
@@ -5905,7 +6006,8 @@
       },
       "source_specific_assertions": [],
       "r1_verdict": null,
-      "r2_verdict": null
+      "r2_verdict": null,
+      "feature_id": "F15"
     },
     {
       "id": "DB-M103",
@@ -5962,7 +6064,8 @@
       },
       "source_specific_assertions": [],
       "r1_verdict": null,
-      "r2_verdict": null
+      "r2_verdict": null,
+      "feature_id": "F04"
     },
     {
       "id": "DB-M104",
@@ -6019,7 +6122,8 @@
       },
       "source_specific_assertions": [],
       "r1_verdict": null,
-      "r2_verdict": null
+      "r2_verdict": null,
+      "feature_id": "F17"
     },
     {
       "id": "DB-M105",
@@ -6076,7 +6180,8 @@
       },
       "source_specific_assertions": [],
       "r1_verdict": null,
-      "r2_verdict": null
+      "r2_verdict": null,
+      "feature_id": "F17"
     },
     {
       "id": "DB-M106",
@@ -6135,7 +6240,8 @@
       },
       "source_specific_assertions": [],
       "r1_verdict": null,
-      "r2_verdict": null
+      "r2_verdict": null,
+      "feature_id": "F15"
     },
     {
       "id": "DB-M107",
@@ -6192,7 +6298,8 @@
       },
       "source_specific_assertions": [],
       "r1_verdict": null,
-      "r2_verdict": null
+      "r2_verdict": null,
+      "feature_id": "F15"
     },
     {
       "id": "DB-M108",
@@ -6251,7 +6358,8 @@
       },
       "source_specific_assertions": [],
       "r1_verdict": null,
-      "r2_verdict": null
+      "r2_verdict": null,
+      "feature_id": "F17"
     },
     {
       "id": "DB-M109",
@@ -6310,7 +6418,8 @@
       },
       "source_specific_assertions": [],
       "r1_verdict": null,
-      "r2_verdict": null
+      "r2_verdict": null,
+      "feature_id": "F17"
     },
     {
       "id": "DB-M110",
@@ -6369,7 +6478,8 @@
       },
       "source_specific_assertions": [],
       "r1_verdict": null,
-      "r2_verdict": null
+      "r2_verdict": null,
+      "feature_id": "F17"
     },
     {
       "id": "DB-M111",
@@ -6428,7 +6538,8 @@
       },
       "source_specific_assertions": [],
       "r1_verdict": null,
-      "r2_verdict": null
+      "r2_verdict": null,
+      "feature_id": "F17"
     },
     {
       "id": "DB-M112",
@@ -6487,7 +6598,8 @@
       },
       "source_specific_assertions": [],
       "r1_verdict": null,
-      "r2_verdict": null
+      "r2_verdict": null,
+      "feature_id": "F17"
     },
     {
       "id": "DB-M113",
@@ -6546,7 +6658,8 @@
       },
       "source_specific_assertions": [],
       "r1_verdict": null,
-      "r2_verdict": null
+      "r2_verdict": null,
+      "feature_id": "F17"
     },
     {
       "id": "DB-M114",
@@ -6603,7 +6716,8 @@
       },
       "source_specific_assertions": [],
       "r1_verdict": null,
-      "r2_verdict": null
+      "r2_verdict": null,
+      "feature_id": "F17"
     },
     {
       "id": "DB-M115",
@@ -6662,7 +6776,8 @@
       },
       "source_specific_assertions": [],
       "r1_verdict": null,
-      "r2_verdict": null
+      "r2_verdict": null,
+      "feature_id": "F17"
     },
     {
       "id": "DB-M116",
@@ -6719,7 +6834,8 @@
       },
       "source_specific_assertions": [],
       "r1_verdict": null,
-      "r2_verdict": null
+      "r2_verdict": null,
+      "feature_id": "F04"
     },
     {
       "id": "DB-M117",
@@ -6776,7 +6892,8 @@
       },
       "source_specific_assertions": [],
       "r1_verdict": null,
-      "r2_verdict": null
+      "r2_verdict": null,
+      "feature_id": "F13"
     },
     {
       "id": "DB-M118",
@@ -6833,7 +6950,8 @@
       },
       "source_specific_assertions": [],
       "r1_verdict": null,
-      "r2_verdict": null
+      "r2_verdict": null,
+      "feature_id": "F08"
     },
     {
       "id": "DB-M119",
@@ -6890,7 +7008,8 @@
       },
       "source_specific_assertions": [],
       "r1_verdict": null,
-      "r2_verdict": null
+      "r2_verdict": null,
+      "feature_id": "F30"
     },
     {
       "id": "DB-M120",
@@ -6949,7 +7068,8 @@
       },
       "source_specific_assertions": [],
       "r1_verdict": null,
-      "r2_verdict": null
+      "r2_verdict": null,
+      "feature_id": "F30"
     },
     {
       "id": "DB-M121",
@@ -7006,7 +7126,8 @@
       },
       "source_specific_assertions": [],
       "r1_verdict": null,
-      "r2_verdict": null
+      "r2_verdict": null,
+      "feature_id": "F30"
     },
     {
       "id": "DB-M122",
@@ -7063,7 +7184,8 @@
       },
       "source_specific_assertions": [],
       "r1_verdict": null,
-      "r2_verdict": null
+      "r2_verdict": null,
+      "feature_id": "F28"
     }
   ],
   "signals": [
@@ -7101,7 +7223,8 @@
         }
       },
       "r1_verdict": null,
-      "r2_verdict": null
+      "r2_verdict": null,
+      "feature_id": "F06"
     },
     {
       "id": "DB-S002",
@@ -7137,7 +7260,8 @@
         }
       },
       "r1_verdict": null,
-      "r2_verdict": null
+      "r2_verdict": null,
+      "feature_id": "F10"
     },
     {
       "id": "DB-S003",
@@ -7173,7 +7297,8 @@
         }
       },
       "r1_verdict": null,
-      "r2_verdict": null
+      "r2_verdict": null,
+      "feature_id": "F02"
     },
     {
       "id": "DB-S004",
@@ -7209,7 +7334,8 @@
         }
       },
       "r1_verdict": null,
-      "r2_verdict": null
+      "r2_verdict": null,
+      "feature_id": "F03"
     },
     {
       "id": "DB-S005",
@@ -7245,7 +7371,8 @@
         }
       },
       "r1_verdict": null,
-      "r2_verdict": null
+      "r2_verdict": null,
+      "feature_id": "F11"
     },
     {
       "id": "DB-S006",
@@ -7281,7 +7408,8 @@
         }
       },
       "r1_verdict": null,
-      "r2_verdict": null
+      "r2_verdict": null,
+      "feature_id": "F20"
     },
     {
       "id": "DB-S007",
@@ -7317,7 +7445,8 @@
         }
       },
       "r1_verdict": null,
-      "r2_verdict": null
+      "r2_verdict": null,
+      "feature_id": "F17"
     }
   ]
 }

@@ -9,8 +9,22 @@ use crate::defaults::{
     PROFILE_ID_HIGH_PERFORMANCE, PROFILE_ID_MAX_ENERGY_SAVE, PROFILE_ID_OFFICE, PROFILE_ID_QUIET,
 };
 use serde::{Deserialize, Serialize};
-use std::collections::HashMap;
+use std::collections::{BTreeMap, HashMap};
 use ucc_core::{KeyboardBacklightState, UccProfile};
+
+/// Supported format variants for display YCbCr 4:2:0 workaround entries.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(untagged)]
+pub enum YCbCrWorkaroundEntry {
+    /// Baseline format: map from port name to boolean e.g. `{"eDP-1": true}`
+    Map(BTreeMap<String, bool>),
+    /// Port struct: `{"port": "eDP-1", "enabled": true}`
+    Port { port: String, enabled: bool },
+    /// Card struct: `{"card": 0, "ports": [...]}`
+    Card { card: i32, ports: Vec<serde_json::Value> },
+    /// Simple string display ID
+    String(String),
+}
 
 /// Custom saved keyboard profile entry.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -92,7 +106,7 @@ pub struct UccSettings {
 
     /// List of display identifiers requiring YCbCr / YUV420 color format workarounds.
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub ycbcr420_workaround: Option<Vec<String>>,
+    pub ycbcr420_workaround: Option<Vec<YCbCrWorkaroundEntry>>,
 
     /// Preserves unknown/vendor-specific legacy attributes without loss.
     #[serde(flatten)]
@@ -214,17 +228,14 @@ pub fn create_default_settings() -> UccSettings {
         default_high_performance_profile(),
     );
 
+    // Baseline policy (UccDBusService.cpp:4078-4106):
+    // On fresh install, selects highest-TDP detected default profile and assigns it to AC, Battery, and WC.
+    let default_assigned = PROFILE_ID_HIGH_PERFORMANCE.to_string();
     let mut state_map = HashMap::new();
-    state_map.insert(
-        "power_ac".to_string(),
-        PROFILE_ID_HIGH_PERFORMANCE.to_string(),
-    );
+    state_map.insert("power_ac".to_string(), default_assigned.clone());
     state_map.insert("power_type_c".to_string(), PROFILE_ID_OFFICE.to_string());
-    state_map.insert("power_bat".to_string(), PROFILE_ID_QUIET.to_string());
-    state_map.insert(
-        "power_wc".to_string(),
-        PROFILE_ID_HIGH_PERFORMANCE.to_string(),
-    );
+    state_map.insert("power_bat".to_string(), default_assigned.clone());
+    state_map.insert("power_wc".to_string(), default_assigned);
 
     UccSettings {
         keyboard_layout: Some("ansi".to_string()),

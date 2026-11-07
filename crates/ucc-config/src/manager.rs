@@ -10,27 +10,49 @@ use std::fs;
 use std::path::{Path, PathBuf};
 
 /// Standard system-wide settings path.
-pub const SYSTEM_CONFIG_PATH: &str = "/etc/ucc/settings.json";
+pub const SYSTEM_CONFIG_PATH: &str = "/etc/ucc/settings";
+
+/// Alternate system-wide settings path (with .json extension).
+pub const SYSTEM_CONFIG_JSON_PATH: &str = "/etc/ucc/settings.json";
 
 /// Relative path under user config directory.
-pub const USER_CONFIG_REL_PATH: &str = "ucc/settings.json";
+pub const USER_CONFIG_REL_PATH: &str = "ucc/settings";
 
-/// Returns the standard system configuration path (`/etc/ucc/settings.json`).
+/// Alternate relative path under user config directory.
+pub const USER_CONFIG_JSON_REL_PATH: &str = "ucc/settings.json";
+
+/// Returns the standard system configuration path (`/etc/ucc/settings`).
 pub fn system_config_path() -> PathBuf {
     PathBuf::from(SYSTEM_CONFIG_PATH)
 }
 
-/// Returns the current user's configuration path (`~/.config/ucc/settings.json` or `$XDG_CONFIG_HOME/ucc/settings.json`).
+/// Returns the current user's configuration path (`~/.config/ucc/settings` or `$XDG_CONFIG_HOME/ucc/settings`).
 pub fn user_config_path() -> Option<PathBuf> {
     if let Ok(xdg) = std::env::var("XDG_CONFIG_HOME") {
         if !xdg.trim().is_empty() {
-            return Some(PathBuf::from(xdg).join(USER_CONFIG_REL_PATH));
+            let path = PathBuf::from(&xdg).join(USER_CONFIG_REL_PATH);
+            if path.exists() {
+                return Some(path);
+            }
+            let json_path = PathBuf::from(xdg).join(USER_CONFIG_JSON_REL_PATH);
+            if json_path.exists() {
+                return Some(json_path);
+            }
+            return Some(path);
         }
     }
 
     if let Ok(home) = std::env::var("HOME") {
         if !home.trim().is_empty() {
-            return Some(PathBuf::from(home).join(".config").join(USER_CONFIG_REL_PATH));
+            let path = PathBuf::from(&home).join(".config").join(USER_CONFIG_REL_PATH);
+            if path.exists() {
+                return Some(path);
+            }
+            let json_path = PathBuf::from(home).join(".config").join(USER_CONFIG_JSON_REL_PATH);
+            if json_path.exists() {
+                return Some(json_path);
+            }
+            return Some(path);
         }
     }
 
@@ -78,6 +100,11 @@ impl ConfigManager {
         let sys_path = system_config_path();
         if sys_path.exists() {
             return Some(sys_path);
+        }
+
+        let sys_json = PathBuf::from(SYSTEM_CONFIG_JSON_PATH);
+        if sys_json.exists() {
+            return Some(sys_json);
         }
 
         None

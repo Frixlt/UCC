@@ -66,6 +66,56 @@ impl Default for ProfileWebcam {
     }
 }
 
+mod manual_fan_speed_serde {
+    use serde::{Deserialize, Deserializer, Serializer};
+
+    pub fn serialize<S>(val: &Option<u8>, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        match val {
+            Some(v) => serializer.serialize_some(v),
+            None => serializer.serialize_none(),
+        }
+    }
+
+    pub fn deserialize<'de, D>(deserializer: D) -> Result<Option<u8>, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        let opt: Option<i64> = Option::deserialize(deserializer)?;
+        Ok(match opt {
+            Some(v) if (0..=100).contains(&v) => Some(v as u8),
+            _ => None, // -1 sentinel or None
+        })
+    }
+}
+
+mod manual_pump_voltage_serde {
+    use serde::{Deserialize, Deserializer, Serializer};
+
+    pub fn serialize<S>(val: &Option<i32>, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        match val {
+            Some(v) => serializer.serialize_some(v),
+            None => serializer.serialize_none(),
+        }
+    }
+
+    pub fn deserialize<'de, D>(deserializer: D) -> Result<Option<i32>, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        let opt: Option<i32> = Option::deserialize(deserializer)?;
+        Ok(match opt {
+            Some(v) if v >= 0 => Some(v),
+            _ => None, // -1 sentinel or None
+        })
+    }
+}
+
 /// Fan and water cooler control settings within a profile.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -78,9 +128,19 @@ pub struct ProfileFanControl {
     pub same_speed: bool,
     #[serde(rename = "autoControlWC", default = "default_true")]
     pub auto_control_wc: bool,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "manual_fan_speed_serde::deserialize",
+        serialize_with = "manual_fan_speed_serde::serialize"
+    )]
     pub manual_fan_speed: Option<u8>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "manual_pump_voltage_serde::deserialize",
+        serialize_with = "manual_pump_voltage_serde::serialize"
+    )]
     pub manual_pump_voltage: Option<i32>,
     #[serde(default)]
     pub enable_water_cooler: bool,

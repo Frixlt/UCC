@@ -106,6 +106,49 @@
       "actual": "122 methods present without feature_id annotations",
       "consequence": "Requires manual cross-correlation during audit",
       "suggested_direction": "Enrich dbus-status.json with feature_id mappings from parity reviewer report",
+      "status": "resolved",
+      "resolution": "Enriched dbus-status.json with explicit feature_id tags for all 122 D-Bus methods and 7 signals"
+    },
+    {
+      "id": "FINDING-V3-01",
+      "priority": "P1",
+      "title": "Missing de.uniwill.uccd namespace alias in crates/ucc-dbus",
+      "files": [
+        "crates/ucc-dbus/src/lib.rs"
+      ],
+      "trigger": "Legacy clients or scripts invoking methods on de.uniwill.uccd interface",
+      "expected": "Both com.uniwill.uccd and de.uniwill.uccd supported via interface alias or secondary registration",
+      "actual": "Only com.uniwill.uccd is declared in DBUS_INTERFACE",
+      "consequence": "Unknown interface error if client queries de.uniwill.uccd",
+      "suggested_direction": "Add DBUS_INTERFACE_ALT = 'de.uniwill.uccd' and register dual interface adaptor in ucc-dbus",
+      "status": "open"
+    },
+    {
+      "id": "FINDING-V3-02",
+      "priority": "P1",
+      "title": "84 of 122 D-Bus methods pending implementation in crates/ucc-dbus",
+      "files": [
+        "crates/ucc-dbus/src/lib.rs"
+      ],
+      "trigger": "Calling un-implemented D-Bus methods (e.g. CPU policy F08, fan profiles F14, keyboard F18, monitor F30)",
+      "expected": "Complete 122-method interface implemented in UccdBackend and UccdInterface / UccdProxy",
+      "actual": "Only 38 skeleton methods implemented in crates/ucc-dbus/src/lib.rs",
+      "consequence": "Missing D-Bus methods return UnknownMethod to clients",
+      "suggested_direction": "Complete M3.1 tickets implementing remaining 84 methods with exact zbus signatures matching introspection XML",
+      "status": "open"
+    },
+    {
+      "id": "FINDING-V3-03",
+      "priority": "P2",
+      "title": "Comprehensive contract test harness for 122 methods pending (M3.2)",
+      "files": [
+        "crates/ucc-dbus/tests/dbus_skeleton.rs"
+      ],
+      "trigger": "Running automated contract verification against fake or real D-Bus daemon",
+      "expected": "Automated tests for all 122 methods covering positive, negative, and invalid argument cases on private bus",
+      "actual": "dbus_skeleton.rs only tests 6 methods on default mock backend",
+      "consequence": "Lack of automated test coverage for 116 methods",
+      "suggested_direction": "Implement fake service and contract tests in M3.2 on private zbus session/system bus",
       "status": "open"
     }
   ]

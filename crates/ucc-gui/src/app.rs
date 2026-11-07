@@ -71,6 +71,7 @@ pub struct ControlCenterApp {
     pub right_color: ZoneColor,
     pub keyboard_brightness: u8,
     pub status_message: Option<String>,
+    pub config_load_error: Option<String>,
 }
 
 impl ControlCenterApp {
@@ -79,7 +80,13 @@ impl ControlCenterApp {
         let is_preview = std::env::args().any(|arg| arg == "--preview") || is_read_only_preview();
 
         let config_manager = ConfigManager::new();
-        let settings = config_manager.load().unwrap_or_else(|_| create_default_settings());
+        let (settings, config_load_error) = match config_manager.load() {
+            Ok(s) => (s, None),
+            Err(e) => {
+                let err_msg = format!("Existing configuration failed to load: {}. Write operations are blocked to prevent data loss.", e);
+                (create_default_settings(), Some(err_msg))
+            }
+        };
 
         let active_profile_id = settings
             .state_map
@@ -148,6 +155,7 @@ impl ControlCenterApp {
             },
             keyboard_brightness: 75,
             status_message: None,
+            config_load_error,
         };
 
         (app, Task::none())
@@ -215,6 +223,12 @@ impl ControlCenterApp {
                 if self.is_preview || is_read_only_preview() {
                     self.status_message =
                         Some("Save blocked: UCC_READ_ONLY_PREVIEW mode is active".to_string());
+                    return;
+                }
+
+                // Block saving if existing configuration failed to load, preventing data destruction
+                if let Some(ref err) = self.config_load_error {
+                    self.status_message = Some(format!("Save blocked: {}", err));
                     return;
                 }
 

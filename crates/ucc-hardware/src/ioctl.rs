@@ -193,6 +193,24 @@ impl TuxedoIoDevice {
         Ok(())
     }
 
+    /// Maximum buffer size for module and interface version strings per kernel ABI (20 bytes).
+    pub const VERSION_BUFFER_LEN: usize = 20;
+
+    /// Reads driver module version safely using the kernel ABI fixed 20-byte buffer.
+    pub fn read_module_version(&self) -> Result<String, IoctlError> {
+        self.read_str(requests::R_MOD_VERSION, Self::VERSION_BUFFER_LEN)
+    }
+
+    /// Reads Uniwill hardware interface string safely using the kernel ABI fixed 20-byte buffer.
+    pub fn read_uniwill_interface_string(&self) -> Result<String, IoctlError> {
+        self.read_str(requests::R_UW_HW_IF_STR, Self::VERSION_BUFFER_LEN)
+    }
+
+    /// Reads Clevo hardware interface string safely using the kernel ABI fixed 20-byte buffer.
+    pub fn read_clevo_interface_string(&self) -> Result<String, IoctlError> {
+        self.read_str(requests::R_CL_HW_IF_STR, Self::VERSION_BUFFER_LEN)
+    }
+
     /// Read a fixed-length C string (e.g., driver version or interface ID).
     pub fn read_str(&self, request: u64, max_len: usize) -> Result<String, IoctlError> {
         let mut buffer = vec![0u8; max_len.max(1)];
@@ -203,9 +221,26 @@ impl TuxedoIoDevice {
                 source: nix::Error::last(),
             });
         }
-        // Ensure null-terminated
-        let c_str = CStr::from_bytes_until_nul(&buffer)
-            .map_err(|_| std::str::from_utf8(&buffer).unwrap_err())?;
-        Ok(c_str.to_str()?.to_string())
+        // Safely extract null-terminated string or convert full valid UTF-8 slice without panicking
+        let s = match CStr::from_bytes_until_nul(&buffer) {
+            Ok(c) => c.to_str()?.to_string(),
+            Err(_) => std::str::from_utf8(&buffer)?.trim_end_matches('\0').to_string(),
+        };
+        Ok(s)
+    }
+
+    /// Low-level raw ioctl invocation with caller-managed buffer pointers and invariants.
+    ///
+    /// # Safety
+    /// Caller must guarantee `arg` points to valid memory corresponding to `request` ABI requirements.
+    pub unsafe fn raw_ioctl(&self, request: u64, arg: *mut libc::c_void) -> Result<i32, IoctlError> {
+        let ret = libc::ioctl(self.file.as_raw_fd(), request, arg);
+        if ret < 0 {
+            return Err(IoctlError::IoctlFailed {
+                request,
+                source: nix::Error::last(),
+            });
+        }
+        Ok(ret)
     }
 }

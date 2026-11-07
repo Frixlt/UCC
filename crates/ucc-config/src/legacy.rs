@@ -8,7 +8,7 @@ use std::fs;
 use std::path::{Path, PathBuf};
 use ucc_core::{ProfileState, UccProfile};
 
-pub const DEFAULT_SETTINGS_FILE: &str = "/etc/ucc/settings.json";
+pub const DEFAULT_SETTINGS_FILE: &str = "/etc/ucc/settings";
 
 use crate::error::ConfigError;
 
@@ -264,26 +264,10 @@ impl SettingsManager {
         Ok(json)
     }
 
-    /// Atomically writes settings to disk with automatic `.backup` retention.
+    /// Atomically writes settings to disk with automatic backup retention and preview protection.
     pub fn write_settings(&self, settings: &TccSettings) -> Result<(), ConfigError> {
         let json = self.settings_to_json(settings)?;
-
-        if let Some(parent) = self.settings_file.parent() {
-            fs::create_dir_all(parent)?;
-        }
-
-        // Backup existing file if present
-        if self.settings_file.exists() {
-            let backup_file = self.settings_file.with_extension("json.backup");
-            let _ = fs::copy(&self.settings_file, &backup_file);
-        }
-
-        // Write to temporary file in same directory, then atomic rename
-        let temp_file = self.settings_file.with_extension("json.tmp");
-        fs::write(&temp_file, &json)?;
-        fs::rename(&temp_file, &self.settings_file)?;
-
-        Ok(())
+        crate::persistence::write_atomic(&self.settings_file, json.as_bytes())
     }
 
     /// Reads settings from disk, falling back to `.backup` if the primary file is corrupted.
@@ -296,12 +280,20 @@ impl SettingsManager {
             }
         }
 
-        // Fallback to backup
-        let backup_file = self.settings_file.with_extension("json.backup");
-        if backup_file.exists() {
-            if let Ok(content) = fs::read_to_string(&backup_file) {
-                if let Some(settings) = self.parse_settings_json(&content) {
-                    return Ok(settings);
+        // Fallback to .bak or .backup
+        let candidate_backups = [
+            PathBuf::from(format!("{}.bak", self.settings_file.display())),
+            PathBuf::from(format!("{}.backup", self.settings_file.display())),
+            self.settings_file.with_extension("json.backup"),
+            self.settings_file.with_extension("bak"),
+        ];
+
+        for backup_file in &candidate_backups {
+            if backup_file.exists() {
+                if let Ok(content) = fs::read_to_string(backup_file) {
+                    if let Some(settings) = self.parse_settings_json(&content) {
+                        return Ok(settings);
+                    }
                 }
             }
         }

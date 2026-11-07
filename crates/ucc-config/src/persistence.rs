@@ -131,13 +131,15 @@ pub fn write_atomic(target_path: impl AsRef<Path>, content: &[u8]) -> Result<(),
         };
     }
 
-    // 5. Create backup (.bak) of the existing target file
+    // 5. Create backup of the existing target file (both canonical .bak and legacy .backup)
     if target_path.exists() {
         let bak_path = PathBuf::from(format!("{}.bak", target_path.display()));
         if let Err(e) = fs::copy(target_path, &bak_path) {
             let _ = fs::remove_file(&temp_path);
             return Err(ConfigError::Io(e));
         }
+        let backup_path = PathBuf::from(format!("{}.backup", target_path.display()));
+        let _ = fs::copy(target_path, &backup_path);
     }
 
     // 6. Atomically rename temporary file to target path
