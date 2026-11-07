@@ -4,17 +4,17 @@
   "baseline_sha": "45921b0b7021448a81575a840b2b77d93da8b298",
   "integration_branch": "rust/migration",
   "integration_base_sha": "582dd4a",
-  "wave": "V2",
+  "wave": "V3",
   "status": "in_progress",
   "execution_mode": "concurrent_subagents_2_plus_2",
   "execution_mode_note": "4 autonomous subagents active: W1, W2, R1, R2 running concurrently in dedicated worktrees",
   "verification_mode": "independent_peer_review",
   "verification_mode_note": "R1 (parity_reviewer) and R2 (test_engineer) actively performing independent review and verification",
   "roles": {
-    "W1": {"role": "rust_backend", "worktree": ".worktrees/w1", "branch": "rust/w1", "current_ticket": "M2.1/M2.2", "conversation_id": "632e6a2d-67fd-4670-a48a-176fdad1b1a3"},
-    "W2": {"role": "rust_frontend", "worktree": ".worktrees/w2", "branch": "rust/w2", "current_ticket": "M2.4/M2.5", "conversation_id": "09727207-8554-48a3-8d62-749d3ff11ba2"},
-    "R1": {"role": "parity_reviewer", "worktree": null, "branch": null, "current_ticket": "M2-parity-review", "conversation_id": "634e984a-5178-4854-825e-cf72db5718c5"},
-    "R2": {"role": "test_engineer", "worktree": ".worktrees/r2", "branch": "rust/r2-tests", "current_ticket": "M2.6/M2.7/M2.8", "conversation_id": "dc3756a1-00c7-4a63-bba9-a45584f5f133"}
+    "W1": {"role": "rust_backend", "worktree": ".worktrees/w1", "branch": "rust/w1", "current_ticket": "M3.1/M3.3/M3.4", "conversation_id": "632e6a2d-67fd-4670-a48a-176fdad1b1a3"},
+    "W2": {"role": "rust_frontend", "worktree": ".worktrees/w2", "branch": "rust/w2", "current_ticket": "M3.5/M3.6", "conversation_id": "09727207-8554-48a3-8d62-749d3ff11ba2"},
+    "R1": {"role": "parity_reviewer", "worktree": null, "branch": null, "current_ticket": "M3.8-contract-review", "conversation_id": "634e984a-5178-4854-825e-cf72db5718c5"},
+    "R2": {"role": "test_engineer", "worktree": ".worktrees/r2", "branch": "rust/r2-tests", "current_ticket": "M3.2/M3.7", "conversation_id": "dc3756a1-00c7-4a63-bba9-a45584f5f133"}
   },
   "open_decisions": [],
   "environment_blockers": [
@@ -22,12 +22,13 @@
     "test_ite8291_brightness.py: external tuxedo-drivers source tree argument not bundled"
   ],
   "next_ready_tickets": [
-    "M2.1: Domain models in crates/ucc-core",
-    "M2.2: ProfileState, PowerPolicy, UccProfile, FanCurve validation",
-    "M2.4: Default profiles and device-specific defaults",
-    "M2.5: Settings persistence, atomic write, backup recovery",
-    "M2.6: Corruption recovery & fault injection tests",
-    "M2.7: Profile parsers & legacy import tests",
-    "M2.8: Property-based invariants & differential tests"
+    "M3.1: Complete 122 D-Bus methods and 7 signals on com.uniwill.uccd via zbus in crates/ucc-dbus",
+    "M3.2: Fake D-Bus service and contract tests for all 122 methods",
+    "M3.3: Polkit action mapping (read, control, manage-hardware) and caller UID validation",
+    "M3.4: Async Polkit prompt non-blocking queue and request rate-limiting",
+    "M3.5: CLI commands (status, monitor, profile, fan, keyboard, hardware, cooler, charging, cpu, gpu, lightbar)",
+    "M3.6: CLI aliases, JSON output, exit codes, and shell completions",
+    "M3.7: Private bus cross-validation (Rust CLI to C++ daemon, C++ client to Rust daemon)",
+    "M3.8: D-Bus introspection contract parity review and semantic defect tracking"
   ]
 }

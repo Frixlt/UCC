@@ -213,12 +213,19 @@
       "assigned_agent_id": null,
       "depends_on": [],
       "dependency_refinement_required": false,
-      "owned_paths": ["Cargo.toml", "Cargo.lock", "crates/"],
+      "owned_paths": [
+        "Cargo.toml",
+        "Cargo.lock",
+        "crates/"
+      ],
       "feature_ids": [],
       "test_ids": [],
       "implementation_sha": "514b5e6",
       "r1_review": "same_actor_self_check",
-      "r2_evidence": ["cargo check --workspace", "cargo test --workspace"],
+      "r2_evidence": [
+        "cargo check --workspace",
+        "cargo test --workspace"
+      ],
       "integration_sha": "514b5e6",
       "children": [],
       "blockers": [],
@@ -233,14 +240,27 @@
       "status_basis": "Iced v0.13 Fluent shell with 10 pages, FanCurveCanvas with monotonic constraint, TelemetryChartCanvas, KeyboardCanvas",
       "suggested_role": "W2",
       "assigned_agent_id": null,
-      "depends_on": ["M1.1"],
+      "depends_on": [
+        "M1.1"
+      ],
       "dependency_refinement_required": false,
-      "owned_paths": ["crates/ucc-gui/"],
-      "feature_ids": ["F01", "F14", "F18", "F37"],
-      "test_ids": ["gui_prototype"],
+      "owned_paths": [
+        "crates/ucc-gui/"
+      ],
+      "feature_ids": [
+        "F01",
+        "F14",
+        "F18",
+        "F37"
+      ],
+      "test_ids": [
+        "gui_prototype"
+      ],
       "implementation_sha": "5791f11",
       "r1_review": "same_actor_self_check",
-      "r2_evidence": ["cargo test -p ucc-gui"],
+      "r2_evidence": [
+        "cargo test -p ucc-gui"
+      ],
       "integration_sha": "5791f11",
       "children": [],
       "blockers": [],
@@ -255,14 +275,24 @@
       "status_basis": "Light/Dark theme switching, DPI scaling support, preview read-only mutation blocker",
       "suggested_role": "W2",
       "assigned_agent_id": null,
-      "depends_on": ["M1.2"],
+      "depends_on": [
+        "M1.2"
+      ],
       "dependency_refinement_required": false,
-      "owned_paths": ["crates/ucc-gui/src/theme.rs"],
-      "feature_ids": ["F37"],
-      "test_ids": ["test_preview_mode_blocks_mutations"],
+      "owned_paths": [
+        "crates/ucc-gui/src/theme.rs"
+      ],
+      "feature_ids": [
+        "F37"
+      ],
+      "test_ids": [
+        "test_preview_mode_blocks_mutations"
+      ],
       "implementation_sha": "5791f11",
       "r1_review": "same_actor_self_check",
-      "r2_evidence": ["cargo test -p ucc-gui"],
+      "r2_evidence": [
+        "cargo test -p ucc-gui"
+      ],
       "integration_sha": "5791f11",
       "children": [],
       "blockers": [],
@@ -277,10 +307,17 @@
       "status_basis": "WGPU_POWER_PREF=low_power guard to prevent dGPU wakeups, Wayland/X11 backend compatibility",
       "suggested_role": "W2",
       "assigned_agent_id": null,
-      "depends_on": ["M1.2"],
+      "depends_on": [
+        "M1.2"
+      ],
       "dependency_refinement_required": false,
-      "owned_paths": ["crates/ucc-gui/src/main.rs"],
-      "feature_ids": ["F13", "F42"],
+      "owned_paths": [
+        "crates/ucc-gui/src/main.rs"
+      ],
+      "feature_ids": [
+        "F13",
+        "F42"
+      ],
       "test_ids": [],
       "implementation_sha": "5791f11",
       "r1_review": "same_actor_self_check",
@@ -299,14 +336,24 @@
       "status_basis": "StatusNotifierItem desktop tray in ucc-desktop via ksni with profile, fan auto, and cooler toggles",
       "suggested_role": "W2",
       "assigned_agent_id": null,
-      "depends_on": ["M1.1"],
+      "depends_on": [
+        "M1.1"
+      ],
       "dependency_refinement_required": false,
-      "owned_paths": ["crates/ucc-desktop/"],
-      "feature_ids": ["F42"],
-      "test_ids": ["tray_menu"],
+      "owned_paths": [
+        "crates/ucc-desktop/"
+      ],
+      "feature_ids": [
+        "F42"
+      ],
+      "test_ids": [
+        "tray_menu"
+      ],
       "implementation_sha": "5791f11",
       "r1_review": "same_actor_self_check",
-      "r2_evidence": ["cargo test -p ucc-desktop"],
+      "r2_evidence": [
+        "cargo test -p ucc-desktop"
+      ],
       "integration_sha": "5791f11",
       "children": [],
       "blockers": [],
@@ -321,14 +368,25 @@
       "status_basis": "Linux /dev/tuxedo_io ioctl ABI numbers and 64-bit pointer-size encoding verified byte-for-byte against C++",
       "suggested_role": "W1",
       "assigned_agent_id": null,
-      "depends_on": ["M1.1"],
+      "depends_on": [
+        "M1.1"
+      ],
       "dependency_refinement_required": false,
-      "owned_paths": ["crates/ucc-hardware/src/ioctl.rs"],
-      "feature_ids": ["F11", "F14"],
-      "test_ids": ["ioctl_abi"],
+      "owned_paths": [
+        "crates/ucc-hardware/src/ioctl.rs"
+      ],
+      "feature_ids": [
+        "F11",
+        "F14"
+      ],
+      "test_ids": [
+        "ioctl_abi"
+      ],
       "implementation_sha": "fda1b76",
       "r1_review": "same_actor_self_check",
-      "r2_evidence": ["crates/ucc-hardware/tests/ioctl_abi.rs"],
+      "r2_evidence": [
+        "crates/ucc-hardware/tests/ioctl_abi.rs"
+      ],
       "integration_sha": "fda1b76",
       "children": [],
       "blockers": [],
@@ -343,14 +401,30 @@
       "status_basis": "Nordic UART Service (NUS) BLE cooler codec, 80ms rate limiter, keepalive, and Fake BlueZ GATT test harness",
       "suggested_role": "W1",
       "assigned_agent_id": null,
-      "depends_on": ["M1.1"],
+      "depends_on": [
+        "M1.1"
+      ],
       "dependency_refinement_required": false,
-      "owned_paths": ["crates/ucc-hardware/src/cooler.rs"],
-      "feature_ids": ["F15", "F16", "F17"],
-      "test_ids": ["cooler_protocol", "fake_bluez_cooler", "cooler_stress_tests"],
+      "owned_paths": [
+        "crates/ucc-hardware/src/cooler.rs"
+      ],
+      "feature_ids": [
+        "F15",
+        "F16",
+        "F17"
+      ],
+      "test_ids": [
+        "cooler_protocol",
+        "fake_bluez_cooler",
+        "cooler_stress_tests"
+      ],
       "implementation_sha": "3e22e1e",
       "r1_review": "same_actor_self_check",
-      "r2_evidence": ["crates/ucc-hardware/tests/cooler_protocol.rs", "crates/ucc-hardware/tests/fake_bluez_cooler.rs", "crates/ucc-hardware/tests/cooler_stress_tests.rs"],
+      "r2_evidence": [
+        "crates/ucc-hardware/tests/cooler_protocol.rs",
+        "crates/ucc-hardware/tests/fake_bluez_cooler.rs",
+        "crates/ucc-hardware/tests/cooler_stress_tests.rs"
+      ],
       "integration_sha": "3e22e1e",
       "children": [],
       "blockers": [],
@@ -365,14 +439,24 @@
       "status_basis": "Dynamic NVML loader via libloading and sysfs runtime PM guard checking power/runtime_status before GPU queries",
       "suggested_role": "W1",
       "assigned_agent_id": null,
-      "depends_on": ["M1.1"],
+      "depends_on": [
+        "M1.1"
+      ],
       "dependency_refinement_required": false,
-      "owned_paths": ["crates/ucc-hardware/src/nvml.rs"],
-      "feature_ids": ["F13"],
-      "test_ids": ["nvml_guard"],
+      "owned_paths": [
+        "crates/ucc-hardware/src/nvml.rs"
+      ],
+      "feature_ids": [
+        "F13"
+      ],
+      "test_ids": [
+        "nvml_guard"
+      ],
       "implementation_sha": "24f79a7",
       "r1_review": "same_actor_self_check",
-      "r2_evidence": ["crates/ucc-hardware/tests/nvml_guard.rs"],
+      "r2_evidence": [
+        "crates/ucc-hardware/tests/nvml_guard.rs"
+      ],
       "integration_sha": "24f79a7",
       "children": [],
       "blockers": [],
@@ -389,8 +473,12 @@
       "assigned_agent_id": null,
       "depends_on": [],
       "dependency_refinement_required": false,
-      "owned_paths": ["docs/rust/execution/decisions/ADR-03-shell-embedding-policy.md"],
-      "feature_ids": ["F42"],
+      "owned_paths": [
+        "docs/rust/execution/decisions/ADR-03-shell-embedding-policy.md"
+      ],
+      "feature_ids": [
+        "F42"
+      ],
       "test_ids": [],
       "implementation_sha": "5791f11",
       "r1_review": "same_actor_self_check",
@@ -411,7 +499,9 @@
       "assigned_agent_id": null,
       "depends_on": [],
       "dependency_refinement_required": false,
-      "owned_paths": ["docs/rust/execution/decisions/"],
+      "owned_paths": [
+        "docs/rust/execution/decisions/"
+      ],
       "feature_ids": [],
       "test_ids": [],
       "implementation_sha": "132453b",
@@ -427,19 +517,22 @@
       "milestone": "M2",
       "wave": "V2",
       "title": "Перенести ProfileState, physical/effective/profile states и PowerPolicy как pure functions/state machine.",
-      "status": "planned",
-      "status_basis": "No Rust implementation or test result is claimed.",
-      "suggested_role": null,
-      "assigned_agent_id": null,
+      "status": "done",
+      "status_basis": "ProfileState, PowerMode, and PowerPolicy state machine implemented in ucc-core::power with exhaustive matrix test parity",
+      "suggested_role": "W1",
+      "assigned_agent_id": "632e6a2d-67fd-4670-a48a-176fdad1b1a3",
       "depends_on": [],
       "dependency_refinement_required": true,
       "owned_paths": [],
       "feature_ids": [],
       "test_ids": [],
-      "implementation_sha": null,
-      "r1_review": null,
-      "r2_evidence": [],
-      "integration_sha": null,
+      "implementation_sha": "718b478",
+      "r1_review": "accepted",
+      "r2_evidence": [
+        "crates/ucc-core/tests/domain_validation.rs",
+        "crates/ucc-core/tests/property_invariants.rs"
+      ],
+      "integration_sha": "d87650b",
       "children": [],
       "blockers": []
     },
@@ -448,19 +541,22 @@
       "milestone": "M2",
       "wave": "V2",
       "title": "Перенести UccProfile, fan/keyboard profiles, stateMap, global charging, capability types, units и supported defaults.",
-      "status": "planned",
-      "status_basis": "No Rust implementation or test result is claimed.",
-      "suggested_role": null,
-      "assigned_agent_id": null,
+      "status": "done",
+      "status_basis": "UccProfile, FanCurve, FanPoint, PumpVoltage (discrete codes 0, 2, 3, 4, code 1 rejected), CpuLimits, ChargingPolicy, and LedSettings in ucc-core",
+      "suggested_role": "W1",
+      "assigned_agent_id": "632e6a2d-67fd-4670-a48a-176fdad1b1a3",
       "depends_on": [],
       "dependency_refinement_required": true,
       "owned_paths": [],
       "feature_ids": [],
       "test_ids": [],
-      "implementation_sha": null,
-      "r1_review": null,
-      "r2_evidence": [],
-      "integration_sha": null,
+      "implementation_sha": "718b478",
+      "r1_review": "accepted",
+      "r2_evidence": [
+        "crates/ucc-core/tests/domain_validation.rs",
+        "crates/ucc-core/tests/property_invariants.rs"
+      ],
+      "integration_sha": "d87650b",
       "children": [],
       "blockers": []
     },
@@ -469,19 +565,21 @@
       "milestone": "M2",
       "wave": "V2",
       "title": "Развести legacy wire DTO и внутреннюю модель `Option`/typed values.",
-      "status": "planned",
-      "status_basis": "No Rust implementation or test result is claimed.",
-      "suggested_role": null,
-      "assigned_agent_id": null,
+      "status": "done",
+      "status_basis": "Legacy wire DTOs and bidirectional translators implemented in ucc-core::dto and ucc-core::fan (pump speed index 0..4 to voltage code translation)",
+      "suggested_role": "W1",
+      "assigned_agent_id": "632e6a2d-67fd-4670-a48a-176fdad1b1a3",
       "depends_on": [],
       "dependency_refinement_required": true,
       "owned_paths": [],
       "feature_ids": [],
       "test_ids": [],
-      "implementation_sha": null,
-      "r1_review": null,
-      "r2_evidence": [],
-      "integration_sha": null,
+      "implementation_sha": "901586f",
+      "r1_review": "accepted",
+      "r2_evidence": [
+        "crates/ucc-core/tests/dto_mapping.rs"
+      ],
+      "integration_sha": "d87650b",
       "children": [],
       "blockers": []
     },
@@ -490,19 +588,21 @@
       "milestone": "M2",
       "wave": "V2",
       "title": "Перенести default profiles и device-specific defaults с сохранением IDs; исключить личные power limits из public defaults.",
-      "status": "planned",
-      "status_basis": "No Rust implementation or test result is claimed.",
-      "suggested_role": null,
-      "assigned_agent_id": null,
+      "status": "done",
+      "status_basis": "Canonical 4 Built-in profile IDs preserved, device-specific catalogs implemented, personal limits strictly omitted from public defaults",
+      "suggested_role": "W2",
+      "assigned_agent_id": "09727207-8554-48a3-8d62-749d3ff11ba2",
       "depends_on": [],
       "dependency_refinement_required": true,
       "owned_paths": [],
       "feature_ids": [],
       "test_ids": [],
-      "implementation_sha": null,
-      "r1_review": null,
-      "r2_evidence": [],
-      "integration_sha": null,
+      "implementation_sha": "21100eb",
+      "r1_review": "accepted",
+      "r2_evidence": [
+        "crates/ucc-config/tests/config_persistence.rs"
+      ],
+      "integration_sha": "d87650b",
       "children": [],
       "blockers": []
     },
@@ -511,19 +611,22 @@
       "milestone": "M2",
       "wave": "V2",
       "title": "Реализовать read/validate/round-trip settings, autosave, Aquaris, user INI prefs и sleep snapshots.",
-      "status": "planned",
-      "status_basis": "No Rust implementation or test result is claimed.",
-      "suggested_role": null,
-      "assigned_agent_id": null,
+      "status": "done",
+      "status_basis": "ConfigManager, path hierarchy, settings read/validate/round-trip, preview guard, and dynamic GUI binding implemented",
+      "suggested_role": "W2",
+      "assigned_agent_id": "09727207-8554-48a3-8d62-749d3ff11ba2",
       "depends_on": [],
       "dependency_refinement_required": true,
       "owned_paths": [],
       "feature_ids": [],
       "test_ids": [],
-      "implementation_sha": null,
-      "r1_review": null,
-      "r2_evidence": [],
-      "integration_sha": null,
+      "implementation_sha": "21100eb",
+      "r1_review": "accepted",
+      "r2_evidence": [
+        "crates/ucc-config/tests/config_persistence.rs",
+        "crates/ucc-gui/tests/gui_prototype.rs"
+      ],
+      "integration_sha": "d87650b",
       "children": [],
       "blockers": []
     },
@@ -532,19 +635,21 @@
       "milestone": "M2",
       "wave": "V2",
       "title": "Реализовать atomic persistence, backups/recovery и сериализацию без повторных ключей.",
-      "status": "planned",
-      "status_basis": "No Rust implementation or test result is claimed.",
-      "suggested_role": null,
-      "assigned_agent_id": null,
+      "status": "done",
+      "status_basis": "Atomic persistence via temporary files, fsync, automatic .bak creation, and stale temp file cleanup tested with fault injection",
+      "suggested_role": "R2",
+      "assigned_agent_id": "dc3756a1-00c7-4a63-bba9-a45584f5f133",
       "depends_on": [],
       "dependency_refinement_required": true,
       "owned_paths": [],
       "feature_ids": [],
       "test_ids": [],
-      "implementation_sha": null,
-      "r1_review": null,
-      "r2_evidence": [],
-      "integration_sha": null,
+      "implementation_sha": "1a5e81a",
+      "r1_review": "accepted",
+      "r2_evidence": [
+        "crates/ucc-config/tests/corruption_recovery.rs"
+      ],
+      "integration_sha": "d87650b",
       "children": [],
       "blockers": []
     },
@@ -553,19 +658,21 @@
       "milestone": "M2",
       "wave": "V2",
       "title": "Перенести CPU/fan/profile parsers и validation с fixtures повреждённых/неполных/старых файлов.",
-      "status": "planned",
-      "status_basis": "No Rust implementation or test result is claimed.",
-      "suggested_role": null,
-      "assigned_agent_id": null,
+      "status": "done",
+      "status_basis": "Settings & profile parsers validated with corrupted, truncated, invalid types, and legacy fixture round-trip suites",
+      "suggested_role": "R2",
+      "assigned_agent_id": "dc3756a1-00c7-4a63-bba9-a45584f5f133",
       "depends_on": [],
       "dependency_refinement_required": true,
       "owned_paths": [],
       "feature_ids": [],
       "test_ids": [],
-      "implementation_sha": null,
-      "r1_review": null,
-      "r2_evidence": [],
-      "integration_sha": null,
+      "implementation_sha": "1a5e81a",
+      "r1_review": "accepted",
+      "r2_evidence": [
+        "crates/ucc-config/tests/corruption_recovery.rs"
+      ],
+      "integration_sha": "d87650b",
       "children": [],
       "blockers": []
     },
@@ -574,19 +681,21 @@
       "milestone": "M2",
       "wave": "V2",
       "title": "Прогнать property/differential tests policy matrix и сериализации; intentional differences записать отдельно.",
-      "status": "planned",
-      "status_basis": "No Rust implementation or test result is claimed.",
-      "suggested_role": null,
-      "assigned_agent_id": null,
+      "status": "done",
+      "status_basis": "Property-based invariant fuzzing: 1000 TDP permutations, 2000 fan curve fuzz tests, Core 0 validation, discrete pump codes parity",
+      "suggested_role": "R2",
+      "assigned_agent_id": "dc3756a1-00c7-4a63-bba9-a45584f5f133",
       "depends_on": [],
       "dependency_refinement_required": true,
       "owned_paths": [],
       "feature_ids": [],
       "test_ids": [],
-      "implementation_sha": null,
-      "r1_review": null,
-      "r2_evidence": [],
-      "integration_sha": null,
+      "implementation_sha": "1a5e81a",
+      "r1_review": "accepted",
+      "r2_evidence": [
+        "crates/ucc-core/tests/property_invariants.rs"
+      ],
+      "integration_sha": "d87650b",
       "children": [],
       "blockers": []
     },
