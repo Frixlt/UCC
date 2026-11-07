@@ -162,10 +162,8 @@ pub fn cleanup_temp_files(dir: impl AsRef<Path>) -> Result<usize, std::io::Error
         let entry = entry?;
         let name = entry.file_name();
         let name_str = name.to_string_lossy();
-        if name_str.starts_with('.') && name_str.contains(".tmp.") {
-            if fs::remove_file(entry.path()).is_ok() {
-                count += 1;
-            }
+        if name_str.starts_with('.') && name_str.contains(".tmp.") && fs::remove_file(entry.path()).is_ok() {
+            count += 1;
         }
     }
     Ok(count)
