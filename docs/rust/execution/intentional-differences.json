@@ -64,6 +64,22 @@
       "status": "documented",
       "legacy_defect": "Legacy UccDBusService returned bool false for malformed JSON, out-of-bounds parameters, or failed Polkit checks, treating error conditions as valid replies containing false.",
       "rust_target_behavior": "Return typed zbus::fdo::Error or structured Result on validation/authorization failure while maintaining backwards wire compatibility where callers require boolean return."
+    },
+    {
+      "id": "DIFF-09",
+      "title": "Dual D-Bus interface alias registered concurrently on primary and legacy paths",
+      "affected_features": ["F01", "F43"],
+      "status": "documented",
+      "legacy_defect": "Legacy daemon was configured either under com.uniwill.uccd or de.uniwill.uccd depending on compile-time flags and system symlinks, causing interface errors for clients expecting the alternative namespace.",
+      "rust_target_behavior": "Concurrently register both com.uniwill.uccd and de.uniwill.uccd on /com/uniwill/uccd and /de/uniwill/uccd paths via register_uccd_service, providing seamless compatibility for both modern and legacy clients without configuration."
+    },
+    {
+      "id": "DIFF-10",
+      "title": "Normalized 0..4 pump speed step table mapping vs raw wire voltage codes",
+      "affected_features": ["F14", "F26"],
+      "status": "documented",
+      "legacy_defect": "Legacy table speed columns directly referenced discrete hardware codes where 1 was 12V (which is strictly forbidden on LCT coolers), creating confusion between curve steps and raw voltage values.",
+      "rust_target_behavior": "Fan profiles define pump curve levels 0..=4 (0=Off, 1=7V, 2=8V, 3=11V, 4=12V forbidden) translated through bidirectional translators pump_speed_to_voltage and voltage_to_pump_speed in ucc-core::fan, with CoolerPacketEncoder strictly rejecting 12V."
     }
   ]
 }

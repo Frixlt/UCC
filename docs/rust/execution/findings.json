@@ -121,7 +121,8 @@
       "actual": "Only com.uniwill.uccd is declared in DBUS_INTERFACE",
       "consequence": "Unknown interface error if client queries de.uniwill.uccd",
       "suggested_direction": "Add DBUS_INTERFACE_ALT = 'de.uniwill.uccd' and register dual interface adaptor in ucc-dbus",
-      "status": "open"
+      "status": "resolved",
+      "resolution": "Implemented UccdLegacyInterface and DBUS_INTERFACE_ALT/DBUS_PATH_ALT in crates/ucc-dbus/src/lib.rs with dual registration helper in commit c2e2353"
     },
     {
       "id": "FINDING-V3-02",
@@ -135,7 +136,8 @@
       "actual": "Only 38 skeleton methods implemented in crates/ucc-dbus/src/lib.rs",
       "consequence": "Missing D-Bus methods return UnknownMethod to clients",
       "suggested_direction": "Complete M3.1 tickets implementing remaining 84 methods with exact zbus signatures matching introspection XML",
-      "status": "open"
+      "status": "resolved",
+      "resolution": "Implemented all 122 D-Bus methods and 7 signals with full zbus signatures, Polkit authorization checks, and typed client proxies in commit c2e2353"
     },
     {
       "id": "FINDING-V3-03",
@@ -149,6 +151,67 @@
       "actual": "dbus_skeleton.rs only tests 6 methods on default mock backend",
       "consequence": "Lack of automated test coverage for 116 methods",
       "suggested_direction": "Implement fake service and contract tests in M3.2 on private zbus session/system bus",
+      "status": "resolved",
+      "resolution": "Added comprehensive 1083-line contract test suite (crates/ucc-dbus/tests/contract_tests.rs) covering all 122 methods, 7 signals, error handling, and introspection on private zbus in commit 7210962 and 9d15b7c"
+    },
+    {
+      "id": "FINDING-V4-01",
+      "priority": "P1",
+      "title": "NvmlWrapper permanently locks device_count to 0 if instantiated while discrete GPU is in runtime D3cold sleep",
+      "files": [
+        "crates/ucc-hardware/src/nvml.rs"
+      ],
+      "trigger": "Starting daemon/NvmlWrapper on battery or hybrid graphics system where NVIDIA dGPU is runtime suspended ('suspended' in power/runtime_status), then later waking the GPU and calling get_telemetry(0) or get_power_limit_constraints(0)",
+      "expected": "When dGPU transitions from suspended to active, ensure_active_and_initialized() initializes NVML, discovers available devices, updates device_count dynamically, and allows telemetry queries",
+      "actual": "device_count is an immutable u32 initialized to 0 in new(). In get_telemetry/get_power_limit_constraints, the check 'if index >= self.device_count' executes BEFORE ensure_active_and_initialized(), immediately returning Err(NvmlError::NoGpuFound). Even inside ensure_active_and_initialized(), the result of fn_device_get_count is discarded without updating self.device_count",
+      "consequence": "Discrete GPU telemetry, temperature monitoring, utilization, and power limit controls remain permanently broken (returning NoGpuFound) for the entire lifetime of the process whenever the daemon boots while dGPU is suspended",
+      "reproducer": "Instantiate NvmlWrapper with mock power_guard returning is_dgpu_awake() == false. Subsequently set power_guard to return true and invoke get_telemetry(0). The call returns Err(NvmlError::NoGpuFound) instead of telemetry.",
+      "suggested_direction": "1. Change device_count in NvmlWrapper to Arc<AtomicU32> (or AtomicU32). 2. In ensure_active_and_initialized(), after successful fn_init(), query device count and store with self.device_count.store(count, Ordering::SeqCst). 3. Call ensure_active_and_initialized() prior to index >= self.device_count.load() check in get_telemetry, get_power_limit_constraints, and set_power_limit.",
+      "status": "open"
+    },
+    {
+      "id": "FINDING-V4-02",
+      "priority": "P1",
+      "title": "TuxedoIoDevice::read_clevo_interface_string allocates 20-byte buffer instead of 50 bytes required by Clevo kernel driver ABI",
+      "files": [
+        "crates/ucc-hardware/src/ioctl.rs"
+      ],
+      "trigger": "Invoking read_clevo_interface_string() on Clevo hardware platform",
+      "expected": "Kernel ABI buffer length for R_CL_HW_IF_STR is 50 bytes, matching C++ baseline in clevo.h:45 (m_io.ioctlCall(R_CL_HW_IF_STR, interfaceIdStr, 50))",
+      "actual": "read_clevo_interface_string() passes Self::VERSION_BUFFER_LEN (20 bytes) to read_str",
+      "consequence": "Potential kernel-to-userspace heap buffer overflow via copy_to_user if Clevo driver writes more than 20 bytes, or truncation of interface string causing hardware identification failure",
+      "reproducer": "Simulate R_CL_HW_IF_STR returning a 30-byte identification string; verify 20-byte buffer causes out-of-bounds write or truncation",
+      "suggested_direction": "Define CLEVO_IF_STR_BUFFER_LEN: usize = 50 and use it in read_clevo_interface_string()",
+      "status": "open"
+    },
+    {
+      "id": "FINDING-V4-03",
+      "priority": "P2",
+      "title": "Clevo W_CL_FANAUTO ioctl requires 0x0f bitmask argument but lacks dedicated safe method",
+      "files": [
+        "crates/ucc-hardware/src/ioctl.rs"
+      ],
+      "trigger": "Calling call_none(requests::W_CL_FANAUTO) expecting fan auto behavior similar to Uniwill W_UW_FANAUTO",
+      "expected": "Clevo fan auto requires passing integer bitmask 0x0f (_IOW(MAGIC_WRITE_CL, 0x11, int32_t*)), whereas Uniwill uses _IO(MAGIC_WRITE_UW, 0x14) with no argument",
+      "actual": "W_CL_FANAUTO is exposed as a raw request code without a dedicated high-level method, creating a hazard where a developer calling call_none passes no argument and causes the kernel driver to dereference invalid memory",
+      "consequence": "Kernel driver dereferences invalid pointer in ioctl handler on Clevo hardware, failing fan auto operation",
+      "reproducer": "Audit request macro: _iow_ptr encodes IOC_WRITE with size 8, requiring pointer to int32_t",
+      "suggested_direction": "Add set_fans_auto_clevo(&self) -> Result<(), IoctlError> sending 0x0f via write_i32, and set_fans_auto_uniwill(&self) -> Result<(), IoctlError> invoking call_none(W_UW_FANAUTO)",
+      "status": "open"
+    },
+    {
+      "id": "FINDING-V4-04",
+      "priority": "P2",
+      "title": "NvidiaPowerGuard::find_nvidia_devices fails open if PCI class node is unreadable",
+      "files": [
+        "crates/ucc-hardware/src/nvml.rs"
+      ],
+      "trigger": "A sysfs PCI device entry with NVIDIA vendor (0x10de) where class attribute is temporarily unreadable or missing",
+      "expected": "Fail closed: device should only be classified as a graphics controller if class attribute exists and starts with 0x03 (display controller), matching GpuSysfs.hpp:48",
+      "actual": "if class_path.exists() condition skips filtering if class_path is absent or fails to read, adding the device unconditionally",
+      "consequence": "Non-graphics NVIDIA devices (audio controllers 0x0403xx, USB-C controllers) could be misidentified as dGPU graphics devices and prevent sleep",
+      "reproducer": "Create mock sysfs device with vendor 0x10de without class file; find_nvidia_devices returns it as an active GPU",
+      "suggested_direction": "Ensure device is only included if class is successfully read and starts with '0x03' or '03'",
       "status": "open"
     }
   ]
