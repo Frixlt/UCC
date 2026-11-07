@@ -1,5 +1,6 @@
 pub mod cooler;
 pub mod ioctl;
+pub mod nvml;
 
 pub use cooler::{
     BleWriteLimiter, CoolerError, CoolerPacketEncoder, CoolerState, CoolerStateMachine,
@@ -8,3 +9,7 @@ pub use cooler::{
     NORDIC_UART_CHAR_TX, NORDIC_UART_SERVICE_UUID,
 };
 pub use ioctl::{magic, requests, IoctlError, TuxedoIoDevice};
+pub use nvml::{
+    GpuRuntimeStatus, NvidiaPowerGuard, NvmlError, NvmlMemory, NvmlTelemetry, NvmlUtilization,
+    NvmlWrapper,
+};

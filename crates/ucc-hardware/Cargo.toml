@@ -12,3 +12,8 @@ thiserror = { workspace = true }
 tracing = { workspace = true }
 tokio = { workspace = true }
 zbus = { workspace = true }
+libloading = "0.8"
+
+[dev-dependencies]
+tempfile = "3"
+libloading = { workspace = true }
