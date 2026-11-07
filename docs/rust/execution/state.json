@@ -4,29 +4,30 @@
   "baseline_sha": "45921b0b7021448a81575a840b2b77d93da8b298",
   "integration_branch": "rust/migration",
   "integration_base_sha": "582dd4a",
-  "wave": "V0_repaired",
-  "status": "v0_repair_complete",
-  "execution_mode": "single_operator_role_queues",
-  "execution_mode_note": "invoke_subagent API blocked by location policy; W1, W2, R1, R2 roles execute sequentially in dedicated worktrees with full artifact separation",
-  "verification_mode": "same_actor_self_check",
-  "verification_mode_note": "Independent verification by external roles remains pending until independent reviewers are available",
+  "wave": "V2",
+  "status": "in_progress",
+  "execution_mode": "concurrent_subagents_2_plus_2",
+  "execution_mode_note": "4 autonomous subagents active: W1, W2, R1, R2 running concurrently in dedicated worktrees",
+  "verification_mode": "independent_peer_review",
+  "verification_mode_note": "R1 (parity_reviewer) and R2 (test_engineer) actively performing independent review and verification",
   "roles": {
-    "W1": {"role": "rust_backend", "worktree": ".worktrees/w1", "branch": "rust/w1", "current_ticket": null},
-    "W2": {"role": "rust_frontend", "worktree": ".worktrees/w2", "branch": "rust/w2", "current_ticket": null},
-    "R1": {"role": "parity_reviewer", "worktree": null, "branch": null, "current_ticket": null},
-    "R2": {"role": "test_engineer", "worktree": ".worktrees/r2", "branch": "rust/r2-tests", "current_ticket": null}
+    "W1": {"role": "rust_backend", "worktree": ".worktrees/w1", "branch": "rust/w1", "current_ticket": "M2.1/M2.2", "conversation_id": "632e6a2d-67fd-4670-a48a-176fdad1b1a3"},
+    "W2": {"role": "rust_frontend", "worktree": ".worktrees/w2", "branch": "rust/w2", "current_ticket": "M2.4/M2.5", "conversation_id": "09727207-8554-48a3-8d62-749d3ff11ba2"},
+    "R1": {"role": "parity_reviewer", "worktree": null, "branch": null, "current_ticket": "M2-parity-review", "conversation_id": "634e984a-5178-4854-825e-cf72db5718c5"},
+    "R2": {"role": "test_engineer", "worktree": ".worktrees/r2", "branch": "rust/r2-tests", "current_ticket": "M2.6/M2.7/M2.8", "conversation_id": "dc3756a1-00c7-4a63-bba9-a45584f5f133"}
   },
-  "open_decisions": [
-    "ADR-01: GUI toolkit and shell embedding policy (Iced vs Slint vs popup) [M1.2/M1.9]"
-  ],
+  "open_decisions": [],
   "environment_blockers": [
     "test_gnome_async.js: gjs not installed in Hyprland session",
     "test_ite8291_brightness.py: external tuxedo-drivers source tree argument not bundled"
   ],
   "next_ready_tickets": [
-    "M1.1: Создать минимальный Cargo workspace и закрепить stable toolchain/MSRV/dependencies",
-    "M1.2: Iced prototype: Fluent shell, таблица устройств, curve canvas, keyboard canvas, live chart",
-    "M1.6: Проверить Rust ioctl ABI: request numbers/struct layouts против установленного driver ABI",
-    "M1.7: Тестовый стенд Fake BlueZ для проверки GATT water cooler"
+    "M2.1: Domain models in crates/ucc-core",
+    "M2.2: ProfileState, PowerPolicy, UccProfile, FanCurve validation",
+    "M2.4: Default profiles and device-specific defaults",
+    "M2.5: Settings persistence, atomic write, backup recovery",
+    "M2.6: Corruption recovery & fault injection tests",
+    "M2.7: Profile parsers & legacy import tests",
+    "M2.8: Property-based invariants & differential tests"
   ]
 }
