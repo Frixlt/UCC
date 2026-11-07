@@ -127,6 +127,168 @@ pub trait UccdBackend: Send + Sync + 'static {
     fn set_charge_type(&self, _charge_type: &str) -> bool {
         true
     }
+    fn default_profiles_json(&self) -> String {
+        "[]".to_string()
+    }
+    fn custom_profiles_json(&self) -> String {
+        "[]".to_string()
+    }
+    fn cpu_frequency_limits_json(&self) -> String {
+        "{}".to_string()
+    }
+    fn default_values_profile_json(&self) -> String {
+        "{}".to_string()
+    }
+    fn fan_profile(&self, _id: &str) -> String {
+        "{}".to_string()
+    }
+    fn fan_profile_names(&self) -> String {
+        "[]".to_string()
+    }
+    fn set_fan_profile(&self, _id: &str, _json: &str) -> bool {
+        true
+    }
+    fn apply_fan_profiles(&self, _json: &str) -> bool {
+        true
+    }
+    fn revert_fan_profiles(&self) -> bool {
+        true
+    }
+    fn custom_fan_profiles_json(&self) -> String {
+        "[]".to_string()
+    }
+    fn save_custom_fan_profile(&self, _id: &str, _name: &str, _json: &str) -> bool {
+        true
+    }
+    fn delete_custom_fan_profile(&self, _id: &str) -> bool {
+        true
+    }
+    fn keyboard_backlight_control_supported(&self) -> bool {
+        true
+    }
+    fn keyboard_backlight_capabilities_json(&self) -> String {
+        "{}".to_string()
+    }
+    fn keyboard_backlight_states_json(&self) -> String {
+        "{}".to_string()
+    }
+    fn set_keyboard_backlight_states_json(&self, _json: &str) -> bool {
+        true
+    }
+    fn custom_keyboard_profiles_json(&self) -> String {
+        "[]".to_string()
+    }
+    fn save_custom_keyboard_profile(&self, _id: &str, _name: &str, _json: &str) -> bool {
+        true
+    }
+    fn delete_custom_keyboard_profile(&self, _id: &str) -> bool {
+        true
+    }
+    fn webcam_sw_status(&self) -> bool {
+        true
+    }
+    fn set_webcam(&self, _enabled: bool) -> bool {
+        true
+    }
+    fn fn_lock_status(&self) -> bool {
+        false
+    }
+    fn set_fn_lock_status(&self, _enabled: bool) -> bool {
+        true
+    }
+    fn water_cooler_supported(&self) -> bool {
+        false
+    }
+    fn enable_water_cooler(&self, _enable: bool) -> bool {
+        true
+    }
+    fn is_water_cooler_enabled(&self) -> bool {
+        false
+    }
+    fn set_water_cooler_auto_control(&self, _enabled: bool) -> bool {
+        true
+    }
+    fn set_water_cooler_led_color(&self, _r: i32, _g: i32, _b: i32, _mode: i32) -> bool {
+        true
+    }
+    fn charging_profiles_available(&self) -> String {
+        "[]".to_string()
+    }
+    fn charging_priorities_available(&self) -> String {
+        "[]".to_string()
+    }
+    fn current_charging_priority(&self) -> String {
+        "".to_string()
+    }
+    fn set_charging_priority(&self, _priority: &str) -> bool {
+        true
+    }
+    fn charge_start_available_thresholds(&self) -> String {
+        "[]".to_string()
+    }
+    fn charge_end_available_thresholds(&self) -> String {
+        "[]".to_string()
+    }
+    fn cpu_frequency_mhz(&self) -> i32 {
+        0
+    }
+    fn cpu_power_values_json(&self) -> String {
+        "{}".to_string()
+    }
+    fn cpu_core_count(&self) -> i32 {
+        1
+    }
+    fn available_governors(&self) -> String {
+        "[]".to_string()
+    }
+    fn available_epps(&self) -> String {
+        "[]".to_string()
+    }
+    fn d_gpu_info_values_json(&self) -> String {
+        "{}".to_string()
+    }
+    fn i_gpu_info_values_json(&self) -> String {
+        "{}".to_string()
+    }
+    fn odm_power_limits_json(&self) -> String {
+        "[]".to_string()
+    }
+    fn nvidia_power_ctrl_available(&self) -> bool {
+        false
+    }
+    fn nvidia_power_ctrl_max_power_limit(&self) -> i32 {
+        0
+    }
+    fn nvidia_power_ctrl_default_power_limit(&self) -> i32 {
+        0
+    }
+    fn set_nvidia_power_offset(&self, _offset: i32) -> bool {
+        true
+    }
+    fn lightbar_settings_json(&self) -> String {
+        "{}".to_string()
+    }
+    fn lightbar_status_json(&self) -> String {
+        "{}".to_string()
+    }
+    fn set_lightbar_settings_json(&self, _json: &str) -> bool {
+        true
+    }
+    fn trigger_lightbar_animation(&self, _force: bool) -> bool {
+        true
+    }
+    fn power_device_settings_json(&self) -> String {
+        "{}".to_string()
+    }
+    fn power_device_status_json(&self) -> String {
+        "{}".to_string()
+    }
+    fn set_power_device_settings_json(&self, _json: &str) -> bool {
+        true
+    }
+    fn scan_power_devices(&self) -> bool {
+        true
+    }
 }
 
 /// Default mock/in-memory backend for UccdInterface.
@@ -391,6 +553,284 @@ impl<B: UccdBackend> UccdInterface<B> {
     pub fn set_charge_type(&self, charge_type: &str) -> bool {
         self.backend.set_charge_type(charge_type)
     }
+
+    // Additional Profiles & Config
+    #[zbus(name = "GetDefaultProfilesJSON")]
+    pub fn get_default_profiles_json(&self) -> String {
+        self.backend.default_profiles_json()
+    }
+
+    #[zbus(name = "GetCustomProfilesJSON")]
+    pub fn get_custom_profiles_json(&self) -> String {
+        self.backend.custom_profiles_json()
+    }
+
+    #[zbus(name = "GetCpuFrequencyLimitsJSON")]
+    pub fn get_cpu_frequency_limits_json(&self) -> String {
+        self.backend.cpu_frequency_limits_json()
+    }
+
+    #[zbus(name = "GetDefaultValuesProfileJSON")]
+    pub fn get_default_values_profile_json(&self) -> String {
+        self.backend.default_values_profile_json()
+    }
+
+    // Additional Fans
+    #[zbus(name = "GetFanProfile")]
+    pub fn get_fan_profile(&self, fan_profile_id: &str) -> String {
+        self.backend.fan_profile(fan_profile_id)
+    }
+
+    #[zbus(name = "GetFanProfileNames")]
+    pub fn get_fan_profile_names(&self) -> String {
+        self.backend.fan_profile_names()
+    }
+
+    #[zbus(name = "SetFanProfile")]
+    pub fn set_fan_profile(&self, fan_profile_id: &str, json: &str) -> bool {
+        self.backend.set_fan_profile(fan_profile_id, json)
+    }
+
+    #[zbus(name = "ApplyFanProfiles")]
+    pub fn apply_fan_profiles(&self, json: &str) -> bool {
+        self.backend.apply_fan_profiles(json)
+    }
+
+    #[zbus(name = "RevertFanProfiles")]
+    pub fn revert_fan_profiles(&self) -> bool {
+        self.backend.revert_fan_profiles()
+    }
+
+    #[zbus(name = "GetCustomFanProfilesJSON")]
+    pub fn get_custom_fan_profiles_json(&self) -> String {
+        self.backend.custom_fan_profiles_json()
+    }
+
+    #[zbus(name = "SaveCustomFanProfile")]
+    pub fn save_custom_fan_profile(&self, id: &str, name: &str, json: &str) -> bool {
+        self.backend.save_custom_fan_profile(id, name, json)
+    }
+
+    #[zbus(name = "DeleteCustomFanProfile")]
+    pub fn delete_custom_fan_profile(&self, id: &str) -> bool {
+        self.backend.delete_custom_fan_profile(id)
+    }
+
+    // Keyboard
+    #[zbus(name = "GetKeyboardBacklightControlSupported")]
+    pub fn get_keyboard_backlight_control_supported(&self) -> bool {
+        self.backend.keyboard_backlight_control_supported()
+    }
+
+    #[zbus(name = "GetKeyboardBacklightCapabilitiesJSON")]
+    pub fn get_keyboard_backlight_capabilities_json(&self) -> String {
+        self.backend.keyboard_backlight_capabilities_json()
+    }
+
+    #[zbus(name = "GetKeyboardBacklightStatesJSON")]
+    pub fn get_keyboard_backlight_states_json(&self) -> String {
+        self.backend.keyboard_backlight_states_json()
+    }
+
+    #[zbus(name = "SetKeyboardBacklightStatesJSON")]
+    pub fn set_keyboard_backlight_states_json(&self, json: &str) -> bool {
+        self.backend.set_keyboard_backlight_states_json(json)
+    }
+
+    #[zbus(name = "GetCustomKeyboardProfilesJSON")]
+    pub fn get_custom_keyboard_profiles_json(&self) -> String {
+        self.backend.custom_keyboard_profiles_json()
+    }
+
+    #[zbus(name = "SaveCustomKeyboardProfile")]
+    pub fn save_custom_keyboard_profile(&self, id: &str, name: &str, json: &str) -> bool {
+        self.backend.save_custom_keyboard_profile(id, name, json)
+    }
+
+    #[zbus(name = "DeleteCustomKeyboardProfile")]
+    pub fn delete_custom_keyboard_profile(&self, id: &str) -> bool {
+        self.backend.delete_custom_keyboard_profile(id)
+    }
+
+    // Hardware toggles
+    #[zbus(name = "GetWebcamSWStatus")]
+    pub fn get_webcam_sw_status(&self) -> bool {
+        self.backend.webcam_sw_status()
+    }
+
+    #[zbus(name = "SetWebcam")]
+    pub fn set_webcam(&self, enabled: bool) -> bool {
+        self.backend.set_webcam(enabled)
+    }
+
+    #[zbus(name = "GetFnLockStatus")]
+    pub fn get_fn_lock_status(&self) -> bool {
+        self.backend.fn_lock_status()
+    }
+
+    #[zbus(name = "SetFnLockStatus")]
+    pub fn set_fn_lock_status(&self, enabled: bool) -> bool {
+        self.backend.set_fn_lock_status(enabled)
+    }
+
+    // Water cooler extensions
+    #[zbus(name = "GetWaterCoolerSupported")]
+    pub fn get_water_cooler_supported(&self) -> bool {
+        self.backend.water_cooler_supported()
+    }
+
+    #[zbus(name = "EnableWaterCooler")]
+    pub fn enable_water_cooler(&self, enable: bool) -> bool {
+        self.backend.enable_water_cooler(enable)
+    }
+
+    #[zbus(name = "IsWaterCoolerEnabled")]
+    pub fn is_water_cooler_enabled(&self) -> bool {
+        self.backend.is_water_cooler_enabled()
+    }
+
+    #[zbus(name = "SetWaterCoolerAutoControl")]
+    pub fn set_water_cooler_auto_control(&self, enabled: bool) -> bool {
+        self.backend.set_water_cooler_auto_control(enabled)
+    }
+
+    #[zbus(name = "SetWaterCoolerLEDColor")]
+    pub fn set_water_cooler_led_color(&self, r: i32, g: i32, b: i32, mode: i32) -> bool {
+        self.backend.set_water_cooler_led_color(r, g, b, mode)
+    }
+
+    // Charging extensions
+    #[zbus(name = "GetChargingProfilesAvailable")]
+    pub fn get_charging_profiles_available(&self) -> String {
+        self.backend.charging_profiles_available()
+    }
+
+    #[zbus(name = "GetChargingPrioritiesAvailable")]
+    pub fn get_charging_priorities_available(&self) -> String {
+        self.backend.charging_priorities_available()
+    }
+
+    #[zbus(name = "GetCurrentChargingPriority")]
+    pub fn get_current_charging_priority(&self) -> String {
+        self.backend.current_charging_priority()
+    }
+
+    #[zbus(name = "SetChargingPriority")]
+    pub fn set_charging_priority(&self, priority: &str) -> bool {
+        self.backend.set_charging_priority(priority)
+    }
+
+    #[zbus(name = "GetChargeStartAvailableThresholds")]
+    pub fn get_charge_start_available_thresholds(&self) -> String {
+        self.backend.charge_start_available_thresholds()
+    }
+
+    #[zbus(name = "GetChargeEndAvailableThresholds")]
+    pub fn get_charge_end_available_thresholds(&self) -> String {
+        self.backend.charge_end_available_thresholds()
+    }
+
+    // CPU / GPU telemetry & power
+    #[zbus(name = "GetCpuFrequencyMHz")]
+    pub fn get_cpu_frequency_mhz(&self) -> i32 {
+        self.backend.cpu_frequency_mhz()
+    }
+
+    #[zbus(name = "GetCpuPowerValuesJSON")]
+    pub fn get_cpu_power_values_json(&self) -> String {
+        self.backend.cpu_power_values_json()
+    }
+
+    #[zbus(name = "GetCpuCoreCount")]
+    pub fn get_cpu_core_count(&self) -> i32 {
+        self.backend.cpu_core_count()
+    }
+
+    #[zbus(name = "GetAvailableGovernors")]
+    pub fn get_available_governors(&self) -> String {
+        self.backend.available_governors()
+    }
+
+    #[zbus(name = "GetAvailableEPPs")]
+    pub fn get_available_epps(&self) -> String {
+        self.backend.available_epps()
+    }
+
+    #[zbus(name = "GetDGpuInfoValuesJSON")]
+    pub fn get_d_gpu_info_values_json(&self) -> String {
+        self.backend.d_gpu_info_values_json()
+    }
+
+    #[zbus(name = "GetIGpuInfoValuesJSON")]
+    pub fn get_i_gpu_info_values_json(&self) -> String {
+        self.backend.i_gpu_info_values_json()
+    }
+
+    #[zbus(name = "ODMPowerLimitsJSON")]
+    pub fn odm_power_limits_json(&self) -> String {
+        self.backend.odm_power_limits_json()
+    }
+
+    #[zbus(name = "GetNVIDIAPowerCTRLAvailable")]
+    pub fn get_nvidia_power_ctrl_available(&self) -> bool {
+        self.backend.nvidia_power_ctrl_available()
+    }
+
+    #[zbus(name = "GetNVIDIAPowerCTRLMaxPowerLimit")]
+    pub fn get_nvidia_power_ctrl_max_power_limit(&self) -> i32 {
+        self.backend.nvidia_power_ctrl_max_power_limit()
+    }
+
+    #[zbus(name = "GetNVIDIAPowerCTRLDefaultPowerLimit")]
+    pub fn get_nvidia_power_ctrl_default_power_limit(&self) -> i32 {
+        self.backend.nvidia_power_ctrl_default_power_limit()
+    }
+
+    #[zbus(name = "SetNVIDIAPowerOffset")]
+    pub fn set_nvidia_power_offset(&self, offset: i32) -> bool {
+        self.backend.set_nvidia_power_offset(offset)
+    }
+
+    // Lightbar & Power devices
+    #[zbus(name = "GetLightbarSettingsJSON")]
+    pub fn get_lightbar_settings_json(&self) -> String {
+        self.backend.lightbar_settings_json()
+    }
+
+    #[zbus(name = "GetLightbarStatusJSON")]
+    pub fn get_lightbar_status_json(&self) -> String {
+        self.backend.lightbar_status_json()
+    }
+
+    #[zbus(name = "SetLightbarSettingsJSON")]
+    pub fn set_lightbar_settings_json(&self, json: &str) -> bool {
+        self.backend.set_lightbar_settings_json(json)
+    }
+
+    #[zbus(name = "TriggerLightbarAnimation")]
+    pub fn trigger_lightbar_animation(&self, force: bool) -> bool {
+        self.backend.trigger_lightbar_animation(force)
+    }
+
+    #[zbus(name = "GetPowerDeviceSettingsJSON")]
+    pub fn get_power_device_settings_json(&self) -> String {
+        self.backend.power_device_settings_json()
+    }
+
+    #[zbus(name = "GetPowerDeviceStatusJSON")]
+    pub fn get_power_device_status_json(&self) -> String {
+        self.backend.power_device_status_json()
+    }
+
+    #[zbus(name = "SetPowerDeviceSettingsJSON")]
+    pub fn set_power_device_settings_json(&self, json: &str) -> bool {
+        self.backend.set_power_device_settings_json(json)
+    }
+
+    #[zbus(name = "ScanPowerDevices")]
+    pub fn scan_power_devices(&self) -> bool {
+        self.backend.scan_power_devices()
+    }
 }
 
 /// Client proxy for interacting with `com.uniwill.uccd` over D-Bus.
@@ -504,4 +944,183 @@ pub trait Uccd {
 
     #[zbus(name = "SetChargeType")]
     fn set_charge_type(&self, charge_type: &str) -> zbus::Result<bool>;
+
+    // Additional Profiles & Config
+    #[zbus(name = "GetDefaultProfilesJSON")]
+    fn get_default_profiles_json(&self) -> zbus::Result<String>;
+
+    #[zbus(name = "GetCustomProfilesJSON")]
+    fn get_custom_profiles_json(&self) -> zbus::Result<String>;
+
+    #[zbus(name = "GetCpuFrequencyLimitsJSON")]
+    fn get_cpu_frequency_limits_json(&self) -> zbus::Result<String>;
+
+    #[zbus(name = "GetDefaultValuesProfileJSON")]
+    fn get_default_values_profile_json(&self) -> zbus::Result<String>;
+
+    // Fans
+    #[zbus(name = "GetFanDataCPU")]
+    fn get_fan_data_cpu(&self) -> zbus::Result<std::collections::HashMap<String, zbus::zvariant::OwnedValue>>;
+
+    #[zbus(name = "GetFanDataGPU1")]
+    fn get_fan_data_gpu1(&self) -> zbus::Result<std::collections::HashMap<String, zbus::zvariant::OwnedValue>>;
+
+    #[zbus(name = "GetFanDataGPU2")]
+    fn get_fan_data_gpu2(&self) -> zbus::Result<std::collections::HashMap<String, zbus::zvariant::OwnedValue>>;
+
+    #[zbus(name = "GetFanProfile")]
+    fn get_fan_profile(&self, fan_profile_id: &str) -> zbus::Result<String>;
+
+    #[zbus(name = "GetFanProfileNames")]
+    fn get_fan_profile_names(&self) -> zbus::Result<String>;
+
+    #[zbus(name = "SetFanProfile")]
+    fn set_fan_profile(&self, fan_profile_id: &str, json: &str) -> zbus::Result<bool>;
+
+    #[zbus(name = "ApplyFanProfiles")]
+    fn apply_fan_profiles(&self, fan_profiles_json: &str) -> zbus::Result<bool>;
+
+    #[zbus(name = "RevertFanProfiles")]
+    fn revert_fan_profiles(&self) -> zbus::Result<bool>;
+
+    #[zbus(name = "GetCustomFanProfilesJSON")]
+    fn get_custom_fan_profiles_json(&self) -> zbus::Result<String>;
+
+    #[zbus(name = "SaveCustomFanProfile")]
+    fn save_custom_fan_profile(&self, id: &str, name: &str, json: &str) -> zbus::Result<bool>;
+
+    #[zbus(name = "DeleteCustomFanProfile")]
+    fn delete_custom_fan_profile(&self, id: &str) -> zbus::Result<bool>;
+
+    // Keyboard
+    #[zbus(name = "GetKeyboardBacklightControlSupported")]
+    fn get_keyboard_backlight_control_supported(&self) -> zbus::Result<bool>;
+
+    #[zbus(name = "GetKeyboardBacklightCapabilitiesJSON")]
+    fn get_keyboard_backlight_capabilities_json(&self) -> zbus::Result<String>;
+
+    #[zbus(name = "GetKeyboardBacklightStatesJSON")]
+    fn get_keyboard_backlight_states_json(&self) -> zbus::Result<String>;
+
+    #[zbus(name = "SetKeyboardBacklightStatesJSON")]
+    fn set_keyboard_backlight_states_json(&self, config: &str) -> zbus::Result<bool>;
+
+    #[zbus(name = "GetCustomKeyboardProfilesJSON")]
+    fn get_custom_keyboard_profiles_json(&self) -> zbus::Result<String>;
+
+    #[zbus(name = "SaveCustomKeyboardProfile")]
+    fn save_custom_keyboard_profile(&self, id: &str, name: &str, json: &str) -> zbus::Result<bool>;
+
+    #[zbus(name = "DeleteCustomKeyboardProfile")]
+    fn delete_custom_keyboard_profile(&self, id: &str) -> zbus::Result<bool>;
+
+    // Hardware toggles
+    #[zbus(name = "GetWebcamSWStatus")]
+    fn get_webcam_sw_status(&self) -> zbus::Result<bool>;
+
+    #[zbus(name = "SetWebcam")]
+    fn set_webcam(&self, enabled: bool) -> zbus::Result<bool>;
+
+    #[zbus(name = "GetFnLockStatus")]
+    fn get_fn_lock_status(&self) -> zbus::Result<bool>;
+
+    #[zbus(name = "SetFnLockStatus")]
+    fn set_fn_lock_status(&self, enabled: bool) -> zbus::Result<()>;
+
+    // Water cooler extensions
+    #[zbus(name = "GetWaterCoolerSupported")]
+    fn get_water_cooler_supported(&self) -> zbus::Result<bool>;
+
+    #[zbus(name = "EnableWaterCooler")]
+    fn enable_water_cooler(&self, enable: bool) -> zbus::Result<bool>;
+
+    #[zbus(name = "IsWaterCoolerEnabled")]
+    fn is_water_cooler_enabled(&self) -> zbus::Result<bool>;
+
+    #[zbus(name = "SetWaterCoolerAutoControl")]
+    fn set_water_cooler_auto_control(&self, enabled: bool) -> zbus::Result<bool>;
+
+    #[zbus(name = "SetWaterCoolerLEDColor")]
+    fn set_water_cooler_led_color(&self, r: i32, g: i32, b: i32, mode: i32) -> zbus::Result<bool>;
+
+    // Charging extensions
+    #[zbus(name = "GetChargingProfilesAvailable")]
+    fn get_charging_profiles_available(&self) -> zbus::Result<String>;
+
+    #[zbus(name = "GetChargingPrioritiesAvailable")]
+    fn get_charging_priorities_available(&self) -> zbus::Result<String>;
+
+    #[zbus(name = "GetCurrentChargingPriority")]
+    fn get_current_charging_priority(&self) -> zbus::Result<String>;
+
+    #[zbus(name = "SetChargingPriority")]
+    fn set_charging_priority(&self, priority: &str) -> zbus::Result<bool>;
+
+    #[zbus(name = "GetChargeStartAvailableThresholds")]
+    fn get_charge_start_available_thresholds(&self) -> zbus::Result<String>;
+
+    #[zbus(name = "GetChargeEndAvailableThresholds")]
+    fn get_charge_end_available_thresholds(&self) -> zbus::Result<String>;
+
+    // CPU / GPU telemetry & power
+    #[zbus(name = "GetCpuFrequencyMHz")]
+    fn get_cpu_frequency_mhz(&self) -> zbus::Result<i32>;
+
+    #[zbus(name = "GetCpuPowerValuesJSON")]
+    fn get_cpu_power_values_json(&self) -> zbus::Result<String>;
+
+    #[zbus(name = "GetCpuCoreCount")]
+    fn get_cpu_core_count(&self) -> zbus::Result<i32>;
+
+    #[zbus(name = "GetAvailableGovernors")]
+    fn get_available_governors(&self) -> zbus::Result<String>;
+
+    #[zbus(name = "GetAvailableEPPs")]
+    fn get_available_epps(&self) -> zbus::Result<String>;
+
+    #[zbus(name = "GetDGpuInfoValuesJSON")]
+    fn get_d_gpu_info_values_json(&self) -> zbus::Result<String>;
+
+    #[zbus(name = "GetIGpuInfoValuesJSON")]
+    fn get_i_gpu_info_values_json(&self) -> zbus::Result<String>;
+
+    #[zbus(name = "ODMPowerLimitsJSON")]
+    fn odm_power_limits_json(&self) -> zbus::Result<String>;
+
+    #[zbus(name = "GetNVIDIAPowerCTRLAvailable")]
+    fn get_nvidia_power_ctrl_available(&self) -> zbus::Result<bool>;
+
+    #[zbus(name = "GetNVIDIAPowerCTRLMaxPowerLimit")]
+    fn get_nvidia_power_ctrl_max_power_limit(&self) -> zbus::Result<i32>;
+
+    #[zbus(name = "GetNVIDIAPowerCTRLDefaultPowerLimit")]
+    fn get_nvidia_power_ctrl_default_power_limit(&self) -> zbus::Result<i32>;
+
+    #[zbus(name = "SetNVIDIAPowerOffset")]
+    fn set_nvidia_power_offset(&self, offset: i32) -> zbus::Result<bool>;
+
+    // Lightbar & Power devices
+    #[zbus(name = "GetLightbarSettingsJSON")]
+    fn get_lightbar_settings_json(&self) -> zbus::Result<String>;
+
+    #[zbus(name = "GetLightbarStatusJSON")]
+    fn get_lightbar_status_json(&self) -> zbus::Result<String>;
+
+    #[zbus(name = "SetLightbarSettingsJSON")]
+    fn set_lightbar_settings_json(&self, json: &str) -> zbus::Result<bool>;
+
+    #[zbus(name = "TriggerLightbarAnimation")]
+    fn trigger_lightbar_animation(&self, force: bool) -> zbus::Result<bool>;
+
+    #[zbus(name = "GetPowerDeviceSettingsJSON")]
+    fn get_power_device_settings_json(&self) -> zbus::Result<String>;
+
+    #[zbus(name = "GetPowerDeviceStatusJSON")]
+    fn get_power_device_status_json(&self) -> zbus::Result<String>;
+
+    #[zbus(name = "SetPowerDeviceSettingsJSON")]
+    fn set_power_device_settings_json(&self, json: &str) -> zbus::Result<bool>;
+
+    #[zbus(name = "ScanPowerDevices")]
+    fn scan_power_devices(&self) -> zbus::Result<bool>;
 }
