@@ -134,7 +134,7 @@ pub fn write_atomic(target_path: impl AsRef<Path>, content: &[u8]) -> Result<(),
     // 5. Create backup of the existing target file (both canonical .bak and legacy .backup)
     if target_path.exists() {
         let target_content = fs::read_to_string(target_path).unwrap_or_default();
-        let target_is_valid = serde_json::from_str::<serde_json::Value>(&target_content).is_ok();
+        let target_is_valid = crate::manager::is_valid_settings_content(&target_content);
 
         let bak_path = PathBuf::from(format!("{}.bak", target_path.display()));
         let backup_path = PathBuf::from(format!("{}.backup", target_path.display()));
@@ -146,10 +146,10 @@ pub fn write_atomic(target_path: impl AsRef<Path>, content: &[u8]) -> Result<(),
             }
             let _ = fs::copy(target_path, &backup_path);
         } else {
-            // Target is corrupted! Do NOT overwrite valid existing backup files with a broken file!
+            // Target is corrupted or domain-invalid! Do NOT overwrite valid existing backup files with a broken file!
             let has_valid_backup = [&bak_path, &backup_path]
                 .iter()
-                .any(|p| p.exists() && fs::read_to_string(p).map(|s| serde_json::from_str::<serde_json::Value>(&s).is_ok()).unwrap_or(false));
+                .any(|p| p.exists() && fs::read_to_string(p).map(|s| crate::manager::is_valid_settings_content(&s)).unwrap_or(false));
             if !has_valid_backup {
                 let _ = fs::copy(target_path, &bak_path);
             }

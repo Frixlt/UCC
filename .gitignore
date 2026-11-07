@@ -32,4 +32,5 @@ __pycache__/
 /.worktrees/
 /audit-cpp-build/
 /fake-nvml/
+/extended-nvml/
 rust-dbus-*.xml

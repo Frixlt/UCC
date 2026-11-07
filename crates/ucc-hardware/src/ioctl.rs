@@ -128,6 +128,106 @@ pub enum IoctlError {
     DeviceUnavailable,
 }
 
+/// Validate that an ioctl request belongs to the canonical Tuxedo IO read_i32 requests.
+fn is_valid_tuxedo_read_i32(request: u64) -> bool {
+    if request > u32::MAX as u64 {
+        return false;
+    }
+    let dir = (request >> 30) & 3;
+    let size = (request >> 16) & 0x3FFF;
+    if dir != IOC_READ as u64 || size != 8 {
+        return false;
+    }
+    matches!(
+        request,
+        requests::R_HWCHECK_CL
+            | requests::R_HWCHECK_UW
+            | requests::R_CL_FANINFO1
+            | requests::R_CL_FANINFO2
+            | requests::R_CL_FANINFO3
+            | requests::R_CL_WEBCAM_SW
+            | requests::R_CL_FLIGHTMODE_SW
+            | requests::R_CL_TOUCHPAD_SW
+            | requests::R_UW_MODEL_ID
+            | requests::R_UW_FANSPEED
+            | requests::R_UW_FANSPEED2
+            | requests::R_UW_FAN_TEMP
+            | requests::R_UW_FAN_TEMP2
+            | requests::R_UW_MODE
+            | requests::R_UW_MODE_ENABLE
+            | requests::R_UW_FANS_OFF_AVAILABLE
+            | requests::R_UW_FANS_MIN_SPEED
+            | requests::R_UW_TDP0
+            | requests::R_UW_TDP1
+            | requests::R_UW_TDP2
+            | requests::R_UW_TDP0_MIN
+            | requests::R_UW_TDP1_MIN
+            | requests::R_UW_TDP2_MIN
+            | requests::R_UW_TDP0_MAX
+            | requests::R_UW_TDP1_MAX
+            | requests::R_UW_TDP2_MAX
+            | requests::R_UW_PROFS_AVAILABLE
+    )
+}
+
+/// Validate that an ioctl request belongs to the canonical Tuxedo IO write_i32 requests.
+fn is_valid_tuxedo_write_i32(request: u64) -> bool {
+    if request > u32::MAX as u64 {
+        return false;
+    }
+    let dir = (request >> 30) & 3;
+    let size = (request >> 16) & 0x3FFF;
+    if dir != IOC_WRITE as u64 || size != 8 {
+        return false;
+    }
+    matches!(
+        request,
+        requests::W_CL_FANSPEED
+            | requests::W_CL_FANAUTO
+            | requests::W_CL_WEBCAM_SW
+            | requests::W_CL_FLIGHTMODE_SW
+            | requests::W_CL_TOUCHPAD_SW
+            | requests::W_CL_PERF_PROFILE
+            | requests::W_UW_FANSPEED
+            | requests::W_UW_FANSPEED2
+            | requests::W_UW_MODE
+            | requests::W_UW_MODE_ENABLE
+            | requests::W_UW_TDP0
+            | requests::W_UW_TDP1
+            | requests::W_UW_TDP2
+            | requests::W_UW_PERF_PROF
+    )
+}
+
+/// Validate that an ioctl request belongs to the canonical Tuxedo IO call_none requests.
+fn is_valid_tuxedo_call_none(request: u64) -> bool {
+    if request > u32::MAX as u64 {
+        return false;
+    }
+    let dir = (request >> 30) & 3;
+    let size = (request >> 16) & 0x3FFF;
+    if dir != IOC_NONE as u64 || size != 0 {
+        return false;
+    }
+    matches!(request, requests::W_UW_FANAUTO)
+}
+
+/// Validate that an ioctl request belongs to the canonical Tuxedo IO read_str requests.
+fn is_valid_tuxedo_read_str(request: u64) -> bool {
+    if request > u32::MAX as u64 {
+        return false;
+    }
+    let dir = (request >> 30) & 3;
+    let size = (request >> 16) & 0x3FFF;
+    if dir != IOC_READ as u64 || size != 8 {
+        return false;
+    }
+    matches!(
+        request,
+        requests::R_MOD_VERSION | requests::R_CL_HW_IF_STR | requests::R_UW_HW_IF_STR
+    )
+}
+
 /// Typed wrapper around a character device like `/dev/tuxedo_io`.
 pub struct TuxedoIoDevice {
     file: File,
@@ -166,18 +266,9 @@ impl TuxedoIoDevice {
     /// Caller must ensure that `request` is a valid ioctl request code whose ABI expects
     /// a pointer to an `int32_t`.
     pub unsafe fn read_i32(&self, request: u64) -> Result<i32, IoctlError> {
-        let dir = (request >> 30) & 3;
-        if dir != IOC_READ as u64 {
+        if !is_valid_tuxedo_read_i32(request) {
             return Err(IoctlError::PreconditionFailed(
-                "Cannot invoke read_i32 with non-read ioctl request",
-            ));
-        }
-        if request == requests::R_MOD_VERSION
-            || request == requests::R_UW_HW_IF_STR
-            || request == requests::R_CL_HW_IF_STR
-        {
-            return Err(IoctlError::PreconditionFailed(
-                "Cannot invoke read_i32 with a string ioctl request",
+                "Cannot invoke read_i32 with non-read or unsupported ioctl request",
             ));
         }
 
@@ -198,10 +289,9 @@ impl TuxedoIoDevice {
     /// Caller must ensure that `request` is a valid ioctl request code whose ABI expects
     /// a pointer to an `int32_t`.
     pub unsafe fn write_i32(&self, request: u64, mut val: i32) -> Result<(), IoctlError> {
-        let dir = (request >> 30) & 3;
-        if dir != IOC_WRITE as u64 {
+        if !is_valid_tuxedo_write_i32(request) {
             return Err(IoctlError::PreconditionFailed(
-                "Cannot invoke write_i32 with non-write ioctl request",
+                "Cannot invoke write_i32 with non-write or unsupported ioctl request",
             ));
         }
         let ret = libc::ioctl(self.file.as_raw_fd(), request, &mut val);
@@ -219,10 +309,9 @@ impl TuxedoIoDevice {
     /// # Safety
     /// Caller must ensure that `request` is an `_IO` request code taking no arguments.
     pub unsafe fn call_none(&self, request: u64) -> Result<(), IoctlError> {
-        let dir = (request >> 30) & 3;
-        if dir != IOC_NONE as u64 {
+        if !is_valid_tuxedo_call_none(request) {
             return Err(IoctlError::PreconditionFailed(
-                "Cannot invoke call_none with argument-bearing ioctl request",
+                "Cannot invoke call_none with argument-bearing or unsupported ioctl request",
             ));
         }
         let ret = libc::ioctl(self.file.as_raw_fd(), request);
@@ -261,12 +350,9 @@ impl TuxedoIoDevice {
     /// # Safety
     /// Caller must ensure `request` expects a char buffer of at least `max_len` bytes.
     pub unsafe fn read_str(&self, request: u64, max_len: usize) -> Result<String, IoctlError> {
-        let is_string_req = request == requests::R_MOD_VERSION
-            || request == requests::R_UW_HW_IF_STR
-            || request == requests::R_CL_HW_IF_STR;
-        if !is_string_req {
+        if !is_valid_tuxedo_read_str(request) {
             return Err(IoctlError::PreconditionFailed(
-                "Cannot invoke read_str with non-string ioctl request",
+                "Cannot invoke read_str with non-string or unsupported ioctl request",
             ));
         }
         let required_len = if request == requests::R_CL_HW_IF_STR {
@@ -512,9 +598,14 @@ pub fn set_uniwill_tdp(
     if index > 2 {
         return Err(IoctlError::PreconditionFailed("Uniwill TDP index must be 0..=2 (PL1, PL2, PL4)"));
     }
-    let (min, max) = match limits {
-        Some(lim) => lim,
-        None => read_uniwill_tdp_limits(hw, index)?,
+    let dev_limits = read_uniwill_tdp_limits(hw, index);
+    let (min, max) = match (limits, dev_limits) {
+        (Some(lim), Ok(d_lim)) if d_lim.0 > 0 && d_lim.1 > 0 && d_lim.0 <= d_lim.1 => {
+            (lim.0.max(d_lim.0), lim.1.min(d_lim.1))
+        }
+        (Some(lim), _) => lim,
+        (None, Ok(d_lim)) => d_lim,
+        (None, Err(e)) => return Err(e),
     };
     if min <= 0 || max <= 0 || min > max || !(min..=max).contains(&watts) {
         return Err(IoctlError::PreconditionFailed(

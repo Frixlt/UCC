@@ -69,8 +69,16 @@ impl CpuWorker {
         }
 
         // 2. Set intel_pstate flags before frequency bounds
-        let _ = self.cpu_ctrl.write_intel_pstate_no_turbo(cpu.no_turbo);
-        let _ = self.cpu_ctrl.write_intel_hwp_dynamic_boost(cpu.hwp_dynamic_boost);
+        if let Err(e) = self.cpu_ctrl.write_intel_pstate_no_turbo(cpu.no_turbo) {
+            if e.kind() != std::io::ErrorKind::NotFound {
+                return Err(format!("Failed to write intel_pstate/no_turbo: {e}"));
+            }
+        }
+        if let Err(e) = self.cpu_ctrl.write_intel_hwp_dynamic_boost(cpu.hwp_dynamic_boost) {
+            if e.kind() != std::io::ErrorKind::NotFound {
+                return Err(format!("Failed to write intel_pstate/hwp_dynamic_boost: {e}"));
+            }
+        }
 
         // 3. Reset frequency bounds on selected cores to avoid clamp conflicts
         let _ = self.cpu_ctrl.set_governor_scaling_min_frequency(None);
@@ -103,7 +111,11 @@ impl CpuWorker {
         if !self.no_epp_write_quirk && !cpu.energy_performance_preference.is_empty() {
             let epp = &cpu.energy_performance_preference;
             if self.is_epp_available(epp) {
-                let _ = self.cpu_ctrl.set_energy_performance_preference(Some(epp));
+                if let Err(e) = self.cpu_ctrl.set_energy_performance_preference(Some(epp)) {
+                    if e.kind() != std::io::ErrorKind::NotFound {
+                        return Err(format!("Failed to apply CPU EPP '{epp}': {e}"));
+                    }
+                }
 
                 // Verification check: detect EPP write rejection quirks
                 if !self.cpu_ctrl.cores.is_empty() {

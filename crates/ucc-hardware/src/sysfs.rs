@@ -1,8 +1,11 @@
 //! Sysfs and Procfs abstraction layer with type safety, path sandbox isolation,
 //! and write journaling for non-destructive testing and hardware resilience.
 
+use nix::libc;
 use std::fs::{self, OpenOptions};
 use std::io::{self, Write};
+use std::os::unix::fs::OpenOptionsExt;
+use std::os::unix::io::AsRawFd;
 use std::path::{Component, Path, PathBuf};
 use std::str::FromStr;
 use std::sync::{Arc, Mutex};
@@ -185,7 +188,25 @@ impl SysfsRoot {
             let mut file = OpenOptions::new()
                 .write(true)
                 .truncate(true)
+                .custom_flags(libc::O_NOFOLLOW)
                 .open(&full_path)?;
+
+            #[cfg(target_os = "linux")]
+            {
+                if let Ok(canon_root) = fs::canonicalize(&self.root_path) {
+                    if let Ok(proc_link) = fs::read_link(format!("/proc/self/fd/{}", file.as_raw_fd())) {
+                        if let Ok(canon_fd) = fs::canonicalize(&proc_link) {
+                            if !canon_fd.starts_with(&canon_root) {
+                                return Err(io::Error::new(
+                                    io::ErrorKind::PermissionDenied,
+                                    "Symlink escape detected via descriptor target",
+                                ));
+                            }
+                        }
+                    }
+                }
+            }
+
             file.write_all(data.as_bytes())?;
             file.flush()?;
             Ok(())

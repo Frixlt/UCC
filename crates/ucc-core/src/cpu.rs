@@ -115,10 +115,12 @@ pub mod cpu_sentinel_serde {
     where
         D: Deserializer<'de>,
     {
-        let opt = Option::<i64>::deserialize(deserializer)?;
+        let opt = Option::<i128>::deserialize(deserializer)?;
         match opt {
-            Some(v) if v >= 0 => Ok(Some(v as u32)),
-            _ => Ok(None),
+            Some(v) if v < 0 => Ok(None),
+            Some(v) if v <= u32::MAX as i128 => Ok(Some(v as u32)),
+            Some(_) => Err(serde::de::Error::custom("CPU numeric value exceeds u32::MAX")),
+            None => Ok(None),
         }
     }
 

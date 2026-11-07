@@ -59,6 +59,21 @@ pub fn user_config_path() -> Option<PathBuf> {
     None
 }
 
+/// Checks whether raw JSON content represents valid settings whose profiles pass domain validation.
+pub fn is_valid_settings_content(content: &str) -> bool {
+    match UccSettings::from_json(content) {
+        Ok(settings) => {
+            for profile in settings.profiles.values() {
+                if profile.validate().is_err() {
+                    return false;
+                }
+            }
+            true
+        }
+        Err(_) => false,
+    }
+}
+
 /// High-level configuration manager for loading and saving settings.
 #[derive(Debug, Clone, Default)]
 pub struct ConfigManager {
@@ -229,6 +244,10 @@ impl ConfigManager {
     pub fn save_to(&self, path: &Path, settings: &UccSettings) -> Result<(), ConfigError> {
         if is_read_only_preview() {
             return Err(ConfigError::ReadOnlyPreview);
+        }
+
+        for profile in settings.profiles.values() {
+            profile.validate()?;
         }
 
         let json = settings.to_json_pretty()?;

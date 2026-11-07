@@ -477,6 +477,86 @@
       "files": ["crates/ucc-desktop/src/tray.rs"],
       "status": "resolved",
       "resolution": "Only update local state when send over mpsc channel succeeds."
+    },
+    {
+      "id": "FINDING-RECHECK-3F4-01",
+      "priority": "P1",
+      "title": "Arbitrary ioctl numbers reach syscall through safe HardwareIo trait",
+      "files": ["crates/ucc-hardware/src/ioctl.rs"],
+      "status": "resolved",
+      "resolution": "Enforce strict closed set of canonical 32-bit Tuxedo IO request codes for read_i32, write_i32, call_none, and read_str."
+    },
+    {
+      "id": "FINDING-RECHECK-3F4-02",
+      "priority": "P1",
+      "title": "Caller-specified TDP limits override hardware driver bounds",
+      "files": ["crates/ucc-hardware/src/ioctl.rs"],
+      "status": "resolved",
+      "resolution": "Intersect caller-provided limits with driver hardware limits so caller limits cannot exceed device bounds."
+    },
+    {
+      "id": "FINDING-RECHECK-3F4-03",
+      "priority": "P1",
+      "title": "Sysfs check and file open separated allowing symlink race",
+      "files": ["crates/ucc-hardware/src/sysfs.rs"],
+      "status": "resolved",
+      "resolution": "Use O_NOFOLLOW on open and verify file descriptor target against canonical root before writing."
+    },
+    {
+      "id": "FINDING-RECHECK-3F4-04",
+      "priority": "P1",
+      "title": "HWP dynamic boost and EPP write errors ignored in CpuWorker",
+      "files": ["crates/ucc-hardware/src/cpu/worker.rs"],
+      "status": "resolved",
+      "resolution": "Propagate write errors for HWP and EPP while properly treating NotFound as unsupported."
+    },
+    {
+      "id": "FINDING-RECHECK-3F4-05",
+      "priority": "P2",
+      "title": "CPU sentinel decoder wraps values larger than u32::MAX",
+      "files": ["crates/ucc-core/src/cpu.rs"],
+      "status": "resolved",
+      "resolution": "Use checked conversion in cpu_sentinel_serde rejecting values exceeding u32::MAX."
+    },
+    {
+      "id": "FINDING-RECHECK-3F4-06",
+      "priority": "P1",
+      "title": "Domain-invalid primary file can overwrite valid existing backup",
+      "files": ["crates/ucc-config/src/persistence.rs"],
+      "status": "resolved",
+      "resolution": "Validate primary file with full domain model checks before rotating onto backup files."
+    },
+    {
+      "id": "FINDING-RECHECK-3F4-07",
+      "priority": "P2",
+      "title": "ConfigManager::save writes invalid configuration that loader rejects",
+      "files": ["crates/ucc-config/src/manager.rs"],
+      "status": "resolved",
+      "resolution": "Validate all profiles in save_to before writing to disk."
+    },
+    {
+      "id": "FINDING-RECHECK-3F4-08",
+      "priority": "P1",
+      "title": "NVML enumeration order mismatch probes sleeping GPU",
+      "files": ["crates/ucc-hardware/src/nvml.rs"],
+      "status": "resolved",
+      "resolution": "Map sysfs GPU indices to NVML indices respecting reversed enumeration order and per-device sleep status."
+    },
+    {
+      "id": "FINDING-RECHECK-3F4-09",
+      "priority": "P1",
+      "title": "Retry of NVML device enumeration leaks init reference",
+      "files": ["crates/ucc-hardware/src/nvml.rs"],
+      "status": "resolved",
+      "resolution": "Separate library init from enumeration so nvmlInit_v2 is called exactly once and matched by shutdown."
+    },
+    {
+      "id": "FINDING-RECHECK-3F4-10",
+      "priority": "P2",
+      "title": "Parallel CLI test execution on single session bus causes name collision",
+      "files": ["crates/ucc-cli/tests/full_audit_cli.rs"],
+      "status": "resolved",
+      "resolution": "Use async Mutex test serialization and graceful fallback for C++ parity binary in clean checkout."
     }
   ]
 }

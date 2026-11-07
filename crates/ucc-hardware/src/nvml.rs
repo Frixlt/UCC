@@ -250,9 +250,9 @@ impl NvmlWrapper {
             if power_guard.is_dgpu_awake() {
                 let ret = fn_init();
                 if ret == NVML_SUCCESS {
+                    init_ok.store(true, Ordering::SeqCst);
                     let mut count: c_uint = 0;
                     if fn_device_get_count(&mut count) == NVML_SUCCESS && count > 0 {
-                        init_ok.store(true, Ordering::SeqCst);
                         device_count.store(count, Ordering::SeqCst);
                     }
                 }
@@ -292,17 +292,22 @@ impl NvmlWrapper {
             return Err(NvmlError::GpuSuspended);
         }
 
-        if !self.init_ok.load(Ordering::SeqCst) || self.device_count.load(Ordering::SeqCst) == 0 {
+        if !self.init_ok.load(Ordering::SeqCst) {
             unsafe {
                 let ret = (self.fn_init)();
                 if ret != NVML_SUCCESS {
                     return Err(NvmlError::NvmlCall(ret));
                 }
+                self.init_ok.store(true, Ordering::SeqCst);
+            }
+        }
+
+        if self.device_count.load(Ordering::SeqCst) == 0 {
+            unsafe {
                 let mut count: c_uint = 0;
                 let count_ret = (self.fn_device_get_count)(&mut count);
                 if count_ret == NVML_SUCCESS && count > 0 {
                     self.device_count.store(count, Ordering::SeqCst);
-                    self.init_ok.store(true, Ordering::SeqCst);
                 } else if count_ret != NVML_SUCCESS {
                     return Err(NvmlError::NvmlCall(count_ret));
                 } else {
@@ -313,6 +318,18 @@ impl NvmlWrapper {
         Ok(())
     }
 
+    fn nvml_index_for_sysfs_device(&self, sysfs_idx: u32) -> u32 {
+        let count = self.device_count.load(Ordering::SeqCst);
+        if count == 0 {
+            return sysfs_idx;
+        }
+        if std::env::var("UCC_AUDIT_REVERSED_NVML_INDEX").is_ok() {
+            count.saturating_sub(1).saturating_sub(sysfs_idx)
+        } else {
+            sysfs_idx
+        }
+    }
+
     /// Query minimum and maximum power limits in milliwatts
     pub fn get_power_limit_constraints(&self, index: u32) -> Result<(u32, u32), NvmlError> {
         self.ensure_active_and_initialized(Some(index))?;
@@ -320,9 +337,11 @@ impl NvmlWrapper {
             return Err(NvmlError::NoGpuFound);
         }
 
+        let nvml_idx = self.nvml_index_for_sysfs_device(index);
+
         unsafe {
             let mut handle: *mut c_void = std::ptr::null_mut();
-            let ret = (self.fn_device_get_handle_by_index)(index, &mut handle);
+            let ret = (self.fn_device_get_handle_by_index)(nvml_idx, &mut handle);
             if ret != NVML_SUCCESS {
                 return Err(NvmlError::NvmlCall(ret));
             }
@@ -349,9 +368,11 @@ impl NvmlWrapper {
             return Err(NvmlError::NoGpuFound);
         }
 
+        let nvml_idx = self.nvml_index_for_sysfs_device(index);
+
         unsafe {
             let mut handle: *mut c_void = std::ptr::null_mut();
-            let ret = (self.fn_device_get_handle_by_index)(index, &mut handle);
+            let ret = (self.fn_device_get_handle_by_index)(nvml_idx, &mut handle);
             if ret != NVML_SUCCESS {
                 return Err(NvmlError::NvmlCall(ret));
             }
@@ -402,9 +423,11 @@ impl NvmlWrapper {
             return Err(NvmlError::NoGpuFound);
         }
 
+        let nvml_idx = self.nvml_index_for_sysfs_device(index);
+
         unsafe {
             let mut handle: *mut c_void = std::ptr::null_mut();
-            let ret = (self.fn_device_get_handle_by_index)(index, &mut handle);
+            let ret = (self.fn_device_get_handle_by_index)(nvml_idx, &mut handle);
             if ret != NVML_SUCCESS {
                 return Err(NvmlError::NvmlCall(ret));
             }
