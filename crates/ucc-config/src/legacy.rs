@@ -190,6 +190,27 @@ impl SettingsManager {
             settings.charge_end_threshold = Some(i as i32);
         }
 
+        // Parse ycbcr420Workaround array matching C++ structure
+        if let Some(ycbcr) = parsed.get("ycbcr420Workaround").and_then(|v| v.as_array()) {
+            let mut cards = Vec::new();
+            for (i, card_val) in ycbcr.iter().enumerate() {
+                let mut card = YCbCr420Card {
+                    card: i as i32,
+                    ports: Vec::new(),
+                };
+                if let Some(obj) = card_val.as_object() {
+                    for (port, enabled) in obj {
+                        card.ports.push(YCbCr420Port {
+                            port: port.clone(),
+                            enabled: enabled.as_bool().unwrap_or(false),
+                        });
+                    }
+                }
+                cards.push(card);
+            }
+            settings.ycbcr420_workaround = cards;
+        }
+
         Some(settings)
     }
 
@@ -246,7 +267,16 @@ impl SettingsManager {
         map.insert("fanControlEnabled".to_string(), serde_json::json!(settings.fan_control_enabled));
         map.insert("keyboardBacklightControlSupported".to_string(), serde_json::json!(settings.keyboard_backlight_control_supported));
 
-        map.insert("ycbcr420Workaround".to_string(), serde_json::json!(settings.ycbcr420_workaround));
+        // Serialize ycbcr420Workaround array matching C++ format
+        let mut ycbcr_arr = Vec::new();
+        for card in &settings.ycbcr420_workaround {
+            let mut card_obj = serde_json::Map::new();
+            for port in &card.ports {
+                card_obj.insert(port.port.clone(), serde_json::Value::Bool(port.enabled));
+            }
+            ycbcr_arr.push(serde_json::Value::Object(card_obj));
+        }
+        map.insert("ycbcr420Workaround".to_string(), serde_json::Value::Array(ycbcr_arr));
         map.insert("chargingProfile".to_string(), serde_json::json!(settings.charging_profile));
         map.insert("chargingPriority".to_string(), serde_json::json!(settings.charging_priority));
 

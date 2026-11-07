@@ -78,6 +78,14 @@ impl ConfigManager {
         }
     }
 
+    /// Returns candidate backup paths for a given config path in order of preference (.bak, .backup).
+    pub fn backup_paths(path: &Path) -> [PathBuf; 2] {
+        [
+            PathBuf::from(format!("{}.bak", path.display())),
+            PathBuf::from(format!("{}.backup", path.display())),
+        ]
+    }
+
     /// Determines the active file path to read from:
     /// 1. Custom override path if set.
     /// 2. User config path (`~/.config/ucc/settings.json`) if it exists on disk.
@@ -85,25 +93,25 @@ impl ConfigManager {
     /// 4. None (indicating default settings should be generated).
     pub fn resolve_read_path(&self) -> Option<PathBuf> {
         if let Some(ref p) = self.custom_path {
-            if p.exists() {
+            if p.exists() || Self::backup_paths(p).iter().any(|b| b.exists()) {
                 return Some(p.clone());
             }
             return None;
         }
 
         if let Some(user_path) = user_config_path() {
-            if user_path.exists() {
+            if user_path.exists() || Self::backup_paths(&user_path).iter().any(|b| b.exists()) {
                 return Some(user_path);
             }
         }
 
         let sys_path = system_config_path();
-        if sys_path.exists() {
+        if sys_path.exists() || Self::backup_paths(&sys_path).iter().any(|b| b.exists()) {
             return Some(sys_path);
         }
 
         let sys_json = PathBuf::from(SYSTEM_CONFIG_JSON_PATH);
-        if sys_json.exists() {
+        if sys_json.exists() || Self::backup_paths(&sys_json).iter().any(|b| b.exists()) {
             return Some(sys_json);
         }
 
@@ -153,39 +161,49 @@ impl ConfigManager {
     }
 
     /// Loads settings from `path`. If `path` is corrupted (syntax error, truncated write,
-    /// invalid types) or unreadable, attempts recovery by reading from `<path>.bak`.
+    /// invalid types) or unreadable, attempts recovery by reading from `<path>.bak` or `<path>.backup`.
     /// Returns `Ok((settings, was_recovered))` where `was_recovered == true` indicates that
-    /// the configuration was successfully restored from `.bak`.
+    /// the configuration was successfully restored from a backup file.
     pub fn load_with_recovery(path: &Path) -> Result<(UccSettings, bool), ConfigError> {
         match Self::load_from_path(path) {
             Ok(settings) => Ok((settings, false)),
             Err(primary_err) => {
-                let bak_path = PathBuf::from(format!("{}.bak", path.display()));
-                if bak_path.exists() {
-                    match Self::load_from_path(&bak_path) {
-                        Ok(settings) => Ok((settings, true)),
-                        Err(_) => Err(primary_err),
+                for bak_path in Self::backup_paths(path) {
+                    if bak_path.exists() {
+                        if let Ok(settings) = Self::load_from_path(&bak_path) {
+                            return Ok((settings, true));
+                        }
                     }
-                } else {
-                    Err(primary_err)
                 }
+                Err(primary_err)
             }
         }
     }
 
-    /// Recovers settings from `<path>.bak` and writes them back to `path` atomically.
+    /// Recovers settings from `<path>.bak` or `<path>.backup` and writes them back to `path` atomically,
+    /// strictly preserving the valid backup file.
     pub fn restore_from_backup(path: &Path) -> Result<UccSettings, ConfigError> {
-        let bak_path = PathBuf::from(format!("{}.bak", path.display()));
-        if !bak_path.exists() {
-            return Err(ConfigError::Io(std::io::Error::new(
-                std::io::ErrorKind::NotFound,
-                format!("Backup file {} does not exist", bak_path.display()),
-            )));
+        for bak_path in Self::backup_paths(path) {
+            if bak_path.exists() {
+                if let Ok(settings) = Self::load_from_path(&bak_path) {
+                    let json = settings.to_json_pretty()?;
+                    let temp_path = path.with_extension(format!(
+                        "tmp_restore_{}",
+                        std::time::SystemTime::now()
+                            .duration_since(std::time::UNIX_EPOCH)
+                            .unwrap_or_default()
+                            .as_nanos()
+                    ));
+                    fs::write(&temp_path, json.as_bytes())?;
+                    fs::rename(&temp_path, path)?;
+                    return Ok(settings);
+                }
+            }
         }
-        let settings = Self::load_from_path(&bak_path)?;
-        let json = settings.to_json_pretty()?;
-        write_atomic(path, json.as_bytes())?;
-        Ok(settings)
+        Err(ConfigError::Io(std::io::Error::new(
+            std::io::ErrorKind::NotFound,
+            format!("No valid backup file found (.bak or .backup) for {}", path.display()),
+        )))
     }
 
     /// Saves settings to the resolved write path using atomic persistence.

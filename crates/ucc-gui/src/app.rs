@@ -80,13 +80,19 @@ impl ControlCenterApp {
         let is_preview = std::env::args().any(|arg| arg == "--preview") || is_read_only_preview();
 
         let config_manager = ConfigManager::new();
-        let (settings, config_load_error) = match config_manager.load() {
+        let (mut settings, config_load_error) = match config_manager.load() {
             Ok(s) => (s, None),
             Err(e) => {
                 let err_msg = format!("Existing configuration failed to load: {}. Write operations are blocked to prevent data loss.", e);
                 (create_default_settings(), Some(err_msg))
             }
         };
+
+        // Guarantee all built-in profiles are always available in the GUI
+        let defaults = create_default_settings();
+        for (k, v) in defaults.profiles {
+            settings.profiles.entry(k).or_insert(v);
+        }
 
         let active_profile_id = settings
             .state_map

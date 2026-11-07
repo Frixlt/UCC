@@ -8,7 +8,7 @@ use libloading::Library;
 use std::ffi::{c_char, c_uint, c_ulonglong, c_void, CStr};
 use std::fs;
 use std::path::{Path, PathBuf};
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
 use std::sync::Arc;
 use thiserror::Error;
 
@@ -91,14 +91,13 @@ impl NvidiaPowerGuard {
                 if let Ok(content) = fs::read_to_string(&vendor_path) {
                     if content.trim().eq_ignore_ascii_case(NVIDIA_PCI_VENDOR_ID) {
                         // Check PCI class to ensure this is a display/3D graphics device, not audio (0x0403xx)
-                        if class_path.exists() {
-                            if let Ok(class_str) = fs::read_to_string(&class_path) {
-                                let c = class_str.trim().to_ascii_lowercase();
-                                // Base class 0x03 indicates Display controller (VGA 0x0300, 3D 0x0302, etc.)
-                                if !c.starts_with("0x03") && !c.starts_with("03") {
-                                    continue;
-                                }
-                            }
+                        let Ok(class_str) = fs::read_to_string(&class_path) else {
+                            continue;
+                        };
+                        let c = class_str.trim().to_ascii_lowercase();
+                        // Base class 0x03 indicates Display controller (VGA 0x0300, 3D 0x0302, etc.)
+                        if !c.starts_with("0x03") && !c.starts_with("03") {
+                            continue;
                         }
                         devices.push(path);
                     }
@@ -155,7 +154,7 @@ pub struct NvmlTelemetry {
 pub struct NvmlWrapper {
     _lib: Library,
     init_ok: Arc<AtomicBool>,
-    device_count: u32,
+    device_count: Arc<AtomicU32>,
     power_guard: NvidiaPowerGuard,
 
     // Function pointers
@@ -229,7 +228,7 @@ impl NvmlWrapper {
             ) -> c_uint = *lib.get(b"nvmlDeviceGetMemoryInfo")?;
 
             let init_ok = Arc::new(AtomicBool::new(false));
-            let mut device_count: u32 = 0;
+            let device_count = Arc::new(AtomicU32::new(0));
 
             // Strict D3cold guard: do NOT invoke native nvmlInit during construction
             // if the discrete GPU is suspended, avoiding waking the hardware.
@@ -239,7 +238,7 @@ impl NvmlWrapper {
                     init_ok.store(true, Ordering::SeqCst);
                     let mut count: c_uint = 0;
                     if fn_device_get_count(&mut count) == NVML_SUCCESS {
-                        device_count = count;
+                        device_count.store(count, Ordering::SeqCst);
                     }
                 }
             }
@@ -266,7 +265,7 @@ impl NvmlWrapper {
     }
 
     pub fn device_count(&self) -> u32 {
-        self.device_count
+        self.device_count.load(Ordering::SeqCst)
     }
 
     fn ensure_active_and_initialized(&self) -> Result<(), NvmlError> {
@@ -281,7 +280,9 @@ impl NvmlWrapper {
                 }
                 self.init_ok.store(true, Ordering::SeqCst);
                 let mut count: c_uint = 0;
-                let _ = (self.fn_device_get_count)(&mut count);
+                if (self.fn_device_get_count)(&mut count) == NVML_SUCCESS {
+                    self.device_count.store(count, Ordering::SeqCst);
+                }
             }
         }
         Ok(())
@@ -289,10 +290,10 @@ impl NvmlWrapper {
 
     /// Query minimum and maximum power limits in milliwatts
     pub fn get_power_limit_constraints(&self, index: u32) -> Result<(u32, u32), NvmlError> {
-        if index >= self.device_count {
+        self.ensure_active_and_initialized()?;
+        if index >= self.device_count.load(Ordering::SeqCst) {
             return Err(NvmlError::NoGpuFound);
         }
-        self.ensure_active_and_initialized()?;
 
         unsafe {
             let mut handle: *mut c_void = std::ptr::null_mut();
@@ -317,12 +318,11 @@ impl NvmlWrapper {
 
     /// Read telemetry for a GPU index, strictly respecting the power guard
     pub fn get_telemetry(&self, index: u32) -> Result<NvmlTelemetry, NvmlError> {
-        if index >= self.device_count {
-            return Err(NvmlError::NoGpuFound);
-        }
-
         // GUARD: check if dGPU is suspended in D3cold before waking it!
         self.ensure_active_and_initialized()?;
+        if index >= self.device_count.load(Ordering::SeqCst) {
+            return Err(NvmlError::NoGpuFound);
+        }
 
         unsafe {
             let mut handle: *mut c_void = std::ptr::null_mut();
@@ -372,10 +372,10 @@ impl NvmlWrapper {
 
     /// Set power limit in milliwatts
     pub fn set_power_limit(&self, index: u32, power_mw: u32) -> Result<(), NvmlError> {
-        if index >= self.device_count {
+        self.ensure_active_and_initialized()?;
+        if index >= self.device_count.load(Ordering::SeqCst) {
             return Err(NvmlError::NoGpuFound);
         }
-        self.ensure_active_and_initialized()?;
 
         unsafe {
             let mut handle: *mut c_void = std::ptr::null_mut();

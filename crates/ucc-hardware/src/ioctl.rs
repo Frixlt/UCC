@@ -157,9 +157,13 @@ impl TuxedoIoDevice {
     }
 
     /// Read an `i32` value via ioctl.
-    pub fn read_i32(&self, request: u64) -> Result<i32, IoctlError> {
+    ///
+    /// # Safety
+    /// Caller must ensure that `request` is a valid ioctl request code whose ABI expects
+    /// a pointer to an `int32_t`.
+    pub unsafe fn read_i32(&self, request: u64) -> Result<i32, IoctlError> {
         let mut val: i32 = 0;
-        let ret = unsafe { libc::ioctl(self.file.as_raw_fd(), request, &mut val) };
+        let ret = libc::ioctl(self.file.as_raw_fd(), request, &mut val);
         if ret < 0 {
             return Err(IoctlError::IoctlFailed {
                 request,
@@ -170,8 +174,12 @@ impl TuxedoIoDevice {
     }
 
     /// Write an `i32` value via ioctl.
-    pub fn write_i32(&self, request: u64, mut val: i32) -> Result<(), IoctlError> {
-        let ret = unsafe { libc::ioctl(self.file.as_raw_fd(), request, &mut val) };
+    ///
+    /// # Safety
+    /// Caller must ensure that `request` is a valid ioctl request code whose ABI expects
+    /// a pointer to an `int32_t`.
+    pub unsafe fn write_i32(&self, request: u64, mut val: i32) -> Result<(), IoctlError> {
+        let ret = libc::ioctl(self.file.as_raw_fd(), request, &mut val);
         if ret < 0 {
             return Err(IoctlError::IoctlFailed {
                 request,
@@ -182,8 +190,11 @@ impl TuxedoIoDevice {
     }
 
     /// Execute an ioctl without arguments (such as `W_UW_FANAUTO`).
-    pub fn call_none(&self, request: u64) -> Result<(), IoctlError> {
-        let ret = unsafe { libc::ioctl(self.file.as_raw_fd(), request) };
+    ///
+    /// # Safety
+    /// Caller must ensure that `request` is an `_IO` request code taking no arguments.
+    pub unsafe fn call_none(&self, request: u64) -> Result<(), IoctlError> {
+        let ret = libc::ioctl(self.file.as_raw_fd(), request);
         if ret < 0 {
             return Err(IoctlError::IoctlFailed {
                 request,
@@ -196,25 +207,31 @@ impl TuxedoIoDevice {
     /// Maximum buffer size for module and interface version strings per kernel ABI (20 bytes).
     pub const VERSION_BUFFER_LEN: usize = 20;
 
+    /// Clevo kernel driver interface string buffer length (50 bytes).
+    pub const CLEVO_IF_STR_BUFFER_LEN: usize = 50;
+
     /// Reads driver module version safely using the kernel ABI fixed 20-byte buffer.
     pub fn read_module_version(&self) -> Result<String, IoctlError> {
-        self.read_str(requests::R_MOD_VERSION, Self::VERSION_BUFFER_LEN)
+        unsafe { self.read_str(requests::R_MOD_VERSION, Self::VERSION_BUFFER_LEN) }
     }
 
     /// Reads Uniwill hardware interface string safely using the kernel ABI fixed 20-byte buffer.
     pub fn read_uniwill_interface_string(&self) -> Result<String, IoctlError> {
-        self.read_str(requests::R_UW_HW_IF_STR, Self::VERSION_BUFFER_LEN)
+        unsafe { self.read_str(requests::R_UW_HW_IF_STR, Self::VERSION_BUFFER_LEN) }
     }
 
-    /// Reads Clevo hardware interface string safely using the kernel ABI fixed 20-byte buffer.
+    /// Reads Clevo hardware interface string safely using the kernel ABI fixed 50-byte buffer.
     pub fn read_clevo_interface_string(&self) -> Result<String, IoctlError> {
-        self.read_str(requests::R_CL_HW_IF_STR, Self::VERSION_BUFFER_LEN)
+        unsafe { self.read_str(requests::R_CL_HW_IF_STR, Self::CLEVO_IF_STR_BUFFER_LEN) }
     }
 
     /// Read a fixed-length C string (e.g., driver version or interface ID).
-    pub fn read_str(&self, request: u64, max_len: usize) -> Result<String, IoctlError> {
+    ///
+    /// # Safety
+    /// Caller must ensure `request` expects a char buffer of at least `max_len` bytes.
+    pub unsafe fn read_str(&self, request: u64, max_len: usize) -> Result<String, IoctlError> {
         let mut buffer = vec![0u8; max_len.max(1)];
-        let ret = unsafe { libc::ioctl(self.file.as_raw_fd(), request, buffer.as_mut_ptr()) };
+        let ret = libc::ioctl(self.file.as_raw_fd(), request, buffer.as_mut_ptr());
         if ret < 0 {
             return Err(IoctlError::IoctlFailed {
                 request,

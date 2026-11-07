@@ -877,8 +877,8 @@
       "milestone": "M3",
       "wave": "V3",
       "title": "Проверить Rust CLI → C++ daemon и C++ test-client → Rust fake/daemon backend на private bus.",
-      "status": "done",
-      "status_basis": "Cross-validation between Rust CLI and backend executed via private session bus test stand with status, profile, fan, and exit code assertions",
+      "status": "partially_verified; pending_cross_language_daemon_test",
+      "status_basis": "Rust CLI validated against pure-Rust D-Bus daemon backend on private session bus in crates/ucc-cli/tests/cli_daemon_integration.rs; bidirectional cross-language verification (Rust CLI -> C++ daemon and C++ test-client -> Rust backend) requires built C++ binary in integration environment",
       "suggested_role": "R2",
       "assigned_agent_id": "dc3756a1-00c7-4a63-bba9-a45584f5f133",
       "depends_on": [

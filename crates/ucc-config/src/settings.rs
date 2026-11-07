@@ -35,8 +35,69 @@ pub struct CustomKeyboardProfile {
     pub json: serde_json::Value,
 }
 
-/// Complete Frixit Control Center settings structure (stored in `settings.json`).
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct UccSettingsRaw {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub keyboard_layout: Option<String>,
+
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub keyboard_backlight_states: Option<Vec<KeyboardBacklightState>>,
+
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub custom_keyboard_profiles: Option<HashMap<String, CustomKeyboardProfile>>,
+
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub power_devices: Option<serde_json::Value>,
+
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub lightbar: Option<serde_json::Value>,
+
+    #[serde(default)]
+    pub state_map: HashMap<String, String>,
+
+    #[serde(default)]
+    pub profiles: HashMap<String, UccProfile>,
+
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub charging_profile: Option<String>,
+
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub charging_priority: Option<String>,
+
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub charge_type: Option<String>,
+
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub charge_start_threshold: Option<u8>,
+
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub charge_end_threshold: Option<u8>,
+
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub shutdown_time: Option<String>,
+
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub fahrenheit: Option<bool>,
+
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub cpu_settings_enabled: Option<bool>,
+
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub fan_control_enabled: Option<bool>,
+
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub keyboard_backlight_control_supported: Option<bool>,
+
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub ycbcr420_workaround: Option<Vec<YCbCrWorkaroundEntry>>,
+
+    #[serde(flatten)]
+    pub extra: HashMap<String, serde_json::Value>,
+}
+
+/// Complete Frixit Control Center settings structure (stored in `settings.json`).
+#[derive(Debug, Clone, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct UccSettings {
     /// Active keyboard layout identifier (e.g. "frixit-mechrevo", "iso", "ansi").
@@ -113,6 +174,39 @@ pub struct UccSettings {
     pub extra: HashMap<String, serde_json::Value>,
 }
 
+impl<'de> serde::Deserialize<'de> for UccSettings {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        // Parse through generic JSON Value first to handle legacy C++ writer quirk
+        // where `keyboardBacklightStates` was serialized twice, preserving last-value semantics.
+        let val = serde_json::Value::deserialize(deserializer)?;
+        let raw: UccSettingsRaw = serde_json::from_value(val).map_err(serde::de::Error::custom)?;
+        Ok(UccSettings {
+            keyboard_layout: raw.keyboard_layout,
+            keyboard_backlight_states: raw.keyboard_backlight_states,
+            custom_keyboard_profiles: raw.custom_keyboard_profiles,
+            power_devices: raw.power_devices,
+            lightbar: raw.lightbar,
+            state_map: raw.state_map,
+            profiles: raw.profiles,
+            charging_profile: raw.charging_profile,
+            charging_priority: raw.charging_priority,
+            charge_type: raw.charge_type,
+            charge_start_threshold: raw.charge_start_threshold,
+            charge_end_threshold: raw.charge_end_threshold,
+            shutdown_time: raw.shutdown_time,
+            fahrenheit: raw.fahrenheit,
+            cpu_settings_enabled: raw.cpu_settings_enabled,
+            fan_control_enabled: raw.fan_control_enabled,
+            keyboard_backlight_control_supported: raw.keyboard_backlight_control_supported,
+            ycbcr420_workaround: raw.ycbcr420_workaround,
+            extra: raw.extra,
+        })
+    }
+}
+
 impl Default for UccSettings {
     fn default() -> Self {
         create_default_settings()
@@ -122,7 +216,8 @@ impl Default for UccSettings {
 impl UccSettings {
     /// Deserializes settings from a JSON string.
     pub fn from_json(json_str: &str) -> Result<Self, serde_json::Error> {
-        serde_json::from_str(json_str)
+        let val: serde_json::Value = serde_json::from_str(json_str)?;
+        serde_json::from_value(val)
     }
 
     /// Serializes settings into a pretty-printed JSON string.

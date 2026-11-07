@@ -8,12 +8,13 @@ fn test_nvidia_power_guard_suspended() {
     let power_dir = dev_dir.join("power");
     fs::create_dir_all(&power_dir).unwrap();
 
-    // Create vendor and runtime_status files
+    // Create vendor, class, and runtime_status files
     fs::write(
         dev_dir.join("vendor"),
         format!("{}\n", NVIDIA_PCI_VENDOR_ID),
     )
     .unwrap();
+    fs::write(dev_dir.join("class"), "0x030000\n").unwrap();
     fs::write(power_dir.join("runtime_status"), "suspended\n").unwrap();
 
     let guard = NvidiaPowerGuard::new(temp_dir.path());
@@ -38,6 +39,7 @@ fn test_nvidia_power_guard_active() {
         format!("{}\n", NVIDIA_PCI_VENDOR_ID),
     )
     .unwrap();
+    fs::write(dev_dir.join("class"), "0x030000\n").unwrap();
     fs::write(power_dir.join("runtime_status"), "active\n").unwrap();
 
     let guard = NvidiaPowerGuard::new(temp_dir.path());
