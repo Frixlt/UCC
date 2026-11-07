@@ -1,6 +1,19 @@
 pub mod cooler;
+pub mod cpu;
+pub mod devices;
 pub mod ioctl;
 pub mod nvml;
+
+pub use cpu::{
+    find_closest_value, parse_cpu_range_list, CpuController, CpuInfo, CpuTopology, CpuWorker,
+    LogicalCpu, ScalingDriver, MAX_REAPPLY_ATTEMPTS,
+};
+pub use devices::{
+    default_process_runner, is_valid_aspm, is_valid_epp, is_valid_governor, is_valid_mode,
+    is_valid_path, is_valid_value, validate_settings_json, CpuModeSettings, DeviceEntry,
+    PowerDeviceController, PowerDeviceSettings, ProcessRunner, VALID_ASPM, VALID_EPP,
+    VALID_GOVERNORS, VALID_MODES, WHITELISTED_SYS_PATHS,
+};
 
 pub use cooler::{
     BleWriteLimiter, CoolerError, CoolerPacketEncoder, CoolerState, CoolerStateMachine,
