@@ -59,13 +59,16 @@ pub async fn run_status(client: &CliClient, json_mode: bool) -> Result<(), i32> 
         if let Some(f) = hw.fn_lock { hw_obj["fnLock"] = json!(f); }
         root["hardware"] = hw_obj;
 
+        let mut wc_obj = json!({
+            "connected": wc.connected,
+        });
         if wc.supported {
-            let mut wc_obj = json!({ "supported": true });
+            wc_obj["supported"] = json!(true);
             if let Some(e) = wc.enabled { wc_obj["enabled"] = json!(e); }
             if let Some(s) = wc.fan_speed { wc_obj["fanSpeed"] = json!(s); }
             if let Some(p) = wc.pump_level { wc_obj["pumpLevel"] = json!(p); }
-            root["waterCooler"] = wc_obj;
         }
+        root["waterCooler"] = wc_obj;
 
         if ch.available {
             let mut ch_obj = json!({});
@@ -102,7 +105,7 @@ pub async fn run_status(client: &CliClient, json_mode: bool) -> Result<(), i32> 
 
     println!("  {:<24} yes", "Daemon connected:");
     if let Some(ref ps) = power_state {
-        println!("  {:<24} {}", "Power state:", power_state_label(ps));
+        println!("  {:<24} {} ({})", "Power state:", power_state_label(ps), ps);
     }
     if let Some(ref prof) = active_profile {
         println!("  {:<24} {}", "Active profile:", profile_name(prof));

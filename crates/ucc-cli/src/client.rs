@@ -50,6 +50,7 @@ pub struct HardwareMetrics {
 #[derive(Debug, Default, Clone)]
 pub struct WaterCoolerMetrics {
     pub supported: bool,
+    pub connected: bool,
     pub enabled: Option<bool>,
     pub fan_speed: Option<i32>,
     pub pump_level: Option<i32>,
@@ -71,14 +72,26 @@ pub struct CliClient {
 }
 
 impl CliClient {
-    /// Connect to system D-Bus and create UccdProxy.
+    /// Connect to system D-Bus (or session bus if UCCD_DBUS_SERVICE is set) and create UccdProxy.
     /// Exits with code 2 if connection to daemon fails.
     pub async fn connect() -> Result<Self, i32> {
-        let conn = match Connection::system().await {
-            Ok(c) => c,
-            Err(_) => {
-                eprintln!("{}", DAEMON_CONNECT_ERR);
-                return Err(2);
+        let service_name = std::env::var("UCCD_DBUS_SERVICE").unwrap_or_else(|_| DBUS_SERVICE.to_string());
+        let use_session = std::env::var("UCCD_DBUS_SERVICE").is_ok() || std::env::var("UCCD_DBUS_SESSION").is_ok();
+        let conn = if use_session {
+            match Connection::session().await {
+                Ok(c) => c,
+                Err(_) => {
+                    eprintln!("{}", DAEMON_CONNECT_ERR);
+                    return Err(2);
+                }
+            }
+        } else {
+            match Connection::system().await {
+                Ok(c) => c,
+                Err(_) => {
+                    eprintln!("{}", DAEMON_CONNECT_ERR);
+                    return Err(2);
+                }
             }
         };
 
@@ -88,7 +101,7 @@ impl CliClient {
             "/org/freedesktop/DBus",
             Some("org.freedesktop.DBus"),
             "NameHasOwner",
-            &(DBUS_SERVICE),
+            &(&service_name),
         ).await {
             Ok(msg) => msg.body().deserialize::<bool>().unwrap_or(false),
             Err(_) => false,
@@ -100,7 +113,7 @@ impl CliClient {
         }
 
         let proxy = match UccdProxy::builder(&conn)
-            .destination(DBUS_SERVICE).map_err(|_| 2)?
+            .destination(service_name).map_err(|_| 2)?
             .path(DBUS_PATH).map_err(|_| 2)?
             .interface(DBUS_INTERFACE).map_err(|_| 2)?
             .build()
@@ -284,16 +297,14 @@ impl CliClient {
 
     pub async fn get_water_cooler_metrics(&self) -> WaterCoolerMetrics {
         let supported = self.proxy.get_water_cooler_supported().await.unwrap_or(false);
-        if !supported {
-            return WaterCoolerMetrics { supported: false, ..Default::default() };
-        }
-
+        let connected = self.proxy.get_water_cooler_connected().await.unwrap_or(false);
         let enabled = self.proxy.is_water_cooler_enabled().await.ok();
         let fan_speed = self.proxy.get_water_cooler_fan_speed().await.ok();
         let pump_level = self.proxy.get_water_cooler_pump_level().await.ok();
 
         WaterCoolerMetrics {
-            supported: true,
+            supported,
+            connected,
             enabled,
             fan_speed: fan_speed.filter(|&v| v >= 0),
             pump_level: pump_level.filter(|&v| v >= 0),

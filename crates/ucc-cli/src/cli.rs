@@ -33,41 +33,41 @@ pub enum Commands {
     #[command(visible_alias = "prof")]
     Profile {
         #[command(subcommand)]
-        action: ProfileAction,
+        action: Option<ProfileAction>,
     },
 
     /// Power-state to profile mapping (AC, Battery, Type-C, Water Cooler)
     #[command(visible_alias = "state-map")]
     Statemap {
         #[command(subcommand)]
-        action: StatemapAction,
+        action: Option<StatemapAction>,
     },
 
     /// Fan profiles and curve management
     Fan {
         #[command(subcommand)]
-        action: FanAction,
+        action: Option<FanAction>,
     },
 
     /// Keyboard backlight configuration and profiles
     #[command(visible_alias = "kb")]
     Keyboard {
         #[command(subcommand)]
-        action: KeyboardAction,
+        action: Option<KeyboardAction>,
     },
 
     /// Liquid cooling (LCT) water cooler status and control
     #[command(visible_aliases = ["watercooler", "wc"])]
     Cooler {
         #[command(subcommand)]
-        action: CoolerAction,
+        action: Option<CoolerAction>,
     },
 
     /// Battery charging profile and threshold management
     #[command(visible_alias = "charge")]
     Charging {
         #[command(subcommand)]
-        action: ChargingAction,
+        action: Option<ChargingAction>,
     },
 
     /// CPU frequency limits, governors, EPP, and core telemetry

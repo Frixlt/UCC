@@ -68,13 +68,33 @@ where
     let result = match &command {
         Commands::Status => commands::status::run_status(&client, cli.json).await,
         Commands::Monitor(ref m) => commands::monitor::run_monitor(&client, m, cli.json).await,
-        Commands::Profile { ref action } => commands::profile::run_profile(&client, action, cli.json).await,
-        Commands::Statemap { ref action } => commands::statemap::run_statemap(&client, action, cli.json).await,
-        Commands::Fan { ref action } => commands::fan::run_fan(&client, action, cli.json).await,
-        Commands::Keyboard { ref action } => commands::keyboard::run_keyboard(&client, action, cli.json).await,
-        Commands::Cooler { ref action } => commands::cooler::run_cooler(&client, action, cli.json).await,
-        Commands::Charging { ref action } => commands::charging::run_charging(&client, action, cli.json).await,
-        Commands::Cpu { ref action } => commands::cpu::run_cpu(&client, action, cli.json).await,
+        Commands::Profile { ref action } => {
+            let act = action.as_ref().unwrap_or(&cli::ProfileAction::List);
+            commands::profile::run_profile(&client, act, cli.json).await
+        }
+        Commands::Statemap { ref action } => {
+            let act = action.as_ref().unwrap_or(&cli::StatemapAction::Get);
+            commands::statemap::run_statemap(&client, act, cli.json).await
+        }
+        Commands::Fan { ref action } => {
+            let act = action.as_ref().unwrap_or(&cli::FanAction::List);
+            commands::fan::run_fan(&client, act, cli.json).await
+        }
+        Commands::Keyboard { ref action } => {
+            let act = action.as_ref().unwrap_or(&cli::KeyboardAction::Info);
+            commands::keyboard::run_keyboard(&client, act, cli.json).await
+        }
+        Commands::Cooler { ref action } => {
+            let act = action.as_ref().unwrap_or(&cli::CoolerAction::Status);
+            commands::cooler::run_cooler(&client, act, cli.json).await
+        }
+        Commands::Charging { ref action } => {
+            let act = action.as_ref().unwrap_or(&cli::ChargingAction::Status);
+            commands::charging::run_charging(&client, act, cli.json).await
+        }
+        Commands::Cpu { ref action } => {
+            commands::cpu::run_cpu(&client, action, cli.json).await
+        }
         Commands::Gpu => commands::gpu::run_gpu(&client, cli.json).await,
         Commands::PowerLimits => commands::power_limits::run_power_limits(&client, cli.json).await,
         Commands::Brightness { ref action } => commands::hardware::run_brightness(&client, action, cli.json).await,

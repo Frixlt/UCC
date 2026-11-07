@@ -17,11 +17,15 @@ path = "src/main.rs"
 ucc-core = { workspace = true }
 ucc-config = { workspace = true }
 ucc-dbus = { workspace = true }
+zbus = { workspace = true }
 tokio = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
 thiserror = { workspace = true }
-zbus = { workspace = true }
 clap = { version = "4.5", features = ["derive", "cargo"] }
 clap_complete = "4.5"
 clap_mangen = "0.2"
+
+[[test]]
+name = "cli_daemon_integration"
+path = "tests/cli_daemon_integration.rs"
