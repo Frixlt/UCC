@@ -257,6 +257,8 @@ pub struct UccProfile {
     pub odm_power_limits: Vec<u32>,
     #[serde(default, rename = "nvidiaCTGPOffset", skip_serializing_if = "Option::is_none")]
     pub nvidia_ctgp_offset: Option<i32>,
+    #[serde(default, rename = "selectedKeyboardProfile", skip_serializing_if = "Option::is_none")]
+    pub selected_keyboard_profile: Option<String>,
     #[serde(default)]
     pub charging: ChargingPolicy,
 }
@@ -275,6 +277,7 @@ impl UccProfile {
             odm_profile_name: None,
             odm_power_limits: Vec::new(),
             nvidia_ctgp_offset: None,
+            selected_keyboard_profile: None,
             charging: ChargingPolicy::default(),
         }
     }
