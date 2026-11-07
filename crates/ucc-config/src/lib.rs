@@ -1,14 +1,21 @@
-pub fn add(left: u64, right: u64) -> u64 {
-    left + right
-}
+//! Configuration crate for Frixit Control Center.
+//!
+//! Handles:
+//! - Loading and atomic saving of settings (`/etc/ucc/settings.json`, `~/.config/ucc/settings.json`).
+//! - Standard Built-in profiles (Quiet, Balanced, Performance) with canonical IDs.
+//! - Device-specific default profile catalogs.
+//! - Safe atomic file writes with `.bak` backup creation and permissions checking.
+//! - Read-only preview mode enforcement (`UCC_READ_ONLY_PREVIEW`).
 
-#[cfg(test)]
-mod tests {
-    use super::*;
+pub mod defaults;
+pub mod error;
+pub mod manager;
+pub mod persistence;
+pub mod settings;
 
-    #[test]
-    fn it_works() {
-        let result = add(2, 2);
-        assert_eq!(result, 4);
-    }
-}
+pub use defaults::*;
+pub use error::*;
+pub use manager::*;
+pub use persistence::*;
+pub use settings::*;
+pub use ucc_core::*;

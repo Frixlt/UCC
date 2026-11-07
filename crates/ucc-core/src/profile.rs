@@ -6,13 +6,21 @@ use serde::{Deserialize, Serialize};
 
 /// Display resolution and refresh rate settings for a profile.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct ProfileDisplay {
+    #[serde(default = "default_brightness")]
     pub brightness: i32,
+    #[serde(default)]
     pub use_brightness: bool,
+    #[serde(default = "default_neg_one")]
     pub refresh_rate: i32,
+    #[serde(default)]
     pub use_ref_rate: bool,
+    #[serde(default = "default_neg_one")]
     pub x_resolution: i32,
+    #[serde(default = "default_neg_one")]
     pub y_resolution: i32,
+    #[serde(default)]
     pub use_resolution: bool,
 }
 
@@ -41,8 +49,11 @@ impl ProfileDisplay {
 
 /// Webcam toggle status for a profile.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct ProfileWebcam {
+    #[serde(default = "default_true")]
     pub status: bool,
+    #[serde(default = "default_true")]
     pub use_status: bool,
 }
 
@@ -57,17 +68,29 @@ impl Default for ProfileWebcam {
 
 /// Fan and water cooler control settings within a profile.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct ProfileFanControl {
+    #[serde(default = "default_true")]
     pub use_control: bool,
+    #[serde(default = "default_fan_profile")]
     pub fan_profile: String,
+    #[serde(default = "default_true")]
     pub same_speed: bool,
+    #[serde(rename = "autoControlWC", default = "default_true")]
     pub auto_control_wc: bool,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub manual_fan_speed: Option<u8>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub manual_pump_voltage: Option<i32>,
+    #[serde(default)]
     pub enable_water_cooler: bool,
+    #[serde(rename = "tableCPU", default)]
     pub table_cpu: Vec<FanPoint>,
+    #[serde(rename = "tableGPU", default)]
     pub table_gpu: Vec<FanPoint>,
+    #[serde(rename = "tablePump", default)]
     pub table_pump: Vec<PumpPoint>,
+    #[serde(rename = "tableWaterCoolerFan", default)]
     pub table_water_cooler_fan: Vec<FanPoint>,
 }
 
@@ -120,26 +143,41 @@ impl ProfileFanControl {
 
 /// Keyboard backlight references within a profile.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Default)]
+#[serde(rename_all = "camelCase")]
 pub struct ProfileKeyboard {
+    #[serde(default)]
     pub keyboard_profile_name: String,
+    #[serde(default)]
     pub keyboard_profile_id: String,
+    #[serde(default)]
     pub keyboard_profile_data: String,
 }
 
 /// Complete UCC system performance and hardware configuration profile.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct UccProfile {
     pub id: String,
     pub name: String,
+    #[serde(default)]
     pub description: String,
+    #[serde(default)]
     pub display: ProfileDisplay,
+    #[serde(default)]
     pub cpu: ProfileCpu,
+    #[serde(default)]
     pub webcam: ProfileWebcam,
+    #[serde(default)]
     pub fan: ProfileFanControl,
+    #[serde(default)]
     pub keyboard: ProfileKeyboard,
+    #[serde(default, rename = "odmProfileName", skip_serializing_if = "Option::is_none")]
     pub odm_profile_name: Option<String>,
+    #[serde(default, rename = "odmPowerLimits", skip_serializing_if = "Vec::is_empty")]
     pub odm_power_limits: Vec<u32>,
+    #[serde(default, rename = "nvidiaCTGPOffset", skip_serializing_if = "Option::is_none")]
     pub nvidia_ctgp_offset: Option<i32>,
+    #[serde(default)]
     pub charging: ChargingPolicy,
 }
 
@@ -174,4 +212,17 @@ impl UccProfile {
         self.charging.validate()?;
         Ok(())
     }
+}
+
+const fn default_brightness() -> i32 {
+    100
+}
+const fn default_neg_one() -> i32 {
+    -1
+}
+const fn default_true() -> bool {
+    true
+}
+fn default_fan_profile() -> String {
+    "fan-balanced".to_string()
 }

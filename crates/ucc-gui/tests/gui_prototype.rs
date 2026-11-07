@@ -1,3 +1,7 @@
+use ucc_config::{
+    PROFILE_ID_HIGH_PERFORMANCE, PROFILE_ID_MAX_ENERGY_SAVE, PROFILE_ID_OFFICE, PROFILE_ID_QUIET,
+};
+use ucc_gui::app::{ControlCenterApp, Message};
 use ucc_gui::navigation::Page;
 use ucc_gui::widgets::fan_curve::CurvePoint;
 
@@ -43,14 +47,62 @@ fn test_monotonic_fan_curve_constraints() {
 }
 
 #[test]
-fn test_preview_mode_blocks_mutations() {
-    // In preview mode, profile switches and curve changes must be ignored
-    let is_preview = true;
-    let mut active_profile = "Quiet".to_string();
+fn test_profile_switch_updates_fan_curve_and_cpu_settings() {
+    let (mut app, _) = ControlCenterApp::new();
 
-    if !is_preview {
-        active_profile = "Performance".to_string();
-    }
-    // Must remain "Quiet" because preview blocks write paths!
-    assert_eq!(active_profile, "Quiet");
+    // 1. Switch to Quiet profile
+    app.update(Message::SelectProfile(PROFILE_ID_QUIET.to_string()));
+    assert_eq!(app.active_profile().id, PROFILE_ID_QUIET);
+    assert_eq!(app.active_profile().cpu.governor, "powersave");
+    assert_eq!(app.active_profile().cpu.energy_performance_preference, "power");
+    assert_eq!(app.active_profile().fan.fan_profile, "quiet");
+
+    // Verify fan curve points updated to Quiet profile curve
+    assert!(!app.fan_points.is_empty());
+    assert_eq!(app.fan_points[0].temp_c, 35.0);
+    assert_eq!(app.fan_points[0].speed_pct, 15.0);
+
+    // 2. Switch to High Performance profile
+    app.update(Message::SelectProfile(PROFILE_ID_HIGH_PERFORMANCE.to_string()));
+    assert_eq!(app.active_profile().id, PROFILE_ID_HIGH_PERFORMANCE);
+    assert_eq!(app.active_profile().cpu.governor, "performance");
+    assert_eq!(app.active_profile().cpu.energy_performance_preference, "performance");
+    assert_eq!(app.active_profile().fan.fan_profile, "balanced");
+
+    // Verify fan curve points updated to High Performance curve
+    assert_eq!(app.fan_points[0].temp_c, 30.0);
+    assert_eq!(app.fan_points[0].speed_pct, 30.0);
+
+    // 3. Switch to Office / Balanced profile
+    app.update(Message::SelectProfile(PROFILE_ID_OFFICE.to_string()));
+    assert_eq!(app.active_profile().id, PROFILE_ID_OFFICE);
+    assert_eq!(app.active_profile().cpu.governor, "powersave");
+    assert_eq!(app.active_profile().cpu.energy_performance_preference, "balance_performance");
+
+    // 4. Switch to Max Energy Save profile
+    app.update(Message::SelectProfile(PROFILE_ID_MAX_ENERGY_SAVE.to_string()));
+    assert_eq!(app.active_profile().id, PROFILE_ID_MAX_ENERGY_SAVE);
+    assert_eq!(app.active_profile().cpu.governor, "powersave");
+    assert_eq!(app.active_profile().cpu.energy_performance_preference, "power");
+    assert!(app.active_profile().cpu.no_turbo);
+}
+
+#[test]
+fn test_preview_mode_blocks_save_settings() {
+    let (mut app, _) = ControlCenterApp::new();
+    // Force preview mode
+    app.is_preview = true;
+
+    // Attempt to save settings
+    app.update(Message::SaveSettings);
+
+    // Status message must explicitly indicate save is blocked in preview mode
+    assert!(
+        app.status_message
+            .as_ref()
+            .map(|m| m.contains("Save blocked"))
+            .unwrap_or(false),
+        "Expected status message indicating save blocked in preview mode, got: {:?}",
+        app.status_message
+    );
 }
