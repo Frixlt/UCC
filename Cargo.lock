@@ -3593,6 +3593,7 @@ dependencies = [
  "serde_json",
  "thiserror 2.0.21",
  "tokio",
+ "tracing",
  "ucc-core",
  "zbus 5.19.0",
 ]
