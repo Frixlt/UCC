@@ -1,0 +1,12 @@
+[package]
+name = "ucc-gui"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+
+[dependencies]
+ucc-core = { workspace = true }
+ucc-dbus = { workspace = true }
+tokio = { workspace = true }
+thiserror = { workspace = true }

@@ -1,0 +1,38 @@
+[workspace]
+resolver = "2"
+members = [
+    "crates/ucc-core",
+    "crates/ucc-config",
+    "crates/ucc-hardware",
+    "crates/ucc-dbus",
+    "crates/uccd",
+    "crates/ucc-cli",
+    "crates/ucc-desktop",
+    "crates/ucc-gui",
+    "crates/xtask",
+]
+
+[workspace.package]
+version = "0.3.0"
+edition = "2021"
+rust-version = "1.85"
+authors = ["Frixit <05mba0622@gmail.com>"]
+license = "GPL-3.0-or-later"
+repository = "https://github.com/Frixlt/UCC"
+
+[workspace.dependencies]
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+thiserror = "2.0"
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+tokio = { version = "1.43", features = ["full"] }
+zbus = "5.5"
+nix = { version = "0.29", features = ["ioctl", "fs", "signal", "process"] }
+
+# Internal workspace crates
+ucc-core = { path = "crates/ucc-core" }
+ucc-config = { path = "crates/ucc-config" }
+ucc-hardware = { path = "crates/ucc-hardware" }
+ucc-dbus = { path = "crates/ucc-dbus" }
+ucc-desktop = { path = "crates/ucc-desktop" }
