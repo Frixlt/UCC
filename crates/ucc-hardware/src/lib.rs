@@ -1,6 +1,7 @@
 pub mod cooler;
 pub mod ioctl;
 pub mod nvml;
+pub mod sysfs;
 
 pub use cooler::{
     BleWriteLimiter, CoolerError, CoolerPacketEncoder, CoolerState, CoolerStateMachine,
@@ -12,4 +13,8 @@ pub use ioctl::{magic, requests, IoctlError, TuxedoIoDevice};
 pub use nvml::{
     GpuRuntimeStatus, NvidiaPowerGuard, NvmlError, NvmlMemory, NvmlTelemetry, NvmlUtilization,
     NvmlWrapper,
+};
+pub use sysfs::{
+    format_cpu_range, parse_cpu_range, SysfsError, SysfsJournalEntry, SysfsNode, SysfsRoot,
+    SysfsValue, SysfsWriteJournal,
 };
