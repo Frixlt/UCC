@@ -26,7 +26,7 @@ find_package(Qt6 REQUIRED COMPONENTS Core Bluetooth DBus)
 set(CMAKE_AUTOMOC ON)
 
 add_executable(ucc-sleep src/sleep-helper.cpp)
-target_include_directories(ucc-sleep PRIVATE inc)
+target_include_directories(ucc-sleep PRIVATE inc 3rdparty)
 target_link_libraries(ucc-sleep PRIVATE Qt6::Core Qt6::DBus)
 if(UCC_READ_ONLY_PREVIEW)
   target_compile_definitions(ucc-sleep PRIVATE UCC_READ_ONLY_PREVIEW)
@@ -49,6 +49,7 @@ add_executable(uccd
   src/workers/DisplayWorker.cpp
   src/workers/HardwareMonitorWorker.cpp
   inc/UccDBusService.hpp
+  inc/LidController.hpp
   inc/workers/LCTWaterCoolerWorker.hpp
   inc/workers/DaemonWorker.hpp
   src/profiles/FanProfiles.cpp

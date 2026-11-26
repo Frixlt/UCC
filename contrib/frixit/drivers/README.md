@@ -23,11 +23,25 @@ The original installed modules for other kernels can remain installed.
 `update-hook.patch` records the matching changes to Frixit's existing driver
 update scripts. Copy the driver patch next to those scripts as
 `0003-linux-7.3-acpi-lightbar.patch` and apply the hook patch in that directory.
-The worker applies the compatibility fix before replacing the custom DKMS source,
-builds with one job, and reports failure if any target kernel failed. The launcher
-limits build CPU/memory and collects transient units so a failed update does not
-block the next run. This integration is specific to those existing local hooks;
-it is not automatically installed on other machines.
+The worker applies the compatibility fix when registering the custom DKMS source.
+Once `/usr/src/tuxedo-mechrevo-custom/dkms.conf` exists, the launcher leaves
+kernel upgrades to Arch's synchronous `70-dkms-install.hook`. Rebuilding the
+same source in the background after that hook has run can remove working modules
+just before a reboot. This integration is specific to the existing local hooks.
+
+If a reboot interrupted the original background worker, restore the running
+kernel from the existing patched source:
+
+```sh
+sudo dkms install -j 2 tuxedo-mechrevo/custom -k "$(uname -r)" --force
+sudo modprobe -a uniwill_wmi tuxedo_keyboard tuxedo_io ite_8291 ite_8291_lb tuxedo_nb02_nvidia_power_ctrl
+sudo systemctl restart tuxedo-kbd-perms.service uccd.service
+```
+
+If the stock `tuxedo-drivers-dkms` package remains installed for its userspace
+files, disable its competing build with `BUILD_EXCLUSIVE_KERNEL="^$"` in
+`/etc/dkms/tuxedo-drivers.conf`. This override applies only to the stock DKMS
+module. Arch's DKMS hook can report exit code 77 for the excluded build.
 
 The recovered laptop explicitly loads `uniwill_wmi`, `tuxedo_keyboard`,
 `tuxedo_io`, `ite_8291`, `ite_8291_lb` and `tuxedo_nb02_nvidia_power_ctrl` through

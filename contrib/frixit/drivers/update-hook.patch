@@ -82,7 +82,29 @@
      echo ""
 --- a/update-tuxedo-hook.sh
 +++ b/update-tuxedo-hook.sh
-@@ -25,7 +25,10 @@
+@@ -1,13 +1,19 @@
+ #!/bin/bash
+ # ============================================================
+ # Pacman hook: update-tuxedo-hook.sh
+-# Запускается pacman-ом, но сетевой запрос НЕ делает сам —
+-# передаёт управление systemd-сервису, у которого VPN уже жив.
++# Первичная установка драйвера. При обновлении ядра существующие
++# исходники собирает штатный 70-dkms-install.hook.
+ # ============================================================
+
+ SCRIPT_DIR="/home/frixit/.customconfigs/hooks/tuxedo"
+ WORKER="$SCRIPT_DIR/update-tuxedo-worker.sh"
+ LOG_FILE="/tmp/tuxedo-hook-last.log"
++DKMS_CONF="/usr/src/tuxedo-mechrevo-custom/dkms.conf"
++
++if [ -f "$DKMS_CONF" ]; then
++    echo "Исходники Mechrevo уже зарегистрированы для штатного хука DKMS."
++    exit 0
++fi
+
+ echo ""
+ echo "=========================================="
+@@ -25,7 +31,10 @@
  # --no-block — не ждём завершения (pacman не висит)
  # Сеть (VPN) уже доступна к моменту запуска, т.к. это отдельная транзакция.
  systemd-run \

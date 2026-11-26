@@ -11,6 +11,7 @@
 #include "NotificationMonitor.hpp"
 #include "SessionSignals.hpp"
 #include "RefreshAdvisor.hpp"
+#include "LidDisplayHandler.hpp"
 #include "DriverAlert.hpp"
 #include "PowerSourceAlert.hpp"
 #include "DriverHealth.hpp"
@@ -30,23 +31,42 @@ int main(int argc,char **argv) {
     desktops.contains("KDE",Qt::CaseInsensitive) ? ucc::RefreshBackend::KDE : ucc::RefreshBackend::Unsupported;
   ucc::RefreshAdvisor refresh(backend);
   quint64 profileGeneration=0;
-  auto loadProfile=[&] {
+  int profileReadAttempts=0;
+  QTimer profileRetry;
+  profileRetry.setSingleShot(true);
+  profileRetry.setInterval(1500);
+  auto requestProfile=[&] {
     const auto generation=++profileGeneration;
     ucc::readUccdAsync(&app,"GetActiveProfileJSON",{},[&,generation](std::optional<QVariant> value) {
-      if(generation==profileGeneration) refresh.profileChanged(value ? value->toString() : QString("{}"));
+      if(generation!=profileGeneration) return;
+      if(value) refresh.profileChanged(value->toString());
+      else if(++profileReadAttempts<3) profileRetry.start();
     });
+  };
+  QObject::connect(&profileRetry,&QTimer::timeout,&app,requestProfile);
+  auto loadProfile=[&] {
+    profileRetry.stop();
+    profileReadAttempts=0;
+    requestProfile();
   };
   ucc::PowerSourceAlert powerAlert;
   ucc::SessionSleepMonitor sleepMonitor;
+  ucc::LidDisplayHandler lidDisplay(backend);
   QObject::connect(&sleepMonitor,&ucc::SessionSleepMonitor::sleeping,&refresh,&ucc::RefreshAdvisor::sleeping);
   auto load=[&] {
     if(auto json=client.getLightbarSettingsJSON()) settings=QJsonDocument::fromJson(QByteArray::fromStdString(*json)).object();else settings={};
-    if(auto json=client.getPowerPolicyJSON()) {policy=QJsonDocument::fromJson(QByteArray::fromStdString(*json)).object();refresh.policyChanged(QString::fromStdString(*json));powerAlert.policyChanged(QString::fromStdString(*json));}else policy={};
+    if(auto json=client.getPowerDeviceSettingsJSON()) lidDisplay.deviceSettingsChanged(QString::fromStdString(*json));else lidDisplay.deviceSettingsChanged("{}");
+    if(auto json=client.getPowerPolicyJSON()) {const auto policyStr=QString::fromStdString(*json);policy=QJsonDocument::fromJson(policyStr.toUtf8()).object();refresh.policyChanged(policyStr);powerAlert.policyChanged(policyStr);lidDisplay.policyChanged(policyStr);}else policy={};
     loadProfile();
   };
-  QObject::connect(&client,&ucc::UccdClient::connectionStatusChanged,&app,[&](bool connected){if(connected) load();else {++profileGeneration;refresh.profileChanged("{}");settings={};policy={};powerAlert.reset();}});
+  QObject::connect(&client,&ucc::UccdClient::connectionStatusChanged,&app,[&](bool connected){if(connected) load();else {++profileGeneration;profileRetry.stop();refresh.profileChanged("{}");settings={};policy={};powerAlert.reset();lidDisplay.deviceSettingsChanged("{}");}});
   QObject::connect(&client,&ucc::UccdClient::lightbarSettingsChanged,&app,[&](const QString &json){settings=QJsonDocument::fromJson(json.toUtf8()).object();});
-  QObject::connect(&client,&ucc::UccdClient::powerPolicyChanged,&app,[&](const QString &json){policy=QJsonDocument::fromJson(json.toUtf8()).object();refresh.policyChanged(json);powerAlert.policyChanged(json);loadProfile();});
+  QObject::connect(&client,&ucc::UccdClient::powerPolicyChanged,&app,[&](const QString &json){policy=QJsonDocument::fromJson(json.toUtf8()).object();refresh.policyChanged(json);powerAlert.policyChanged(json);lidDisplay.policyChanged(json);loadProfile();});
+  QObject::connect(&client,&ucc::UccdClient::powerDeviceStatusChanged,&app,[&](const QString &){
+    ucc::readUccdAsync(&app,"GetPowerDeviceSettingsJSON",{},[&](std::optional<QVariant> value){
+      if(value) lidDisplay.deviceSettingsChanged(value->toString());
+    });
+  });
   QObject::connect(&client,&ucc::UccdClient::profileChanged,&app,[&](const QString&,const QString&,const QString&){loadProfile();});
   load();
   ucc::DriverAlert driverAlert;

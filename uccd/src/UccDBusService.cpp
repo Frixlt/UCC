@@ -1214,7 +1214,10 @@ bool UccDBusInterfaceAdaptor::SetPowerDeviceSettingsJSON(const QString &json)
     if(!m_service->m_settingsManager.writeSettings(updated)) return false;
     m_service->m_settings.powerDeviceSettings=updated.powerDeviceSettings;
     m_service->m_powerDevices.setSettings(settings,error);
+    if (m_service->m_lidController)
+      m_service->m_lidController->setSettings(m_service->m_powerDevices.lidSettings());
     m_service->updateDBusSettingsData();
+    emit PowerDeviceStatusChanged(QString::fromStdString(m_service->m_powerDevices.status().dump()));
     return true;
   } catch(const std::exception &error) {syslog(LOG_ERR,"[PowerDevices] %s",error.what());return false;}
 }
@@ -2979,6 +2982,18 @@ bool UccDBusService::initDBus()
     m_lightbar->setPowerMode(profileStateToString(m_powerPolicy.evaluate(determineState(),false).effective).substr(6));
     try {m_lightbar->configure(nlohmann::json::parse(m_settings.lightbarSettings));}
     catch(const std::exception &error) {syslog(LOG_ERR,"[Lightbar] Ignoring invalid settings: %s",error.what());}
+    {
+#ifdef UCC_READ_ONLY_PREVIEW
+      const bool connectLidBus = false;
+#else
+      const bool connectLidBus = true;
+#endif
+      const auto lidDecision = m_powerPolicy.evaluate(determineState(), false);
+      m_lastLidPowerSource = lidDecision.status["real_power_source"].get<std::string>();
+      m_lidController = std::make_unique<LidController>(connectLidBus);
+      m_lidController->setPowerSource(m_lastLidPowerSource);
+      m_lidController->setSettings(m_powerDevices.lidSettings());
+    }
     syslog( LOG_INFO, "DBus service registered on %s (Qt D-Bus)", SERVICE_NAME );
     return true;
   }
@@ -2992,6 +3007,7 @@ bool UccDBusService::initDBus()
 void UccDBusService::shutdown()
 {
   syslog( LOG_INFO, "Shutting down workers..." );
+  m_lidController.reset();
   if(m_lightbar) m_lightbar->shutdown();
 
   // Phase 1: Signal ALL workers to stop (non-blocking).
@@ -4376,6 +4392,16 @@ void UccDBusService::updatePowerPolicy()
   const auto decision = m_powerPolicy.evaluate(determineState(), m_previousWaterCoolerConnected.load());
   m_effectivePowerMode=decision.effective;
   const std::string mode=decision.status["current_mode"];
+  const std::string realSource = decision.status["real_power_source"];
+  if (realSource != m_lastLidPowerSource) {
+    m_lastLidPowerSource = realSource;
+    if (m_lidController) {
+      auto *lid = m_lidController.get();
+      QMetaObject::invokeMethod(lid, [lid, realSource] {
+        lid->setPowerSource(realSource);
+      }, Qt::QueuedConnection);
+    }
+  }
   const std::string json = decision.status.dump();
   bool changed = false;
   {

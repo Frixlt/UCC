@@ -43,6 +43,7 @@ private slots:
 private:
   bool enabled() const;
   void propose();
+  bool retry();
   void applySelection(const RefreshPlan& selected);
   void invalidate();
   void closeNotification();

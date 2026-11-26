@@ -26,11 +26,24 @@ public:
 
   void setRunner(Runner runner) {m_runner=std::move(runner);}
 
+  static Json defaultLidSettings() {
+    return Json{{"ac", "screen_off"}, {"type_c", "screen_off"}, {"bat", "suspend"}, {"wakeOnlyLidAndKeyboard", true}};
+  }
+
   static bool validate(const Json &settings, std::string &error) {
     try {
       if (!settings.is_object()) throw std::runtime_error("Settings must be an object");
       if (settings.contains("enabled") && !settings["enabled"].is_boolean()) throw std::runtime_error("Invalid enabled flag");
       if (settings.contains("keepNvidiaAwake") && !settings["keepNvidiaAwake"].is_boolean()) throw std::runtime_error("Invalid NVIDIA policy");
+      if (settings.contains("lid")) {
+        const auto &lid = settings["lid"];
+        if (!lid.is_object()) throw std::runtime_error("Invalid lid policy");
+        for (const auto &[field, value] : lid.items()) {
+          if ((field == "ac" || field == "type_c" || field == "bat") && validLidAction(value)) continue;
+          if (field == "wakeOnlyLidAndKeyboard" && value.is_boolean()) continue;
+          throw std::runtime_error("Invalid lid field: " + field);
+        }
+      }
       const auto cpu=settings.value("cpu",Json::object());
       if (!cpu.is_object()) throw std::runtime_error("Invalid CPU policy");
       for (const auto &[mode,policy] : cpu.items()) {
@@ -69,6 +82,15 @@ public:
     return true;
   }
   Json settings() const {std::lock_guard lock(m_mutex);return m_settings;}
+  Json lidSettings() const {
+    std::lock_guard lock(m_mutex);
+    Json merged = defaultLidSettings();
+    if (m_settings.contains("lid") && m_settings["lid"].is_object()) {
+      for (const auto &[key, val] : m_settings["lid"].items())
+        merged[key] = val;
+    }
+    return merged;
+  }
   Json status() const {std::lock_guard lock(m_mutex);return m_status;}
   uint64_t revision() const {std::lock_guard lock(m_mutex);return m_revision;}
 
@@ -181,6 +203,9 @@ public:
 
 private:
   static bool validMode(const std::string &mode) {return mode=="ac" || mode=="type_c" || mode=="bat";}
+  static bool validLidAction(const Json &value) {
+    return oneOf(value, {"screen_off", "suspend", "lock", "hibernate", "poweroff", "ignore"});
+  }
   static bool oneOf(const Json &value,std::initializer_list<const char *> values) {
     if (!value.is_string()) return false;
     for (const auto *allowed:values) if (value==allowed) return true;

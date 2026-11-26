@@ -1,11 +1,14 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 #include "SleepState.hpp"
+#include "SettingsManager.hpp"
+#include "WakeupPolicy.hpp"
 #include <QCoreApplication>
 #include <QDBusConnection>
 #include <QDBusMessage>
 #include <QProcess>
 #include <QTextStream>
 #include <QTimer>
+#include <nlohmann/json.hpp>
 
 namespace
 {
@@ -108,6 +111,18 @@ int main( int argc, char** argv )
     return systemctl( "start", output, err );
   };
   const ucc::SleepStateStore store;
+  if (args[1] == "prepare") {
+    bool wakeOnly = true;
+    if (const auto settings = SettingsManager().readSettings()) {
+      try {
+        const auto devicesJson = nlohmann::json::parse(settings->powerDeviceSettings);
+        if (devicesJson.contains("lid") && devicesJson["lid"].is_object())
+          wakeOnly = devicesJson["lid"].value("wakeOnlyLidAndKeyboard", true);
+      } catch (const std::exception &) {
+      }
+    }
+    applyWakeupPolicy(wakeOnly);
+  }
   const bool success =
       args[1] == "prepare" ? ucc::prepareSleep( store, ops, error ) : ucc::resumeSleep( store, ops, error );
   if( !success )

@@ -48,6 +48,7 @@
 #include "TccSettings.hpp"
 #include "PowerPolicy.hpp"
 #include "PowerDeviceController.hpp"
+#include "LidController.hpp"
 #include "LightbarController.hpp"
 #include <QDBusServiceWatcher>
 #include "MetricsHistoryStore.hpp"
@@ -575,6 +576,8 @@ private:
   PowerPolicy m_powerPolicy;
   std::optional<bool> m_resumeCoolerEnabled;
   PowerDeviceController m_powerDevices;
+  std::unique_ptr<LidController> m_lidController;
+  std::string m_lastLidPowerSource;
   std::unique_ptr<LightbarController> m_lightbar;
   void refreshLightbarKeyboard();
   std::optional<UccProfileCpu> m_profileCpuBase;

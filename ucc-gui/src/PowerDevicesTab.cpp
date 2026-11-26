@@ -4,6 +4,7 @@
 #include "PreviewMode.hpp"
 #include <QVBoxLayout>
 #include <QHBoxLayout>
+#include <QGridLayout>
 #include <QHeaderView>
 #include <QSpinBox>
 #include <QComboBox>
@@ -56,6 +57,41 @@ PowerDevicesTab::PowerDevicesTab(UccdClient *client,QWidget *parent) : QWidget(p
   m_nvidia=new QCheckBox("Keep NVIDIA awake (Blackwell workaround)");m_nvidia->setObjectName("keepNvidiaAwake");
   m_nvidia->setToolTip("Keeps NVIDIA awake in every power mode and enables persistence. Uncheck and Save and apply to restore the per-mode policy; auto also disables persistence.");
   m_nvidia->setEnabled(!readOnlyPreview);layout->addWidget(m_nvidia);
+  auto *lidCard=FluentTheme::createCard();auto *lidLayout=new QVBoxLayout(lidCard);
+  auto *lidTitle=new QLabel("Lid close action & sleep wakeup");lidTitle->setObjectName("cardTitle");lidLayout->addWidget(lidTitle);
+  auto *lidRow=new QGridLayout;lidRow->setHorizontalSpacing(12);lidRow->setVerticalSpacing(6);
+  auto makeLidSelector=[&](const char *objectName) {
+    auto *combo=new ValueSelector;
+    combo->setObjectName(objectName);
+    combo->setSizeAdjustPolicy(QComboBox::AdjustToMinimumContentsLengthWithIcon);
+    combo->setMinimumContentsLength(10);
+    combo->setSizePolicy(QSizePolicy::Expanding,QSizePolicy::Fixed);
+    combo->addItem("Turn off screen (keep running)","screen_off");
+    combo->addItem("Suspend","suspend");
+    combo->addItem("Lock & turn off screen","lock");
+    combo->addItem("Hibernate","hibernate");
+    combo->addItem("Shut down","poweroff");
+    combo->addItem("Do nothing (keep screen on)","ignore");
+    combo->setEnabled(!readOnlyPreview);
+    return combo;
+  };
+  m_lidAc=makeLidSelector("lidActionAc");
+  m_lidTypeC=makeLidSelector("lidActionTypeC");
+  m_lidBat=makeLidSelector("lidActionBat");
+  lidRow->addWidget(new QLabel("On AC:"),0,0);
+  lidRow->addWidget(new QLabel("On Type-C:"),0,1);
+  lidRow->addWidget(new QLabel("On Battery:"),0,2);
+  lidRow->addWidget(m_lidAc,1,0);
+  lidRow->addWidget(m_lidTypeC,1,1);
+  lidRow->addWidget(m_lidBat,1,2);
+  for(int col=0;col<3;++col) lidRow->setColumnStretch(col,1);
+  lidLayout->addLayout(lidRow);
+  m_wakeOnlyLidKbd=new QCheckBox("Wake from sleep only by opening lid or pressing built-in keyboard");
+  m_wakeOnlyLidKbd->setObjectName("wakeOnlyLidAndKeyboard");
+  m_wakeOnlyLidKbd->setToolTip("Disables wakeups from mouse, USB receivers, AC/USB-C power, RTC timers, and Thunderbolt devices.");
+  m_wakeOnlyLidKbd->setEnabled(!readOnlyPreview);
+  lidLayout->addWidget(m_wakeOnlyLidKbd);
+  layout->addWidget(lidCard);
   auto *toolbar=new QHBoxLayout;
   m_search=new QLineEdit;m_search->setPlaceholderText("Filter devices by name or path");toolbar->addWidget(m_search,1);
   auto *reloadButton=new QPushButton("Reload");toolbar->addWidget(reloadButton);
@@ -73,7 +109,7 @@ PowerDevicesTab::PowerDevicesTab(UccdClient *client,QWidget *parent) : QWidget(p
   connect(m_scan,&QPushButton::clicked,this,&PowerDevicesTab::scan);
   connect(m_client,&UccdClient::powerDeviceStatusChanged,this,&PowerDevicesTab::showStatus);
   connect(m_client,&UccdClient::connectionStatusChanged,this,[this](bool connected){
-    if(connected) reload();else {m_save->setEnabled(false);m_scan->setEnabled(false);m_status->setText("Service unavailable");}
+    if(connected) reload();else {m_save->setEnabled(false);m_scan->setEnabled(false);m_lidAc->setEnabled(false);m_lidTypeC->setEnabled(false);m_lidBat->setEnabled(false);m_wakeOnlyLidKbd->setEnabled(false);m_status->setText("Service unavailable");}
   });
   reload();
 }
@@ -82,9 +118,19 @@ void PowerDevicesTab::reload() {
   const auto document=json ? QJsonDocument::fromJson(QByteArray::fromStdString(*json)) : QJsonDocument();
   const bool available=document.isObject();
   m_save->setEnabled(available && !readOnlyPreview);m_scan->setEnabled(available && !readOnlyPreview);
+  m_lidAc->setEnabled(available && !readOnlyPreview);m_lidTypeC->setEnabled(available && !readOnlyPreview);m_lidBat->setEnabled(available && !readOnlyPreview);m_wakeOnlyLidKbd->setEnabled(available && !readOnlyPreview);
   if(!available) {m_status->setText("Per-device controls require the updated UCC daemon.");return;}
   m_settings=document.object();m_enabled->setChecked(m_settings["enabled"].toBool(false));
   m_nvidia->setChecked(m_settings["keepNvidiaAwake"].toBool(false));
+  const auto lid=m_settings["lid"].toObject();
+  auto selectLid=[](QComboBox *combo,const QString &value) {
+    const int idx=combo->findData(value);
+    combo->setCurrentIndex(idx>=0 ? idx : 0);
+  };
+  selectLid(m_lidAc,lid.value("ac").toString("screen_off"));
+  selectLid(m_lidTypeC,lid.value("type_c").toString("screen_off"));
+  selectLid(m_lidBat,lid.value("bat").toString("suspend"));
+  m_wakeOnlyLidKbd->setChecked(lid.value("wakeOnlyLidAndKeyboard").toBool(true));
   const auto cpu=m_settings["cpu"].toObject();
   for(int row=0;row<3;++row) {
     m_cpu->setItem(row,0,new QTableWidgetItem(QStringList{"AC","Type-C","Battery"}[row]));
@@ -145,7 +191,10 @@ QJsonObject PowerDevicesTab::collect() const {
     }
     entries[row]=entry;
   }
-  result["devices"]=entries;return result;
+  result["devices"]=entries;
+  result["lid"]=QJsonObject{{"ac",m_lidAc->currentData().toString()},{"type_c",m_lidTypeC->currentData().toString()},
+                            {"bat",m_lidBat->currentData().toString()},{"wakeOnlyLidAndKeyboard",m_wakeOnlyLidKbd->isChecked()}};
+  return result;
 }
 void PowerDevicesTab::save() {
   if(readOnlyPreview) return;

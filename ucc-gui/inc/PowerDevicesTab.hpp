@@ -5,6 +5,7 @@
 #include <QJsonArray>
 #include <QTableWidget>
 #include <QCheckBox>
+#include <QComboBox>
 #include <QLabel>
 #include <QLineEdit>
 #include <QPushButton>
@@ -28,7 +29,8 @@ private:
   QJsonObject m_settings;
   QJsonArray m_entries;
   QTableWidget *m_cpu,*m_devices;
-  QCheckBox *m_enabled,*m_nvidia;
+  QCheckBox *m_enabled,*m_nvidia,*m_wakeOnlyLidKbd;
+  QComboBox *m_lidAc,*m_lidTypeC,*m_lidBat;
   QLabel *m_status;
   QLineEdit *m_search;
   QPushButton *m_save,*m_scan;

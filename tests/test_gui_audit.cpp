@@ -349,9 +349,19 @@ private slots:
     auto *battery=qobject_cast<QComboBox *>(table->cellWidget(0,3));QVERIFY(battery);
     QCOMPARE(battery->currentData().toString(),QString("auto"));
     battery->setCurrentIndex(battery->findData("on"));
+    auto *lidAc=window.findChild<QComboBox *>("lidActionAc");QVERIFY(lidAc);
+    auto *lidTypeC=window.findChild<QComboBox *>("lidActionTypeC");QVERIFY(lidTypeC);
+    auto *lidBat=window.findChild<QComboBox *>("lidActionBat");QVERIFY(lidBat);
+    auto *wakeOnly=window.findChild<QCheckBox *>("wakeOnlyLidAndKeyboard");QVERIFY(wakeOnly);
+    QCOMPARE(lidAc->currentData().toString(),QString("screen_off"));
+    QCOMPARE(lidTypeC->currentData().toString(),QString("screen_off"));
+    QCOMPARE(lidBat->currentData().toString(),QString("suspend"));
+    QVERIFY(wakeOnly->isChecked());
     auto *save=window.findChild<QPushButton *>("savePowerDevices");QVERIFY(save);
 #ifdef UCC_READ_ONLY_PREVIEW
     QVERIFY(!save->isEnabled());
+    QVERIFY(!lidAc->isEnabled());
+    QVERIFY(!wakeOnly->isEnabled());
     QVERIFY(stats()["writes"].toArray().isEmpty());
 #else
     QVERIFY(save->isEnabled());save->click();
@@ -360,6 +370,9 @@ private slots:
     QCOMPARE(entry["ac_val"].toString(),QString("on"));
     QCOMPARE(entry["type_c_val"].toString(),QString("auto"));
     QCOMPARE(entry["bat_val"].toString(),QString("on"));
+    QCOMPARE(payload["lid"]["ac"].toString(),QString("screen_off"));
+    QCOMPARE(payload["lid"]["bat"].toString(),QString("suspend"));
+    QVERIFY(payload["lid"]["wakeOnlyLidAndKeyboard"].toBool());
 #endif
     QTest::qWait(80);
     const QString output=qEnvironmentVariable("UCC_SCREENSHOT_DIR");

@@ -207,6 +207,30 @@ else:
     QVERIFY(!logContents().contains("scale"));
     QVERIFY(!logContents().contains("position"));
   }
+  void hyprlandRestoresProfileWhenInternalPanelBecomesReady()
+  {
+    if( readOnlyPreview )
+      QSKIP( "Normal-build integration" );
+    QJsonObject panel{ { "name", "eDP-1" }, { "width", 2560 }, { "height", 1600 }, { "refreshRate", 60 },
+                       { "availableModes", QJsonArray{ "2560x1600@60.00Hz", "2560x1600@240.00Hz" } },
+                       { "dpmsStatus", false } };
+    auto external = panel;
+    external["name"] = "DP-1";
+    external["dpmsStatus"] = true;
+    QVERIFY( write( config, QJsonDocument( QJsonArray{ external } ).toJson() ) );
+    RefreshAdvisor advisor( RefreshBackend::Hyprland, command, directory.path() );
+    QSignalSpy result( &advisor, &RefreshAdvisor::result );
+    // The profile can arrive before the power-source query succeeds.
+    advisor.profileChanged( R"({"id":"ac","display":{"useRefRate":true,"refreshRate":240}})" );
+    QTRY_COMPARE_WITH_TIMEOUT( logContents(), "-j monitors all\n", 2000 );
+    QVERIFY( write( config, QJsonDocument( QJsonArray{ panel, external } ).toJson() ) );
+    QTRY_COMPARE_WITH_TIMEOUT( logContents(), "-j monitors all\n-j monitors all\n", 2500 );
+    panel["dpmsStatus"] = true;
+    QVERIFY( write( config, QJsonDocument( QJsonArray{ panel, external } ).toJson() ) );
+    QTRY_COMPARE_WITH_TIMEOUT( result.size(), 1, 4000 );
+    QVERIFY( result[0][0].toBool() );
+    QVERIFY( logContents().contains( R"(hl.monitor({ output = "eDP-1", mode = "2560x1600@240.00" }))" ) );
+  }
   void powerNotificationsFollowPhysicalSourceOnAnyDesktop() {
     if(readOnlyPreview) QSKIP("Normal-build integration");
     PowerSourceAlert alert;

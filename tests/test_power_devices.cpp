@@ -93,6 +93,19 @@ private slots:
     controller.apply("type_c");QCOMPARE(calls.back(),std::string("nvidia-smi:0"));
     QVERIFY(!controller.status()["nvidiaPersistenceEnabled"].get<bool>());
   }
+  void lidPolicyValidatesAndSurvivesRescan() {
+    QTemporaryDir root;const auto sys=std::filesystem::path(root.path().toStdString())/"sys";
+    PowerDeviceController controller(sys,sys/"proc",{},sys/"bin");std::string error;
+    QVERIFY(PowerDeviceController::validate({{"lid",{{"ac","screen_off"},{"type_c","lock"},{"bat","suspend"},{"wakeOnlyLidAndKeyboard",true}}}},error));
+    QVERIFY(!PowerDeviceController::validate({{"lid",{{"ac","bogus"}}}},error));
+    QVERIFY(!PowerDeviceController::validate({{"lid",{{"unknown",true}}}},error));
+    QVERIFY(!PowerDeviceController::validate({{"lid",{{"wakeOnlyLidAndKeyboard","yes"}}}},error));
+    QVERIFY(controller.setSettings({{"lid",{{"ac","ignore"},{"type_c","screen_off"},{"bat","hibernate"},{"wakeOnlyLidAndKeyboard",false}}}},error));
+    const auto scanned=controller.scan();
+    QCOMPARE(scanned["lid"]["ac"].get<std::string>(),std::string("ignore"));
+    QCOMPARE(scanned["lid"]["bat"].get<std::string>(),std::string("hibernate"));
+    QVERIFY(!scanned["lid"]["wakeOnlyLidAndKeyboard"].get<bool>());
+  }
 };
 QTEST_GUILESS_MAIN(TestPowerDevices)
 #include "test_power_devices.moc"

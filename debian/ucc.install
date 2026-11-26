@@ -1,6 +1,8 @@
 usr/bin/uccd
 usr/bin/ucc-gui
 usr/bin/ucc-cli
+usr/lib/ucc/ucc-hardware
+usr/lib/ucc/ucc-sleep
 usr/lib/*/libucc-dbus.so*
 usr/lib/*/qt6/plugins/plasma/applets/com.uniwill.ucc.so
 usr/lib/*/qt6/qml/com/uniwill/ucc/private/libucc-declarative.so
@@ -18,8 +20,6 @@ usr/share/icons/hicolor/*/apps/ucc-gui.png
 usr/share/icons/hicolor/*/apps/ucc-tray.png
 usr/share/icons/hicolor/scalable/apps/ucc-gui*.svg
 usr/share/icons/hicolor/scalable/apps/ucc-tray*.svg
-usr/share/pixmaps/ucc-gui.svg
-usr/share/pixmaps/ucc-tray.svg
 usr/share/man/man1/ucc-cli.1
 usr/share/bash-completion/completions/ucc-cli
 usr/share/gnome-shell/extensions/ucc@uniwill.com/metadata.json

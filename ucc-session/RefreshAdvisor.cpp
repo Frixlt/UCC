@@ -31,6 +31,11 @@ bool internal( const QString& s )
 {
   return s.startsWith( "eDP-" ) || s.startsWith( "LVDS-" );
 }
+bool availablePanel( const QJsonObject& output )
+{
+  const auto name = output["name"].toString();
+  return internal( name ) && identifier( name ) && output["connected"].toBool() && output["enabled"].toBool();
+}
 bool nvidiaPanel( const QString& name, const QString& root )
 {
   for( const auto& entry : QDir( root ).entryList( QDir::Dirs | QDir::NoDotAndDotDot ) )
@@ -59,13 +64,13 @@ bool RefreshPlan::sameSelection( const RefreshPlan& o ) const
 std::optional< RefreshPlan > RefreshAdvisor::plan( const QJsonObject& configuration, const QString& source,
                                                    const QString& drm, int requestedHz )
 {
-  if( !validSource( source ) )
+  if( requestedHz <= 0 && !validSource( source ) )
     return {};
   for( const auto& v : configuration["outputs"].toArray() )
   {
     const auto output = v.toObject();
     const auto name = output["name"].toString();
-    if( !internal( name ) || !identifier( name ) || !output["connected"].toBool() || !output["enabled"].toBool() )
+    if( !availablePanel( output ) )
       continue;
     const auto current = currentMode( output ), size = current["size"].toObject();
     const int w = size["width"].toInt(), h = size["height"].toInt();
@@ -117,7 +122,6 @@ RefreshAdvisor::RefreshAdvisor( RefreshBackend backend, QString command, QString
       m_bus( std::move( bus ) )
 {
   m_debounce.setSingleShot( true );
-  m_debounce.setInterval( 800 );
   connect( &m_debounce, &QTimer::timeout, this, &RefreshAdvisor::propose );
   m_bus.connect( notificationService, notificationPath, notificationInterface, "ActionInvoked", this,
                  SLOT( actionInvoked( uint, QString ) ) );
@@ -151,7 +155,7 @@ QJsonObject RefreshAdvisor::hyprlandConfiguration(const QByteArray& json)
       modes.append(QJsonObject{{"id",id},{"refreshRate",hz},{"size",QJsonObject{{"width",w},{"height",h}}}});
       if(w==monitor["width"].toInt() && h==monitor["height"].toInt() && std::abs(hz-monitor["refreshRate"].toDouble())<0.1) current=id;
     }
-    outputs.append(QJsonObject{{"name",monitor["name"]},{"connected",true},{"enabled",!current.isEmpty()},
+    outputs.append(QJsonObject{{"name",monitor["name"]},{"connected",true},{"enabled",!current.isEmpty() && monitor["dpmsStatus"].toBool(true)},
                                {"currentModeId",current},{"modes",modes}});
   }
   return {{"outputs",outputs}};
@@ -216,7 +220,7 @@ void RefreshAdvisor::policyChanged( const QString& json )
   m_retries = 0;
   m_wanted = true;
   if( enabled() && !m_sleeping )
-    m_debounce.start();
+    m_debounce.start( 800 );
 }
 void RefreshAdvisor::profileChanged(const QString& json)
 {
@@ -229,7 +233,7 @@ void RefreshAdvisor::profileChanged(const QString& json)
   if(hz==m_profileHz && id==m_profileId) return;
   invalidate();m_profileHz=hz;m_profileId=id;m_retries=0;
   m_wanted=hz>0;
-  if(m_wanted && enabled() && !m_sleeping) m_debounce.start();
+  if(m_wanted && enabled() && !m_sleeping) m_debounce.start(800);
 }
 void RefreshAdvisor::sleeping( bool sleep )
 {
@@ -304,28 +308,31 @@ void RefreshAdvisor::propose()
        [this]( bool ok, const QByteArray& bytes )
        {
          const auto config = configuration(bytes);
-         if( !ok || config["outputs"].toArray().isEmpty() )
+         const auto outputs = config["outputs"].toArray();
+         bool panelReady = false, alreadyAtProfileRate = false;
+         for( const auto& entry : outputs )
          {
-           if( ++m_retries < 3 )
-             m_debounce.start( 1500 );
-           else
-             m_wanted = false;
+           const auto output = entry.toObject();
+           if( !availablePanel( output ) )
+             continue;
+           const double hz = currentMode( output )["refreshRate"].toDouble();
+           panelReady |= hz > 0;
+           alreadyAtProfileRate |= hz > 0 && std::abs( hz - m_profileHz ) < 2;
+         }
+         if( !ok || outputs.isEmpty() || ( m_profileHz > 0 && !panelReady ) )
+         {
+           retry();
            return;
          }
          m_wanted = false;
          const auto offer = plan( config, m_source, m_drm, m_profileHz );
-         if( !offer ) {
-           if(m_profileHz>0) {
-             bool already=false;
-             for(const auto& value:config["outputs"].toArray()) {
-               const auto output=value.toObject();
-               already |= internal(output["name"].toString()) && output["connected"].toBool() && output["enabled"].toBool() &&
-                 std::abs(currentMode(output)["refreshRate"].toDouble()-m_profileHz)<2;
-             }
-             if(!already) {
-               const auto text=QString("%1 Гц недоступны при текущем разрешении внутреннего экрана.").arg(m_profileHz);
-               emit result(false,text);notify("Частота не изменена",text);
-             }
+         if( !offer )
+         {
+           if( m_profileHz > 0 && !alreadyAtProfileRate )
+           {
+             const auto text = QString( "%1 Гц недоступны при текущем разрешении внутреннего экрана." ).arg( m_profileHz );
+             emit result( false, text );
+             notify( "Частота не изменена", text );
            }
            return;
          }
@@ -337,6 +344,14 @@ void RefreshAdvisor::propose()
                      .arg( offer->targetHz, 0, 'f', 0 ),
                  offer );
        } );
+}
+bool RefreshAdvisor::retry()
+{
+  // Give the internal display time to come back while keeping retries bounded.
+  m_wanted = ++m_retries < ( m_profileHz > 0 ? 8 : 3 );
+  if( m_wanted )
+    m_debounce.start( 1500 );
+  return m_wanted;
 }
 void RefreshAdvisor::notify( const QString& title, const QString& body, const std::optional< RefreshPlan >& offer )
 {
@@ -389,7 +404,8 @@ void RefreshAdvisor::applySelection(const RefreshPlan& selected)
          const auto fresh = ok ? plan( configuration(bytes), m_source, m_drm, m_profileHz ) : std::nullopt;
          if( !fresh || !selected.sameSelection( *fresh ) || !enabled() )
          {
-           emit result( false, "Display or power state changed; the old suggestion was discarded" );
+           if( m_profileHz <= 0 || !retry() )
+             emit result( false, "Display or power state changed; the old suggestion was discarded" );
            return;
          }
          // Lua monitor updates merge with the existing rule, preserving scale,
@@ -422,6 +438,8 @@ void RefreshAdvisor::applySelection(const RefreshPlan& selected)
 }
 void RefreshAdvisor::report( bool success, const RefreshPlan& p )
 {
+  if( !success && m_profileHz > 0 && retry() )
+    return;
   const auto text = success ? QString( "%1: установлено %2 Гц" ).arg( p.output ).arg( p.targetHz, 0, 'f', 0 )
                             : QString( "Не удалось подтвердить изменение частоты %1" ).arg( p.output );
   emit result( success, text );

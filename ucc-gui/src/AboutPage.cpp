@@ -128,7 +128,7 @@ QWidget *createAboutPage(QWidget *parent) {
   auto *loggingLayout=qobject_cast<QVBoxLayout*>(diagnostics->layout());
   auto *loggingRow=new QHBoxLayout;loggingRow->setSpacing(16);
   auto *saveLogs=new QCheckBox("Save application logs (DEBUG and above)");saveLogs->setObjectName("saveApplicationLogs");
-  saveLogs->setChecked(AppLogging::isEnabled());saveLogs->setEnabled(!readOnlyPreview);loggingRow->addWidget(saveLogs,1);
+  saveLogs->setChecked(AppLogging::isEnabled());saveLogs->setEnabled(!readOnlyPreview);loggingRow->addWidget(saveLogs);loggingRow->addStretch(1);
   auto *openLogs=new QPushButton("Open logs folder");openLogs->setObjectName("openLogsDirectory");openLogs->setEnabled(!readOnlyPreview);loggingRow->addWidget(openLogs);loggingLayout->addLayout(loggingRow);
   loggingLayout->addWidget(text("Reproduce the issue, then attach the newest .log file to your bug report. Files include the build version and message timestamps.","muted"));
   auto *path=text(AppLogging::directory(),"muted");path->setObjectName("logsDirectoryPath");loggingLayout->addWidget(path);
