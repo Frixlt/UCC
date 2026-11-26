@@ -6,7 +6,9 @@
 use std::collections::HashMap;
 use std::future::Future;
 use std::pin::Pin;
-use std::sync::Mutex;
+use std::sync::{Arc, Mutex, OnceLock};
+use std::time::Duration;
+use tokio::sync::Semaphore;
 use zbus::fdo::DBusProxy;
 use zbus::zvariant::Value;
 
@@ -79,6 +81,16 @@ pub trait Authorizer: Send + Sync + 'static {
 #[derive(Debug, Default, Clone, Copy)]
 pub struct PolkitAuthorizer;
 
+fn interactive_polkit_semaphore() -> &'static Arc<Semaphore> {
+    static SEM: OnceLock<Arc<Semaphore>> = OnceLock::new();
+    SEM.get_or_init(|| Arc::new(Semaphore::new(4)))
+}
+
+fn should_try_legacy_action(err: &zbus::Error) -> bool {
+    let text = err.to_string();
+    text.contains("Action") || text.contains("does not exist") || text.contains("NotFound")
+}
+
 impl PolkitAuthorizer {
     pub fn new() -> Self {
         Self
@@ -110,7 +122,7 @@ impl PolkitAuthorizer {
             }
         };
 
-        let uid = match dbus_proxy.get_connection_unix_user(bus_name.clone()).await {
+        let uid = match dbus_proxy.get_connection_unix_user(bus_name).await {
             Ok(u) => u,
             Err(e) => {
                 tracing::warn!("Failed to query Unix UID for sender '{sender}': {e}");
@@ -123,14 +135,6 @@ impl PolkitAuthorizer {
             return true;
         }
 
-        let pid = match dbus_proxy.get_connection_unix_process_id(bus_name).await {
-            Ok(p) => p,
-            Err(e) => {
-                tracing::warn!("Failed to query Unix PID for sender '{sender}': {e}");
-                return false;
-            }
-        };
-
         let authority = match PolicyKitAuthorityProxy::new(conn).await {
             Ok(a) => a,
             Err(e) => {
@@ -139,47 +143,86 @@ impl PolkitAuthorizer {
             }
         };
 
+        // Race-free D-Bus unique-name subject (CVE-2013-4288 safe, `ISSUE-17`)
         let mut subject_details = HashMap::new();
-        subject_details.insert("pid".to_string(), Value::U32(pid));
-        subject_details.insert("start-time".to_string(), Value::U64(0));
-        let subject = ("unix-process".to_string(), subject_details);
+        subject_details.insert("name".to_string(), Value::from(sender));
+        let subject = ("system-bus-name".to_string(), subject_details);
         let details = HashMap::new();
-        let flags: u32 = 0x1; // AllowUserInteraction
+        let (flags, timeout) = match action {
+            AuthAction::Read => (0u32, Duration::from_secs(5)),
+            AuthAction::Control | AuthAction::ManageHardware => (0x1u32, Duration::from_secs(30)),
+        };
         let cancellation_id = "";
 
-        // Check primary action
-        match authority
-            .check_authorization(&subject, action.action_id(), &details, flags, cancellation_id)
+        let _interactive_permit = if flags != 0 {
+            match tokio::time::timeout(
+                Duration::from_secs(5),
+                Arc::clone(interactive_polkit_semaphore()).acquire_owned(),
+            )
             .await
+            {
+                Ok(Ok(permit)) => Some(permit),
+                _ => return false,
+            }
+        } else {
+            None
+        };
+
+        // Check primary action
+        match tokio::time::timeout(
+            timeout,
+            authority.check_authorization(
+                &subject,
+                action.action_id(),
+                &details,
+                flags,
+                cancellation_id,
+            ),
+        )
+        .await
         {
-            Ok((is_authorized, _, _)) => {
+            Ok(Ok((is_authorized, _, _))) => {
                 return is_authorized;
             }
-            Err(e) => {
+            Ok(Err(e)) if should_try_legacy_action(&e) => {
                 tracing::debug!(
-                    "Polkit primary check error for '{}': {e}, trying legacy",
+                    "Polkit primary check missing action '{}': {e}, trying legacy",
                     action.action_id()
                 );
             }
+            Ok(Err(e)) => {
+                tracing::warn!("Polkit primary check error for '{}': {e}", action.action_id());
+                return false;
+            }
+            Err(_) => {
+                tracing::warn!("Polkit primary check timed out for '{}'", action.action_id());
+                return false;
+            }
         }
 
-        // Fallback to legacy action ID (de.uniwill.uccd.*)
-        match authority
-            .check_authorization(
+        // Fallback to legacy action ID (`de.uniwill.uccd.*`) only when primary action is unregistered
+        match tokio::time::timeout(
+            timeout,
+            authority.check_authorization(
                 &subject,
                 action.legacy_action_id(),
                 &details,
                 flags,
                 cancellation_id,
-            )
-            .await
+            ),
+        )
+        .await
         {
-            Ok((is_authorized, _, _)) => is_authorized,
-            Err(e) => {
+            Ok(Ok((is_authorized, _, _))) => is_authorized,
+            Ok(Err(e)) => {
                 tracing::warn!(
                     "Polkit fallback check error for '{}': {e}",
                     action.legacy_action_id()
                 );
+                false
+            }
+            Err(_) => {
+                tracing::warn!("Polkit fallback check timed out for '{}'", action.legacy_action_id());
                 false
             }
         }
@@ -242,7 +285,10 @@ impl TrackingAuthorizer {
     }
 
     pub fn recorded_actions(&self) -> Vec<(Option<String>, AuthAction)> {
-        self.recorded.lock().unwrap().clone()
+        self.recorded
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .clone()
     }
 }
 

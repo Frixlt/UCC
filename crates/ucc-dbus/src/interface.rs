@@ -3,9 +3,37 @@
 use crate::auth::{AuthAction, Authorizer, PolkitAuthorizer};
 use crate::backend::{DefaultUccdBackend, UccdBackend};
 use std::collections::HashMap;
-use std::sync::Arc;
+use std::sync::{Arc, OnceLock};
+use tokio::sync::Semaphore;
 use zbus::object_server::SignalEmitter;
 use zbus::zvariant::OwnedValue;
+
+const MAX_CONCURRENT_OFFLOAD_THREADS: usize = 16;
+
+fn offload_semaphore() -> &'static Arc<Semaphore> {
+    static SEM: OnceLock<Arc<Semaphore>> = OnceLock::new();
+    SEM.get_or_init(|| Arc::new(Semaphore::new(MAX_CONCURRENT_OFFLOAD_THREADS)))
+}
+
+fn profile_requires_manage_hardware(profile_json: &str) -> bool {
+    let Ok(val) = serde_json::from_str::<serde_json::Value>(profile_json) else {
+        return false;
+    };
+    let has_custom_tdp = match val.get("odmPowerLimits") {
+        Some(serde_json::Value::Array(arr)) => !arr.is_empty(),
+        Some(serde_json::Value::Object(obj)) => obj
+            .get("tdpValues")
+            .and_then(|v| v.as_array())
+            .is_some_and(|arr| !arr.is_empty()),
+        _ => false,
+    };
+    let disables_fan_control = val
+        .get("fan")
+        .and_then(|f| f.get("useControl"))
+        .and_then(|v| v.as_bool())
+        == Some(false);
+    has_custom_tdp || disables_fan_control
+}
 
 async fn sender_is_alive(conn: &zbus::Connection, sender: &str) -> bool {
     if !sender.starts_with(':') {
@@ -34,11 +62,16 @@ where
     F: FnOnce(&B) -> R + Send + 'static,
     R: Send + 'static,
 {
+    let Ok(permit) = Arc::clone(offload_semaphore()).acquire_owned().await else {
+        tracing::error!("{label} offload semaphore closed");
+        return fallback;
+    };
     let backend = Arc::clone(backend);
     let (tx, rx) = tokio::sync::oneshot::channel::<Result<R, String>>();
     match std::thread::Builder::new()
         .name("uccd-dbus-io".to_string())
         .spawn(move || {
+            let _permit = permit;
             let outcome = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| f(&backend)))
                 .map_err(format_panic_payload);
             let _ = tx.send(outcome);
@@ -70,11 +103,17 @@ where
     B: UccdBackend,
     F: FnOnce(&B) + Send + 'static,
 {
+    let Ok(permit) = Arc::clone(offload_semaphore()).acquire_owned().await else {
+        return Err(zbus::fdo::Error::Failed(format!(
+            "{label} offload semaphore closed"
+        )));
+    };
     let backend = Arc::clone(backend);
     let (tx, rx) = tokio::sync::oneshot::channel::<Result<(), String>>();
     match std::thread::Builder::new()
         .name("uccd-dbus-io".to_string())
         .spawn(move || {
+            let _permit = permit;
             let outcome = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| f(&backend)))
                 .map_err(format_panic_payload);
             let _ = tx.send(outcome);
@@ -112,11 +151,17 @@ where
     B: UccdBackend,
     F: FnOnce(&B) -> Result<(), String> + Send + 'static,
 {
+    let Ok(permit) = Arc::clone(offload_semaphore()).acquire_owned().await else {
+        return Err(zbus::fdo::Error::Failed(format!(
+            "{label} offload semaphore closed"
+        )));
+    };
     let backend = Arc::clone(backend);
     let (tx, rx) = tokio::sync::oneshot::channel::<Result<Result<(), String>, String>>();
     match std::thread::Builder::new()
         .name("uccd-dbus-io".to_string())
         .spawn(move || {
+            let _permit = permit;
             let outcome = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| f(&backend)))
                 .map_err(format_panic_payload);
             let _ = tx.send(outcome);
@@ -342,7 +387,7 @@ macro_rules! impl_uccd_methods {
             pub async fn get_display_modes_json(&self, #[zbus(header)] header: zbus::message::Header<'_>, #[zbus(connection)] conn: &zbus::Connection) -> String {
                 let sender = header.sender().map(|s| s.as_str());
                 if !self.authorizer.check_auth(conn, sender, AuthAction::Read).await {
-                    return "{}".to_string();
+                    return "[]".to_string();
                 }
                 self.backend.get_display_modes_json()
             }
@@ -450,7 +495,7 @@ macro_rules! impl_uccd_methods {
             pub async fn get_display_brightness(&self, #[zbus(header)] header: zbus::message::Header<'_>, #[zbus(connection)] conn: &zbus::Connection) -> i32 {
                 let sender = header.sender().map(|s| s.as_str());
                 if !self.authorizer.check_auth(conn, sender, AuthAction::Read).await {
-                    return 0;
+                    return -1;
                 }
                 self.backend.get_display_brightness()
             }
@@ -712,7 +757,12 @@ macro_rules! impl_uccd_methods {
             #[zbus(name = "ApplyProfile")]
             pub async fn apply_profile(&self, #[zbus(header)] header: zbus::message::Header<'_>, #[zbus(connection)] conn: &zbus::Connection, profile_json: &str) -> bool {
                 let sender = header.sender().map(|s| s.as_str());
-                if !self.authorizer.check_auth(conn, sender, AuthAction::Control).await {
+                let action = if profile_requires_manage_hardware(profile_json) {
+                    AuthAction::ManageHardware
+                } else {
+                    AuthAction::Control
+                };
+                if !self.authorizer.check_auth(conn, sender, action).await {
                     return false;
                 }
                 let profile_json = profile_json.to_owned();
@@ -723,7 +773,7 @@ macro_rules! impl_uccd_methods {
             pub async fn get_profiles_json(&self, #[zbus(header)] header: zbus::message::Header<'_>, #[zbus(connection)] conn: &zbus::Connection) -> String {
                 let sender = header.sender().map(|s| s.as_str());
                 if !self.authorizer.check_auth(conn, sender, AuthAction::Read).await {
-                    return "{}".to_string();
+                    return "[]".to_string();
                 }
                 self.backend.get_profiles_json()
             }
@@ -732,7 +782,7 @@ macro_rules! impl_uccd_methods {
             pub async fn get_custom_profiles_json(&self, #[zbus(header)] header: zbus::message::Header<'_>, #[zbus(connection)] conn: &zbus::Connection) -> String {
                 let sender = header.sender().map(|s| s.as_str());
                 if !self.authorizer.check_auth(conn, sender, AuthAction::Read).await {
-                    return "{}".to_string();
+                    return "[]".to_string();
                 }
                 self.backend.get_custom_profiles_json()
             }
@@ -780,7 +830,7 @@ macro_rules! impl_uccd_methods {
             pub async fn get_default_profiles_json(&self, #[zbus(header)] header: zbus::message::Header<'_>, #[zbus(connection)] conn: &zbus::Connection) -> String {
                 let sender = header.sender().map(|s| s.as_str());
                 if !self.authorizer.check_auth(conn, sender, AuthAction::Read).await {
-                    return "{}".to_string();
+                    return "[]".to_string();
                 }
                 self.backend.get_default_profiles_json()
             }
@@ -806,7 +856,12 @@ macro_rules! impl_uccd_methods {
             #[zbus(name = "AddCustomProfile")]
             pub async fn add_custom_profile(&self, #[zbus(header)] header: zbus::message::Header<'_>, #[zbus(connection)] conn: &zbus::Connection, profile_json: &str) -> bool {
                 let sender = header.sender().map(|s| s.as_str());
-                if !self.authorizer.check_auth(conn, sender, AuthAction::Control).await {
+                let action = if profile_requires_manage_hardware(profile_json) {
+                    AuthAction::ManageHardware
+                } else {
+                    AuthAction::Control
+                };
+                if !self.authorizer.check_auth(conn, sender, action).await {
                     return false;
                 }
                 let profile_json = profile_json.to_owned();
@@ -816,7 +871,12 @@ macro_rules! impl_uccd_methods {
             #[zbus(name = "SaveCustomProfile")]
             pub async fn save_custom_profile(&self, #[zbus(header)] header: zbus::message::Header<'_>, #[zbus(connection)] conn: &zbus::Connection, profile_json: &str) -> bool {
                 let sender = header.sender().map(|s| s.as_str());
-                if !self.authorizer.check_auth(conn, sender, AuthAction::Control).await {
+                let action = if profile_requires_manage_hardware(profile_json) {
+                    AuthAction::ManageHardware
+                } else {
+                    AuthAction::Control
+                };
+                if !self.authorizer.check_auth(conn, sender, action).await {
                     return false;
                 }
                 let profile_json = profile_json.to_owned();
@@ -836,7 +896,12 @@ macro_rules! impl_uccd_methods {
             #[zbus(name = "UpdateCustomProfile")]
             pub async fn update_custom_profile(&self, #[zbus(header)] header: zbus::message::Header<'_>, #[zbus(connection)] conn: &zbus::Connection, profile_json: &str) -> bool {
                 let sender = header.sender().map(|s| s.as_str());
-                if !self.authorizer.check_auth(conn, sender, AuthAction::Control).await {
+                let action = if profile_requires_manage_hardware(profile_json) {
+                    AuthAction::ManageHardware
+                } else {
+                    AuthAction::Control
+                };
+                if !self.authorizer.check_auth(conn, sender, action).await {
                     return false;
                 }
                 let profile_json = profile_json.to_owned();
@@ -847,7 +912,7 @@ macro_rules! impl_uccd_methods {
             pub async fn get_fan_profile(&self, #[zbus(header)] header: zbus::message::Header<'_>, #[zbus(connection)] conn: &zbus::Connection, name: &str) -> String {
                 let sender = header.sender().map(|s| s.as_str());
                 if !self.authorizer.check_auth(conn, sender, AuthAction::Read).await {
-                    return String::new();
+                    return "{}".to_string();
                 }
                 self.backend.get_fan_profile(name)
             }
@@ -856,7 +921,7 @@ macro_rules! impl_uccd_methods {
             pub async fn get_fan_profile_names(&self, #[zbus(header)] header: zbus::message::Header<'_>, #[zbus(connection)] conn: &zbus::Connection) -> String {
                 let sender = header.sender().map(|s| s.as_str());
                 if !self.authorizer.check_auth(conn, sender, AuthAction::Read).await {
-                    return String::new();
+                    return "[]".to_string();
                 }
                 self.backend.get_fan_profile_names()
             }
@@ -915,7 +980,7 @@ macro_rules! impl_uccd_methods {
             pub async fn odm_power_limits_json(&self, #[zbus(header)] header: zbus::message::Header<'_>, #[zbus(connection)] conn: &zbus::Connection) -> String {
                 let sender = header.sender().map(|s| s.as_str());
                 if !self.authorizer.check_auth(conn, sender, AuthAction::Read).await {
-                    return "{}".to_string();
+                    return "[]".to_string();
                 }
                 self.backend.odm_power_limits_json()
             }
@@ -933,7 +998,7 @@ macro_rules! impl_uccd_methods {
             pub async fn get_keyboard_backlight_states_json(&self, #[zbus(header)] header: zbus::message::Header<'_>, #[zbus(connection)] conn: &zbus::Connection) -> String {
                 let sender = header.sender().map(|s| s.as_str());
                 if !self.authorizer.check_auth(conn, sender, AuthAction::Read).await {
-                    return "{}".to_string();
+                    return "[]".to_string();
                 }
                 self.backend.get_keyboard_backlight_states_json()
             }
@@ -952,7 +1017,7 @@ macro_rules! impl_uccd_methods {
             pub async fn get_custom_keyboard_profiles_json(&self, #[zbus(header)] header: zbus::message::Header<'_>, #[zbus(connection)] conn: &zbus::Connection) -> String {
                 let sender = header.sender().map(|s| s.as_str());
                 if !self.authorizer.check_auth(conn, sender, AuthAction::Read).await {
-                    return "{}".to_string();
+                    return "[]".to_string();
                 }
                 self.backend.get_custom_keyboard_profiles_json()
             }
@@ -983,7 +1048,7 @@ macro_rules! impl_uccd_methods {
             pub async fn get_custom_fan_profiles_json(&self, #[zbus(header)] header: zbus::message::Header<'_>, #[zbus(connection)] conn: &zbus::Connection) -> String {
                 let sender = header.sender().map(|s| s.as_str());
                 if !self.authorizer.check_auth(conn, sender, AuthAction::Read).await {
-                    return "{}".to_string();
+                    return "[]".to_string();
                 }
                 self.backend.get_custom_fan_profiles_json()
             }
@@ -1032,7 +1097,7 @@ macro_rules! impl_uccd_methods {
             pub async fn get_charging_profiles_available(&self, #[zbus(header)] header: zbus::message::Header<'_>, #[zbus(connection)] conn: &zbus::Connection) -> String {
                 let sender = header.sender().map(|s| s.as_str());
                 if !self.authorizer.check_auth(conn, sender, AuthAction::Read).await {
-                    return String::new();
+                    return "[]".to_string();
                 }
                 self.backend.get_charging_profiles_available()
             }
@@ -1060,7 +1125,7 @@ macro_rules! impl_uccd_methods {
             pub async fn get_charging_priorities_available(&self, #[zbus(header)] header: zbus::message::Header<'_>, #[zbus(connection)] conn: &zbus::Connection) -> String {
                 let sender = header.sender().map(|s| s.as_str());
                 if !self.authorizer.check_auth(conn, sender, AuthAction::Read).await {
-                    return String::new();
+                    return "[]".to_string();
                 }
                 self.backend.get_charging_priorities_available()
             }
@@ -1088,7 +1153,7 @@ macro_rules! impl_uccd_methods {
             pub async fn get_charge_start_available_thresholds(&self, #[zbus(header)] header: zbus::message::Header<'_>, #[zbus(connection)] conn: &zbus::Connection) -> String {
                 let sender = header.sender().map(|s| s.as_str());
                 if !self.authorizer.check_auth(conn, sender, AuthAction::Read).await {
-                    return String::new();
+                    return "[]".to_string();
                 }
                 self.backend.get_charge_start_available_thresholds()
             }
@@ -1097,7 +1162,7 @@ macro_rules! impl_uccd_methods {
             pub async fn get_charge_end_available_thresholds(&self, #[zbus(header)] header: zbus::message::Header<'_>, #[zbus(connection)] conn: &zbus::Connection) -> String {
                 let sender = header.sender().map(|s| s.as_str());
                 if !self.authorizer.check_auth(conn, sender, AuthAction::Read).await {
-                    return String::new();
+                    return "[]".to_string();
                 }
                 self.backend.get_charge_end_available_thresholds()
             }
@@ -1243,7 +1308,7 @@ macro_rules! impl_uccd_methods {
             #[zbus(name = "SetNVIDIAPowerOffset")]
             pub async fn set_nvidia_power_offset(&self, #[zbus(header)] header: zbus::message::Header<'_>, #[zbus(connection)] conn: &zbus::Connection, offset: i32) -> bool {
                 let sender = header.sender().map(|s| s.as_str());
-                if !self.authorizer.check_auth(conn, sender, AuthAction::ManageHardware).await {
+                if !self.authorizer.check_auth(conn, sender, AuthAction::Control).await {
                     return false;
                 }
                 self.offload_or(false, move |b| b.set_nvidia_power_offset(offset)).await
@@ -1253,7 +1318,7 @@ macro_rules! impl_uccd_methods {
             pub async fn get_available_governors(&self, #[zbus(header)] header: zbus::message::Header<'_>, #[zbus(connection)] conn: &zbus::Connection) -> String {
                 let sender = header.sender().map(|s| s.as_str());
                 if !self.authorizer.check_auth(conn, sender, AuthAction::Read).await {
-                    return String::new();
+                    return "[]".to_string();
                 }
                 self.backend.get_available_governors()
             }
@@ -1262,7 +1327,7 @@ macro_rules! impl_uccd_methods {
             pub async fn get_available_epps(&self, #[zbus(header)] header: zbus::message::Header<'_>, #[zbus(connection)] conn: &zbus::Connection) -> String {
                 let sender = header.sender().map(|s| s.as_str());
                 if !self.authorizer.check_auth(conn, sender, AuthAction::Read).await {
-                    return String::new();
+                    return "[]".to_string();
                 }
                 self.backend.get_available_epps()
             }
@@ -1280,7 +1345,7 @@ macro_rules! impl_uccd_methods {
             pub async fn get_cpu_topology_json(&self, #[zbus(header)] header: zbus::message::Header<'_>, #[zbus(connection)] conn: &zbus::Connection) -> String {
                 let sender = header.sender().map(|s| s.as_str());
                 if !self.authorizer.check_auth(conn, sender, AuthAction::Read).await {
-                    return "{}".to_string();
+                    return "[]".to_string();
                 }
                 self.backend.get_cpu_topology_json()
             }
@@ -1307,7 +1372,7 @@ macro_rules! impl_uccd_methods {
             pub async fn get_water_cooler_fan_speed(&self, #[zbus(header)] header: zbus::message::Header<'_>, #[zbus(connection)] conn: &zbus::Connection) -> i32 {
                 let sender = header.sender().map(|s| s.as_str());
                 if !self.authorizer.check_auth(conn, sender, AuthAction::Read).await {
-                    return 0;
+                    return -1;
                 }
                 self.backend.get_water_cooler_fan_speed()
             }
@@ -1316,7 +1381,7 @@ macro_rules! impl_uccd_methods {
             pub async fn get_water_cooler_pump_level(&self, #[zbus(header)] header: zbus::message::Header<'_>, #[zbus(connection)] conn: &zbus::Connection) -> i32 {
                 let sender = header.sender().map(|s| s.as_str());
                 if !self.authorizer.check_auth(conn, sender, AuthAction::Read).await {
-                    return 0;
+                    return -1;
                 }
                 self.backend.get_water_cooler_pump_level()
             }
@@ -1351,7 +1416,7 @@ macro_rules! impl_uccd_methods {
             #[zbus(name = "SetWaterCoolerPumpVoltage")]
             pub async fn set_water_cooler_pump_voltage(&self, #[zbus(header)] header: zbus::message::Header<'_>, #[zbus(connection)] conn: &zbus::Connection, voltage: i32) -> bool {
                 let sender = header.sender().map(|s| s.as_str());
-                if !self.authorizer.check_auth(conn, sender, AuthAction::ManageHardware).await {
+                if !self.authorizer.check_auth(conn, sender, AuthAction::Control).await {
                     return false;
                 }
                 self.offload_or(false, move |b| b.set_water_cooler_pump_voltage(voltage)).await
@@ -1378,7 +1443,7 @@ macro_rules! impl_uccd_methods {
             #[zbus(name = "TurnOffWaterCoolerFan")]
             pub async fn turn_off_water_cooler_fan(&self, #[zbus(header)] header: zbus::message::Header<'_>, #[zbus(connection)] conn: &zbus::Connection) -> bool {
                 let sender = header.sender().map(|s| s.as_str());
-                if !self.authorizer.check_auth(conn, sender, AuthAction::ManageHardware).await {
+                if !self.authorizer.check_auth(conn, sender, AuthAction::Control).await {
                     return false;
                 }
                 self.offload_or(false, |b| b.turn_off_water_cooler_fan()).await
@@ -1387,7 +1452,7 @@ macro_rules! impl_uccd_methods {
             #[zbus(name = "TurnOffWaterCoolerPump")]
             pub async fn turn_off_water_cooler_pump(&self, #[zbus(header)] header: zbus::message::Header<'_>, #[zbus(connection)] conn: &zbus::Connection) -> bool {
                 let sender = header.sender().map(|s| s.as_str());
-                if !self.authorizer.check_auth(conn, sender, AuthAction::ManageHardware).await {
+                if !self.authorizer.check_auth(conn, sender, AuthAction::Control).await {
                     return false;
                 }
                 self.offload_or(false, |b| b.turn_off_water_cooler_pump()).await
