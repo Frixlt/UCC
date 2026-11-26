@@ -1,33 +1,25 @@
 # ADR-03: Политика интеграции с оболочками GNOME и KDE Plasma (M1.9)
 
 ## Статус
-Предложено (Proposed / ожидается решение пользователя по внешним shell-расширениям против чистого standalone SNI апплета)
+Принято (Accepted — 2026-11-26)
 
 ## Контекст
-В историческом проекте:
-1. Для KDE Plasma существовал нативный C++/QML плагин трея (`ucc-tray`), встраиваемый в панель Plasma 5/6.
-2. Для GNOME Shell поддерживалось внешнее расширение через GJS.
-3. Полный отказ от C++/Qt в основном бинарнике ставит вопрос: как поддерживать системный трей и интеграцию с DE без нарушения принципа «Rust-only core»?
-
-Правило миграции (F42, M1.9):
-Запрещено «тихое удаление» интерфейсов оболочек или замена нативной интеграции несовместимым хаком без явного решения.
+В историческом проекте существовали:
+1. Встроенный C++/QML апплет для панели KDE Plasma (`ucc-tray`), требовавший `ECM`, `KF6Config`, `KF6CoreAddons`, `Plasma` и `libucc-dbus.so`.
+2. Внешнее расширение GNOME Shell на GJS (`ucc-gnome`).
+3. В целевой системе пользователя основным окружением является Hyprland + Noctalia, а пакеты KDE (`KF6`) планомерно удаляются.
 
 ## Решение
-1. **Основной трей — Standalone KSNI (StatusNotifierItem)**:
-   - В ядро Rust-десктопного стека (`crates/ucc-desktop`) входит независимый трей на базе протокола `org.kde.StatusNotifierItem` (реализован через чистый Rust/zbus).
-   - Он нативно поддерживается:
-     - В KDE Plasma (из коробки).
-     - В Hyprland / Sway / Waybar / Swaybar / polybar (через tray-модули SNI).
-     - В GNOME Shell (при наличии `appindicator` / `AppIndicator and KStatusNotifierItem Support`).
-2. **KDE Plasma Embedded Applet**:
-   - QML/C++ плагин Plasma объявляется внешним опциональным адаптером (thin D-Bus client).
-   - Основной пакет UCC не собирает Qt-плагины. Если пользователю требуется именно встроенный виджет панели Plasma, он поставляется как тонкий декларативный QML-апплет, общающийся с демоном `uccd` по D-Bus.
-3. **GNOME Shell Extension**:
-   - Расширение GNOME Shell (GJS) сохраняется как внешний JS-адаптер, делающий вызовы к `com.uniwill.uccd` (alias `de.uniwill.uccd`) по D-Bus.
-   - Оно не требует C++ библиотек и упаковывается независимо.
-4. **Уведомления и токены активации**:
-   - Переход к главному окну и активация поверх других окон реализуются по спецификации `xdg-activation-v1` (Wayland) и `_NET_ACTIVE_WINDOW` (X11).
+1. **Единственный трей в поставке — Standalone Rust SNI (`ucc-desktop-tray`)**:
+   - Вся логика системного трея, меню переключения режимов питания, мониторинга батареи и запуска GUI реализуется на чистом Rust в `crates/ucc-desktop` поверх протокола `org.kde.StatusNotifierItem` (`ksni` / `zbus`).
+   - Этот трей работает нативно в Hyprland/Noctalia, KDE Plasma, Swaybar/Waybar и в GNOME Shell (через AppIndicator/SNI host).
+2. **Отказ от C++/QML Plasma-апплета (`ucc-tray`)**:
+   - Сборка и поставка `ucc-tray` окончательно исключаются из целевого пакета: это убирает последние зависимости от `KF6`/Plasma/`QML` и `libucc-dbus.so`.
+3. **Внешний GJS-адаптер (`ucc-gnome`)**:
+   - Не входит в обязательный Rust-runtime; при сохранении в репозитории остаётся тонким внешним D-Bus клиентом без C++-зависимостей.
+4. **Активация окна без `KF6WindowSystem`**:
+   - Rust-трей `ucc-desktop-tray` передаёт Wayland activation token (`xdg-activation-v1`) по D-Bus (`ActivateWithToken`), а автономный `Qt6::Widgets` клиент `ucc-gui` принимает фокус штатным `XDG_ACTIVATION_TOKEN` + `QWindow::requestActivate()`.
 
 ## Последствия
-- Основные бинарники `uccd`, `ucc`, `ucc-desktop` и `ucc-gui` на 100% свободны от зависимостей Qt и GTK.
-- Все существующие возможности управления из трея и панели сохраняются для всех поддерживаемых DE.
+- Основной пакет полностью свободен от `KF6`, `Plasma` и `QML`.
+- Вся фоновая часть трея и активации написана на чистом Rust.

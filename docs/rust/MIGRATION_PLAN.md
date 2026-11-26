@@ -13,24 +13,17 @@
 
 ## 1. Результат, к которому идём
 
-Переписать весь собственный прикладной центр на Rust: системный демон, аппаратные контроллеры, политики, хранение настроек, IPC-клиент, CLI, графический интерфейс, самостоятельный трей, session agent, sleep/helper-программы, импортеры и используемые инструменты сопровождения. Финальная поставка основного приложения не должна зависеть от старых исполняемых Python/C++-компонентов, Qt Widgets или `libucc-dbus.so`.
+Переписать весь фоновый системный и пользовательский стек на Rust: системный демон, аппаратные контроллеры, политики, хранение настроек, IPC-клиент/сервер, CLI, самостоятельный трей (`ucc-desktop-tray`), `session agent`, `sleep`/helper-программы, импортеры, используемые инструменты сопровождения и в перспективе собственный `uwcc` (`M14`). Окно настроек `ucc-gui` по пересмотренному [`ADR-01`](execution/decisions/ADR-01-gui-toolkit.md) (модель `frixit-huion`) остаётся автономным D-Bus-клиентом на `C++20 / Qt6::Widgets + Qt6::Charts` без `KF6`, `QML`, `Qt6::Bluetooth` и `libucc-dbus.so`, запускаемым только по требованию и полностью выгружающимся из памяти при закрытии (0 фоновых процессов C++/Qt).
 
-Переход считается завершённым по возможностям и проверкам, а не по факту появления Rust-окна. Временный мост к старому демону допустим на промежуточном этапе, но не является конечной архитектурой.
+Переход считается завершённым по возможностям и проверкам, а не по факту появления нового окна. Временный мост к старому демону допустим на промежуточном этапе, но не является конечной архитектурой.
 
-Приложение остаётся Linux control center. Ядро Linux, отдельный `tuxedo-drivers`/DKMS, BlueZ, systemd, Polkit, графические драйверы и поставляемые NVIDIA библиотеки остаются внешними системными компонентами. «Весь центр на Rust» не означает переписывание ядра, драйверов или каждого транзитивного системного компонента.
+Приложение остаётся Linux control center. Ядро Linux, BlueZ, systemd, Polkit, графические драйверы и поставляемые NVIDIA библиотеки остаются внешними системными компонентами. На этапах `M0–M13` внешний `tuxedo-drivers`/DKMS сохраняется как совместимый базовый бэкенд, а последующий этап **`M14`** ([`ADR-05`](execution/decisions/ADR-05-uwcc-platform-backend.md)) реализует переход на собственный открытый Rust `uwcc` (модуль ядра `/dev/uwcc` + userspace `UwccBackend` + прямой `hidraw` для подсветки). «Весь центр на Rust» не означает переписывание всего ядра Linux или сторонних графических драйверов.
 
 Архив Python используется как первоисточник поведения и входных форматов. Его собственный HTTP/FastAPI/Unix socket/SSE API не восстанавливаем: текущие интеграции UCC используют D-Bus.
 
-### Особая граница GNOME и Plasma
+### Особая граница GNOME и Plasma (`ADR-03`, принято)
 
-В проекте есть самостоятельный трей и отдельно два встраиваемых интерфейса: GNOME Shell extension на GJS и Plasma applet на QML с C++ backend. Их нельзя честно объявить «переписанными на чистый Rust», просто оставив `extension.js` и QML.
-
-Для полного плана фиксируем два проверяемых результата:
-
-1. **Обязательный результат:** все функции управления доступны через Rust GUI/CLI/tray/session agent; вся прикладная логика и новый tray написаны на Rust.
-2. **Отдельное решение об интерфейсах внутри оболочек:** либо сохранить минимальные GJS/QML-адаптеры без бизнес-логики как явно названное исключение, либо заменить их самостоятельным Rust tray/popup и отказаться именно от встраивания. Во втором случае отсутствие встроенного апплета — изменение продукта, которое нужно согласовать до удаления старых компонентов.
-
-Рекомендация для буквальной цели «весь центр на Rust»: Rust tray/popup как основной интерфейс во всех поддерживаемых сессиях. Однако старые GNOME/Plasma-компоненты сохраняются до отдельного решения; потеря встроенного UI не маскируется как полная совместимость. В GNOME дополнительно проверяется наличие StatusNotifier/AppIndicator host: отображение такого трея не гарантируется одной лишь установкой приложения.
+По обновлённому [`ADR-03`](execution/decisions/ADR-03-shell-embedding-policy.md) единственным треем в поставке является самостоятельный Rust SNI-трей (`ucc-desktop-tray` на `ksni`/`zbus`), работающий в Hyprland/Noctalia, KDE Plasma, Waybar/Sway и GNOME (при наличии AppIndicator/SNI host). Устаревший C++/QML Plasma-апплет `ucc-tray` окончательно исключается из целевой сборки (в том числе для полного отказа от пакетов `KF6`/Plasma). Внешнее GJS-расширение `ucc-gnome` не входит в обязательный Rust-runtime и сохраняется только как необязательный внешний D-Bus-клиент.
 
 ## 2. Что находится в текущем проекте
 
@@ -42,13 +35,13 @@
 |---|---|---|
 | `uccd` | Root daemon, D-Bus, workers, оборудование, профили | `uccd`, предметные библиотеки и аппаратные адаптеры |
 | `uccd/3rdparty/tuxedo_io_lib` | C++ доступ к `/dev/tuxedo_io`, Clevo/Uniwill/Dummy | Собственный Rust ioctl backend с совместимым ABI |
-| `libucc-dbus` | Общий Qt D-Bus client, signals, preview guard | Типизированная библиотека `ucc-dbus` |
-| `ucc-gui` | Fluent Qt Widgets/Charts, редакторы, история уведомлений | Новый Rust GUI с теми же пользовательскими сценариями |
+| `libucc-dbus` | Общий Qt D-Bus client, signals, preview guard | Внутренний статический D-Bus-клиент внутри `ucc-gui` (публичная `libucc-dbus.so` удаляется) |
+| `ucc-gui` | Fluent Qt Widgets/Charts, редакторы, история уведомлений | Автономный `C++20 / Qt6::Widgets + Qt6::Charts` клиент поверх Rust `uccd` без `KF6`/`QML`/`Bluetooth` (`ADR-01`) |
 | `ucc-cli` | Команды, JSON, live monitor, совместимость скриптов | Rust CLI с сохранением команд и кодов выхода |
-| `ucc-desktop` | Tray, батареи, NVIDIA-процессы, pidfd termination | Rust desktop library + отдельный tray binary |
+| `ucc-desktop` | Tray, батареи, NVIDIA-процессы, pidfd termination | Rust desktop library + отдельный Rust tray binary |
 | `ucc-session` | Уведомления, Lightbar relay, KDE/Hyprland refresh | Rust session agent |
-| `ucc-tray` | Необязательный Plasma applet и Qt backend | Решение по shell-интеграции; функции переносятся полностью |
-| `ucc-gnome` | GJS extension с быстрыми аппаратными контролами | Решение по shell-интеграции; D-Bus остаётся совместимым |
+| `ucc-tray` | Необязательный Plasma applet и Qt backend | Исключается из целевой поставки (`ADR-03`); функции полностью покрыты Rust `ucc-desktop-tray` |
+| `ucc-gnome` | GJS extension с быстрыми аппаратными контролами | Внешний необязательный D-Bus адаптер без C++-зависимостей (`ADR-03`) |
 | `contrib/frixit`, `contrib/mechrevo` | Offline import, deploy/rollback, драйверные патчи | Rust importer/maintenance tools; драйверные материалы отдельно |
 | `tests` | QtTest, Python, Node/GJS, fake sysfs/procfs/D-Bus | Rust unit/integration/contract/UI tests + fixtures |
 | Build/package | CMake, Arch, DEB, RPM, Nix, CI | Cargo workspace + distro recipes + Rust xtask |
@@ -62,6 +55,9 @@
 - i915/xe telemetry и снижение частоты NVML-проб при разрешённом runtime suspend.
 - Выключение NVIDIA persistence при отмене Keep awake.
 - Исправления drag редактора вентиляторов, асинхронного мониторинга и CI.
+- **Пост-базовые изменения C++ (ноябрь 2026), подлежащие переносу в Rust:**
+  - восстановление частоты встроенной панели Hyprland после готовности DPMS (`ucc-session`);
+  - настраиваемые действия при закрытии крышки отдельно для `AC`/`Type-C`/`Battery` (`powerDevices.lid`, ингибитор `handle-lid-switch`, отложенный переход в сон при отключении питания, DPMS только встроенной панели в Hyprland) и строгий режим пробуждения только от крышки и встроенной клавиатуры (`WakeupPolicy` в `uccd` и `ucc-sleep`).
 
 Ориентироваться только на README от 22 октября недостаточно: он описывает не все изменения из базы 7 ноября.
 
@@ -93,8 +89,8 @@
 | Async daemon | Tokio, bounded channels, cancellation | События питания, D-Bus, BLE, таймеры; блокирующее оборудование выносится отдельно |
 | D-Bus | `zbus`/`zvariant` | Сервер, клиент, signals; имена и сигнатуры задаются явно |
 | Модели/JSON | `serde`, `serde_json`, `uuid`, `thiserror` | Одна модель данных вместо нескольких ручных сериализаторов |
-| GUI | **Iced + собственные Canvas widgets** | Rust UI; графики, кривые, клавиатура; обязательный ранний прототип |
-| GUI fallback | Slint либо другой Rust-oriented toolkit после M1 | Если Iced не проходит реальные требования; доменная модель от GUI не зависит |
+| GUI | **Автономный C++20 / Qt6::Widgets + Qt6::Charts** | По образцу `frixit-huion` (`ADR-01`): 0 МБ Qt в фоне, без `KF6`/`QML` и без пробуждения dGPU от `wgpu`; стабильный Wayland/HiDPI/IME |
+| GUI прототип (отклонён) | Iced + wgpu | Отклонён в `ADR-01` (пересмотр 2026-11-26): частые ломки API до 1.0, риск пробуждения NVIDIA через Vulkan, ~150+ лишних крейтов |
 | Tray | `ksni` / StatusNotifierItem + D-Bus menu | Rust tray; отдельно проверяются KDE activation token и host в других DE |
 | Bluetooth | `bluer` или прямой BlueZ D-Bus через `zbus` | Выбор после проверки GATT, reconnect и runtime-зависимостей |
 | NVIDIA | `nvml-wrapper` для покрытых API; `libloading` для узкого FFI | Нужна карта покрытия текущего wrapper, особенно voltage/OC |
@@ -120,22 +116,24 @@ crates/
   ucc-core/          профили, типы, capabilities, power policy, ошибки
   ucc-config/        JSON/legacy settings, атомарная запись, backup, import models
   ucc-dbus/          совместимый API, proxies, DTO и signals
-  ucc-hardware/      sysfs/procfs/ioctl, CPU/GPU/charging/display, FFI
+  ucc-hardware/      sysfs/procfs/ioctl, PlatformBackend (TuxedoIoBackend + UwccBackend), CPU/GPU/charging/display, FFI
   ucc-cooling/       алгоритмы вентиляторов и кривых
   ucc-cooler/        BLE protocol, connection state machine, command queue
-  ucc-lighting/      клавиатура, LED identity, Lightbar и анимации
+  ucc-lighting/      клавиатура, LED identity, Lightbar, анимации и LightingTransport (sysfs + hidraw)
   ucc-telemetry/     выборки, freshness, история и legacy binary codec
   ucc-desktop/       батареи, процессы, notifications, display session backends
+kernel/
+  uwcc-rs/           собственный Rust-модуль ядра (/dev/uwcc, DKMS, этап M14 / ADR-05)
 apps/
-  uccd/             системный демон
-  ucc-cli/          CLI
-  ucc-gui/          GUI и single-instance session endpoint
-  ucc-desktop-tray/ самостоятельный tray и popup
-  ucc-session-agent/
-  ucc-sleep/
-  ucc-hardware/     аварийный firmware fan-auto helper
-  ucc-import-check/
-  ucc-migrate/      offline conversion и deployment maintenance subcommands
+  uccd/             системный демон (Rust)
+  ucc-cli/          CLI (Rust)
+  ucc-desktop-tray/ самостоятельный SNI tray и popup (Rust)
+  ucc-session-agent/ (Rust)
+  ucc-sleep/         (Rust)
+  ucc-hardware/     аварийный firmware fan-auto helper (Rust)
+  ucc-import-check/ (Rust)
+  ucc-migrate/      offline conversion и deployment maintenance subcommands (Rust)
+ucc-gui/            автономное окно настроек (C++20 / Qt6::Widgets + Qt6::Charts D-Bus client, без KF6/QML)
 xtask/
 tests/
   fixtures/         обезличенные старые settings, DBus/JSON/BLE/metrics samples
@@ -152,7 +150,7 @@ packaging/
 
 ```mermaid
 flowchart TB
-  GUI["ucc-gui · desktop user · Rust"] --> BUS["system D-Bus · совместимый API"]
+  GUI["ucc-gui · desktop user · Qt6::Widgets D-Bus client (on demand)"] --> BUS["system D-Bus · совместимый API"]
   CLI["ucc-cli · user · Rust"] --> BUS
   TRAY["ucc-desktop-tray · user · Rust"] --> BUS
   AGENT["ucc-session-agent · user · Rust"] --> BUS
@@ -289,6 +287,8 @@ point_count × (i64 timestamp_ms + f64 value)
 | F42 | Shell interfaces | Все текущие быстрые controls GNOME/Plasma учтены; перенос функций и решение о встраивании отдельно | TrayBackend, extension.js |
 | F43 | CLI/API users | Существующие команды, aliases, --json, monitor, codes 0/1/2, completion/man | ucc-cli/main.cpp |
 | F44 | Distribution | Arch, DEB/RPM/Nix recipes, service/autostart, driver separation, licenses/assets/source release | Корневые рецепты, CI |
+| F45 | Крышка и пробуждение | Независимые действия при закрытии крышки (`screen_off`/`suspend`/`lock`/`hibernate`/`poweroff`/`ignore`) для `AC`/`Type-C`/`Battery`, ингибитор `handle-lid-switch`, отложенный переход в сон при отключении питания, DPMS только встроенной панели в сессии, строгий `WakeupPolicy` (крышка `PNP0C0D` и клавиатура `i8042 KBD`) | PowerDeviceController, LidController, WakeupPolicy, LidDisplayHandler, PowerDevicesTab |
+| F46 | Собственный Rust `uwcc` backend (`ADR-05`, `M14`) | Доменный `PlatformBackend` (`TuxedoIoBackend` ↔ `UwccBackend`), Rust-модуль ядра `/dev/uwcc` (`ECRR`/`ECRW`/`SMRW`/`PWUP`/WMI events), EC-менеджер `0x1A` (`RamFan 1.5`, `SMRW`, TCC лимит температуры CPU, `PWUP`, зарядка и переключатели через EC), `uinput` для WMI-клавиш, прямой USB `hidraw` для `048D:600B` и `048D:7001`, взаимоисключение с `tuxedo-drivers` и откат | `ADR-05`, открытая спецификация EC/ACPI `0x1A` (без `proprietary/` и `oem/`) |
 
 ## 9. Детали, которые критично сохранить
 
@@ -423,6 +423,7 @@ Pump code `0` — высокий режим 11V, `2` — 7V, `3` — 8V, `4` —
 - [ ] M4.6 Перенести devices scan/merge, whitelist paths/values, отсутствующие devices и независимые три колонки.
 - [ ] M4.7 Перенести ASPM/Wi-Fi/system tunables/nvidia-powerd/persistence ordering без shell interpolation.
 - [ ] M4.8 Прогнать fake sysfs/procfs failure matrix; после этого провести ограниченные аппаратные read/write проверки.
+- [ ] M4.9 Ввести доменный трейт `PlatformBackend` поверх `HardwareIo`/`Sysfs`, изолирующий `TuxedoIoBackend` от логики демона и готовящий плавный переход к `UwccBackend` (`ADR-05`).
 
 **Выход:** CPU/device actions соответствуют fixture journal и подтверждаемому readback; неподдержанное оборудование не получает guessed writes.
 
@@ -447,6 +448,7 @@ Pump code `0` — высокий режим 11V, `2` — 7V, `3` — 8V, `4` —
 - [ ] M6.4 Перенести Lightbar discovery/settings, power modes, majority color, defaults и все 5 frame functions.
 - [ ] M6.5 Реализовать таймер анимации без sleep в event loop, no overlap, proper idle/Flash, Welcome/Silent/Test.
 - [ ] M6.6 Проверить private fixture цвета и аппаратный readback, изменения профиля и power mode, отказ записи и resume без повторного welcome.
+- [ ] M6.7 Отделить логику клавиатуры и Lightbar от способа доставки (`LightingTransport`: `SysfsLedTransport` для `M6–M13` и точка подключения `HidrawTransport` для `M14`).
 
 **Выход:** старые цвета/яркость и physical mapping сохранены; idle и error states воспроизводимы.
 
@@ -472,6 +474,7 @@ Pump code `0` — высокий режим 11V, `2` — 7V, `3` — 8V, `4` —
 - [ ] M8.6 Перенести ucc-import-check с проверкой всех профилей/curves/LED IDs.
 - [ ] M8.7 Проверить restart, corrupt config, unavailable device, D-Bus restart, slow auth, queue overload, sleep cancellation.
 - [ ] M8.8 Старый C++ GUI/CLI тестируется с новым Rust daemon на изолированной шине и затем в управляемом аппаратном переходе.
+- [ ] M8.9 Перенести `LidController` (ингибитор `handle-lid-switch`, debounce при отключении питания) и `WakeupPolicy` в `uccd` и `ucc-sleep prepare`.
 
 **Выход:** все backend-функции F01–F29/F40 работают без C++ daemon и без запущенного GUI.
 
@@ -485,27 +488,21 @@ Pump code `0` — высокий режим 11V, `2` — 7V, `3` — 8V, `4` —
 - [ ] M9.6 Перенести tray icon/menu/process popup, command failures и адаптивный polling.
 - [ ] M9.7 Реализовать GUI activation endpoint с token forwarding и отдельные service names preview.
 - [ ] M9.8 Проверить autostart, singleton, compositor restart, отсутствие notification server/tray host и несколько пользовательских сессий.
+- [ ] M9.9 Перенести `LidDisplayHandler` (DPMS только встроенной панели `eDP-*`/`LVDS-*`) и восстановление частоты после готовности DPMS в `ucc-session-agent`.
 
 **Выход:** tray и session agent работают без открытого главного окна и без Qt.
 
-### M10 — весь GUI
+### M10 — автономный `Qt6::Widgets` GUI поверх Rust `uccd` (`ADR-01`)
 
-- [ ] M10.1 Перенести Fluent shell/sidebar/header/theme/notification popup и route каждой страницы.
-- [ ] M10.2 Overview: реальные CPU/dGPU/iGPU данные, driver-health banner, profile и быстрые cooler controls.
-- [ ] M10.3 Profiles: CRUD, immutable built-ins, descriptions, state assignments, CPU/P/E selection, frequency/governor/EPP/HWP, display, keyboard/fan references, ODM/cTGP.
-- [ ] M10.4 Cooler Settings: CPU/GPU editor, selected-nearest point, reversible drag, release commit, temporary Apply/Revert и persistence.
-- [ ] M10.5 Watercool Settings: device state, fan/pump/LED, auto/manual и все curve editors.
-- [ ] M10.6 Monitor: grouping/unified mode, axes/units, markers/zoom/pan, toggles/time window/history prefs и inactive-page throttling.
-- [ ] M10.7 Keyboard & Hardware: calibrated canvas, hover/selection/multiselect отдельно от Apply, colors/brightness/profile operations, Fn Lock/webcam/display capabilities.
-- [ ] M10.8 Power & Devices: filter/table/three columns/rescan, CPU overlay, Keep awake/status/per-device errors.
-- [ ] M10.9 Lightbar: all mode settings, Silent/Welcome/Test, exact saved values и ошибки daemon.
-- [ ] M10.10 Battery & Processes: global charging, presets/custom current values, user processes, confirmations, desktop prefs.
-- [ ] M10.11 About: версия/commit, credits, bundled notices, diagnostics toggle и logs folder.
-- [ ] M10.12 Port notification history/read controls, build preview guards и CLI-compatible `ucc-gui --display N`, `--import-preferences`, `--preferences-only`, `--show`, `--minimized`.
-- [ ] M10.13 Проверить no fake success: отказ команд возвращает UI к подтверждённому значению; async responses не затирают текущий drag/draft.
-- [ ] M10.14 Снять галерею обеих тем, сравнить размеры/overflow/focus/scroll и пройти сценарии клавиатурой.
+- [ ] M10.1 Отвязать CMake-сборку `ucc-gui` от удаляемых C++-компонентов (`uccd`, `ucc-session`, `ucc-desktop-tray`, `ucc-tray`) и лишних зависимостей (`Qml`, `Quick`, `QuickControls2`, `Qt6::Bluetooth`, `KF6WindowSystem`, `KF6StatusNotifierItem`), оставив только `Qt6::{Core,Gui,Widgets,DBus,Charts}`.
+- [ ] M10.2 Заменить активацию окна через `KF6WindowSystem` на нативный путь Qt6 Wayland (`XDG_ACTIVATION_TOKEN` + `QWindow::requestActivate()`) и статически встроить клиент D-Bus (без установки внешней `libucc-dbus.so`).
+- [ ] M10.3 Перевести вкладку `Battery & Processes` на данные/команды Rust-стека (или изолированный легковесный Qt-виджет без `ucc-desktop-tray`), сохранив безопасное завершение пользовательских процессов NVIDIA и настройки глобальной зарядки.
+- [ ] M10.4 Обеспечить жизненный цикл «0 МБ Qt в фоне»: закрытие окна `ucc-gui` полностью завершает процесс, а клик в Rust-трее `ucc-desktop-tray` мгновенно запускает или фокусирует `ucc-gui` с передачей Wayland activation token.
+- [ ] M10.5 Исключить прототип `crates/ucc-gui` (`iced`/`wgpu`) из `Cargo.toml` и `Cargo.lock`, очистив Rust-workspace от графических зависимостей.
+- [ ] M10.6 Прогнать полный `test_gui_audit` (все 10 разделов, включая карточку `Lid close action & sleep wakeup` `F45`, обе темы, `UCC_READ_ONLY_PREVIEW` и отказ команд без fake success) в связке с новым Rust-демоном `uccd` на изолированной шине.
+- [ ] M10.7 Проверить на живой сессии Hyprland: масштабирование `1.25`/`2.0`, тему `qt6ct`/Kvantum, открытие из Rust-трея с фокусом и отсутствие пробуждения спящей RTX 5080 при открытии/закрытии `ucc-gui`.
 
-**Выход:** все 10 разделов и общие сценарии работают на Rust. Входить в «готово» с кнопками, которые только меняют локальную модель, запрещено.
+**Выход:** все 10 разделов `ucc-gui` работают с Rust `uccd` без зависимостей `KF6`/`QML`/`libucc-dbus.so`, а в фоне нет ни одного Qt-процесса.
 
 ### M11 — миграция инструментов и shell-интеграций
 
@@ -547,6 +544,23 @@ Pump code `0` — высокий режим 11V, `2` — 7V, `3` — 8V, `4` —
 - [ ] M13.9 Обновить README/BUILDING/TESTING/COMPARISON/origins и выпустить проверенный release.
 
 **Выход:** достигается определение готовности из раздела 16. Наличие незавершённого hardware test или несогласованной потери embedded shell UI оставляет соответствующий пункт открытым.
+
+### M14 — переход с tuxedo-drivers на собственный Rust `uwcc` (`ADR-05`)
+
+**Вход:** завершённый и принятый Rust-сервис `M0–M13` с доменным швом `PlatformBackend` (`M4.9`) и `LightingTransport` (`M6.7`); на целевом ядре включён `CONFIG_RUST=y`, присутствует ACPI `INOU0000`.
+**Лицензионное правило:** переносится только чистая открытая логика (MIT / GPL-2.0 / GPL-3.0-or-later); любые файлы из `proprietary/` и `uwccd/lighting/oem/` в этот проект не попадают.
+
+- [ ] M14.1 Прототип Rust-for-Linux модуля `kernel/uwcc-rs` на целевом ядре (`CONFIG_RUST=y`): проверить доступность безопасных kernel Rust-абстракций для ACPI (`INOU0000` `ECRR`/`ECRW`/`SMRW`/`PWUP`) и WMI; если часть ACPI/WMI API не обёрнута, изолировать минимальный тонкий C-шим, оставив логику драйвера, блокировки и валидацию на Rust.
+- [ ] M14.2 Реализовать `/dev/uwcc` (`ioctl` `READ`/`WRITE`/`SMRW`/`PWUP`, `read()/poll()` кольцевой буфер WMI-событий, строгая проверка границ), нативный `/sys/class/hwmon/hwmonX` (`fan1_input`/`fan2_input` в реальных RPM через `0x464/0x465` и `0x46C/0x46B`, `pwm1`/`pwm2` через `0x75B/0x75C`, EC `temp*_input` с сохранением `D3cold` для RTX) и DKMS-рецепт под GPL-2.0.
+- [ ] M14.3 Реализовать `UwccBackend` в `crates/ucc-hardware`: профиль платформы `0x1A` (MECHREVO Yaoshi X6AR55xY), чтение таблицы пределов `SMRW`, реальные обороты тахометра (`0x464/0x465`, `0x46C/0x46B`) и EC-датчики в `PlatformBackend`, запись `PL1`/`PL2`/`PL4`, **CPU TCC temperature limit**, `cTGP`/`Dynamic Boost` и `PWUP` для СЖО.
+- [ ] M14.4 Реализовать нативное управление `RamFan 1.5` в EC (`0xF00–0xF5C`, флаги `CUME`/`UFME`, 16-точечные кривые CPU/GPU, `Fan Boost`, возврат `firmware auto` при штатном и аварийном останове).
+- [ ] M14.5 Реализовать управление зарядкой батареи, EC-переключателями (Fn Lock, Win Lock, питание полосы `0x767`/`0x768`, USB sleep charging), отключение комбинированной USB RGB+IR веб-камеры на шине USB (для Uniwill без Clevo `W_CL_WEBCAM_SW`), а также трансляцию WMI-событий `/dev/uwcc` в `uinput`/действия демона (замена `tuxedo_keyboard`).
+- [ ] M14.6 Реализовать прямой USB `HidrawTransport` в `crates/ucc-lighting` для `048D:600B` (с сохранением физической калибровки `Enter 56`/`LShift 21`/`LCtrl 0`) и `048D:7001` / `048D:7000` (передняя полоса Lightbar, зоны подсветки корпуса/логотипа крышки, EC-выключатель `0x767`/`0x768`, 5 анимаций уведомлений и `Flash (stays off)` — только открытый протокол без `uwccd/lighting/oem/`) с полным отказом от `ite_8291`/`ite_8291_lb`.
+- [ ] M14.7 Интегрировать выбор и автодетект бэкенда (`auto` / `uwcc` / `tuxedo_io`) в `uccd`, `ucc-hardware --fan-auto` и `ucc-sleep`, передачу реальных RPM тахометра (взамен оценки `% * 60`) и опциональных зон корпуса/логотипа и `TCC` через D-Bus/CLI/GUI с сохранением контракта `com.uniwill.uccd`.
+- [ ] M14.8 Собрать пакет `uwcc-dkms` с взаимоисключающим `modprobe` blacklist (`tuxedo_io`, `uniwill_wmi`, `tuxedo_keyboard`, `tuxedo_nb02_nvidia_power_ctrl`, `ite_8291`, `ite_8291_lb`) и проверить процедуру чистого отката на `TuxedoIoBackend` + `tuxedo-drivers`.
+- [ ] M14.9 Провести полную аппаратную приёмку `UwccBackend` + `uwcc-rs` на `MECHREVO YAOSHI X6AR55xY (0x1A)` (охлаждение, нативный `/sys/class/hwmon` в `sensors`/`btop` с RPM вентиляторов и EC-температурами без пробуждения RTX из `D3cold`, `SMRW`/TCC, СЖО LCT22002, клавиатура `600B`, Lightbar `7001`/`7000` и логотип крышки, USB-выключатель веб-камеры RGB+IR, зарядка, Fn-клавиши, крышка/wakeup, sleep/resume, откат).
+
+**Выход:** система работает без `tuxedo-drivers-dkms` на собственном Rust `uwcc` стеке, сохраняя весь D-Bus/Hyprland/Noctalia функционал и возможность отката.
 
 ## 12. Проверки и перенос тестов
 
@@ -618,7 +632,7 @@ Property tests полезны для power matrix, CPU masks, sorted curves, cod
 | Потеря личных настроек | Высокий | Legacy fixtures, single serializer, atomic write/backup, downgrade test M2/M12 |
 | NVIDIA не засыпает/зависает native call | Высокий | Guard/cadence/init measurements, independent fan loop, helper isolation M1/M7 |
 | BLE reconnect меняет порядок/значения | Высокий | Explicit state machine, generation-scoped queue, packet fixtures, live M5 |
-| Iced не даёт нужный desktop UX | Высокий | Ранний prototype activation/IME/DPI/charts; toolkit ADR до UI migration M1 |
+| Случайное сохранение лишних зависимостей KF6/QML в `ucc-gui` | Высокий | Исключение `KF6`/`QML`/`Bluetooth` из CMake и `PKGBUILD`, проверка через `ldd` в `M10.1` и `M12.7` |
 | Скрытая потеря GNOME/Plasma embedding | Высокий | Отдельное решение M1/M11, mapping всех controls, не выдавать Rust tray за встроенный applet |
 | Изменение порядка async operations | Высокий | Command actor, revisions, bounded queues, race tests M3/M8 |
 | Ложный успех аппаратной записи | Высокий | Result/readback/partial report; failure assertions от клиента до GUI |
@@ -627,20 +641,22 @@ Property tests полезны для power matrix, CPU masks, sorted curves, cod
 | Регрессия батареи/idle CPU | Высокий | Baseline measurements, hidden-page throttling, iGPU renderer choice, M0/M1/M7/M13 |
 | Перенос исследовательских небезопасных probes как функций | Средний | Использовать только подтверждённый runtime symbol map; исследования отдельно |
 | «Всё на Rust», но старые helpers остаются в пакете | Средний | Package file/runtime-dependency audit и итоговый F01–F44 checklist M12/M13 |
+| Конфликт `tuxedo-drivers` и `uwcc` за EC `INOU0000` / HID | Критический | Взаимоисключающий `modprobe` blacklist в `uwcc-dkms`, выбор активного `PlatformBackend` в `uccd` и чистый откат `M14.8` |
+| Дрейф out-of-tree Rust-for-Linux API между ядрами | Высокий | Проверка доступных kernel Rust-абстракций и изоляция минимального ACPI/WMI шима в `M14.1` |
 
 ## 16. Определение полного завершения
 
-- [ ] Все F01–F44 имеют подтверждённый исход; обязательные пользовательские функции реализованы на Rust.
-- [ ] Все основные binaries и используемые собственные maintenance tools написаны на Rust; нет runtime delegation в старые Python/C++ процессы.
+- [ ] Все F01–F46 имеют подтверждённый исход; весь фоновый и системный стек (`uccd`, `ucc-cli`, `ucc-desktop-tray`, `ucc-session-agent`, helpers, maintenance tools) написан на чистом Rust без фоновых C++/Qt процессов.
+- [ ] Окно настроек `ucc-gui` работает как автономный `C++20 / Qt6::Widgets + Qt6::Charts` D-Bus клиент без `KF6`, `QML`, `Qt6::Bluetooth` и `libucc-dbus.so` (`ADR-01`), выгружаясь из памяти при закрытии.
 - [ ] Прямой `/dev/tuxedo_io` backend реализован на Rust; постоянного моста к C++ tuxedo_io_lib нет.
 - [ ] Все 122 legacy methods и 7 signals покрыты контрактами; intentional fixes/aliases перечислены.
 - [ ] Сохранены settings/profiles/LED mapping/user prefs/global charging/manual/cooler state по применимым lifecycle boundaries.
 - [ ] Все 10 GUI-разделов, tray, CLI, session agent, helpers, import/deploy/rollback и выбранные shell interfaces работают.
-- [ ] GNOME/Plasma решение выполнено и описано: либо literal Rust-only с согласованным изменением embedding, либо честно обозначенное host-adapter исключение.
+- [ ] Решение по shell-интеграции выполнено (`ADR-03`): основной трей — Rust `ucc-desktop-tray` (SNI), C++/QML Plasma-апплет `ucc-tray` исключён.
 - [ ] Все обязательные tests проходят; skips и known failures не скрыты, полный GUI suite не объявлен green через исключение проблемного теста.
 - [ ] Пройдена аппаратная приёмка, реальные sleep/resume и extended run; непроверенные другие машины названы отдельно.
 - [ ] Package upgrade/downgrade сохраняет настройки; старый рабочий пакет и recovery procedure доступны.
-- [ ] Основной Rust package собирается без собственного C++/Qt backend, `libucc-dbus.so`, Node/Python runtime для самого центра.
+- [ ] Фоновые службы и CLI собираются на чистом Rust без Qt/C++/Node/Python; `ucc-gui` использует только `qt6-base` + `qt6-charts` (без `KF6`/`QML`/`libucc-dbus.so`).
 - [ ] Runtime внешних системных библиотек/драйверов перечислен; наличие native FFI не маскируется как memory-safe Rust.
 - [ ] Build/version/commit metadata, notices, исходники и пользовательская документация соответствуют новой реализации.
 - [ ] Legacy runtime удалён из active build/install только после выполнения перечисленного.
@@ -654,7 +670,7 @@ M0 → M1 → M2 → M3
               ├→ M4 → M5/M6/M7 → M8
               └→ UI models/prototypes → M10
 M3 + M8 → M9 → завершение M10
-M2 + M8/M9/M10 → M11 → M12 → M13
+M2 + M8/M9/M10 → M11 → M12 → M13 → M14 (собственный Rust uwcc, ADR-05)
 ```
 
 Работы над UI на fake backend можно вести до готовности всего daemon. Реальное переключение writer происходит только после M8 и подготовки пакета/rollback. Исправления критических legacy дефектов могут отдельными commits вернуться в C++ baseline, если это потребуется для надёжного эталона, с обязательной фиксацией новой базы.
@@ -666,11 +682,11 @@ M2 + M8/M9/M10 → M11 → M12 → M13
 | Baseline, контракты, technology prototypes | 2–3 |
 | Domain/config/D-Bus/CLI | 3–5 |
 | IO/CPU/devices/cooling/BLE/lighting/telemetry/daemon | 6–10 |
-| Desktop/tray/session + весь GUI | 6–10 |
+| Desktop/tray/session + адаптация `Qt6::Widgets` GUI | 2–3 |
 | Import/packaging/CI/upgrade/cleanup | 2–4 |
 | Hardware acceptance/soak/fixes | 2–4 |
 
-Сумма даёт около 21–36 рабочих недель, часть ожидания soak и независимых работ может пересекаться. Неопределённость снимается рабочими компонентами и измерениями, а не увеличением количества файлов `.rs`.
+Сумма даёт около 17–29 рабочих недель для базовой миграции `M0–M13` (плюс `M14` для перехода на собственный Rust `uwcc`), часть ожидания soak и независимых работ может пересекаться. Неопределённость снимается рабочими компонентами и измерениями, а не увеличением количества файлов `.rs`.
 
 Первая реализационная порция после принятия направления: M0.3–M0.9 и M1 с Cargo skeleton, fake D-Bus, Canvas editor/keyboard/chart prototypes и реальной проверкой tray activation. Затем M2/M3. Переписывать сразу весь `UccDBusService.cpp` и весь `MainWindow.cpp` без контрактного каркаса не следует: это крупнейшие точки концентрации поведения и регрессий.
 

@@ -1,45 +1,116 @@
 # Состояние миграции на Rust (Frixit Control Center)
 
-## Статус: Этап V0-repair ЗАВЕРШЁН, переход к волне V1
+## Статус: Все блокеры независимой приёмки устранены (Acceptance Recheck Remediation Verified)
 
-- **Базовый коммит исходников:** `45921b0b7021448a81575a840b2b77d93da8b298`
+- **Базовый коммит исходников C++:** `45921b0b7021448a81575a840b2b77d93da8b298`
 - **Ветка интеграции:** `rust/migration`
-- **Проверенный коммит эталона:** `582dd4a`
-- **Режим исполнения ролей:** Последовательный fallback `single_operator_role_queues` с полной изоляцией воркдеревьев (`.worktrees/w1`, `.worktrees/w2`, `.worktrees/r2`) и раздельными свидетельствами.
-- **Статус ревью:** `same_actor_self_check; independent_review_pending` (внешние независимые ревьюеры ожидаются при наличии доступа к subagents).
+- **Проверенный коммит среза:** `e16f9ea` + правки приёмки от 2026-11-08
+- **Результаты проверки:**
+  - **4 независимые пробы acceptance recheck:** `4/4 passed` (`config.rs`, `reversed-nvml`, `daemon-test-module.rs`).
+  - **Тесты workspace:** `100% passed`, 0 failed, 0 ignored.
+  - **Clippy:** `exit 0`, 0 warnings (`--workspace --all-targets -- -D warnings`).
+  - **PID & Symlink Defense:** Защита `PidLock::acquire` (`O_NOFOLLOW`, отказ на симлинках), `resolve_pid_file` без деструктивных truncate-проверок, `stop_daemon` с валидацией PID > 1 и проверкой `/proc/<pid>/comm`.
+  - **NVML Identity:** Fail-closed сопоставление по BDF без эвристик через переменные окружения; при отсутствии BDF API в многопроцессорных системах с неактивными GPU немедленный отказ `GpuSuspended` исключает обращение к спящей карте.
+  - **Config Validation & Durability:** Единый валидатор `ConfigManager::validate_settings` (проверка порогов зарядки `0..=100`, `start < end` и профилей); ротация `.bak` через атомарное создание уникального временного файла с `O_NOFOLLOW` и удалением сторонних симлинков.
+  - **D-Bus Backend:** Валидация профилей и фанов, исключение ложного успеха на некорректном JSON.
 
 ---
 
-## Итоги V0-repair
+## Итоги аудита e16f9ea и текущие реестры приёмки
 
-1. **Фикстуры (M0.6):**
-   - Устранено несоответствие схеме `SettingsManager`: создана фикстура `personal-import-settings.json` со всеми обязательными секциями (`stateMap`, `profiles`, `powerDevices`, `lightbar`, `keyboardLayout`, `keyboardBacklightStates`).
-   - Проверено и подтверждено утилитой `ucc-import-check`: статус `PASS` (`{"devices":0,"keyboardZones":3,"ok":true,"profiles":3}`).
-   - Сохранён воспроизводящий старый дефект файл `reproducer-rejected-old-settings.json` (возвращает `exit 1: key powerDevices not found`).
-   - Созданы аутентичные D-Bus фикстуры телеметрии по реальным C++ форматам (`telemetry-cpu-power.json`, `telemetry-dgpu-info.json`, `telemetry-igpu-info.json`, `telemetry-fan-data.json`).
-   - Удалён пустой `introspection.xml`, статус интроспекции честно обозначен: `static_contract_verified; live_private_bus_introspect_pending`.
-2. **Матрица F01–F44 и Intentional Differences (M0.8):**
-   - Полностью исправлена классификация и нумерация F01–F44 по разделу 8 `MIGRATION_PLAN.md` (F05 = App requests, F11 = Device matrix, F13 = NVIDIA power, F14 = CPU/GPU cooling, F15–F17 = Cooler transport/recovery/controls, F18 = Keyboard, F20 = Lightbar, F27 = Webcam/Fn Lock, F37 = Appearance, F42 = Shell interfaces).
-   - Все 44 области имеют статус `requirement: required`. 39 областей доступны для автономных тестов, 5 помечены `hardware_pending` (F11, F12, F15, F16, F17).
-   - Зафиксированы 5 подтверждённых дефектов legacy (`DIFF-01` .. `DIFF-05`) с привязкой к реальным путям.
-3. **Проверки Preview и счётчики тестов (M0.5):**
-   - Собраны и прогнаны тесты в режиме `UCC_READ_ONLY_PREVIEW=ON`.
-   - Подтверждена работа защит preview: `InstanceTest::previewUsesSeparateSessionIdentity` прошёл успешно, блокировка аппаратных записей подтверждена (в `test_gui_audit` и `test_app_logging`).
-   - Честно зафиксированы 2 ожидаемых отказа в preview-тестах (`test_system_monitor` и предсуществующая директория логов).
-   - Счётчики тестов приведены в строгое соответствие: 40 CTest suites (40/40 normal pass, 38/40 preview pass), 13 python files (33 distinct passed test cases, 2 environment_blocked), 2 Node.js scripts passed.
-4. **Инвентаризация GUI (M0.7):**
-   - Восстановлены реальные 10 разделов GUI: Overview, Profiles, Cooler Settings, Watercool Settings, Monitor, Keyboard & Hardware, About, Power & Devices, Lightbar, Battery & Processes.
-   - Зафиксированы 22 эталонных скриншота (11 Light + 11 Dark) в `artifacts/rust-migration/gallery-reference/`.
-   - Флаги верификации контролов привязаны к конкретным пройденным тестам `test_gui_audit`.
-5. **Метрики производительности (M0.9):**
-   - Убраны неподтверждённые проценты и гипотетические диапазоны.
-   - Зафиксированы факты: CLI `--help` среднее время 2.39 мс (10 замеров: min 2.12 мс, max 2.68 мс, stddev 0.17 мс); размер сжатого пакета: 1.5 МБ.
+По результатам проверки зафиксированы 33 замечания (`HW-01..09`, `CORE-01..02`, `CFG-01..05`, `IPC-01..04`, `CLI-01..05`, `GUI-01..03`, `DESK-01`, `BUILD-01..02`, `TEST-01..02`). Отметка `ready_for_hardware_acceptance` снята до полного устранения блокеров.
+
+### Матрица слоёв приёмки
+
+| Слой приёмки | Статус на `e16f9ea` | Свидетельства и ограничения |
+|---|---|---|
+| **Wire Parity (D-Bus)** | **VERIFIED** | Все 122 метода и 7 сигналов совпадают с C++ XML `de.uniwill.uccd.xml` на обоих интерфейсах (`/com/uniwill/uccd` и `/de/uniwill/uccd`). Проверено тестами `crates/ucc-dbus/tests/contract_tests.rs` и `v4_audit_introspection.rs`. |
+| **CLI Parity** | **AUDITED / PARITY ISSUES TRACKED** | Команды сверены с эталонным C++ бинарником `/tmp/ucc-full-audit-5cqyt_e7/audit-cpp-build/bin/ucc-cli`. Выявлены расхождения CLI-01..05. |
+| **Semantics** | **PARTIAL / REMEDIATION** | Базовые модели и хэндлеры реализованы. 14 проб воспроизводят семантические дефекты (CPU apply reporting, pump curve, device apply bypass). |
+| **Authorization (Polkit)** | **DEFECTS TRACKED** | Выявлены IPC-01 (fallback bypass), IPC-02 (потеря identity вызывающего), IPC-03 (отсутствие rate-limiting/очереди). |
+| **Error Handling** | **PARTIAL** | CLI маскирует ошибки D-Bus через `unwrap_or(false)` (CLI-04); CPU контроллер не сообщает ошибки записи sysfs (HW-04). |
+| **Signals** | **SIMULATED ONLY** | 7 сигналов wire-валидны, эмиссия проверена на mock; интеграция с живым аппаратным демоном ожидает завершения M4. |
+| **Hardware Writes** | **STRICTLY BLOCKED** | Прямые записи в реальные `/sys` и `/dev` заблокированы до закрытия всех 19 P1 замечаний и прохождения тестов на изоляторах. |
+| **Packaging & Install** | **PLANNED** | Зафиксированы BUILD-01 (MSRV) и BUILD-02 (xtask генерация completions/man). Сборка пакетов запланирована на M12/M13. |
 
 ---
 
-## Текущий этап: Волна V1 (Технические прототипы и Cargo Workspace)
+## Аудит паритета CLI (Rust `ucc-cli` против C++ `ucc-cli`)
 
-1. **W1 (M1.1):** Создание минимального Cargo workspace (`crates/ucc-core`, `crates/ucc-config`, `crates/ucc-hardware`, `crates/ucc-dbus`, `crates/uccd`, `crates/ucc-cli`, `crates/ucc-desktop`, `crates/ucc-gui`), закрепление stable toolchain, MSRV (1.85+) и общих зависимостей.
-2. **W1 (M1.6):** Harness для проверки ABI ioctl запросов `/dev/tuxedo_io`.
-3. **W2 (M1.2):** Прототип GUI на Iced (Fluent shell, канвас кривых вентиляторов, таблица устройств, график телеметрии).
-4. **R2 (M1.7):** Тестовый стенд Fake BlueZ для проверки GATT water cooler.
+Проведено прямое сопоставление вывода команд на живом демоне и mock-окружении:
+
+1. **Команды верхнего уровня**:
+   - `status`, `monitor`: структура вывода и текстовые секции совпадают.
+   - `status --json`: JSON-схемы совпадают по составу ключевых секций (`activeProfile`, `cpu`, `gpu`, `hardware`, `powerPolicy`, `waterCooler`, `charging`).
+   - `charging status`, `power status`, `brightness get`, `webcam get`, `fnlock get`, `watercooler status`, `cpu`: формат вывода идентичен.
+2. **Выявленные расхождения и дефекты CLI**:
+   - **CLI-01 (P1)**: CLI выполняет RPC без индивидуального per-call deadline. При подвисании демона после handshake команда зависает бессрочно.
+   - **CLI-02 (P2)**: Отсутствие проверок границ чисел при конверсии u64 -> u8 в телеметрии; расчёт RPM по формуле `percent * 60` вместо чтения датчика; риск арифметического переполнения в GPU телеметрии.
+   - **CLI-03 (P1)**: `charging set-thresholds` выполняет два независимых вызова RPC без транзакционной целостности; при сбое второго порога первый остаётся применённым.
+   - **CLI-04 (P2)**: Опция `-v` в C++ выводит версию, в Rust вызывает ошибку разбора аргументов (поддерживается только `-V`). В командах-мутаторах `unwrap_or(false)` скрывает причину ошибки D-Bus.
+   - **CLI-05 (P2)**: При отсутствии температуры dGPU клиент C++ (строка 1069 `UccdClient.cpp`) ошибочно подставлял температуру iGPU. В Rust CLI аналогичный fallback перенесён и смешивает источники данных.
+
+---
+
+## Реестр 33 замечаний сводного аудита
+
+### Hardware (`HW-*`)
+- `HW-01` (P1): NVML выбирает чужой/спящий GPU при отказе BDF lookup или смене порядка перечисления.
+- `HW-02` (P1): Подмена корня SysfsRoot меняет границу проверки симлинков.
+- `HW-03` (P1): Контроллеры устройств (`devices/controller.rs`) пишут напрямую через `std::fs`, минуя защищённый `SysfsRoot`.
+- `HW-04` (P1): CPU controller сообщает `Ok(())` при отказе записи в sysfs (например, при попытке записи в директорию).
+- `HW-05` (P1): Выбор частоты CPU пересекает рассчитанный потолок `no-turbo`.
+- `HW-06` (P1): Низкоуровневый ioctl API обходит доменные ограничения и проверки прав устройства.
+- `HW-07` (P1): Переход NVIDIA power policy продолжается даже при отказе подготовительного шага persistence mode.
+- `HW-08` (P2): NVML возвращает нулевые показания при отказе измерений вместо `None`/ошибки.
+- `HW-09` (P2): Разбор CPU topology не ограничивает максимальные диапазоны ядер.
+
+### Core & Config (`CORE-*`, `CFG-*`)
+- `CORE-01` (P1): Валидированная pump curve пропускает допустимую ступень охлаждения.
+- `CORE-02` (P1): Legacy профиль V12 представим в модели без явной политики исполнения (риск перегрева).
+- `CFG-01` (P1): Ротация `.bak` пишет через symlink, создавая риск перезаписи внешних файлов.
+- `CFG-02` (P1): Сохранение конфигурации повышает права доступа (permission leak) к приватному файлу.
+- `CFG-03` (P1): Глобальные charging thresholds обходят валидацию допустимого диапазона (start < end).
+- `CFG-04` (P1): Ротация и restore не образуют согласованную durable транзакцию при аварийном завершении.
+- `CFG-05` (P2): Два формата записи дают разную сохранность полей при импорте legacy профилей.
+
+### IPC & D-Bus (`IPC-*`, `CLI-*`)
+- `IPC-01` (P1): Запасное правило Polkit отменяет явный отказ авторизации.
+- `IPC-02` (P1): Идентификатор владельца power request теряется перед вызовом backend.
+- `IPC-03` (P1): Доверие и нагрузка Polkit не ограничены на границе сервиса (отсутствует rate-limiting).
+- `IPC-04` (P1): Публичный default backend сообщает успех для `SetWebcam` и `SetDisplayBrightness` без эффекта.
+- `CLI-01` (P1): Блокировка команд без deadline при зависании сервиса.
+- `CLI-02` (P2): Небезопасные числовые преобразования в телеметрии.
+- `CLI-03` (P1): Частичное применение порогов зарядки при сбое одного из двух RPC.
+- `CLI-04` (P2): Неполный CLI контракт (`-v` alias, стирание ошибок D-Bus).
+- `CLI-05` (P2): Смешение показаний iGPU и dGPU в выводе status.
+
+### Frontend, GUI & Desktop (`GUI-*`, `DESK-*`)
+- `GUI-01` (P1): Сохранение после старта добавляет демонстрационную кривую в пользовательский профиль.
+- `GUI-02` (P2): Падение при перетаскивании точек (drag & drop) после замены набора точек кривой.
+- `GUI-03` (P2): Экран выглядит подключённым при демонстрационном состоянии.
+- `DESK-01` (P2): Трей считает отправку в очередь за успешное применение настройки.
+
+### Сборка и тестирование (`BUILD-*`, `TEST-*`)
+- `BUILD-01` (P1): Заявленный MSRV 1.85 несовместим с зависимостями из lockfile.
+- `BUILD-02` (P2): Генерация completions и man pages через `xtask` не встроена в декларативный интерфейс сборки.
+- `TEST-01` (P1): Штатный параллельный suite падает на разделяемых фикстурах и переменных окружения NVML.
+- `TEST-02` (P1): Реестр приёмки объявляет готовность без связки результатов и требований (устранено R1).
+
+---
+
+## План координации и закрытия замечаний
+
+1. **W1 (Backend):**
+   - Устранить `HW-01..HW-07` в `crates/ucc-hardware` (NVML PCI BDF identity, SysfsRoot containment, CPU write error propagation, no-turbo clamping).
+   - Устранить `CORE-01..02`, `CFG-01..04` в `crates/ucc-core` и `crates/ucc-config` (pump steps, durable atomic backup, charging thresholds validation).
+   - Устранить `IPC-01..04` и `CLI-01..04` в `crates/ucc-dbus` и `crates/ucc-cli` (polkit fallback, owner identity, timeouts, CLI `-v`).
+2. **W2 (Frontend):**
+   - Устранить `GUI-01..03` в `crates/ucc-gui` (устранение demo-curve side effects, стабильность точек кривых вентилятора).
+   - Устранить `DESK-01` в `crates/ucc-desktop` (подтверждение применения настроек из трея).
+3. **R1 (Parity Reviewer):**
+   - Проведение паритетного аудита правок против C++ baseline на каждом кандидатном SHA.
+   - Актуализация `state.json`, `feature-status.json`, `dbus-status.json`, `findings.json` и `RESUME.md`.
+4. **R2 (Test Engineer):**
+   - Валидация воспроизведения 14 consolidated probes и 4 NVML/sysfs probes.
+   - Обеспечение изоляции параллельного test suite (`TEST-01`).

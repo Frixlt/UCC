@@ -1,6 +1,6 @@
 {
   "schema_version": 2,
-  "total_features": 44,
+  "total_features": 46,
   "features": [
     {
       "id": "F01",
@@ -8,11 +8,27 @@
       "requirement": "DMI, Clevo/Uniwill/Dummy, exact Mechrevo tuple, near misses, реальные capabilities",
       "baseline_references": "SystemInfo, identifyDevice, DriverHealth, device tests",
       "scope": "required",
-      "implementation_status": "planned",
-      "hardware_status": "available",
+      "implementation_status": "partial",
+      "hardware_status": "hardware_blocked",
       "shell_decision": false,
-      "legacy_findings": [],
-      "cases": []
+      "legacy_findings": [
+        "HW-06"
+      ],
+      "cases": [
+        "crates/ucc-hardware/tests/vendor_detection.rs",
+        "crates/ucc-hardware/tests/v4_audit_probes.rs"
+      ],
+      "notes": "DMI/SKU/UWID и mock detection есть. Текущие capabilities и привязка writes к физическому устройству проходят HW-06 и аппаратную матрицу.",
+      "verified_sha": "e16f9ea",
+      "verification_layers": {
+        "wire": "verified",
+        "semantics": "partial",
+        "auth": "not_applicable",
+        "error": "defect",
+        "signals": "planned",
+        "hardware": "blocked",
+        "install": "planned"
+      }
     },
     {
       "id": "F02",
@@ -21,10 +37,21 @@
       "baseline_references": "StateUtils, power_policy tests",
       "scope": "required",
       "implementation_status": "planned",
-      "hardware_status": "available",
+      "hardware_status": "hardware_pending",
       "shell_decision": false,
       "legacy_findings": [],
-      "cases": []
+      "cases": [],
+      "notes": "PowerPolicy принимает источник. Rust scanner всех power supplies и приоритет PD ещё не подключены.",
+      "verified_sha": "e16f9ea",
+      "verification_layers": {
+        "wire": "planned",
+        "semantics": "planned",
+        "auth": "not_applicable",
+        "error": "partial",
+        "signals": "simulated_only",
+        "hardware": "pending",
+        "install": "planned"
+      }
     },
     {
       "id": "F03",
@@ -32,11 +59,24 @@
       "requirement": "Auto/AC/Type-C/Battery; manual выше requests; requests только повышают режим; physical source показан отдельно",
       "baseline_references": "PowerPolicy",
       "scope": "required",
-      "implementation_status": "planned",
-      "hardware_status": "available",
+      "implementation_status": "partial",
+      "hardware_status": "hardware_blocked",
       "shell_decision": false,
       "legacy_findings": [],
-      "cases": []
+      "cases": [
+        "crates/ucc-core/tests/power_policy.rs"
+      ],
+      "notes": "Manual/priority model есть. Связка с D-Bus backend и применение профиля в daemon отсутствуют.",
+      "verified_sha": "e16f9ea",
+      "verification_layers": {
+        "wire": "verified",
+        "semantics": "partial",
+        "auth": "not_applicable",
+        "error": "partial",
+        "signals": "simulated_only",
+        "hardware": "blocked",
+        "install": "planned"
+      }
     },
     {
       "id": "F04",
@@ -44,11 +84,24 @@
       "requirement": "Water-cooler profile при разрешённом auto-выборе; override меняет profile state согласно текущей policy",
       "baseline_references": "PowerPolicy, startup/profile tests",
       "scope": "required",
-      "implementation_status": "planned",
-      "hardware_status": "available",
+      "implementation_status": "partial",
+      "hardware_status": "hardware_pending",
       "shell_decision": false,
       "legacy_findings": [],
-      "cases": []
+      "cases": [
+        "crates/ucc-core/tests/water_cooler.rs"
+      ],
+      "notes": "Выбор WC присутствует в модели. BLE lifecycle и применение профиля ещё в плане.",
+      "verified_sha": "e16f9ea",
+      "verification_layers": {
+        "wire": "verified",
+        "semantics": "partial",
+        "auth": "not_applicable",
+        "error": "partial",
+        "signals": "planned",
+        "hardware": "pending",
+        "install": "planned"
+      }
     },
     {
       "id": "F05",
@@ -56,11 +109,26 @@
       "requirement": "256 всего/32 на owner, имя 128/reason 512, ownership, disconnect cleanup",
       "baseline_references": "PowerPolicy, service watcher",
       "scope": "required",
-      "implementation_status": "planned",
-      "hardware_status": "available",
+      "implementation_status": "defect",
+      "hardware_status": "hardware_pending",
       "shell_decision": false,
-      "legacy_findings": [],
-      "cases": []
+      "legacy_findings": [
+        "IPC-02"
+      ],
+      "cases": [
+        "crates/ucc-core/tests/power_policy.rs"
+      ],
+      "notes": "Модель принимает owner и имеет квоты. D-Bus теряет owner перед backend, cleanup не связан. IPC-02.",
+      "verified_sha": "e16f9ea",
+      "verification_layers": {
+        "wire": "verified",
+        "semantics": "defect",
+        "auth": "defect",
+        "error": "defect",
+        "signals": "planned",
+        "hardware": "pending",
+        "install": "planned"
+      }
     },
     {
       "id": "F06",
@@ -68,11 +136,26 @@
       "requirement": "power_ac/power_type_c/power_bat/power_wc; Type-C fallback на AC; отсутствие назначения не создаёт произвольный профиль",
       "baseline_references": "TccSettings, applyProfileForCurrentState",
       "scope": "required",
-      "implementation_status": "planned",
-      "hardware_status": "available",
+      "implementation_status": "partial",
+      "hardware_status": "hardware_pending",
       "shell_decision": false,
-      "legacy_findings": [],
-      "cases": []
+      "legacy_findings": [
+        "CFG-05"
+      ],
+      "cases": [
+        "crates/ucc-config/tests/state_map.rs"
+      ],
+      "notes": "Startup profile и state map присутствуют. Parity defaults и сквозная операция ещё не приняты. CFG-05.",
+      "verified_sha": "e16f9ea",
+      "verification_layers": {
+        "wire": "verified",
+        "semantics": "partial",
+        "auth": "not_applicable",
+        "error": "defect",
+        "signals": "simulated_only",
+        "hardware": "pending",
+        "install": "planned"
+      }
     },
     {
       "id": "F07",
@@ -80,11 +163,26 @@
       "requirement": "Built-in/custom, create/copy/rename/delete, references, Save отдельно от Apply, temporary apply/revert",
       "baseline_references": "Два ProfileManager, MainWindow, CLI",
       "scope": "required",
-      "implementation_status": "planned",
-      "hardware_status": "available",
+      "implementation_status": "defect",
+      "hardware_status": "hardware_pending",
       "shell_decision": false,
-      "legacy_findings": [],
-      "cases": []
+      "legacy_findings": [
+        "GUI-01"
+      ],
+      "cases": [
+        "crates/ucc-config/tests/profile_crud.rs"
+      ],
+      "notes": "Смена на пустую кривую исправлена. Первый Save всё ещё добавляет demo curve. CRUD и реальные apply/revert не подключены. GUI-01.",
+      "verified_sha": "e16f9ea",
+      "verification_layers": {
+        "wire": "verified",
+        "semantics": "defect",
+        "auth": "defect",
+        "error": "defect",
+        "signals": "planned",
+        "hardware": "pending",
+        "install": "planned"
+      }
     },
     {
       "id": "F08",
@@ -92,11 +190,27 @@
       "requirement": "governor/EPP/turbo/boost/HWP, defaults, частоты в правильных единицах, driver quirks",
       "baseline_references": "CpuController/CpuWorker",
       "scope": "required",
-      "implementation_status": "planned",
-      "hardware_status": "available",
+      "implementation_status": "defect",
+      "hardware_status": "hardware_blocked",
       "shell_decision": false,
-      "legacy_findings": [],
-      "cases": []
+      "legacy_findings": [
+        "HW-04",
+        "HW-05"
+      ],
+      "cases": [
+        "crates/ucc-hardware/tests/cpu_policy.rs"
+      ],
+      "notes": "CPU driver/controller существуют. Apply без узлов сообщает успех, snap пересекает потолок, частичный результат теряется. HW-04/05.",
+      "verified_sha": "e16f9ea",
+      "verification_layers": {
+        "wire": "verified",
+        "semantics": "defect",
+        "auth": "defect",
+        "error": "defect",
+        "signals": "planned",
+        "hardware": "blocked",
+        "install": "planned"
+      }
     },
     {
       "id": "F09",
@@ -104,11 +218,26 @@
       "requirement": "Точные sparse IDs, enabledCores выше onlineCores, обязательный CPU, P/E/unknown, enable-before-disable",
       "baseline_references": "CpuTopology, CPU tests",
       "scope": "required",
-      "implementation_status": "planned",
-      "hardware_status": "available",
+      "implementation_status": "partial",
+      "hardware_status": "hardware_blocked",
       "shell_decision": false,
-      "legacy_findings": [],
-      "cases": []
+      "legacy_findings": [
+        "HW-09"
+      ],
+      "cases": [
+        "crates/ucc-hardware/tests/topology.rs"
+      ],
+      "notes": "Sparse/enable-before-disable проверены mock. Legacy negative IDs отклоняются. Нужны shared policy, bounded ranges и CPUID restore. HW-09.",
+      "verified_sha": "e16f9ea",
+      "verification_layers": {
+        "wire": "verified",
+        "semantics": "partial",
+        "auth": "not_applicable",
+        "error": "defect",
+        "signals": "planned",
+        "hardware": "blocked",
+        "install": "planned"
+      }
     },
     {
       "id": "F10",
@@ -116,13 +245,27 @@
       "requirement": "Ограниченные reapply attempts при конфликтующем сервисе, reset на новом профиле, восстановление исходного CPU состояния",
       "baseline_references": "CpuWorker",
       "scope": "required",
-      "implementation_status": "planned",
-      "hardware_status": "available",
+      "implementation_status": "defect",
+      "hardware_status": "hardware_blocked",
       "shell_decision": false,
       "legacy_findings": [
+        "HW-04",
         "DIFF-04"
       ],
-      "cases": []
+      "cases": [
+        "crates/ucc-hardware/tests/v4_audit_probes.rs"
+      ],
+      "notes": "Базовый governor/EPP drift и bounded retry есть. Missing-node и reapply false-positive остаются. HW-04.",
+      "verified_sha": "e16f9ea",
+      "verification_layers": {
+        "wire": "verified",
+        "semantics": "defect",
+        "auth": "not_applicable",
+        "error": "defect",
+        "signals": "simulated_only",
+        "hardware": "blocked",
+        "install": "planned"
+      }
     },
     {
       "id": "F11",
@@ -130,11 +273,26 @@
       "requirement": "Независимые ac/type_c/bat значения, overlay CPU поверх профиля, rescan сохраняет отсутствующие устройства",
       "baseline_references": "PowerDeviceController/PowerDevicesTab",
       "scope": "required",
-      "implementation_status": "planned",
-      "hardware_status": "hardware_pending",
+      "implementation_status": "defect",
+      "hardware_status": "hardware_blocked",
       "shell_decision": false,
-      "legacy_findings": [],
-      "cases": []
+      "legacy_findings": [
+        "HW-03"
+      ],
+      "cases": [
+        "crates/ucc-hardware/tests/devices.rs"
+      ],
+      "notes": "Три колонки и сохранение disconnected entries есть в модели. Device apply пишет мимо SysfsRoot. HW-03.",
+      "verified_sha": "e16f9ea",
+      "verification_layers": {
+        "wire": "verified",
+        "semantics": "defect",
+        "auth": "defect",
+        "error": "defect",
+        "signals": "simulated_only",
+        "hardware": "blocked",
+        "install": "planned"
+      }
     },
     {
       "id": "F12",
@@ -142,11 +300,28 @@
       "requirement": "PCI/USB runtime PM, ASPM, Wi-Fi power save, audio powersave, NMI watchdog, writeback, только разрешённый nvidia-powerd",
       "baseline_references": "PowerDeviceController",
       "scope": "required",
-      "implementation_status": "planned",
-      "hardware_status": "hardware_pending",
+      "implementation_status": "defect",
+      "hardware_status": "hardware_blocked",
       "shell_decision": false,
-      "legacy_findings": [],
-      "cases": []
+      "legacy_findings": [
+        "HW-02",
+        "HW-03",
+        "HW-07"
+      ],
+      "cases": [
+        "crates/ucc-hardware/tests/v4_audit_probes.rs"
+      ],
+      "notes": "Аргументы процесса разделены, короткие пути исправлены. Общий containment и deadlines отсутствуют. HW-02/03/07.",
+      "verified_sha": "e16f9ea",
+      "verification_layers": {
+        "wire": "verified",
+        "semantics": "defect",
+        "auth": "defect",
+        "error": "defect",
+        "signals": "planned",
+        "hardware": "blocked",
+        "install": "planned"
+      }
     },
     {
       "id": "F13",
@@ -154,11 +329,26 @@
       "requirement": "Keep awake выше runtime auto; wake до power operations; undo persistence при выключении; per-device errors",
       "baseline_references": "PowerDeviceController/ProfileSettingsWorker",
       "scope": "required",
-      "implementation_status": "planned",
-      "hardware_status": "available",
+      "implementation_status": "defect",
+      "hardware_status": "hardware_blocked",
       "shell_decision": false,
-      "legacy_findings": [],
-      "cases": []
+      "legacy_findings": [
+        "HW-07"
+      ],
+      "cases": [
+        "crates/ucc-hardware/tests/nvidia_power.rs"
+      ],
+      "notes": "Success-order mock есть. Отказ persistence не прерывает переход, команда применяется глобально. HW-07.",
+      "verified_sha": "e16f9ea",
+      "verification_layers": {
+        "wire": "verified",
+        "semantics": "defect",
+        "auth": "defect",
+        "error": "defect",
+        "signals": "planned",
+        "hardware": "blocked",
+        "install": "planned"
+      }
     },
     {
       "id": "F14",
@@ -166,13 +356,33 @@
       "requirement": "CPU/GPU curves, interpolation, EWMA/hysteresis, sameSpeed, min/off limits, temporary/saved curves",
       "baseline_references": "FanControlWorker/FanProfile",
       "scope": "required",
-      "implementation_status": "planned",
-      "hardware_status": "available",
+      "implementation_status": "partial",
+      "hardware_status": "hardware_blocked",
       "shell_decision": false,
       "legacy_findings": [
-        "DIFF-04"
+        "HW-06",
+        "CORE-01",
+        "CORE-02",
+        "GUI-01",
+        "GUI-02"
       ],
-      "cases": []
+      "cases": [
+        "crates/ucc-hardware/tests/platform_backend.rs",
+        "crates/ucc-hardware/tests/cooling_engine.rs",
+        "crates/ucc-hardware/tests/wave1_remediation.rs",
+        "crates/ucc-hardware/tests/v4_audit_probes.rs"
+      ],
+      "notes": "W1-01..03 и W1-09 закрыты: повтор failed auto, честный applied status, запрет 0% на пустых кривых и spawn_fan_worker shutdown recovery проверены; подключение в uccd вместо DefaultUccdBackend в M8.",
+      "verified_sha": "e16f9ea",
+      "verification_layers": {
+        "wire": "verified",
+        "semantics": "defect",
+        "auth": "defect",
+        "error": "defect",
+        "signals": "planned",
+        "hardware": "blocked",
+        "install": "planned"
+      }
     },
     {
       "id": "F15",
@@ -180,11 +390,27 @@
       "requirement": "LCT models, saved identity, Nordic UART UUID, exact packet encoding, GATT readiness",
       "baseline_references": "LCTWaterCoolerWorker/AquarisSelection",
       "scope": "required",
-      "implementation_status": "planned",
+      "implementation_status": "partial",
       "hardware_status": "hardware_pending",
       "shell_decision": false,
       "legacy_findings": [],
-      "cases": []
+      "cases": [
+        "crates/ucc-core/tests/cooler_codec.rs",
+        "crates/ucc-hardware/tests/cooling_engine.rs",
+        "crates/ucc-hardware/tests/wave1_remediation.rs",
+        "crates/ucc-hardware/tests/fake_bluez_cooler.rs"
+      ],
+      "notes": "W1-04, W1-05, W1-10, W1-11 закрыты на моках и fake BlueZ ObjectManager: явный Off, retry без потери пакета, Auto/Manual режимы и BluezCoolerClient проверены; оркестрация в uccd (M8) и живая СЖО (M5.8) впереди.",
+      "verified_sha": "e16f9ea",
+      "verification_layers": {
+        "wire": "verified",
+        "semantics": "partial",
+        "auth": "not_applicable",
+        "error": "partial",
+        "signals": "planned",
+        "hardware": "pending",
+        "install": "planned"
+      }
     },
     {
       "id": "F16",
@@ -192,11 +418,26 @@
       "requirement": "Discovery/reconnect/backoff/keepalive, late adapter, rotating address при единственном допустимом совпадении, restart/sleep",
       "baseline_references": "Bluetooth tests",
       "scope": "required",
-      "implementation_status": "planned",
+      "implementation_status": "partial",
       "hardware_status": "hardware_pending",
       "shell_decision": false,
       "legacy_findings": [],
-      "cases": []
+      "cases": [
+        "crates/ucc-hardware/tests/cooling_engine.rs",
+        "crates/ucc-hardware/tests/wave1_remediation.rs",
+        "crates/ucc-hardware/tests/fake_bluez_cooler.rs"
+      ],
+      "notes": "W1-04, W1-05, W1-10, W1-11 закрыты на моках и fake BlueZ ObjectManager: явный Off, retry без потери пакета, Auto/Manual режимы и BluezCoolerClient проверены; оркестрация в uccd (M8) и живая СЖО (M5.8) впереди.",
+      "verified_sha": "e16f9ea",
+      "verification_layers": {
+        "wire": "planned",
+        "semantics": "planned",
+        "auth": "not_applicable",
+        "error": "partial",
+        "signals": "planned",
+        "hardware": "pending",
+        "install": "planned"
+      }
     },
     {
       "id": "F17",
@@ -204,13 +445,30 @@
       "requirement": "Fan 0–100, pump codes 0/2/3/4, LED modes/colors, auto/manual persistence, reconnect restore",
       "baseline_references": "Watercooler override tests",
       "scope": "required",
-      "implementation_status": "planned",
-      "hardware_status": "hardware_pending",
+      "implementation_status": "partial",
+      "hardware_status": "hardware_blocked",
       "shell_decision": false,
       "legacy_findings": [
-        "DIFF-04"
+        "CORE-01",
+        "CORE-02"
       ],
-      "cases": []
+      "cases": [
+        "crates/ucc-core/tests/cooler_controls.rs",
+        "crates/ucc-hardware/tests/cooling_engine.rs",
+        "crates/ucc-hardware/tests/wave1_remediation.rs",
+        "crates/ucc-hardware/tests/fake_bluez_cooler.rs"
+      ],
+      "notes": "W1-04, W1-05, W1-10, W1-11 закрыты на моках и fake BlueZ ObjectManager: явный Off, retry без потери пакета, Auto/Manual режимы и BluezCoolerClient проверены; оркестрация в uccd (M8) и живая СЖО (M5.8) впереди.",
+      "verified_sha": "e16f9ea",
+      "verification_layers": {
+        "wire": "verified",
+        "semantics": "defect",
+        "auth": "defect",
+        "error": "defect",
+        "signals": "simulated_only",
+        "hardware": "blocked",
+        "install": "planned"
+      }
     },
     {
       "id": "F18",
@@ -218,13 +476,25 @@
       "requirement": "White, zone RGB, per-key; physical LED IDs, missing zones, global brightness, batched RGB",
       "baseline_references": "KeyboardBacklightController, AssignKeyZones",
       "scope": "required",
-      "implementation_status": "planned",
-      "hardware_status": "available",
+      "implementation_status": "partial",
+      "hardware_status": "hardware_pending",
       "shell_decision": false,
-      "legacy_findings": [
-        "DIFF-01"
+      "legacy_findings": [],
+      "cases": [
+        "crates/ucc-lighting/tests/lighting_tests.rs",
+        "crates/ucc-lighting/tests/wave1_remediation.rs"
       ],
-      "cases": []
+      "notes": "W1-06, W1-07, W1-13 закрыты: ошибки buffer_input/lightbar возвращаются вызывающему, 126-зонная раскладка маппится по LED ID без сдвига, on_resume не повторяет welcome; подключение в uccd (M8) и Qt6 UI (M10) впереди.",
+      "verified_sha": "e16f9ea",
+      "verification_layers": {
+        "wire": "planned",
+        "semantics": "planned",
+        "auth": "not_applicable",
+        "error": "partial",
+        "signals": "planned",
+        "hardware": "pending",
+        "install": "planned"
+      }
     },
     {
       "id": "F19",
@@ -232,11 +502,25 @@
       "requirement": "Enter 56, LShift 21, LCtrl 0; 101 physical keys при 126 обнаруженных zones на документированной машине",
       "baseline_references": "keyboard-layout.json, GUI calibration tests",
       "scope": "required",
-      "implementation_status": "planned",
-      "hardware_status": "available",
+      "implementation_status": "partial",
+      "hardware_status": "hardware_pending",
       "shell_decision": false,
       "legacy_findings": [],
-      "cases": []
+      "cases": [
+        "crates/ucc-lighting/tests/lighting_tests.rs",
+        "crates/ucc-lighting/tests/wave1_remediation.rs"
+      ],
+      "notes": "W1-06, W1-07, W1-13 закрыты: ошибки buffer_input/lightbar возвращаются вызывающему, 126-зонная раскладка маппится по LED ID без сдвига, on_resume не повторяет welcome; подключение в uccd (M8) и Qt6 UI (M10) впереди.",
+      "verified_sha": "e16f9ea",
+      "verification_layers": {
+        "wire": "planned",
+        "semantics": "planned",
+        "auth": "not_applicable",
+        "error": "partial",
+        "signals": "planned",
+        "hardware": "pending",
+        "install": "planned"
+      }
     },
     {
       "id": "F20",
@@ -244,13 +528,25 @@
       "requirement": "Managed flag, независимые power settings, пять анимаций, Auto majority color, Silent/Welcome/Test",
       "baseline_references": "LightbarController",
       "scope": "required",
-      "implementation_status": "planned",
-      "hardware_status": "available",
+      "implementation_status": "partial",
+      "hardware_status": "hardware_pending",
       "shell_decision": false,
-      "legacy_findings": [
-        "DIFF-04"
+      "legacy_findings": [],
+      "cases": [
+        "crates/ucc-lighting/tests/lighting_tests.rs",
+        "crates/ucc-lighting/tests/wave1_remediation.rs"
       ],
-      "cases": []
+      "notes": "W1-06, W1-07, W1-13 закрыты: ошибки buffer_input/lightbar возвращаются вызывающему, 126-зонная раскладка маппится по LED ID без сдвига, on_resume не повторяет welcome; подключение в uccd (M8) и Qt6 UI (M10) впереди.",
+      "verified_sha": "e16f9ea",
+      "verification_layers": {
+        "wire": "planned",
+        "semantics": "planned",
+        "auth": "not_applicable",
+        "error": "partial",
+        "signals": "simulated_only",
+        "hardware": "pending",
+        "install": "planned"
+      }
     },
     {
       "id": "F21",
@@ -258,11 +554,25 @@
       "requirement": "Flash выключен сразу после Save/start/mode change и между событиями; нет наложения анимаций, welcome не повторяется после resume",
       "baseline_references": "Lightbar tests",
       "scope": "required",
-      "implementation_status": "planned",
-      "hardware_status": "available",
+      "implementation_status": "partial",
+      "hardware_status": "hardware_pending",
       "shell_decision": false,
       "legacy_findings": [],
-      "cases": []
+      "cases": [
+        "crates/ucc-lighting/tests/lighting_tests.rs",
+        "crates/ucc-lighting/tests/wave1_remediation.rs"
+      ],
+      "notes": "W1-06, W1-07, W1-13 закрыты: ошибки buffer_input/lightbar возвращаются вызывающему, 126-зонная раскладка маппится по LED ID без сдвига, on_resume не повторяет welcome; подключение в uccd (M8) и Qt6 UI (M10) впереди.",
+      "verified_sha": "e16f9ea",
+      "verification_layers": {
+        "wire": "planned",
+        "semantics": "planned",
+        "auth": "not_applicable",
+        "error": "partial",
+        "signals": "planned",
+        "hardware": "pending",
+        "install": "planned"
+      }
     },
     {
       "id": "F22",
@@ -271,12 +581,23 @@
       "baseline_references": "DisplayBacklight, brightness tests",
       "scope": "required",
       "implementation_status": "planned",
-      "hardware_status": "available",
+      "hardware_status": "hardware_pending",
       "shell_decision": false,
       "legacy_findings": [
-        "DIFF-05"
+        "IPC-04"
       ],
-      "cases": []
+      "cases": [],
+      "notes": "DTO YCbCr reading есть. Активная панель/MUX и реальная яркость не подключены. Публичная заглушка сообщает ложный успех. IPC-04.",
+      "verified_sha": "e16f9ea",
+      "verification_layers": {
+        "wire": "planned",
+        "semantics": "planned",
+        "auth": "not_applicable",
+        "error": "defect",
+        "signals": "planned",
+        "hardware": "pending",
+        "install": "planned"
+      }
     },
     {
       "id": "F23",
@@ -285,10 +606,21 @@
       "baseline_references": "MainWindow/RefreshAdvisor",
       "scope": "required",
       "implementation_status": "planned",
-      "hardware_status": "available",
+      "hardware_status": "hardware_pending",
       "shell_decision": false,
       "legacy_findings": [],
-      "cases": []
+      "cases": [],
+      "notes": "Поля DTO есть. Display policy и приоритет profile Hz не перенесены.",
+      "verified_sha": "e16f9ea",
+      "verification_layers": {
+        "wire": "planned",
+        "semantics": "planned",
+        "auth": "not_applicable",
+        "error": "partial",
+        "signals": "planned",
+        "hardware": "pending",
+        "install": "planned"
+      }
     },
     {
       "id": "F24",
@@ -300,7 +632,18 @@
       "hardware_status": "hardware_pending",
       "shell_decision": false,
       "legacy_findings": [],
-      "cases": []
+      "cases": [],
+      "notes": "Rust KDE/Hyprland/X11 adapters не обнаружены.",
+      "verified_sha": "e16f9ea",
+      "verification_layers": {
+        "wire": "planned",
+        "semantics": "planned",
+        "auth": "not_applicable",
+        "error": "partial",
+        "signals": "planned",
+        "hardware": "pending",
+        "install": "planned"
+      }
     },
     {
       "id": "F25",
@@ -309,10 +652,21 @@
       "baseline_references": "refresh tests",
       "scope": "required",
       "implementation_status": "planned",
-      "hardware_status": "available",
+      "hardware_status": "hardware_pending",
       "shell_decision": false,
       "legacy_findings": [],
-      "cases": []
+      "cases": [],
+      "notes": "Нет Rust consent pipeline и отмены при stale topology.",
+      "verified_sha": "e16f9ea",
+      "verification_layers": {
+        "wire": "planned",
+        "semantics": "planned",
+        "auth": "not_applicable",
+        "error": "partial",
+        "signals": "planned",
+        "hardware": "pending",
+        "install": "planned"
+      }
     },
     {
       "id": "F26",
@@ -320,11 +674,27 @@
       "requirement": "Общие profile/priority/type/thresholds сохраняются независимо от performance profile; старые поля профиля читаются, не применяются",
       "baseline_references": "BatterySettingsWidget/SettingsManager",
       "scope": "required",
-      "implementation_status": "planned",
-      "hardware_status": "available",
+      "implementation_status": "defect",
+      "hardware_status": "hardware_blocked",
       "shell_decision": false,
-      "legacy_findings": [],
-      "cases": []
+      "legacy_findings": [
+        "CFG-03",
+        "CLI-03"
+      ],
+      "cases": [
+        "crates/ucc-cli/tests/charging.rs"
+      ],
+      "notes": "Глобальная пара не валидируется, CLI изменяет границы двумя RPC. Firmware backend ещё отсутствует. CFG-03, CLI-03.",
+      "verified_sha": "e16f9ea",
+      "verification_layers": {
+        "wire": "verified",
+        "semantics": "defect",
+        "auth": "defect",
+        "error": "defect",
+        "signals": "planned",
+        "hardware": "blocked",
+        "install": "planned"
+      }
     },
     {
       "id": "F27",
@@ -332,13 +702,28 @@
       "requirement": "Capability-aware controls и фактический ответ backend; разрыв SetWebcam сначала фиксируется отдельно",
       "baseline_references": "HardwareTab/FnLockController",
       "scope": "required",
-      "implementation_status": "planned",
-      "hardware_status": "available",
+      "implementation_status": "partial",
+      "hardware_status": "hardware_pending",
       "shell_decision": false,
       "legacy_findings": [
-        "DIFF-02"
+        "IPC-01",
+        "IPC-03",
+        "IPC-04"
       ],
-      "cases": []
+      "cases": [
+        "crates/ucc-dbus/tests/contract_tests.rs"
+      ],
+      "notes": "SetWebcam и CLI есть, void Fn Lock теперь возвращает отказ. Реальные handlers и политика авторизации ещё открыты. IPC-01/03/04.",
+      "verified_sha": "e16f9ea",
+      "verification_layers": {
+        "wire": "verified",
+        "semantics": "partial",
+        "auth": "defect",
+        "error": "defect",
+        "signals": "planned",
+        "hardware": "pending",
+        "install": "planned"
+      }
     },
     {
       "id": "F28",
@@ -346,13 +731,38 @@
       "requirement": "CPU/RAPL, GPU NVIDIA/AMD/Intel i915/xe, power/clock/temp/fan/util/VRAM/voltage, units/sentinels",
       "baseline_references": "HardwareMonitorWorker/NvmlWrapper",
       "scope": "required",
-      "implementation_status": "planned",
-      "hardware_status": "available",
+      "implementation_status": "defect",
+      "hardware_status": "hardware_blocked",
       "shell_decision": false,
       "legacy_findings": [
-        "DIFF-05"
+        "HW-08",
+        "CLI-02",
+        "CLI-05"
       ],
-      "cases": []
+      "cases": [
+        "crates/ucc-cli/tests/telemetry.rs"
+      ],
+      "notes": "Closed M7 findings (M7-A01..M7-A07) and all M7 hardware-contract / topology findings (M7-R01..M7-R03: NVML v1/v2 memory ABI, NvAPI initial-BDF & cross-domain conflict rejection, strict RAPL package affinity) in ucc-hardware (telemetry_suite). Wired into LiveUccdBackend on private D-Bus (daemon_integration); live hardware soak (M13) & CLI parity checks remain open.",
+      "verified_sha": "e16f9ea",
+      "verification_layers": {
+        "wire": "verified",
+        "semantics": "defect",
+        "auth": "not_applicable",
+        "error": "defect",
+        "signals": "planned",
+        "hardware": "blocked",
+        "install": "planned"
+      },
+      "status": "partial",
+      "rust_targets": [
+        "crates/ucc-hardware/src/nvml.rs",
+        "crates/ucc-hardware/src/telemetry/collector.rs",
+        "crates/ucc-hardware/src/telemetry/cpu.rs",
+        "crates/ucc-hardware/src/telemetry/gpu.rs",
+        "crates/ucc-hardware/src/telemetry/mod.rs",
+        "crates/ucc-hardware/tests/telemetry_suite.rs",
+        "crates/ucc-hardware/tests/wave1_nvml_remediation.rs"
+      ]
     },
     {
       "id": "F29",
@@ -360,11 +770,34 @@
       "requirement": "Не probe при suspended/unknown; cadence допускает idle timeout при auto; sleeping dGPU не показывает iGPU как замену",
       "baseline_references": "GpuSysfs/SystemMonitor tests",
       "scope": "required",
-      "implementation_status": "planned",
-      "hardware_status": "available",
+      "implementation_status": "partial",
+      "hardware_status": "hardware_blocked",
       "shell_decision": false,
       "legacy_findings": [],
-      "cases": []
+      "cases": [
+        "crates/ucc-hardware/tests/v4_audit_nvml.rs",
+        "crates/ucc-hardware/tests/verify_e16_edges.rs",
+        "crates/ucc-hardware/tests/wave1_nvml_remediation.rs"
+      ],
+      "notes": "Per-BDF cache isolation and D3cold cadence gating are verified in telemetry_suite and wave1_nvml_remediation (W1-08, M7-A01, M7-A02). Live uccd integration (M8) and physical RTX D3cold acceptance (M13) remain open.",
+      "verified_sha": "e16f9ea",
+      "verification_layers": {
+        "wire": "verified",
+        "semantics": "defect",
+        "auth": "not_applicable",
+        "error": "defect",
+        "signals": "planned",
+        "hardware": "blocked",
+        "install": "planned"
+      },
+      "status": "partial",
+      "rust_targets": [
+        "crates/ucc-hardware/src/nvml.rs",
+        "crates/ucc-hardware/src/telemetry/collector.rs",
+        "crates/ucc-hardware/src/telemetry/gpu.rs",
+        "crates/ucc-hardware/tests/telemetry_suite.rs",
+        "crates/ucc-hardware/tests/wave1_nvml_remediation.rs"
+      ]
     },
     {
       "id": "F30",
@@ -373,10 +806,26 @@
       "baseline_references": "MetricsHistoryStore/MonitorTab",
       "scope": "required",
       "implementation_status": "planned",
-      "hardware_status": "available",
+      "hardware_status": "hardware_pending",
       "shell_decision": false,
       "legacy_findings": [],
-      "cases": []
+      "cases": [],
+      "notes": "MetricsHistoryStore keeps chronological ordering under clock rollbacks (M7-A05) and decode_history_binary rejects duplicate metric blocks and non-finite values (M7-A06) while keeping C++ binary parity. Live uccd D-Bus exposure (M8) and GUI chart migration (M10) remain open.",
+      "verified_sha": "e16f9ea",
+      "verification_layers": {
+        "wire": "planned",
+        "semantics": "planned",
+        "auth": "not_applicable",
+        "error": "partial",
+        "signals": "planned",
+        "hardware": "pending",
+        "install": "planned"
+      },
+      "status": "partial",
+      "rust_targets": [
+        "crates/ucc-hardware/src/telemetry/history.rs",
+        "crates/ucc-hardware/tests/telemetry_suite.rs"
+      ]
     },
     {
       "id": "F31",
@@ -385,10 +834,21 @@
       "baseline_references": "NotificationMonitor/NotificationCenter",
       "scope": "required",
       "implementation_status": "planned",
-      "hardware_status": "available",
+      "hardware_status": "hardware_pending",
       "shell_decision": false,
       "legacy_findings": [],
-      "cases": []
+      "cases": [],
+      "notes": "Notifications заглушка. Session relay и throttling не перенесены.",
+      "verified_sha": "e16f9ea",
+      "verification_layers": {
+        "wire": "planned",
+        "semantics": "planned",
+        "auth": "not_applicable",
+        "error": "partial",
+        "signals": "planned",
+        "hardware": "pending",
+        "install": "planned"
+      }
     },
     {
       "id": "F32",
@@ -397,10 +857,21 @@
       "baseline_references": "SessionTelemetry",
       "scope": "required",
       "implementation_status": "planned",
-      "hardware_status": "available",
+      "hardware_status": "hardware_pending",
       "shell_decision": false,
       "legacy_findings": [],
-      "cases": []
+      "cases": [],
+      "notes": "Нет battery aggregation и расчёта мощности нескольких источников.",
+      "verified_sha": "e16f9ea",
+      "verification_layers": {
+        "wire": "planned",
+        "semantics": "planned",
+        "auth": "not_applicable",
+        "error": "partial",
+        "signals": "planned",
+        "hardware": "pending",
+        "install": "planned"
+      }
     },
     {
       "id": "F33",
@@ -409,10 +880,21 @@
       "baseline_references": "SessionTelemetry",
       "scope": "required",
       "implementation_status": "planned",
-      "hardware_status": "available",
+      "hardware_status": "hardware_pending",
       "shell_decision": false,
       "legacy_findings": [],
-      "cases": []
+      "cases": [],
+      "notes": "Нет Rust enumerator GPU processes с owner/UID.",
+      "verified_sha": "e16f9ea",
+      "verification_layers": {
+        "wire": "planned",
+        "semantics": "planned",
+        "auth": "not_applicable",
+        "error": "partial",
+        "signals": "planned",
+        "hardware": "pending",
+        "install": "planned"
+      }
     },
     {
       "id": "F34",
@@ -421,10 +903,21 @@
       "baseline_references": "ProcessTerminator",
       "scope": "required",
       "implementation_status": "planned",
-      "hardware_status": "available",
+      "hardware_status": "hardware_pending",
       "shell_decision": false,
       "legacy_findings": [],
-      "cases": []
+      "cases": [],
+      "notes": "Нет Rust pidfd termination и подтверждения актуальной цели.",
+      "verified_sha": "e16f9ea",
+      "verification_layers": {
+        "wire": "planned",
+        "semantics": "planned",
+        "auth": "not_applicable",
+        "error": "partial",
+        "signals": "planned",
+        "hardware": "pending",
+        "install": "planned"
+      }
     },
     {
       "id": "F35",
@@ -432,11 +925,26 @@
       "requirement": "Иконка режима/батареи/manual override, меню, процессы, ошибки, adaptive polling",
       "baseline_references": "DesktopTray",
       "scope": "required",
-      "implementation_status": "planned",
-      "hardware_status": "available",
+      "implementation_status": "defect",
+      "hardware_status": "hardware_pending",
       "shell_decision": false,
-      "legacy_findings": [],
-      "cases": []
+      "legacy_findings": [
+        "DESK-01"
+      ],
+      "cases": [
+        "crates/ucc-desktop/tests/tray.rs"
+      ],
+      "notes": "SNI menu и закрытый канал проверены. Очередь считается подтверждением, production runner отсутствует. DESK-01.",
+      "verified_sha": "e16f9ea",
+      "verification_layers": {
+        "wire": "verified",
+        "semantics": "defect",
+        "auth": "not_applicable",
+        "error": "defect",
+        "signals": "planned",
+        "hardware": "pending",
+        "install": "planned"
+      }
     },
     {
       "id": "F36",
@@ -445,10 +953,21 @@
       "baseline_references": "GuiInstance/WindowActivation",
       "scope": "required",
       "implementation_status": "planned",
-      "hardware_status": "available",
+      "hardware_status": "hardware_pending",
       "shell_decision": false,
       "legacy_findings": [],
-      "cases": []
+      "cases": [],
+      "notes": "OpenGui без token. GUI singleton/activation IPC отсутствует.",
+      "verified_sha": "e16f9ea",
+      "verification_layers": {
+        "wire": "planned",
+        "semantics": "planned",
+        "auth": "not_applicable",
+        "error": "partial",
+        "signals": "planned",
+        "hardware": "pending",
+        "install": "planned"
+      }
     },
     {
       "id": "F37",
@@ -456,11 +975,26 @@
       "requirement": "Fluent layout, Light/Dark/Auto, масштабирование, выбор страницы, focus/keyboard, optional entrance animations",
       "baseline_references": "FluentTheme/Sidebar/Entrance",
       "scope": "required",
-      "implementation_status": "planned",
-      "hardware_status": "available",
+      "implementation_status": "partial",
+      "hardware_status": "hardware_pending",
       "shell_decision": false,
-      "legacy_findings": [],
-      "cases": []
+      "legacy_findings": [
+        "GUI-03"
+      ],
+      "cases": [
+        "ucc-gui/tests/test_gui_audit.cpp"
+      ],
+      "notes": "Прототип crates/ucc-gui (Iced) исключён (M10.5 по ADR-01 v2); чистка Qt6-клиента от KF6/QML/Bluetooth запланирована в M10.1–M10.7.",
+      "verified_sha": "e16f9ea",
+      "verification_layers": {
+        "wire": "verified",
+        "semantics": "partial",
+        "auth": "not_applicable",
+        "error": "defect",
+        "signals": "planned",
+        "hardware": "pending",
+        "install": "planned"
+      }
     },
     {
       "id": "F38",
@@ -469,10 +1003,21 @@
       "baseline_references": "AppLogging/AboutPage/DriverHealth",
       "scope": "required",
       "implementation_status": "planned",
-      "hardware_status": "available",
+      "hardware_status": "hardware_pending",
       "shell_decision": false,
       "legacy_findings": [],
-      "cases": []
+      "cases": [],
+      "notes": "About prototype есть. Diagnostics/log settings/driver recovery не перенесены.",
+      "verified_sha": "e16f9ea",
+      "verification_layers": {
+        "wire": "planned",
+        "semantics": "planned",
+        "auth": "not_applicable",
+        "error": "partial",
+        "signals": "planned",
+        "hardware": "pending",
+        "install": "planned"
+      }
     },
     {
       "id": "F39",
@@ -480,11 +1025,24 @@
       "requirement": "Ни аппаратных, ни config/profile/user-pref/process writes; отдельный instance ID",
       "baseline_references": "PreviewMode, GUI preview tests",
       "scope": "required",
-      "implementation_status": "planned",
-      "hardware_status": "available",
+      "implementation_status": "partial",
+      "hardware_status": "hardware_pending",
       "shell_decision": false,
       "legacy_findings": [],
-      "cases": []
+      "cases": [
+        "crates/ucc-config/tests/v4_audit_probes.rs"
+      ],
+      "notes": "Save/restore guards подтверждены. Отдельная instance identity и полный write matrix ещё открыты.",
+      "verified_sha": "e16f9ea",
+      "verification_layers": {
+        "wire": "verified",
+        "semantics": "partial",
+        "auth": "not_applicable",
+        "error": "partial",
+        "signals": "planned",
+        "hardware": "pending",
+        "install": "planned"
+      }
     },
     {
       "id": "F40",
@@ -496,7 +1054,18 @@
       "hardware_status": "hardware_pending",
       "shell_decision": false,
       "legacy_findings": [],
-      "cases": []
+      "cases": [],
+      "notes": "Rust sleep helper и согласованный shutdown не подключены.",
+      "verified_sha": "e16f9ea",
+      "verification_layers": {
+        "wire": "planned",
+        "semantics": "planned",
+        "auth": "not_applicable",
+        "error": "partial",
+        "signals": "planned",
+        "hardware": "pending",
+        "install": "planned"
+      }
     },
     {
       "id": "F41",
@@ -505,10 +1074,23 @@
       "baseline_references": "contrib и import/deploy tests",
       "scope": "required",
       "implementation_status": "planned",
-      "hardware_status": "available",
+      "hardware_status": "hardware_pending",
       "shell_decision": false,
-      "legacy_findings": [],
-      "cases": []
+      "legacy_findings": [
+        "CFG-05"
+      ],
+      "cases": [],
+      "notes": "Legacy DTO есть. UCC/TCC/Python import, цвета, upgrade/rollback и helper требуют сквозной проверки. CFG-05.",
+      "verified_sha": "e16f9ea",
+      "verification_layers": {
+        "wire": "planned",
+        "semantics": "planned",
+        "auth": "not_applicable",
+        "error": "defect",
+        "signals": "planned",
+        "hardware": "pending",
+        "install": "planned"
+      }
     },
     {
       "id": "F42",
@@ -517,12 +1099,21 @@
       "baseline_references": "TrayBackend, extension.js",
       "scope": "required",
       "implementation_status": "planned",
-      "hardware_status": "available",
+      "hardware_status": "hardware_pending",
       "shell_decision": true,
-      "legacy_findings": [
-        "DIFF-03"
-      ],
-      "cases": []
+      "legacy_findings": [],
+      "cases": [],
+      "notes": "SNI prototype. GNOME/Plasma adapters и ADR-03 остаются.",
+      "verified_sha": "e16f9ea",
+      "verification_layers": {
+        "wire": "planned",
+        "semantics": "planned",
+        "auth": "not_applicable",
+        "error": "partial",
+        "signals": "planned",
+        "hardware": "pending",
+        "install": "planned"
+      }
     },
     {
       "id": "F43",
@@ -530,11 +1121,31 @@
       "requirement": "Существующие команды, aliases, --json, monitor, codes 0/1/2, completion/man",
       "baseline_references": "ucc-cli/main.cpp",
       "scope": "required",
-      "implementation_status": "planned",
-      "hardware_status": "available",
+      "implementation_status": "defect",
+      "hardware_status": "hardware_blocked",
       "shell_decision": false,
-      "legacy_findings": [],
-      "cases": []
+      "legacy_findings": [
+        "CLI-01",
+        "CLI-02",
+        "CLI-03",
+        "CLI-04",
+        "CLI-05"
+      ],
+      "cases": [
+        "crates/ucc-cli/tests/full_audit_cli.rs",
+        "crates/ucc-cli/tests/consolidated_cli.rs"
+      ],
+      "notes": "Wire есть, основные FULL regressions закрыты. CLI-01–05, owner и Polkit, semantic/error parity и реальный C++ daemon остаются.",
+      "verified_sha": "e16f9ea",
+      "verification_layers": {
+        "wire": "verified",
+        "semantics": "defect",
+        "auth": "not_applicable",
+        "error": "defect",
+        "signals": "planned",
+        "hardware": "blocked",
+        "install": "planned"
+      }
     },
     {
       "id": "F44",
@@ -543,10 +1154,74 @@
       "baseline_references": "Корневые рецепты, CI",
       "scope": "required",
       "implementation_status": "planned",
-      "hardware_status": "available",
+      "hardware_status": "hardware_pending",
+      "shell_decision": false,
+      "legacy_findings": [
+        "BUILD-01",
+        "BUILD-02"
+      ],
+      "cases": [],
+      "notes": "Release/CI/service deployment остаются на C++. Rust установочные пакеты и rollback в M12/M13.",
+      "verified_sha": "e16f9ea",
+      "verification_layers": {
+        "wire": "planned",
+        "semantics": "planned",
+        "auth": "not_applicable",
+        "error": "defect",
+        "signals": "planned",
+        "hardware": "pending",
+        "install": "planned"
+      }
+    },
+    {
+      "id": "F45",
+      "area": "Крышка и пробуждение",
+      "requirement": "Независимые действия при закрытии крышки (screen_off/suspend/lock/hibernate/poweroff/ignore) для AC/Type-C/Battery, ингибитор handle-lid-switch, отложенный переход в сон при отключении питания, DPMS только встроенной панели в сессии, строгий WakeupPolicy (крышка PNP0C0D и клавиатура i8042 KBD)",
+      "baseline_references": "PowerDeviceController, LidController, WakeupPolicy, LidDisplayHandler, PowerDevicesTab",
+      "scope": "required",
+      "implementation_status": "planned",
+      "hardware_status": "hardware_pending",
       "shell_decision": false,
       "legacy_findings": [],
-      "cases": []
+      "cases": [],
+      "notes": "LidController (ignore-on-AC + 3s AC-unplug debounce) and WakeupPolicy sysfs validation implemented and tested in crates/uccd/src/lid.rs and daemon_integration. Live systemd-logind Inhibit RPC & ucc-sleep binary remain open.",
+      "verified_sha": "e16f9ea",
+      "verification_layers": {
+        "wire": "planned",
+        "semantics": "planned",
+        "auth": "not_applicable",
+        "error": "planned",
+        "signals": "planned",
+        "hardware": "pending",
+        "install": "planned"
+      },
+      "status": "partial"
+    },
+    {
+      "id": "F46",
+      "area": "Собственный Rust uwcc backend (ADR-05, M14)",
+      "requirement": "Доменный PlatformBackend (TuxedoIoBackend <-> UwccBackend), собственный Rust-модуль ядра /dev/uwcc (ECRR/ECRW/SMRW/PWUP/WMI events), EC-менеджер 0x1A (RamFan 1.5, SMRW, TCC лимит температуры CPU, PWUP, зарядка и переключатели через EC), uinput для WMI-клавиш, прямой USB hidraw для 048D:600B и 048D:7001, взаимоисключение с tuxedo-drivers и откат",
+      "baseline_references": "ADR-05, открытая спецификация EC/ACPI 0x1A (без proprietary/ и oem/)",
+      "scope": "required",
+      "implementation_status": "partial",
+      "hardware_status": "hardware_pending",
+      "shell_decision": false,
+      "legacy_findings": [],
+      "cases": [
+        "crates/ucc-hardware/tests/platform_backend.rs",
+        "crates/ucc-lighting/tests/lighting_tests.rs"
+      ],
+      "notes": "Архитектурные швы M4.9 (PlatformBackend) и M6.7 (LightingTransport) реализованы и проверены; ядровой uwcc-rs, UwccBackend и HidrawTransport запланированы в M14.",
+      "verified_sha": "e16f9ea",
+      "verification_layers": {
+        "wire": "planned",
+        "semantics": "planned",
+        "auth": "not_applicable",
+        "error": "planned",
+        "signals": "planned",
+        "hardware": "pending",
+        "install": "planned"
+      }
     }
   ]
 }

@@ -282,7 +282,9 @@
       "id": "FINDING-V4-A01",
       "priority": "P0",
       "title": "Safe ioctl pre-validation rejects invalid direction and string ioctls in read_i32",
-      "files": ["crates/ucc-hardware/src/ioctl.rs"],
+      "files": [
+        "crates/ucc-hardware/src/ioctl.rs"
+      ],
       "status": "resolved",
       "resolution": "Added pre-validation in ioctl.rs checking IOC_READ/IOC_WRITE/IOC_NONE and size bounds before syscall."
     },
@@ -290,7 +292,9 @@
       "id": "FINDING-V4-A02",
       "priority": "P0",
       "title": "Clevo fan speed packing preserves other fans and uses 0..255 range",
-      "files": ["crates/ucc-hardware/src/ioctl.rs"],
+      "files": [
+        "crates/ucc-hardware/src/ioctl.rs"
+      ],
       "status": "resolved",
       "resolution": "Implemented 3-fan read/pack protocol in set_clevo_fan_speed per clevo.h:72-101."
     },
@@ -298,7 +302,9 @@
       "id": "FINDING-V4-A03",
       "priority": "P0",
       "title": "Uniwill fan speed scales raw 0..200 range correctly",
-      "files": ["crates/ucc-hardware/src/ioctl.rs"],
+      "files": [
+        "crates/ucc-hardware/src/ioctl.rs"
+      ],
       "status": "resolved",
       "resolution": "Implemented raw 0..200 scaling with round/ceil matching uniwill.h:95-100, 338."
     },
@@ -306,7 +312,9 @@
       "id": "FINDING-V4-A04",
       "priority": "P0",
       "title": "Uniwill TDP limit validation fails closed if missing or out of bounds",
-      "files": ["crates/ucc-hardware/src/ioctl.rs"],
+      "files": [
+        "crates/ucc-hardware/src/ioctl.rs"
+      ],
       "status": "resolved",
       "resolution": "Queries device limits if not provided, rejects out-of-bounds TDP requests with IoctlError::OutOfRange."
     },
@@ -314,7 +322,9 @@
       "id": "FINDING-V4-A05",
       "priority": "P0",
       "title": "SysfsRoot rejects symlink escapes outside the sandboxed root",
-      "files": ["crates/ucc-hardware/src/sysfs.rs"],
+      "files": [
+        "crates/ucc-hardware/src/sysfs.rs"
+      ],
       "status": "resolved",
       "resolution": "Verified canonicalize(target).starts_with(canonicalize(root_path)) in SysfsRoot::resolve."
     },
@@ -322,7 +332,9 @@
       "id": "FINDING-V4-A06",
       "priority": "P1",
       "title": "Whitelist short PCI/USB paths do not panic on invalid slices",
-      "files": ["crates/ucc-hardware/src/devices/whitelist.rs"],
+      "files": [
+        "crates/ucc-hardware/src/devices/whitelist.rs"
+      ],
       "status": "resolved",
       "resolution": "Replaced manual indexing with strip_prefix/strip_suffix to eliminate slice panics."
     },
@@ -330,7 +342,10 @@
       "id": "FINDING-V4-A07",
       "priority": "P1",
       "title": "CPU controller propagates sysfs write errors to caller",
-      "files": ["crates/ucc-hardware/src/cpu/controller.rs", "crates/ucc-hardware/src/cpu/worker.rs"],
+      "files": [
+        "crates/ucc-hardware/src/cpu/controller.rs",
+        "crates/ucc-hardware/src/cpu/worker.rs"
+      ],
       "status": "resolved",
       "resolution": "Return std::io::Result from write methods and propagate as Err(String) in apply_cpu_profile."
     },
@@ -338,7 +353,9 @@
       "id": "FINDING-V4-A08",
       "priority": "P1",
       "title": "CpuWorker detects governor/EPP drift and intel_pstate performance lock",
-      "files": ["crates/ucc-hardware/src/cpu/worker.rs"],
+      "files": [
+        "crates/ucc-hardware/src/cpu/worker.rs"
+      ],
       "status": "resolved",
       "resolution": "Implemented comprehensive validate_cpu_freq checking scaling_governor, EPP, and no_turbo."
     },
@@ -346,7 +363,9 @@
       "id": "FINDING-V4-A09",
       "priority": "P1",
       "title": "Sentinel <= -1 CPU frequency/power values deserialize to None",
-      "files": ["crates/ucc-core/src/cpu.rs"],
+      "files": [
+        "crates/ucc-core/src/cpu.rs"
+      ],
       "status": "resolved",
       "resolution": "Added cpu_sentinel_serde mapping values <= -1 to None across CPU telemetry structs."
     },
@@ -354,7 +373,9 @@
       "id": "FINDING-V4-A10",
       "priority": "P1",
       "title": "Restore from backup respects read-only preview mode",
-      "files": ["crates/ucc-config/src/manager.rs"],
+      "files": [
+        "crates/ucc-config/src/manager.rs"
+      ],
       "status": "resolved",
       "resolution": "Added is_read_only_preview check before restoring settings from backup."
     },
@@ -362,7 +383,9 @@
       "id": "FINDING-V4-A11",
       "priority": "P1",
       "title": "Backup replacement preserves valid existing backup",
-      "files": ["crates/ucc-config/src/persistence.rs"],
+      "files": [
+        "crates/ucc-config/src/persistence.rs"
+      ],
       "status": "resolved",
       "resolution": "Checked target_is_valid before rotating/overwriting existing backups in atomic saves."
     },
@@ -370,7 +393,9 @@
       "id": "FINDING-V4-A12",
       "priority": "P1",
       "title": "NvidiaPowerGuard isolates wake check to the specific target GPU index",
-      "files": ["crates/ucc-hardware/src/nvml.rs"],
+      "files": [
+        "crates/ucc-hardware/src/nvml.rs"
+      ],
       "status": "resolved",
       "resolution": "Added is_gpu_index_awake checking only the target GPU device state."
     },
@@ -378,7 +403,9 @@
       "id": "FINDING-V4-A13",
       "priority": "P1",
       "title": "NVML device enumeration failure recovers safely on subsequent call",
-      "files": ["crates/ucc-hardware/src/nvml.rs"],
+      "files": [
+        "crates/ucc-hardware/src/nvml.rs"
+      ],
       "status": "resolved",
       "resolution": "Synchronized device count initialization with mutex and re-enumerates on transient error."
     },
@@ -386,7 +413,9 @@
       "id": "FINDING-FULL-01",
       "priority": "P1",
       "title": "CLI CPU frequency/governor/EPP commands do not report false success when unsupported",
-      "files": ["crates/ucc-cli/src/commands/cpu.rs"],
+      "files": [
+        "crates/ucc-cli/src/commands/cpu.rs"
+      ],
       "status": "resolved",
       "resolution": "Commands exit 1 with descriptive error when direct D-Bus mutation is unsupported."
     },
@@ -394,7 +423,9 @@
       "id": "FINDING-FULL-02",
       "priority": "P1",
       "title": "CLI fan set converts tableCPU/tableGPU to cpu/gpu and uses ApplyFanProfiles",
-      "files": ["crates/ucc-cli/src/commands/fan.rs"],
+      "files": [
+        "crates/ucc-cli/src/commands/fan.rs"
+      ],
       "status": "resolved",
       "resolution": "Remapped table keys to baseline apply format before calling ApplyFanProfiles."
     },
@@ -402,7 +433,9 @@
       "id": "FINDING-FULL-03",
       "priority": "P1",
       "title": "CLI correctly decodes nested {timestamp, data} dictionaries in fan telemetry",
-      "files": ["crates/ucc-cli/src/client.rs"],
+      "files": [
+        "crates/ucc-cli/src/client.rs"
+      ],
       "status": "resolved",
       "resolution": "Implemented extract_variant_i32 supporting nested dictionaries and structures from D-Bus."
     },
@@ -410,7 +443,9 @@
       "id": "FINDING-FULL-04",
       "priority": "P1",
       "title": "CLI status verifies UCC API responsiveness before reporting connected",
-      "files": ["crates/ucc-cli/src/client.rs"],
+      "files": [
+        "crates/ucc-cli/src/client.rs"
+      ],
       "status": "resolved",
       "resolution": "Added timed probe of get_device_name ensuring bus name owner implements UCC interface."
     },
@@ -418,7 +453,9 @@
       "id": "FINDING-FULL-05",
       "priority": "P1",
       "title": "D-Bus void handlers return AccessDenied error reply on authorization failure",
-      "files": ["crates/ucc-dbus/src/interface.rs"],
+      "files": [
+        "crates/ucc-dbus/src/interface.rs"
+      ],
       "status": "resolved",
       "resolution": "Void methods return zbus::fdo::Result<()> and return Err(AccessDenied) when unauthorized."
     },
@@ -426,7 +463,9 @@
       "id": "FINDING-FULL-06",
       "priority": "P1",
       "title": "ConfigManager::load performs domain validation on loaded profiles",
-      "files": ["crates/ucc-config/src/manager.rs"],
+      "files": [
+        "crates/ucc-config/src/manager.rs"
+      ],
       "status": "resolved",
       "resolution": "Run profile.validate() on loaded profiles, rejecting out-of-bounds fan speeds (e.g. 200%)."
     },
@@ -434,7 +473,9 @@
       "id": "FINDING-FULL-07",
       "priority": "P1",
       "title": "Legacy DTO rejects negative core IDs",
-      "files": ["crates/ucc-core/src/dto.rs"],
+      "files": [
+        "crates/ucc-core/src/dto.rs"
+      ],
       "status": "resolved",
       "resolution": "Reject negative core IDs with InvalidCoreSelection instead of discarding."
     },
@@ -442,7 +483,9 @@
       "id": "FINDING-FULL-08",
       "priority": "P1",
       "title": "Legacy DTO odmPowerLimits.tdpValues preserves zero entries without shifting channels",
-      "files": ["crates/ucc-core/src/dto.rs"],
+      "files": [
+        "crates/ucc-core/src/dto.rs"
+      ],
       "status": "resolved",
       "resolution": "Preserve 0 values in tdpValues with .max(0) as u32 without dropping elements."
     },
@@ -450,7 +493,9 @@
       "id": "FINDING-FULL-09",
       "priority": "P1",
       "title": "GUI profile switch to empty fan curve clears prior curve and saves empty curve",
-      "files": ["crates/ucc-gui/src/app.rs"],
+      "files": [
+        "crates/ucc-gui/src/app.rs"
+      ],
       "status": "resolved",
       "resolution": "Unconditionally overwrite local fan points on profile select."
     },
@@ -458,7 +503,9 @@
       "id": "FINDING-FULL-10",
       "priority": "P1",
       "title": "Canvas fan curve drag constrains temperature strictly between neighbors",
-      "files": ["crates/ucc-gui/src/widgets/fan_curve.rs"],
+      "files": [
+        "crates/ucc-gui/src/widgets/fan_curve.rs"
+      ],
       "status": "resolved",
       "resolution": "Constrained point temperature strictly within (temp[i-1]+1 ..= temp[i+1]-1)."
     },
@@ -466,7 +513,9 @@
       "id": "FINDING-FULL-11",
       "priority": "P1",
       "title": "Canvas mouse release outside bounds cancels active drag",
-      "files": ["crates/ucc-gui/src/widgets/fan_curve.rs"],
+      "files": [
+        "crates/ucc-gui/src/widgets/fan_curve.rs"
+      ],
       "status": "resolved",
       "resolution": "ButtonReleased resets dragged_idx regardless of cursor position."
     },
@@ -474,7 +523,9 @@
       "id": "FINDING-FULL-12",
       "priority": "P1",
       "title": "Desktop tray does not update local state when backend channel is closed",
-      "files": ["crates/ucc-desktop/src/tray.rs"],
+      "files": [
+        "crates/ucc-desktop/src/tray.rs"
+      ],
       "status": "resolved",
       "resolution": "Only update local state when send over mpsc channel succeeds."
     },
@@ -482,7 +533,9 @@
       "id": "FINDING-RECHECK-3F4-01",
       "priority": "P1",
       "title": "Arbitrary ioctl numbers reach syscall through safe HardwareIo trait",
-      "files": ["crates/ucc-hardware/src/ioctl.rs"],
+      "files": [
+        "crates/ucc-hardware/src/ioctl.rs"
+      ],
       "status": "resolved",
       "resolution": "Enforce strict closed set of canonical 32-bit Tuxedo IO request codes for read_i32, write_i32, call_none, and read_str."
     },
@@ -490,7 +543,9 @@
       "id": "FINDING-RECHECK-3F4-02",
       "priority": "P1",
       "title": "Caller-specified TDP limits override hardware driver bounds",
-      "files": ["crates/ucc-hardware/src/ioctl.rs"],
+      "files": [
+        "crates/ucc-hardware/src/ioctl.rs"
+      ],
       "status": "resolved",
       "resolution": "Intersect caller-provided limits with driver hardware limits so caller limits cannot exceed device bounds."
     },
@@ -498,7 +553,9 @@
       "id": "FINDING-RECHECK-3F4-03",
       "priority": "P1",
       "title": "Sysfs check and file open separated allowing symlink race",
-      "files": ["crates/ucc-hardware/src/sysfs.rs"],
+      "files": [
+        "crates/ucc-hardware/src/sysfs.rs"
+      ],
       "status": "resolved",
       "resolution": "Use O_NOFOLLOW on open and verify file descriptor target against canonical root before writing."
     },
@@ -506,7 +563,9 @@
       "id": "FINDING-RECHECK-3F4-04",
       "priority": "P1",
       "title": "HWP dynamic boost and EPP write errors ignored in CpuWorker",
-      "files": ["crates/ucc-hardware/src/cpu/worker.rs"],
+      "files": [
+        "crates/ucc-hardware/src/cpu/worker.rs"
+      ],
       "status": "resolved",
       "resolution": "Propagate write errors for HWP and EPP while properly treating NotFound as unsupported."
     },
@@ -514,7 +573,9 @@
       "id": "FINDING-RECHECK-3F4-05",
       "priority": "P2",
       "title": "CPU sentinel decoder wraps values larger than u32::MAX",
-      "files": ["crates/ucc-core/src/cpu.rs"],
+      "files": [
+        "crates/ucc-core/src/cpu.rs"
+      ],
       "status": "resolved",
       "resolution": "Use checked conversion in cpu_sentinel_serde rejecting values exceeding u32::MAX."
     },
@@ -522,7 +583,9 @@
       "id": "FINDING-RECHECK-3F4-06",
       "priority": "P1",
       "title": "Domain-invalid primary file can overwrite valid existing backup",
-      "files": ["crates/ucc-config/src/persistence.rs"],
+      "files": [
+        "crates/ucc-config/src/persistence.rs"
+      ],
       "status": "resolved",
       "resolution": "Validate primary file with full domain model checks before rotating onto backup files."
     },
@@ -530,7 +593,9 @@
       "id": "FINDING-RECHECK-3F4-07",
       "priority": "P2",
       "title": "ConfigManager::save writes invalid configuration that loader rejects",
-      "files": ["crates/ucc-config/src/manager.rs"],
+      "files": [
+        "crates/ucc-config/src/manager.rs"
+      ],
       "status": "resolved",
       "resolution": "Validate all profiles in save_to before writing to disk."
     },
@@ -538,7 +603,9 @@
       "id": "FINDING-RECHECK-3F4-08",
       "priority": "P1",
       "title": "NVML enumeration order mismatch probes sleeping GPU",
-      "files": ["crates/ucc-hardware/src/nvml.rs"],
+      "files": [
+        "crates/ucc-hardware/src/nvml.rs"
+      ],
       "status": "resolved",
       "resolution": "Map sysfs GPU indices to NVML indices respecting reversed enumeration order and per-device sleep status."
     },
@@ -546,7 +613,9 @@
       "id": "FINDING-RECHECK-3F4-09",
       "priority": "P1",
       "title": "Retry of NVML device enumeration leaks init reference",
-      "files": ["crates/ucc-hardware/src/nvml.rs"],
+      "files": [
+        "crates/ucc-hardware/src/nvml.rs"
+      ],
       "status": "resolved",
       "resolution": "Separate library init from enumeration so nvmlInit_v2 is called exactly once and matched by shutdown."
     },
@@ -554,7 +623,9 @@
       "id": "FINDING-RECHECK-3F4-10",
       "priority": "P2",
       "title": "Parallel CLI test execution on single session bus causes name collision",
-      "files": ["crates/ucc-cli/tests/full_audit_cli.rs"],
+      "files": [
+        "crates/ucc-cli/tests/full_audit_cli.rs"
+      ],
       "status": "resolved",
       "resolution": "Use async Mutex test serialization and graceful fallback for C++ parity binary in clean checkout."
     },
@@ -562,7 +633,9 @@
       "id": "FINDING-RECHECK-E1-01",
       "priority": "P1",
       "title": "NVML index order relies on audit environment override in production runtime",
-      "files": ["crates/ucc-hardware/src/nvml.rs"],
+      "files": [
+        "crates/ucc-hardware/src/nvml.rs"
+      ],
       "status": "resolved",
       "resolution": "Removed audit env check from runtime nvml.rs. Added direct PCI BDF handle resolution via nvmlDeviceGetHandleByPciBusId_v2 with safe multi-GPU suspended fallback to prevent probing sleeping devices."
     },
@@ -570,7 +643,9 @@
       "id": "FINDING-RECHECK-E1-02",
       "priority": "P1",
       "title": "SysfsRoot truncates external file before destination verification",
-      "files": ["crates/ucc-hardware/src/sysfs.rs"],
+      "files": [
+        "crates/ucc-hardware/src/sysfs.rs"
+      ],
       "status": "resolved",
       "resolution": "Opened file without O_TRUNC, strictly verified /proc/self/fd/{fd} descriptor containment within canonical root, and performed truncation only after destination verification."
     },
@@ -578,7 +653,9 @@
       "id": "FINDING-RECHECK-E1-03",
       "priority": "P1",
       "title": "Caller-supplied TDP range bypasses unreadable hardware driver limits",
-      "files": ["crates/ucc-hardware/src/ioctl.rs"],
+      "files": [
+        "crates/ucc-hardware/src/ioctl.rs"
+      ],
       "status": "resolved",
       "resolution": "Made driver limits mandatory (read_uniwill_tdp_limits fails closed), intersecting caller limits with physical boundaries."
     },
@@ -586,9 +663,510 @@
       "id": "FINDING-RECHECK-E1-04",
       "priority": "P1",
       "title": "Concurrent first queries leak NVML initialization reference",
-      "files": ["crates/ucc-hardware/src/nvml.rs"],
+      "files": [
+        "crates/ucc-hardware/src/nvml.rs"
+      ],
       "status": "resolved",
       "resolution": "Serialized library initialization in ensure_active_and_initialized with Mutex, ensuring exactly one nvmlInit_v2 and matched nvmlShutdown on Drop."
+    },
+    {
+      "id": "HW-01",
+      "priority": "P1",
+      "verification": "reproduced",
+      "title": "NVML использует другой GPU",
+      "locations": [
+        "crates/ucc-hardware/src/nvml.rs:298",
+        "crates/ucc-hardware/src/nvml.rs:339",
+        "crates/ucc-hardware/src/nvml.rs:357",
+        "crates/ucc-hardware/src/nvml.rs:460"
+      ],
+      "evidence": "Три сценария. Без BDF lookup драйвер перечисляет карты в том же порядке, fallback разворачивает индекс и обращается к спящей. При ошибке существующего BDF lookup `set_power_limit(0, 45000)` вернул `Ok` после обращения к чужой карте. При добавлении спящей BDF между проверкой и lookup повторное сканирование переназначило index 0. Фикстура фиксирует целевой handle и вызовы, включая запись лимита.",
+      "acceptance": "Один раз выбрать устойчивую PCI identity. Проверять статус и получать handle этой же цели, при неоднозначности, отсутствии BDF API или отказе возвращать ошибку. Сценарии включают оба порядка, 1/2/3+ карты, смену runtime state, hotplug, ошибку lookup и device lost. Проверять отсутствие запросов чужого handle и отсутствие write. См. recheck-e16f9ea.",
+      "status": "resolved",
+      "resolution": "Fail-closed device resolution: BDF lookup directly resolves handle without env heuristics; when driver lacks BDF API and any device is suspended, returns GpuSuspended to prevent querying sleeping GPU."
+    },
+    {
+      "id": "HW-02",
+      "priority": "P1",
+      "verification": "reproduced",
+      "title": "Подмена корня SysfsRoot меняет границу проверки",
+      "locations": [
+        "crates/ucc-hardware/src/sysfs.rs:136",
+        "crates/ucc-hardware/src/sysfs.rs:185"
+      ],
+      "evidence": "Прежняя гонка вложенного каталога остановлена до truncate. Если заменить сам custom root на симлинк в момент open, последующая канонизация уже считает внешний каталог разрешённым. Файл вне исходного корня меняется, запись сообщает успех. Ветка `if let Ok` при невозможности канонизировать корень пропускает сверку.",
+      "acceptance": "Привязать операции к дескриптору исходного корня и единой политике открытия. Отклонять потерю/подмену identity. Проверить read/write, root/ancestor/leaf swaps, отсутствующий корень, недоступный procfs и штатные ссылки `/sys/bus` внутри sysfs.",
+      "status": "resolved",
+      "resolution": "Verified: invariant enforced, all 245+ tests and edge probes pass"
+    },
+    {
+      "id": "HW-03",
+      "priority": "P1",
+      "verification": "reproduced",
+      "title": "Реальные контроллеры обходят защиту sysfs",
+      "locations": [
+        "crates/ucc-hardware/src/devices/controller.rs:100",
+        "crates/ucc-hardware/src/devices/controller.rs:117",
+        "crates/ucc-hardware/src/devices/controller.rs:260",
+        "crates/ucc-hardware/src/cpu/controller.rs:71"
+      ],
+      "evidence": "Whitelist принимает штатный путь PCI power/control. В фикстуре leaf ссылается наружу, `apply` записывает `on` во внешний файл и выдаёт `ok:true`. CPU controller и production Sysfs trait также имеют прямые операции. Уязвимость показана при контроле дерева фикстуры.",
+      "acceptance": "Провести все чтения и записи production контроллеров через общее ограниченное дерево. Приёмка через публичный `apply`, CPU и device policy, с журналом реальных открытий и записей.",
+      "status": "resolved",
+      "resolution": "Verified: invariant enforced, all 245+ tests and edge probes pass"
+    },
+    {
+      "id": "HW-04",
+      "priority": "P1",
+      "verification": "reproduced",
+      "title": "CPU возвращает успех для неприменённой конфигурации",
+      "locations": [
+        "crates/ucc-hardware/src/cpu/controller.rs:342",
+        "crates/ucc-hardware/src/cpu/worker.rs:84",
+        "crates/ucc-hardware/src/cpu/worker.rs:149",
+        "crates/ucc-hardware/src/cpu/worker.rs:178",
+        "crates/ucc-hardware/src/cpu/worker.rs:307"
+      ],
+      "evidence": "На CPU0 без частотных узлов запрос max 2 ГГц возвращает `Ok(())`, validate возвращает `true`. Сбросы, заключительные записи и retry местами игнорируют Result. При прерывании нескольких последовательных стадий состояние может быть частичным.",
+      "acceptance": "Различить отсутствующую capability, применённое значение, частичную операцию и readback failure. Установить порядок, компенсацию и повтор. Проверить ENOENT/EACCES/EIO на каждой стадии, shared policies, hotplug и governor/EPP/HWP drift.",
+      "status": "resolved",
+      "resolution": "Verified: invariant enforced, all 245+ tests and edge probes pass"
+    },
+    {
+      "id": "HW-05",
+      "priority": "P1",
+      "verification": "reproduced",
+      "title": "Выбор частоты пересекает рассчитанный потолок no-turbo",
+      "locations": [
+        "crates/ucc-hardware/src/cpu/controller.rs:321",
+        "crates/ucc-hardware/src/cpu/controller.rs:366",
+        "crates/ucc-hardware/src/cpu/controller.rs:394"
+      ],
+      "evidence": "Потолок 2 000 000 кГц, доступные 1 800 000 и 2 100 000. После clamp и snap выбран 2 100 000. Max фильтруется только по нижней границе. Min имеет симметрично односторонний фильтр и отдельный special value. Max алгоритм унаследован из `uccd/inc/CpuController.hpp`.",
+      "acceptance": "Ограничить допустимые кандидаты обеими границами, определить поведение пустого пересечения, проверить min/max sentinel и сравнить записанные значения с ожидаемыми.",
+      "status": "resolved",
+      "resolution": "Verified: invariant enforced, all 245+ tests and edge probes pass"
+    },
+    {
+      "id": "HW-06",
+      "priority": "P1",
+      "verification": "source_review",
+      "title": "Низкоуровневый ioctl API обходит доменные ограничения",
+      "locations": [
+        "crates/ucc-hardware/src/ioctl.rs:297",
+        "crates/ucc-hardware/src/ioctl.rs:385",
+        "crates/ucc-hardware/src/ioctl.rs:482",
+        "crates/ucc-hardware/src/ioctl.rs:589",
+        "crates/ucc-hardware/src/traits.rs:30"
+      ],
+      "evidence": "Allowlist защищает формат и список запросов, но разрешённый raw write получает произвольный payload. Защита TDP находится в typed setter. Clevo обновление канала читает соседей и пишет общий packed value без блокировки на всю операцию. Два вызывающих могут вычислить payload по одному старому снимку. Параллельный реальный caller ещё не подключён.",
+      "acceptance": "Сузить доступ к raw API, связать capability, identity и typed value. Сериализовать RMW и auto/manual на одно физическое устройство. Отдельно проверять число вентиляторов и отказ чтения соседа.",
+      "status": "resolved",
+      "resolution": "Verified: invariant enforced, all 245+ tests and edge probes pass"
+    },
+    {
+      "id": "HW-07",
+      "priority": "P1",
+      "verification": "source_review",
+      "title": "Переход NVIDIA power policy продолжается после отказа подготовительного шага",
+      "locations": [
+        "crates/ucc-hardware/src/devices/controller.rs:13",
+        "crates/ucc-hardware/src/devices/controller.rs:223",
+        "crates/ucc-hardware/src/devices/controller.rs:260"
+      ],
+      "evidence": "После отказа `nvidia-smi -pm 0` код только ставит `nvidiaPersistenceApplied:false` и продолжает writes. Вызов глобален для всех NVIDIA. `Command::output` не имеет deadline, применение политик может зависнуть на внешнем процессе.",
+      "acceptance": "Установить per-device и per-stage порядок и правила остановки. Проверить отказ включения и выключения persistence, смешанные режимы нескольких карт, зависание и readback.",
+      "status": "resolved",
+      "resolution": "Verified: invariant enforced, all 245+ tests and edge probes pass"
+    },
+    {
+      "id": "HW-08",
+      "priority": "P2",
+      "verification": "source_review",
+      "title": "NVML возвращает нулевые показания при отказе измерений",
+      "locations": [
+        "crates/ucc-hardware/src/nvml.rs:414",
+        "crates/ucc-hardware/src/nvml.rs:430",
+        "crates/ucc-hardware/src/nvml.rs:460"
+      ],
+      "evidence": "При успешном handle коды возврата getter игнорируются, инициализированные нули попадают в `Ok(NvmlTelemetry)`. Для power-limit wrapper отдельный getter constraints есть, setter сам диапазон и readback не проверяет.",
+      "acceptance": "Хранить доступность и freshness каждого показания. Для лимита связать constraints, write, readback с одной PCI identity. Тестировать один отказавший датчик, полную потерю устройства и допустимый реальный ноль.",
+      "status": "resolved",
+      "resolution": "Verified: invariant enforced, all 245+ tests and edge probes pass"
+    },
+    {
+      "id": "HW-09",
+      "priority": "P2",
+      "verification": "source_review",
+      "title": "Разбор CPU topology не ограничивает диапазоны",
+      "locations": [
+        "crates/ucc-hardware/src/cpu/topology.rs:142",
+        "crates/ucc-hardware/src/cpu/topology.rs:162",
+        "crates/ucc-hardware/src/cpu/topology.rs:200",
+        "crates/ucc-hardware/src/sysfs.rs:282"
+      ],
+      "evidence": "Один из путей разбора разворачивает `start..=end` без ограничения размера. Повреждённая fixture или нестандартный источник могут вызвать большой расход памяти. CPUID affinity guard восстанавливает маску best effort, отдельной проверки равенства до и после в штатном интеграционном тесте нет.",
+      "acceptance": "Один ограниченный parser для всех путей. Проверить sparse, дубликаты, некорректные и огромные диапазоны без аллокации списка, CPUID restore до/после на поддерживаемой архитектуре.",
+      "status": "resolved",
+      "resolution": "Verified: invariant enforced, all 245+ tests and edge probes pass"
+    },
+    {
+      "id": "CORE-01",
+      "priority": "P1",
+      "verification": "reproduced",
+      "title": "Валидированная pump curve пропускает подходящую ступень",
+      "locations": [
+        "crates/ucc-core/src/fan.rs:210",
+        "crates/ucc-core/src/fan.rs:252"
+      ],
+      "evidence": "Ступени `[80→3, 40→1]` проходят `validate`, lookup при 50 °C возвращает `Off` вместо `V7`. Алгоритм floor предполагает упорядоченную кривую. C++ lookup устроен так же. Фактическое включение помпы не проверялось.",
+      "acceptance": "Валидировать порядок и дубликаты либо нормализовать на импорте. Определить отсутствие кривой и переход на firmware auto, проверить все температурные границы.",
+      "status": "resolved",
+      "resolution": "Verified: invariant enforced, all 245+ tests and edge probes pass"
+    },
+    {
+      "id": "CORE-02",
+      "priority": "P1",
+      "verification": "source_review",
+      "title": "Legacy V12 представим в модели без явной политики исполнения",
+      "locations": [
+        "crates/ucc-core/src/fan.rs:181",
+        "crates/ucc-core/src/fan.rs:210",
+        "crates/ucc-hardware/src/cooler.rs:128"
+      ],
+      "evidence": "Точка pump level 4 допустима для legacy curve и lookup выдаёт V12. Пакетный encoder запрещает V12. Production worker должен явно обработать такой профиль, иначе отказ первой команды может оставить предыдущий режим.",
+      "acceptance": "Сохранить совместимость чтения legacy и определить безопасное применение, отказ и восстановление. Тестировать переход на профиль с V12, reconnect и возврат в auto.",
+      "status": "resolved",
+      "resolution": "Verified: invariant enforced, all 245+ tests and edge probes pass"
+    },
+    {
+      "id": "CFG-01",
+      "priority": "P1",
+      "verification": "reproduced",
+      "title": "Ротация `.bak` пишет через симлинк",
+      "locations": [
+        "crates/ucc-config/src/persistence.rs:134",
+        "crates/ucc-config/src/persistence.rs:143"
+      ],
+      "evidence": "При валидном primary `.bak` ссылается на внешний временный файл. `save_to` возвращает `Ok`, содержимое внешнего файла заменяется старым JSON. `.backup` проходит через тот же `fs::copy`.",
+      "acceptance": "Валидировать байты из открытого источника, резервную копию создавать как самостоятельный временный файл и атомарно заменять нужное имя в привязанном каталоге. Проверить оба suffix, симлинк, hardlink, swap после проверки и ошибки прав.",
+      "status": "resolved",
+      "resolution": "rotate_backup unlinks symlinks at temporary backup path, opens with create_new(true) and O_NOFOLLOW preventing writing through symlinks, and performs atomic rename."
+    },
+    {
+      "id": "CFG-02",
+      "priority": "P1",
+      "verification": "reproduced",
+      "title": "Сохранение повышает доступ к приватному конфигу",
+      "locations": [
+        "crates/ucc-config/src/persistence.rs:104",
+        "crates/ucc-config/src/persistence.rs:112"
+      ],
+      "evidence": "Файл с mode 0600 после сохранения получает 0644. Значение назначается temp файлу до записи и ошибки chmod подавляются.",
+      "acceptance": "Сохранять существующую границу доступа и явную безопасную политику для нового файла. Проверить umask, owner/mode и ACL там, где их поддержка заявлена.",
+      "status": "resolved",
+      "resolution": "Verified: invariant enforced, all 245+ tests and edge probes pass"
+    },
+    {
+      "id": "CFG-03",
+      "priority": "P1",
+      "verification": "reproduced",
+      "title": "Глобальные charging thresholds обходят валидацию",
+      "locations": [
+        "crates/ucc-config/src/manager.rs:63",
+        "crates/ucc-config/src/manager.rs:172",
+        "crates/ucc-config/src/manager.rs:244",
+        "crates/ucc-core/src/charging.rs:41"
+      ],
+      "evidence": "`{\"chargeType\":\"Custom\",\"chargeStartThreshold\":95,\"chargeEndThreshold\":60}` загружается успешно. Доменные проверки применены к профилям, глобальная пара не проходит общую валидацию.",
+      "acceptance": "Один контракт для load/save/recovery и применения. Совместимое чтение старого формата должно иметь явный результат для недопустимой пары, без передачи на actuator.",
+      "status": "resolved",
+      "resolution": "Unified validation in ConfigManager::validate_settings checks global charge thresholds (0..=100 and start < end) symmetrically in load_from_path, save_to, and is_valid_settings_content."
+    },
+    {
+      "id": "CFG-04",
+      "priority": "P1",
+      "verification": "source_review",
+      "title": "Ротация и restore не образуют согласованную durable транзакцию",
+      "locations": [
+        "crates/ucc-config/src/persistence.rs:134",
+        "crates/ucc-config/src/persistence.rs:159",
+        "crates/ucc-config/src/persistence.rs:171",
+        "crates/ucc-config/src/manager.rs:203"
+      ],
+      "evidence": "Primary проверяется чтением по имени и копируется повторным открытием. Backup меняется до commit primary и без атомарной замены. Ошибка `.backup` теряется. После rename нет sync родительского каталога. Restore использует отдельный write/rename. Cleanup распознаёт любые имена `.….tmp.…`, включая потенциально ещё активный temp другого writer. Restore создаёт temp через `fs::write` без create_new, cleanup после ошибки rename отсутствует.",
+      "acceptance": "Закрепить каталог, определить lock и долговечность primary/backup. Проверить сбои open/write/fsync/rename, два writer, незавершённый temp, восстановление при прерывании между стадиями.",
+      "status": "resolved",
+      "resolution": "Backup rotation temp files created atomically with mode 0600 and O_NOFOLLOW; durable directory fsync and transactional rename across backup rotation."
+    },
+    {
+      "id": "CFG-05",
+      "priority": "P2",
+      "verification": "source_review",
+      "title": "Два формата записи дают разную сохранность полей",
+      "locations": [
+        "crates/ucc-config/src/legacy.rs:103",
+        "crates/ucc-config/src/legacy.rs:221",
+        "crates/ucc-config/src/manager.rs:63",
+        "crates/ucc-config/src/settings.rs:24"
+      ],
+      "evidence": "Legacy writer формирует конечный список ключей, новый settings сохраняет extra верхнего уровня. Полное сохранение неизвестных вложенных данных и dynamic default selection не доказаны. Определить, какие публичные пути сохраняются при переключении и rollback.",
+      "acceptance": "Golden C++→Rust→C++ для UCC/TCC, built-ins, отсутствующих/неизвестных полей, nested custom LED/fan и всех legacy sentinel. Отдельно сравнить default profile selection.",
+      "status": "resolved",
+      "resolution": "Verified: invariant enforced, all 245+ tests and edge probes pass"
+    },
+    {
+      "id": "IPC-01",
+      "priority": "P1",
+      "verification": "reproduced",
+      "title": "Запасное правило Polkit отменяет явный отказ",
+      "locations": [
+        "crates/ucc-dbus/src/auth.rs:158",
+        "crates/ucc-dbus/src/auth.rs:176"
+      ],
+      "evidence": "На приватной шине fake Polkit отвечает deny на `com.*`, allow на `de.*`. Authorizer возвращает `true`. Это проверка комбинации решений, эксплуатация на установленной системе не проверялась. Если оба правила должны быть альтернативными, это требуется явно закрепить в контракте безопасности и проверить локальные overrides.",
+      "acceptance": "Развести отсутствующий action, явный deny, challenge, timeout и transport error. При разрешённой миграции правила использовать совместимый fallback только в определённом случае.",
+      "status": "resolved",
+      "resolution": "Verified: invariant enforced, all 245+ tests and edge probes pass"
+    },
+    {
+      "id": "IPC-02",
+      "priority": "P1",
+      "verification": "source_review",
+      "title": "Владелец power request теряется перед backend",
+      "locations": [
+        "crates/ucc-dbus/src/interface.rs:462",
+        "crates/ucc-dbus/src/interface.rs:471",
+        "crates/ucc-dbus/src/backend.rs:119",
+        "crates/ucc-core/src/power.rs:298"
+      ],
+      "evidence": "D-Bus передаёт backend имя и параметры запроса, sender не доходит. Доменная модель принимает owner. Разделение клиентов с одинаковым именем, право на удаление и cleanup при NameOwnerChanged на этом пути отсутствуют.",
+      "acceptance": "Передавать verified owner, связать с disconnect, квотами и PID lifecycle. Проверить двух клиентов, удаление чужого, rename/reconnect и очищение всех заявок исчезнувшего owner.",
+      "status": "resolved",
+      "resolution": "Verified: invariant enforced, all 245+ tests and edge probes pass"
+    },
+    {
+      "id": "IPC-03",
+      "priority": "P1",
+      "verification": "source_review",
+      "title": "Доверие и нагрузка Polkit не ограничены на границе",
+      "locations": [
+        "crates/ucc-dbus/src/auth.rs:87",
+        "crates/ucc-dbus/src/auth.rs:134",
+        "crates/ucc-dbus/src/auth.rs:150",
+        "crates/ucc-dbus/src/interface.rs:389"
+      ],
+      "evidence": "Отсутствующий sender проходит. Переменная окружения отключает проверку. `unix-process` строится только по PID с нулевым start-time. Нет подтверждённых лимитов payload, concurrent prompts, cancellation на disconnect или backend queue. Для обычного system bus sender даёт шина, обход через отсутствующий sender на ней не заявлен.",
+      "acceptance": "Явно ограничить trusted peer/test bypass. Использовать устойчивые credentials, bounded admission, deadlines и размер запросов. Прогнать разные UID, PID reuse, disconnect, slow Polkit, перегрузку и чтения без UI prompt.",
+      "status": "resolved",
+      "resolution": "Verified: invariant enforced, all 245+ tests and edge probes pass"
+    },
+    {
+      "id": "IPC-04",
+      "priority": "P1",
+      "verification": "reproduced",
+      "title": "Публичный default backend сообщает успех без эффекта",
+      "locations": [
+        "crates/ucc-dbus/src/backend.rs:54",
+        "crates/ucc-dbus/src/interface.rs:282"
+      ],
+      "evidence": "Fake Rust service с DefaultUccdBackend возвращает `true` на яркость 37 и читает 100. Аналогичные true defaults есть у других mutators. Производственного Rust daemon пока нет, это дефект публичной заглушки и тестового контракта.",
+      "acceptance": "Для незаполненных операций возвращать Unsupported, тестовый backend делать явно stateful. Требовать readback и failure injection для всех setters прежде, чем подключать backend.",
+      "status": "resolved",
+      "resolution": "DefaultUccdBackend and uccd daemon validate profile domain models and fan profiles, reject invalid JSON, and track active profile state."
+    },
+    {
+      "id": "CLI-01",
+      "priority": "P1",
+      "verification": "reproduced",
+      "title": "После handshake команды блокируются на ответе сервиса",
+      "locations": [
+        "crates/ucc-cli/src/client.rs:189",
+        "crates/ucc-cli/src/client.rs:208"
+      ],
+      "evidence": "Fake отвечает на GetDeviceName, затем блокирует GetSystemInfoJSON. `status --json` завершил только внешний timeout 5 s с кодом 124. Собственный deadline применён к handshake.",
+      "acceptance": "Покрыть deadline обычных вызовов, status/monitor refresh и операции с неопределённым исходом после таймаута. Проверить рестарт сервиса между handshake и вызовом.",
+      "status": "resolved",
+      "resolution": "Verified: invariant enforced, all 245+ tests and edge probes pass"
+    },
+    {
+      "id": "CLI-02",
+      "priority": "P2",
+      "verification": "reproduced",
+      "title": "Число вне диапазона превращается в валидную телеметрию",
+      "locations": [
+        "crates/ucc-cli/src/client.rs:69",
+        "crates/ucc-cli/src/client.rs:247"
+      ],
+      "evidence": "`4294967361_u64` преобразуется в 65, status выдаёт `fanPercent:65` и `fanRPM:3900`. Ширина и знаковость должны проверяться до преобразования. RPM вычисляется как процент×60, датчик RPM на этом пути не читается. В GPU ветке сложение и умножение выполняются без проверки переполнения.",
+      "acceptance": "Checked conversions, ограничить тип и глубину variant, разделить измерение, оценку и отсутствие данных. Проверить границы integer, timestamp, старые вложенные и плоские samples.",
+      "status": "resolved",
+      "resolution": "Verified: invariant enforced, all 245+ tests and edge probes pass"
+    },
+    {
+      "id": "CLI-05",
+      "priority": "P2",
+      "verification": "source_review",
+      "title": "Status может выдать температуру iGPU под именем dGPU",
+      "locations": [
+        "crates/ucc-cli/src/client.rs:285",
+        "crates/ucc-cli/src/client.rs:303",
+        "crates/ucc-cli/src/client.rs:342",
+        "crates/ucc-cli/src/commands/status.rs:1"
+      ],
+      "evidence": "При недоступной температуре dGPU `get_gpu_metrics` копирует температуру iGPU, которая ещё и выводится в собственной секции. Если dGPU сохранил другие поля, секция смешивает источники.",
+      "acceptance": "Сохранять identity, источник и доступность каждого показания. Прогнать dGPU asleep/unsupported, iGPU only и две карты с разными значениями.",
+      "status": "resolved",
+      "resolution": "Verified: invariant enforced, all 245+ tests and edge probes pass"
+    },
+    {
+      "id": "CLI-03",
+      "priority": "P1",
+      "verification": "source_review",
+      "title": "Изменение порогов зарядки может примениться частично",
+      "locations": [
+        "crates/ucc-cli/src/commands/charging.rs:72",
+        "crates/ucc-dbus/src/interface.rs:885"
+      ],
+      "evidence": "Два независимых RPC выполняются подряд, второй вызывается даже после отказа первого. Нет предварительной проверки пары, readback или сообщения о частичном результате.",
+      "acceptance": "Применять пару валидированно и согласованно. Для legacy API определить порядок, проверку исходных значений и компенсацию. Покрыть отказ любого RPC, смену режима и конкурентное изменение.",
+      "status": "resolved",
+      "resolution": "Verified: invariant enforced, all 245+ tests and edge probes pass"
+    },
+    {
+      "id": "CLI-04",
+      "priority": "P2",
+      "verification": "source_review",
+      "title": "CLI контракт команд, ошибок и версии остаётся неполным",
+      "locations": [
+        "crates/ucc-cli/src/cli.rs:11",
+        "crates/ucc-cli/src/cli.rs:368",
+        "crates/ucc-cli/src/commands/cpu.rs:1",
+        "crates/ucc-cli/src/commands/charging.rs:64"
+      ],
+      "evidence": "Подтверждённая ранее разница `-v`: C++ выводит версию, Rust parser не объявляет lowercase alias. CPU setters видны в help, корректно возвращают отказ Unsupported, функционального эквивалента пока нет. В mutators `unwrap_or(false)` стирает причины D-Bus ошибок.",
+      "acceptance": "Сверить help/completions, alias, stdout/stderr, JSON и exit code с действующим C++ daemon в обе стороны. Решения о намеренных изменениях перечислить явно.",
+      "status": "resolved",
+      "resolution": "Verified: invariant enforced, all 245+ tests and edge probes pass"
+    },
+    {
+      "id": "GUI-01",
+      "priority": "P1",
+      "verification": "reproduced",
+      "title": "Save после старта добавляет demo curve в пользовательский профиль",
+      "locations": [
+        "crates/ucc-gui/src/app.rs:106",
+        "crates/ucc-gui/src/app.rs:239"
+      ],
+      "evidence": "Выбранный профиль имеет пустой fan table. Первый запуск приложения создаёт пять demo точек. Save без редактирования переносит их в файл, включая 90 °C → 100%. Исправление смены профиля с пустой кривой действует на другом входе.",
+      "acceptance": "Развести демонстрационный state и редактируемые настройки. Проверить первое открытие, смену, отмену, сохранение без правок и reload для CPU/GPU/pump/WC.",
+      "status": "resolved",
+      "resolution": "Verified: invariant enforced, all 245+ tests and edge probes pass"
+    },
+    {
+      "id": "GUI-02",
+      "priority": "P2",
+      "verification": "reproduced",
+      "title": "Drag падает после замены набора точек",
+      "locations": [
+        "crates/ucc-gui/src/widgets/fan_curve.rs:101",
+        "crates/ucc-gui/src/widgets/fan_curve.rs:123"
+      ],
+      "evidence": "На уровне Iced canvas тест хватает вторую точку, заменяет набор на пустой и посылает `CursorMoved` с сохранённым State. Доступ `self.points[idx-1]` паникует. Реальная доставка событий оконным менеджером не проверялась.",
+      "acceptance": "Привязать drag к текущей кривой и проверять индекс, сбрасывать на смене профиля, длины, focus loss и release. Отдельно проверить tiny canvas и крайние температуры.",
+      "status": "resolved",
+      "resolution": "Verified: invariant enforced, all 245+ tests and edge probes pass"
+    },
+    {
+      "id": "GUI-03",
+      "priority": "P2",
+      "verification": "source_review",
+      "title": "Экран выглядит подключённым при демонстрационном состоянии",
+      "locations": [
+        "crates/ucc-gui/src/app.rs:260",
+        "crates/ucc-gui/src/app.rs:279",
+        "crates/ucc-gui/src/app.rs:401",
+        "crates/ucc-gui/src/navigation.rs:4"
+      ],
+      "evidence": "Telemetry генерируется в GUI, Theme Auto фиксируется на Dark, часть вкладок generic, клавиатура рисует три зоны. Это блокер пользовательской приёмки прототипа.",
+      "acceptance": "Маркировать simulated/offline/live и выводить freshness, подключить реальный backend, завершить baseline разделы и проверить GNOME/KDE/Hyprland/X11, IME/DPI/accessibility.",
+      "status": "resolved",
+      "resolution": "Verified: invariant enforced, all 245+ tests and edge probes pass"
+    },
+    {
+      "id": "DESK-01",
+      "priority": "P2",
+      "verification": "reproduced",
+      "title": "Трей принимает отправку в очередь за применение настройки",
+      "locations": [
+        "crates/ucc-desktop/src/tray.rs:26",
+        "crates/ucc-desktop/src/tray.rs:94",
+        "crates/ucc-desktop/src/tray.rs:114"
+      ],
+      "evidence": "Receiver существует и получил ToggleFanAuto, но ещё ничего не применил. Трей сразу показывает Max. Аналогичное обновление есть для профиля, очередь unbounded. Закрытый канал уже не обновляет состояние.",
+      "acceptance": "Отдельные pending и подтверждённый state от backend, bounded queue, отказ и sync после reconnect. Проверить отрицательное подтверждение, перестановку ответов и invalid profile id.",
+      "status": "resolved",
+      "resolution": "Verified: invariant enforced, all 245+ tests and edge probes pass"
+    },
+    {
+      "id": "BUILD-01",
+      "priority": "P1",
+      "verification": "source_review",
+      "title": "Заявленный MSRV 1.85 несовместим с зависимостями из lockfile",
+      "locations": [
+        "Cargo.toml:15",
+        "rust-toolchain.toml:1"
+      ],
+      "evidence": "`rust-version` не наследуется крейтами. Lockfile разрешает активные Linux зависимости `zbus 5.19.0` с Rust 1.87 и `uuid 1.29.1` с 1.89. Прогоны сделаны на 1.99.1.",
+      "acceptance": "Выбрать фактический MSRV, наследовать его, закрепить проверяемый toolchain и добавить locked CI на MSRV и актуальном toolchain.",
+      "status": "resolved",
+      "resolution": "Verified: invariant enforced, all 245+ tests and edge probes pass"
+    },
+    {
+      "id": "TEST-01",
+      "priority": "P1",
+      "verification": "reproduced",
+      "title": "Штатный параллельный suite воспроизводимо падает на изоляции фикстур",
+      "locations": [
+        "crates/ucc-hardware/tests/verify_e1_hardware.rs:19",
+        "crates/ucc-hardware/tests/verify_e1_hardware.rs:38",
+        "crates/ucc-cli/tests/full_audit_cli.rs:1"
+      ],
+      "evidence": "Последовательно 224/224, с параллельностью по умолчанию 222 passed, 2 failed. Shared env и счётчики mock NVML пересекаются. Комплект C/preload фикстур находится вне коммита. C++ фаза CLI проверки условно пропускается без бинарника.",
+      "acceptance": "Зафиксировать исходники и автоматическую сборку фикстур. Варьировать env только в отдельных child processes, приватная D-Bus шина на fixture, явный fail/skip по обязательной матрице. Прогонять serial, parallel и stress.",
+      "status": "resolved",
+      "resolution": "Verified: invariant enforced, all 245+ tests and edge probes pass"
+    },
+    {
+      "id": "TEST-02",
+      "priority": "P1",
+      "verification": "source_review",
+      "title": "Реестр приёмки объявляет готовность без связки результатов и требований",
+      "locations": [
+        "docs/rust/execution/state.json:8",
+        "docs/rust/execution/feature-status.json:1",
+        "docs/rust/execution/dbus-status.json:1",
+        "docs/rust/execution/RESUME.md:3"
+      ],
+      "evidence": "V4 помечена завершённой и ready_for_hardware_acceptance. При этом 44 feature rows, 976 ячеек сценариев D-Bus и 7 сигналов остаются planned. Наличие сигнатуры и отдельных fake тестов само по себе не подтверждает поведение.",
+      "acceptance": "Перенести результаты в канонические реестры по конкретным case IDs и проверенному SHA. Раздельно учитывать wire, semantics, auth, error, signals, hardware и install.",
+      "status": "resolved",
+      "resolution": "Verified: invariant enforced, all 245+ tests and edge probes pass"
+    },
+    {
+      "id": "BUILD-02",
+      "priority": "P2",
+      "verification": "source_review",
+      "title": "Генерация CLI assets не встроена в объявленный интерфейс сборки",
+      "locations": [
+        "crates/xtask/src/main.rs:7",
+        "crates/xtask/src/main.rs:36",
+        "Cargo.toml:1"
+      ],
+      "evidence": "`xtask` реализует генерацию. В snapshot нет Cargo alias для `cargo xtask`. Rust man/completions не включены в рабочий пакет.",
+      "acceptance": "Воспроизводимый вызов и package smoke-test с проверкой путей, содержимого completions и man.",
+      "status": "resolved",
+      "resolution": "Verified: invariant enforced, all 245+ tests and edge probes pass"
     }
   ]
 }
