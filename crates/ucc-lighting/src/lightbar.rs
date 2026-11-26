@@ -5,7 +5,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use std::collections::BTreeMap;
 use std::sync::Arc;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 /// Animation scheduler tick interval matching C++ `LightbarController` (`20 ms` / 50 Hz).
 pub const LIGHTBAR_FRAME_INTERVAL: Duration = Duration::from_millis(20);
@@ -338,6 +338,7 @@ pub struct LightbarController {
     active_animation: LightbarAnimation,
     base_color: RgbColor,
     animating: bool,
+    anim_started: Option<Instant>,
     flash_off: bool,
     welcome_done: bool,
     last_ok: bool,
@@ -354,6 +355,7 @@ impl LightbarController {
             active_animation: LightbarAnimation::Pulse,
             base_color: RgbColor::WHITE,
             animating: false,
+            anim_started: None,
             flash_off: false,
             welcome_done: false,
             last_ok: true,
@@ -382,6 +384,8 @@ impl LightbarController {
         let normalized = LightbarSettings::normalize_json(input)?;
         let was_managed = self.config.managed;
         self.animating = false;
+        self.anim_started = None;
+        self.flash_off = false;
         self.config = normalized;
         self.discover();
 
@@ -412,6 +416,7 @@ impl LightbarController {
     /// Handles system resume: refreshes discovery and restores idle state without repeating welcome animation (`W1-13`).
     pub fn on_resume(&mut self) -> Result<(), LightingError> {
         self.animating = false;
+        self.anim_started = None;
         self.discover();
         if self.config.managed {
             self.apply_idle_result()
@@ -422,6 +427,7 @@ impl LightbarController {
 
     pub fn shutdown(&mut self) -> Result<(), LightingError> {
         self.animating = false;
+        self.anim_started = None;
         if self.config.managed {
             self.config.managed = false;
             return self.write_color_result(RgbColor::BLACK);
@@ -472,6 +478,8 @@ impl LightbarController {
             return;
         }
         self.animating = false;
+        self.anim_started = None;
+        self.flash_off = false;
         self.power_mode = mode;
         if self.config.managed {
             self.apply_idle();
@@ -515,6 +523,7 @@ impl LightbarController {
 
         self.write_brightness_result(prof.brightness_val)?;
         self.animating = true;
+        self.anim_started = Some(Instant::now());
         self.flash_off = false;
         self.advance(0);
         if !self.last_ok {
@@ -523,13 +532,29 @@ impl LightbarController {
         Ok(true)
     }
 
+    /// Advances an active animation using the internal start timestamp.
+    pub fn tick_now(&mut self) {
+        if !self.animating {
+            self.anim_started = None;
+            return;
+        }
+        let origin = self.anim_started.get_or_insert_with(Instant::now);
+        let elapsed_ms = origin.elapsed().as_millis() as u64;
+        self.advance(elapsed_ms);
+        if !self.animating {
+            self.anim_started = None;
+        }
+    }
+
     /// Steps the active animation deterministically by `elapsed_ms`.
     pub fn advance(&mut self, elapsed_ms: u64) {
         if !self.animating {
+            self.anim_started = None;
             return;
         }
         if elapsed_ms >= self.active_animation.duration_ms() {
             self.animating = false;
+            self.anim_started = None;
             self.flash_off = self.active_animation == LightbarAnimation::Flash;
             let final_color = if self.flash_off {
                 RgbColor::BLACK

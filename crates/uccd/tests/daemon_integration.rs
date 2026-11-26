@@ -295,9 +295,9 @@ async fn daemon_exposes_live_telemetry_fans_lighting_and_restores_auto_on_shutdo
     assert!(proxy.set_lightbar_settings_json(&lb_cfg).await.unwrap());
 
     // Per-sender power request isolation (via backend) & cooler mode toggle
-    assert!(backend.register_power_request_with_sender(":1.10", "game", "fps", "ac"));
-    assert!(!backend.unregister_power_request_with_sender(":1.99", "game"));
-    assert!(backend.unregister_power_request_with_sender(":1.10", "game"));
+    assert!(backend.register_power_request_with_sender(":1.999910", "game", "fps", "ac"));
+    assert!(!backend.unregister_power_request_with_sender(":1.999999", "game"));
+    assert!(backend.unregister_power_request_with_sender(":1.999910", "game"));
     assert!(proxy.set_water_cooler_auto_control(false).await.unwrap());
     assert!(!proxy.is_water_cooler_auto_control_enabled().await.unwrap());
 

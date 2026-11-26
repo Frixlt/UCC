@@ -409,30 +409,105 @@ fn t_daemon_16_keyboard_wrapped_object_payload_and_profile_keyboard_rgb_apply() 
     );
 }
 
+struct PwmRampBacklightSysfs {
+    inner: Arc<MockSysfs>,
+    bl_dir: PathBuf,
+    ramp_written_at: std::sync::Mutex<Option<std::time::Instant>>,
+}
+
+impl ucc_hardware::Sysfs for PwmRampBacklightSysfs {
+    fn read(&self, path: &Path) -> std::io::Result<String> {
+        if path == self.bl_dir.join("actual_brightness") {
+            if let Some(at) = *self.ramp_written_at.lock().unwrap() {
+                // Keep actual_brightness lagging at 55 for 20 ms (>4ms old timeout, <250ms new timeout),
+                // then converge to the written target brightness.
+                if at.elapsed() < Duration::from_millis(20) {
+                    return Ok("55\n".to_string());
+                }
+                return self.inner.read(&self.bl_dir.join("brightness"));
+            }
+        }
+        self.inner.read(path)
+    }
+
+    fn write(&self, path: &Path, content: &str) -> std::io::Result<()> {
+        if path == self.bl_dir.join("brightness") && content.trim() == "40" {
+            *self.ramp_written_at.lock().unwrap() = Some(std::time::Instant::now());
+        }
+        self.inner.write(path, content)
+    }
+
+    fn exists(&self, path: &Path) -> bool {
+        self.inner.exists(path)
+    }
+
+    fn read_dir(&self, path: &Path) -> std::io::Result<Vec<PathBuf>> {
+        self.inner.read_dir(path)
+    }
+}
+
 #[test]
 fn t_daemon_17_backlight_pwm_ramp_lag_does_not_rollback_profile_switch() {
     let tmp = tempfile::tempdir().unwrap();
     let bl = tmp.path().join("sys/class/backlight/intel_backlight");
-    let (backend, platform, sysfs, _) = build_backend_with_caps(
-        tmp.path(),
-        default_uniwill_caps(),
-        |s| {
-            s.set_file(bl.join("max_brightness"), "100\n");
-            s.set_file(bl.join("brightness"), "90\n");
-            s.set_file(bl.join("actual_brightness"), "90\n");
-        },
-        |_| {},
+    let raw_sysfs = Arc::new(MockSysfs::new());
+    raw_sysfs.set_file(
+        tmp.path().join("sys/devices/system/cpu/cpu0/cpufreq/scaling_cur_freq"),
+        "3200000",
     );
+    raw_sysfs.set_file(tmp.path().join("sys/devices/system/cpu/present"), "0-1");
+    raw_sysfs.set_file(tmp.path().join("sys/class/hwmon/hwmon0/name"), "coretemp");
+    raw_sysfs.set_file(tmp.path().join("sys/class/hwmon/hwmon0/temp1_input"), "55000");
+    raw_sysfs.set_file(tmp.path().join("sys/class/power_supply/AC/type"), "Mains");
+    raw_sysfs.set_file(tmp.path().join("sys/class/power_supply/AC/online"), "1");
+    raw_sysfs.set_file(bl.join("max_brightness"), "100\n");
+    raw_sysfs.set_file(bl.join("brightness"), "90\n");
+    raw_sysfs.set_file(bl.join("actual_brightness"), "90\n");
+
+    let ramp_sysfs: Arc<dyn ucc_hardware::Sysfs> = Arc::new(PwmRampBacklightSysfs {
+        inner: raw_sysfs.clone(),
+        bl_dir: bl.clone(),
+        ramp_written_at: std::sync::Mutex::new(None),
+    });
+
+    let platform = Arc::new(MockPlatformBackend::new(default_uniwill_caps()));
+    platform.set_fan_temp(0, 55);
+    platform.set_fan_temp(1, 50);
+    platform.set_tdp_limits(0, (15, 90));
+    platform.set_tdp_limits(1, (20, 120));
+    platform.set_tdp_limits(2, (25, 140));
+    let lighting = Arc::new(MockLightingTransport::new());
+    let backend = Arc::new(LiveUccdBackend::new(UccdDependencies {
+        device_name: "Test Laptop".into(),
+        platform: platform.clone(),
+        sysfs: ramp_sysfs,
+        lighting_transport: lighting,
+        config_manager: ConfigManager::with_custom_path(tmp.path().join("settings.json")),
+        sys_root: tmp.path().to_path_buf(),
+        telemetry_config: TelemetryConfig {
+            sys_root: tmp.path().to_path_buf(),
+            ..Default::default()
+        },
+        power_devices: PowerDeviceController::new(
+            tmp.path().join("sys"),
+            tmp.path().join("proc"),
+            default_process_runner(),
+            tmp.path().join("bin"),
+        ),
+        lid_policy: LidPolicyConfig {
+            ignore_lid_on_ac: true,
+            ac_unplug_debounce: Duration::from_secs(3),
+        },
+    }));
     backend.activate_hardware();
 
-    // Simulate PWM ramp lag: set brightness to 40, actual_brightness stays 55 for >4ms
+    // Simulate PWM ramp lag: set brightness to 40, actual_brightness stays 55 for 20ms (>4ms old timeout)
     let mut prof = UccProfile::new("pwm_lag", "PWM Lag");
     prof.odm_power_limits = vec![65, 90, 110];
     prof.display.use_brightness = true;
     prof.display.brightness = 40;
     assert!(backend.apply_profile(&serde_json::to_string(&prof).unwrap()));
     assert_eq!(platform.read_tdp(0).unwrap(), 65);
-    let _ = sysfs;
 }
 
 #[test]

@@ -41,6 +41,89 @@ impl Default for LidPolicyConfig {
     }
 }
 
+/// Per-source lid action matching C++ `LidController` (`screen_off`, `ignore`, `suspend`,
+/// `hibernate`, `poweroff`, `lock`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum LidSourceAction {
+    ScreenOff,
+    Ignore,
+    #[default]
+    Suspend,
+    Hibernate,
+    PowerOff,
+    Lock,
+}
+
+impl LidSourceAction {
+    pub fn parse(s: &str) -> Option<Self> {
+        match s.trim() {
+            "screen_off" => Some(Self::ScreenOff),
+            "ignore" => Some(Self::Ignore),
+            "suspend" => Some(Self::Suspend),
+            "hibernate" => Some(Self::Hibernate),
+            "poweroff" => Some(Self::PowerOff),
+            "lock" => Some(Self::Lock),
+            _ => None,
+        }
+    }
+
+    pub fn requires_inhibitor(self) -> bool {
+        self != Self::Suspend
+    }
+}
+
+/// Multi-source lid switch policy parsed from `powerDevices["lid"]`.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct LidSourcePolicy {
+    pub ac: LidSourceAction,
+    pub type_c: LidSourceAction,
+    pub bat: LidSourceAction,
+    pub wake_only_lid_and_keyboard: bool,
+}
+
+impl Default for LidSourcePolicy {
+    fn default() -> Self {
+        Self {
+            ac: LidSourceAction::Ignore,
+            type_c: LidSourceAction::Ignore,
+            bat: LidSourceAction::Suspend,
+            wake_only_lid_and_keyboard: true,
+        }
+    }
+}
+
+/// Parses `powerDevices["lid"]` into [`LidSourcePolicy`].
+pub fn parse_lid_policy_from_json(power_devices: &serde_json::Value) -> LidSourcePolicy {
+    let mut policy = LidSourcePolicy::default();
+    let Some(lid) = power_devices.get("lid").and_then(|v| v.as_object()) else {
+        return policy;
+    };
+    if let Some(act) = lid.get("ac").and_then(|v| v.as_str()).and_then(LidSourceAction::parse) {
+        policy.ac = act;
+    }
+    if let Some(act) = lid
+        .get("type_c")
+        .and_then(|v| v.as_str())
+        .and_then(LidSourceAction::parse)
+    {
+        policy.type_c = act;
+    }
+    if let Some(act) = lid
+        .get("bat")
+        .and_then(|v| v.as_str())
+        .and_then(LidSourceAction::parse)
+    {
+        policy.bat = act;
+    }
+    if let Some(w) = lid
+        .get("wakeOnlyLidAndKeyboard")
+        .and_then(|v| v.as_bool())
+    {
+        policy.wake_only_lid_and_keyboard = w;
+    }
+    policy
+}
+
 /// Coordinates systemd-logind `handle-lid-switch` inhibitor state and AC-unplug debounce (`M8.9`).
 #[derive(Debug, Clone)]
 pub struct LidController {
@@ -66,6 +149,35 @@ impl LidController {
 
     pub fn set_config(&mut self, config: LidPolicyConfig) {
         self.config = config;
+    }
+
+    /// Evaluates per-source action honoring the 3s AC-unplug debounce window.
+    pub fn action_for_source(
+        &self,
+        policy: &LidSourcePolicy,
+        mode: &str,
+        now: Instant,
+        ac_online: bool,
+        lid_closed: bool,
+    ) -> LidSourceAction {
+        if !lid_closed {
+            return LidSourceAction::Ignore;
+        }
+        let configured = match mode {
+            "ac" => policy.ac,
+            "type_c" => policy.type_c,
+            _ => policy.bat,
+        };
+        if !ac_online
+            && configured == LidSourceAction::Suspend
+            && self
+                .last_ac_unplug
+                .is_some_and(|at| now.saturating_duration_since(at) < self.config.ac_unplug_debounce)
+        {
+            LidSourceAction::Ignore
+        } else {
+            configured
+        }
     }
 
     /// Evaluates an updated `(ac_online, lid_closed)` state and returns whether suspend should occur.
@@ -109,8 +221,8 @@ impl LidController {
 /// Strict allowlisted ACPI/PCI/USB wakeup sysfs/procfs policy ported from `uccd/inc/WakeupPolicy.hpp` (`M8.9`).
 #[derive(Debug, Clone)]
 pub struct WakeupPolicy {
-    sys_root: PathBuf,
-    proc_root: PathBuf,
+    sys_dir: PathBuf,
+    proc_dir: PathBuf,
 }
 
 impl Default for WakeupPolicy {
@@ -124,21 +236,21 @@ impl WakeupPolicy {
     pub fn new(root: impl AsRef<Path>) -> Self {
         let r = root.as_ref();
         Self {
-            sys_root: r.to_path_buf(),
-            proc_root: r.to_path_buf(),
+            sys_dir: r.join("sys"),
+            proc_dir: r.join("proc"),
         }
     }
 
     /// Creates a policy with explicit `/sys` and `/proc` directories.
     pub fn with_sys_proc(sys_dir: impl AsRef<Path>, proc_dir: impl AsRef<Path>) -> Self {
         Self {
-            sys_root: sys_dir.as_ref().to_path_buf(),
-            proc_root: proc_dir.as_ref().to_path_buf(),
+            sys_dir: sys_dir.as_ref().to_path_buf(),
+            proc_dir: proc_dir.as_ref().to_path_buf(),
         }
     }
 
-    /// Validates and resolves a wakeup sysfs node strictly inside `<root>/sys/devices/.../power/wakeup`
-    /// or `<root>/proc/acpi/wakeup`, rejecting any `..` traversal or unexpected node names.
+    /// Validates and resolves a wakeup sysfs node strictly inside `<sys_dir>/devices/.../power/wakeup`
+    /// or `<proc_dir>/acpi/wakeup`, rejecting any `..` traversal or unexpected node names.
     pub fn resolve_wakeup_path(&self, raw_path: &str) -> Result<PathBuf, &'static str> {
         let p = Path::new(raw_path);
         if p.components().any(|c| matches!(c, Component::ParentDir)) {
@@ -146,13 +258,14 @@ impl WakeupPolicy {
         }
         let rel = p.strip_prefix("/").unwrap_or(p);
         let rel_str = rel.to_str().ok_or("Invalid UTF-8 in wakeup path")?;
-        let is_power_wakeup =
-            rel_str.starts_with("sys/devices/") && rel_str.ends_with("/power/wakeup");
-        let is_acpi_wakeup = rel_str == "proc/acpi/wakeup";
-        if !is_power_wakeup && !is_acpi_wakeup {
-            return Err("Wakeup path outside allowlisted sysfs/procfs nodes");
+        if rel_str.starts_with("sys/devices/") && rel_str.ends_with("/power/wakeup") {
+            let after_sys = rel_str.strip_prefix("sys/").unwrap_or(rel_str);
+            return Ok(self.sys_dir.join(after_sys));
         }
-        Ok(self.sys_root.join(rel))
+        if rel_str == "proc/acpi/wakeup" {
+            return Ok(self.proc_dir.join("acpi/wakeup"));
+        }
+        Err("Wakeup path outside allowlisted sysfs/procfs nodes")
     }
 
     /// Applies `"enabled"` or `"disabled"` to an allowlisted wakeup control node via [`Sysfs`].
@@ -171,12 +284,12 @@ impl WakeupPolicy {
             .map_err(|e| format!("Failed writing wakeup node {}: {e}", target.display()))
     }
 
-    /// Applies the lid+keyboard-only wakeup policy across `<root>/sys/devices` and `<root>/proc/acpi/wakeup`.
+    /// Applies the lid+keyboard-only wakeup policy across `<sys_dir>/devices` and `<proc_dir>/acpi/wakeup`.
     pub fn apply(&self, wake_only_lid_and_keyboard: bool, sysfs: &dyn Sysfs) -> WakeupApplyResult {
         apply_wakeup_policy(
             wake_only_lid_and_keyboard,
-            &self.sys_root.join("sys"),
-            &self.proc_root.join("proc"),
+            &self.sys_dir,
+            &self.proc_dir,
             sysfs,
         )
     }

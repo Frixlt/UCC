@@ -6,6 +6,7 @@
 //! hardware controllers, and power/thermal profile management.
 
 use nix::libc;
+use nix::sys::stat::fstat;
 use std::fs::{self, File, OpenOptions};
 use std::io::{Read, Write};
 use std::os::unix::fs::OpenOptionsExt;
@@ -20,7 +21,6 @@ use uccd::{DaemonRuntime, LiveUccdBackend};
 
 const DAEMON_NAME: &str = "uccd";
 const PRIMARY_PID_FILE: &str = "/run/uccd.pid";
-const FALLBACK_PID_FILE: &str = "/tmp/uccd.pid";
 
 fn resolve_pid_file() -> PathBuf {
     #[cfg(unix)]
@@ -30,7 +30,13 @@ fn resolve_pid_file() -> PathBuf {
             return PathBuf::from(PRIMARY_PID_FILE);
         }
     }
-    PathBuf::from(FALLBACK_PID_FILE)
+    if let Some(runtime_dir) = std::env::var_os("XDG_RUNTIME_DIR") {
+        let runtime_path = PathBuf::from(runtime_dir);
+        if runtime_path.is_absolute() {
+            return runtime_path.join("uccd.pid");
+        }
+    }
+    PathBuf::from(format!("/run/user/{}/uccd.pid", unsafe { libc::geteuid() }))
 }
 
 struct PidLock {
@@ -63,6 +69,13 @@ impl PidLock {
             .map_err(|e| format!("Failed to open/create PID file {}: {e}", path.display()))?;
 
         let fd = file.as_raw_fd();
+        let st = fstat(fd).map_err(|e| format!("Failed to stat PID file {}: {e}", path.display()))?;
+        if (st.st_mode & libc::S_IFMT) != libc::S_IFREG || st.st_uid != unsafe { libc::geteuid() } {
+            return Err(format!(
+                "PID file {} is not a regular file owned by current UID",
+                path.display()
+            ));
+        }
         let ret = unsafe { libc::flock(fd, libc::LOCK_EX | libc::LOCK_NB) };
         if ret != 0 {
             let mut existing_pid = String::new();
@@ -128,6 +141,19 @@ fn stop_daemon(pid_path: &Path) -> i32 {
         return 1;
     };
 
+    match fstat(file.as_raw_fd()) {
+        Ok(st)
+            if (st.st_mode & libc::S_IFMT) == libc::S_IFREG
+                && st.st_uid == unsafe { libc::geteuid() } => {}
+        _ => {
+            eprintln!(
+                "PID file {} failed ownership or regular-file verification; refusing to stop.",
+                pid_path.display()
+            );
+            return 1;
+        }
+    }
+
     let mut pid_str = String::new();
     if file.read_to_string(&mut pid_str).is_err() {
         eprintln!("Failed to read PID file");
@@ -154,7 +180,7 @@ fn stop_daemon(pid_path: &Path) -> i32 {
     // Verify process identity to avoid signaling a recycled PID
     if let Ok(comm) = fs::read_to_string(format!("/proc/{pid}/comm")) {
         let comm_trimmed = comm.trim();
-        if comm_trimmed != DAEMON_NAME && !comm_trimmed.starts_with("ucc") {
+        if comm_trimmed != DAEMON_NAME {
             eprintln!("PID {pid} comm ('{comm_trimmed}') does not match daemon name '{DAEMON_NAME}'");
             return 1;
         }
@@ -272,17 +298,26 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     // Connect to D-Bus without acquiring com.uniwill.uccd yet: register objects BEFORE
     // requesting the well-known name so Type=dbus activation sees ready endpoints immediately (M8.2).
+    // Fail closed when the system D-Bus is unavailable unless an explicit non-root test flag opts in.
+    let allow_session_fallback =
+        std::env::var("UCC_ALLOW_SESSION_BUS").as_deref() == Ok("1") && unsafe { libc::geteuid() } != 0;
     let (connection, bus_label) = match zbus::connection::Builder::system() {
         Ok(builder) => match builder.build().await {
             Ok(conn) => (conn, "system"),
-            Err(e) => {
-                warn!("System D-Bus unavailable ({e}); falling back to session bus");
+            Err(e) if allow_session_fallback => {
+                warn!("System D-Bus unavailable ({e}); using session bus because UCC_ALLOW_SESSION_BUS=1");
                 (zbus::connection::Builder::session()?.build().await?, "session")
             }
+            Err(e) => {
+                return Err(format!("System D-Bus unavailable: {e}").into());
+            }
         },
-        Err(e) => {
-            warn!("System D-Bus builder failed ({e}); falling back to session bus");
+        Err(e) if allow_session_fallback => {
+            warn!("System D-Bus builder failed ({e}); using session bus because UCC_ALLOW_SESSION_BUS=1");
             (zbus::connection::Builder::session()?.build().await?, "session")
+        }
+        Err(e) => {
+            return Err(format!("System D-Bus builder failed: {e}").into());
         }
     };
 

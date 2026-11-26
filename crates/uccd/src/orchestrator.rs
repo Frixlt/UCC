@@ -4,7 +4,7 @@
 //! `NameOwnerChanged` client eviction, signal dispatching, periodic worker loops,
 //! and bounded shutdown (`M8.1`, `M8.2`, `M8.3`).
 
-use crate::backend::{CpuDefaultsSnapshot, DbusSignalEvent, LiveUccdBackend};
+use crate::backend::{run_water_cooler_ble_loop, CpuDefaultsSnapshot, DbusSignalEvent, LiveUccdBackend};
 use std::collections::HashMap;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Condvar, Mutex, OnceLock};
@@ -13,7 +13,8 @@ use tokio::sync::{broadcast, watch};
 use tokio::task::JoinHandle;
 use tracing::{error, warn};
 use ucc_dbus::{
-    register_uccd_service, Authorizer, UccdInterface, UccdLegacyInterface, DBUS_PATH, DBUS_PATH_ALT,
+    register_uccd_service, Authorizer, UccdBackend, UccdInterface, UccdLegacyInterface, DBUS_PATH,
+    DBUS_PATH_ALT,
 };
 use zbus::export::futures_core::Stream;
 
@@ -468,6 +469,7 @@ impl DaemonRuntime {
 
         let activate_backend = Arc::clone(&backend);
         if let Err(err) = run_detached_blocking("uccd-activate", move || {
+            activate_backend.load_sleep_state_read_only();
             activate_backend.seed_inherited_cpu_defaults(inherited_cpu_defaults);
             activate_backend.activate_hardware();
         })
@@ -509,7 +511,7 @@ impl DaemonRuntime {
         if let Ok(dbus_proxy) = zbus::fdo::DBusProxy::new(&connection).await {
             if let Ok(noc_stream) = dbus_proxy.receive_name_owner_changed().await {
                 let b_noc = Arc::clone(&backend);
-                let mut rx_noc_stop = stop_rx;
+                let mut rx_noc_stop = stop_rx.clone();
                 tasks.push(tokio::spawn(async move {
                     let mut noc_stream = std::pin::pin!(noc_stream);
                     loop {
@@ -572,6 +574,15 @@ impl DaemonRuntime {
                     b.reconcile_power_state(false);
                 },
             );
+            spawn_periodic_worker(
+                "uccd-worker-cpu",
+                Duration::from_secs(10),
+                Arc::clone(&worker_stop),
+                Arc::clone(&backend),
+                move |b| {
+                    b.validate_and_reapply_cpu_once();
+                },
+            );
             let mut anim_started: Option<Instant> = None;
             spawn_periodic_worker(
                 "uccd-worker-lightbar",
@@ -582,6 +593,22 @@ impl DaemonRuntime {
                     b.tick_lightbar_animation(&mut anim_started);
                 },
             );
+
+            if backend.get_water_cooler_supported() {
+                let ble_conn = connection.clone();
+                let ble_backend = Arc::clone(&backend);
+                let ble_stop = stop_rx.clone();
+                tasks.push(tokio::spawn(async move {
+                    run_water_cooler_ble_loop(ble_conn, ble_backend, ble_stop).await;
+                }));
+            }
+
+            let logind_conn = connection.clone();
+            let logind_backend = Arc::clone(&backend);
+            let mut logind_stop = stop_rx;
+            tasks.push(tokio::spawn(async move {
+                run_logind_monitor_loop(logind_conn, logind_backend, &mut logind_stop).await;
+            }));
         }
 
         Ok(Self {
@@ -685,4 +712,72 @@ impl DaemonRuntime {
             }
         }
     }
+}
+
+/// Best-effort systemd-logind monitor handling `PrepareForSleep` resume notifications and
+/// `handle-lid-switch` inhibitor coordination when non-default lid policies are active (`ISSUE-03`).
+async fn run_logind_monitor_loop(
+    connection: zbus::Connection,
+    backend: Arc<LiveUccdBackend>,
+    stop_rx: &mut watch::Receiver<bool>,
+) {
+    let Ok(login_proxy) = zbus::Proxy::new(
+        &connection,
+        "org.freedesktop.login1",
+        "/org/freedesktop/login1",
+        "org.freedesktop.login1.Manager",
+    )
+    .await
+    else {
+        return;
+    };
+
+    let mut inhibitor_fd: Option<zbus::zvariant::OwnedFd> = None;
+    let pd_settings: serde_json::Value =
+        serde_json::from_str(&backend.get_power_device_settings_json()).unwrap_or_default();
+    if pd_settings.get("lid").is_some() {
+        if let Ok(fd) = login_proxy
+            .call::<_, _, zbus::zvariant::OwnedFd>(
+                "Inhibit",
+                &(
+                    "handle-lid-switch",
+                    "uccd",
+                    "Managing configured lid-switch power policy",
+                    "block",
+                ),
+            )
+            .await
+        {
+            inhibitor_fd = Some(fd);
+        }
+    }
+
+    let Ok(sleep_stream) = login_proxy.receive_signal("PrepareForSleep").await else {
+        let _ = stop_rx.changed().await;
+        drop(inhibitor_fd);
+        return;
+    };
+    let mut sleep_stream = std::pin::pin!(sleep_stream);
+
+    loop {
+        tokio::select! {
+            biased;
+            _ = stop_rx.changed() => break,
+            maybe_sig = std::future::poll_fn(|cx| sleep_stream.as_mut().poll_next(cx)) => {
+                let Some(msg) = maybe_sig else { break; };
+                if let Ok((sleeping,)) = msg.body().deserialize::<(bool,)>() {
+                    if !sleeping {
+                        let b = Arc::clone(&backend);
+                        let _ = tokio::task::spawn_blocking(move || {
+                            if let Some(_g) = b.enter_worker_hw_op() {
+                                b.on_system_resume();
+                                b.reconcile_power_state(true);
+                            }
+                        }).await;
+                    }
+                }
+            }
+        }
+    }
+    drop(inhibitor_fd);
 }
