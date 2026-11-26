@@ -39,7 +39,32 @@ pub fn write_atomic(target_path: impl AsRef<Path>, content: &[u8]) -> Result<(),
         return Err(ConfigError::ReadOnlyPreview);
     }
 
-    let target_path = target_path.as_ref();
+    // Resolve symlink targets so atomic writes update the underlying file instead of
+    // replacing the symlink itself or inheriting 0o777 symlink metadata (`ISSUE-16`).
+    let resolved_storage: PathBuf;
+    let target_path = match fs::symlink_metadata(target_path.as_ref()) {
+        Ok(meta) if meta.file_type().is_symlink() => {
+            resolved_storage = match fs::canonicalize(target_path.as_ref()) {
+                Ok(canonical) => canonical,
+                Err(_) => {
+                    let link_dest = fs::read_link(target_path.as_ref())?;
+                    if link_dest.is_absolute() {
+                        link_dest
+                    } else {
+                        target_path
+                            .as_ref()
+                            .parent()
+                            .filter(|p| !p.as_os_str().is_empty())
+                            .unwrap_or_else(|| Path::new("."))
+                            .join(link_dest)
+                    }
+                }
+            };
+            resolved_storage.as_path()
+        }
+        _ => target_path.as_ref(),
+    };
+
     let parent = target_path
         .parent()
         .filter(|p| !p.as_os_str().is_empty())
@@ -75,8 +100,17 @@ pub fn write_atomic(target_path: impl AsRef<Path>, content: &[u8]) -> Result<(),
         }
     }
 
-    // Check target file write permissions if target already exists
-    if target_path.exists() {
+    #[cfg(unix)]
+    let is_root = {
+        extern "C" {
+            fn geteuid() -> u32;
+        }
+        unsafe { geteuid() == 0 }
+    };
+    #[cfg(not(unix))]
+    let is_root = false;
+
+    if !is_root && target_path.exists() {
         let meta = fs::metadata(target_path)?;
         if meta.permissions().readonly() {
             return Err(ConfigError::PermissionDenied(format!(
@@ -85,6 +119,14 @@ pub fn write_atomic(target_path: impl AsRef<Path>, content: &[u8]) -> Result<(),
             )));
         }
     }
+
+    #[cfg(unix)]
+    let target_mode: u32 = {
+        use std::os::unix::fs::PermissionsExt;
+        fs::metadata(target_path)
+            .map(|m| m.permissions().mode() & 0o666)
+            .unwrap_or(0o644)
+    };
 
     // 4. Create temporary file in the same directory (guarantees same filesystem)
     let file_name = target_path
@@ -101,20 +143,21 @@ pub fn write_atomic(target_path: impl AsRef<Path>, content: &[u8]) -> Result<(),
     // Write content and synchronize to disk
     let write_res = (|| -> Result<(), std::io::Error> {
         use std::io::Write;
-        let mut temp_file = fs::OpenOptions::new()
-            .write(true)
-            .create_new(true)
-            .open(&temp_path)?;
+        let mut opts = fs::OpenOptions::new();
+        opts.write(true).create_new(true);
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::OpenOptionsExt;
+            opts.mode(target_mode);
+            // 0o400000 is O_NOFOLLOW on Linux
+            opts.custom_flags(0o400000);
+        }
+        let mut temp_file = opts.open(&temp_path)?;
 
         #[cfg(unix)]
         {
             use std::os::unix::fs::PermissionsExt;
-            let mode = if let Ok(meta) = fs::symlink_metadata(target_path) {
-                meta.permissions().mode() & 0o777
-            } else {
-                0o644
-            };
-            let _ = fs::set_permissions(&temp_path, fs::Permissions::from_mode(mode));
+            fs::set_permissions(&temp_path, fs::Permissions::from_mode(target_mode))?;
         }
 
         temp_file.write_all(content)?;
@@ -162,6 +205,11 @@ pub fn write_atomic(target_path: impl AsRef<Path>, content: &[u8]) -> Result<(),
                 opts.custom_flags(0o400000);
             }
             let mut f = opts.open(&bak_temp)?;
+            #[cfg(unix)]
+            {
+                use std::os::unix::fs::PermissionsExt;
+                fs::set_permissions(&bak_temp, fs::Permissions::from_mode(mode))?;
+            }
             f.write_all(src_content)?;
             f.flush()?;
             f.sync_all()?;
@@ -177,12 +225,7 @@ pub fn write_atomic(target_path: impl AsRef<Path>, content: &[u8]) -> Result<(),
         let target_is_valid = crate::manager::is_valid_settings_content(&target_content);
 
         #[cfg(unix)]
-        let mode = fs::symlink_metadata(target_path)
-            .map(|m| {
-                use std::os::unix::fs::PermissionsExt;
-                m.permissions().mode() & 0o777
-            })
-            .unwrap_or(0o644);
+        let mode = target_mode;
         #[cfg(not(unix))]
         let mode = 0o644;
 
@@ -223,8 +266,8 @@ pub fn write_atomic(target_path: impl AsRef<Path>, content: &[u8]) -> Result<(),
     Ok(())
 }
 
-/// Scans `dir` for any orphaned temporary files (`.*.tmp.*`) left from interrupted writes
-/// or crashes, and removes them.
+/// Scans `dir` for any orphaned temporary files (`.*.tmp.*` or `.*.tmp_restore.*`)
+/// left from interrupted writes, restores, or crashes, and removes them.
 /// Returns the number of removed temporary files.
 pub fn cleanup_temp_files(dir: impl AsRef<Path>) -> Result<usize, std::io::Error> {
     let dir = dir.as_ref();
@@ -236,7 +279,10 @@ pub fn cleanup_temp_files(dir: impl AsRef<Path>) -> Result<usize, std::io::Error
         let entry = entry?;
         let name = entry.file_name();
         let name_str = name.to_string_lossy();
-        if name_str.starts_with('.') && name_str.contains(".tmp.") && fs::remove_file(entry.path()).is_ok() {
+        if name_str.starts_with('.')
+            && (name_str.contains(".tmp.") || name_str.contains(".tmp_restore."))
+            && fs::remove_file(entry.path()).is_ok()
+        {
             count += 1;
         }
     }

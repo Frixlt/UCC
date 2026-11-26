@@ -117,7 +117,7 @@ pub mod cpu_sentinel_serde {
     {
         let opt = Option::<i128>::deserialize(deserializer)?;
         match opt {
-            Some(v) if v < 0 => Ok(None),
+            Some(v) if v <= 0 => Ok(None),
             Some(v) if v <= u32::MAX as i128 => Ok(Some(v as u32)),
             Some(_) => Err(serde::de::Error::custom("CPU numeric value exceeds u32::MAX")),
             None => Ok(None),
@@ -136,25 +136,103 @@ pub mod cpu_sentinel_serde {
 }
 
 /// CPU settings as configured within a UCC system profile.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Default)]
-#[serde(rename_all = "camelCase")]
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub struct ProfileCpu {
-    #[serde(default, with = "cpu_sentinel_serde", skip_serializing_if = "Option::is_none")]
     pub online_cores: Option<u32>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub enabled_cores: Option<Vec<u32>>,
-    #[serde(rename = "scalingMinFrequency", default, with = "cpu_sentinel_serde", skip_serializing_if = "Option::is_none")]
     pub min_freq_khz: Option<u32>,
-    #[serde(rename = "scalingMaxFrequency", default, with = "cpu_sentinel_serde", skip_serializing_if = "Option::is_none")]
     pub max_freq_khz: Option<u32>,
-    #[serde(default)]
+    pub min_freq_sentinel: Option<i32>,
+    pub max_freq_sentinel: Option<i32>,
     pub governor: String,
-    #[serde(default, alias = "epp")]
     pub energy_performance_preference: String,
-    #[serde(rename = "noTurbo", default)]
     pub no_turbo: bool,
-    #[serde(rename = "hwpDynamicBoost", default)]
     pub hwp_dynamic_boost: bool,
+}
+
+#[derive(Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct ProfileCpuWire {
+    #[serde(default, with = "cpu_sentinel_serde", skip_serializing_if = "Option::is_none")]
+    online_cores: Option<u32>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    enabled_cores: Option<Vec<u32>>,
+    #[serde(rename = "scalingMinFrequency", default, skip_serializing_if = "Option::is_none")]
+    scaling_min_frequency: Option<i64>,
+    #[serde(rename = "scalingMaxFrequency", default, skip_serializing_if = "Option::is_none")]
+    scaling_max_frequency: Option<i64>,
+    #[serde(default)]
+    governor: String,
+    #[serde(default, alias = "epp")]
+    energy_performance_preference: String,
+    #[serde(rename = "noTurbo", default)]
+    no_turbo: bool,
+    #[serde(rename = "hwpDynamicBoost", default)]
+    hwp_dynamic_boost: bool,
+}
+
+fn split_freq_value(raw: Option<i64>) -> Result<(Option<u32>, Option<i32>), &'static str> {
+    match raw {
+        None | Some(0) => Ok((None, None)),
+        Some(v) if v < 0 => {
+            let sentinel = i32::try_from(v).map_err(|_| "CPU frequency sentinel out of range")?;
+            Ok((None, Some(sentinel)))
+        }
+        Some(v) => {
+            let khz = u32::try_from(v).map_err(|_| "CPU frequency exceeds u32::MAX")?;
+            Ok((Some(khz), None))
+        }
+    }
+}
+
+impl<'de> Deserialize<'de> for ProfileCpu {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        let wire = ProfileCpuWire::deserialize(deserializer)?;
+        let (min_freq_khz, min_freq_sentinel) =
+            split_freq_value(wire.scaling_min_frequency).map_err(serde::de::Error::custom)?;
+        let (max_freq_khz, max_freq_sentinel) =
+            split_freq_value(wire.scaling_max_frequency).map_err(serde::de::Error::custom)?;
+        Ok(Self {
+            online_cores: wire.online_cores,
+            enabled_cores: wire.enabled_cores,
+            min_freq_khz,
+            max_freq_khz,
+            min_freq_sentinel,
+            max_freq_sentinel,
+            governor: wire.governor,
+            energy_performance_preference: wire.energy_performance_preference,
+            no_turbo: wire.no_turbo,
+            hwp_dynamic_boost: wire.hwp_dynamic_boost,
+        })
+    }
+}
+
+impl Serialize for ProfileCpu {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        let wire = ProfileCpuWire {
+            online_cores: self.online_cores,
+            enabled_cores: self.enabled_cores.clone(),
+            scaling_min_frequency: self
+                .min_freq_khz
+                .map(i64::from)
+                .or_else(|| self.min_freq_sentinel.map(i64::from)),
+            scaling_max_frequency: self
+                .max_freq_khz
+                .map(i64::from)
+                .or_else(|| self.max_freq_sentinel.map(i64::from)),
+            governor: self.governor.clone(),
+            energy_performance_preference: self.energy_performance_preference.clone(),
+            no_turbo: self.no_turbo,
+            hwp_dynamic_boost: self.hwp_dynamic_boost,
+        };
+        wire.serialize(serializer)
+    }
 }
 
 impl ProfileCpu {

@@ -107,9 +107,21 @@ impl ConfigManager {
             return None;
         }
 
-        if let Some(user_path) = user_config_path() {
-            if user_path.exists() || Self::backup_paths(&user_path).iter().any(|b| b.exists()) {
-                return Some(user_path);
+        #[cfg(unix)]
+        let is_root = {
+            extern "C" {
+                fn geteuid() -> u32;
+            }
+            unsafe { geteuid() == 0 }
+        };
+        #[cfg(not(unix))]
+        let is_root = false;
+
+        if !is_root {
+            if let Some(user_path) = user_config_path() {
+                if user_path.exists() || Self::backup_paths(&user_path).iter().any(|b| b.exists()) {
+                    return Some(user_path);
+                }
             }
         }
 
@@ -163,6 +175,14 @@ impl ConfigManager {
 
     /// Validates unified configuration invariants including global charging thresholds and profile structures.
     pub fn validate_settings(settings: &UccSettings) -> Result<(), ConfigError> {
+        Self::validate_global_settings(settings)?;
+        for profile in settings.profiles.values() {
+            profile.validate()?;
+        }
+        Ok(())
+    }
+
+    fn validate_global_settings(settings: &UccSettings) -> Result<(), ConfigError> {
         if let Some(start) = settings.charge_start_threshold {
             if !(0..=100).contains(&start) {
                 return Err(ConfigError::Validation(format!(
@@ -184,17 +204,38 @@ impl ConfigManager {
                 )));
             }
         }
-        for profile in settings.profiles.values() {
-            profile.validate()?;
-        }
         Ok(())
     }
 
     /// Loads settings directly from an explicit file path.
+    ///
+    /// Quarantine invalid non-referenced legacy profiles rather than discarding an entire valid
+    /// settings file when a single unreferenced user profile has legacy field quirks (`ISSUE-26`).
     pub fn load_from_path(path: &Path) -> Result<UccSettings, ConfigError> {
         let content = fs::read_to_string(path)?;
-        let settings = UccSettings::from_json(&content)?;
-        Self::validate_settings(&settings)?;
+        let mut settings = UccSettings::from_json(&content)?;
+        Self::validate_global_settings(&settings)?;
+
+        let referenced: std::collections::HashSet<String> =
+            settings.state_map.values().cloned().collect();
+        let total_profiles = settings.profiles.len();
+        let mut invalid_unreferenced = Vec::new();
+        for (key, profile) in &settings.profiles {
+            if let Err(err) = profile.validate() {
+                if referenced.contains(key) || referenced.contains(&profile.id) {
+                    return Err(err.into());
+                }
+                invalid_unreferenced.push((key.clone(), err));
+            }
+        }
+        // Only quarantine unreferenced quirky profiles when at least one healthy profile
+        // remains in the catalog; otherwise fail so backup recovery / schema checks trigger.
+        if !invalid_unreferenced.is_empty() && invalid_unreferenced.len() == total_profiles {
+            return Err(invalid_unreferenced.into_iter().next().unwrap().1.into());
+        }
+        for (key, _err) in invalid_unreferenced {
+            settings.profiles.remove(&key);
+        }
         Ok(settings)
     }
 

@@ -334,24 +334,18 @@ impl UccSettings {
             return Some(p);
         }
 
-        // Canonical alias matching
-        if lower == ALIAS_QUIET || lower.contains("quiet") {
-            return self.profiles.get(PROFILE_ID_QUIET);
+        // Exact canonical alias matching (no broad substring matching that shadows custom names)
+        match lower.as_str() {
+            ALIAS_QUIET => self.profiles.get(PROFILE_ID_QUIET),
+            ALIAS_BALANCED | "office" => self.profiles.get(PROFILE_ID_OFFICE),
+            ALIAS_PERFORMANCE | "enthusiast" | "high performance" | "high_performance" => {
+                self.profiles.get(PROFILE_ID_HIGH_PERFORMANCE)
+            }
+            ALIAS_MAX_ENERGY_SAVE | "max energy save" => {
+                self.profiles.get(PROFILE_ID_MAX_ENERGY_SAVE)
+            }
+            _ => None,
         }
-        if lower == ALIAS_BALANCED || lower.contains("balanced") || lower == "office" {
-            return self.profiles.get(PROFILE_ID_OFFICE);
-        }
-        if lower == ALIAS_PERFORMANCE
-            || lower.contains("performance")
-            || lower.contains("enthusiast")
-        {
-            return self.profiles.get(PROFILE_ID_HIGH_PERFORMANCE);
-        }
-        if lower == ALIAS_MAX_ENERGY_SAVE || lower.contains("energy") {
-            return self.profiles.get(PROFILE_ID_MAX_ENERGY_SAVE);
-        }
-
-        None
     }
 
     /// Returns the active profile assigned to a given system power state ("power_ac", "power_bat", "power_type_c", "power_wc").
@@ -383,7 +377,7 @@ impl UccSettings {
 }
 
 /// Helper structure for standalone profile catalogs (e.g. `profiles.json`).
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct ProfilesCatalog {
     pub profiles: Vec<UccProfile>,
 }

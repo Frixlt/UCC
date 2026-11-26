@@ -205,6 +205,8 @@ impl LegacyProfileDto {
                 }),
                 min_freq_khz: c.scaling_min_frequency.and_then(|v| if v > 0 { Some(v as u32) } else { None }),
                 max_freq_khz: c.scaling_max_frequency.and_then(|v| if v > 0 { Some(v as u32) } else { None }),
+                min_freq_sentinel: c.scaling_min_frequency.filter(|&v| v < 0),
+                max_freq_sentinel: c.scaling_max_frequency.filter(|&v| v < 0),
                 governor: c.governor.unwrap_or_default(),
                 energy_performance_preference: c.energy_performance_preference.unwrap_or_default(),
                 no_turbo: c.no_turbo.unwrap_or(false),
@@ -270,17 +272,14 @@ impl LegacyProfileDto {
             keyboard_profile_name: self.keyboard.as_ref().and_then(|k| k.keyboard_profile_name.clone()).unwrap_or_default(),
             keyboard_profile_id: self.selected_keyboard_profile.clone().unwrap_or_default(),
             keyboard_profile_data: self.keyboard.as_ref().and_then(|k| k.keyboard_profile_data.clone()).unwrap_or_default(),
+            extra: std::collections::BTreeMap::new(),
         };
 
         let odm_power_limits = self.odm_power_limits
             .map(|l| l.tdp_values.into_iter().map(|x| x.max(0) as u32).collect())
             .unwrap_or_default();
 
-        let charge_type = match self.charge_type.as_deref() {
-            Some("Custom") => Some(ChargeType::Custom),
-            Some("Standard") => Some(ChargeType::Standard),
-            _ => None,
-        };
+        let charge_type = self.charge_type.as_deref().and_then(ChargeType::parse);
 
         let start_threshold = self.charge_start_threshold.and_then(|t| if (0..=100).contains(&t) { Some(t as u8) } else { None });
         let end_threshold = self.charge_end_threshold.and_then(|t| if (0..=100).contains(&t) { Some(t as u8) } else { None });
@@ -307,6 +306,7 @@ impl LegacyProfileDto {
             nvidia_ctgp_offset: self.nvidia_ctgp_offset,
             selected_keyboard_profile: self.selected_keyboard_profile,
             charging,
+            extra: std::collections::BTreeMap::new(),
         };
 
         profile.validate()?;
@@ -328,8 +328,16 @@ impl LegacyProfileDto {
         let cpu = Some(LegacyCpuDto {
             online_cores: profile.cpu.online_cores.map(|v| v as i32),
             enabled_cores: profile.cpu.enabled_cores.as_ref().map(|cores| cores.iter().map(|&x| x as i32).collect()),
-            scaling_min_frequency: profile.cpu.min_freq_khz.map(|v| v as i32),
-            scaling_max_frequency: profile.cpu.max_freq_khz.map(|v| v as i32),
+            scaling_min_frequency: profile
+                .cpu
+                .min_freq_khz
+                .map(|v| v as i32)
+                .or(profile.cpu.min_freq_sentinel),
+            scaling_max_frequency: profile
+                .cpu
+                .max_freq_khz
+                .map(|v| v as i32)
+                .or(profile.cpu.max_freq_sentinel),
             governor: if profile.cpu.governor.is_empty() { None } else { Some(profile.cpu.governor.clone()) },
             energy_performance_preference: if profile.cpu.energy_performance_preference.is_empty() { None } else { Some(profile.cpu.energy_performance_preference.clone()) },
             no_turbo: Some(profile.cpu.no_turbo),
@@ -372,10 +380,7 @@ impl LegacyProfileDto {
             })
         };
 
-        let charge_type = profile.charging.charge_type.map(|t| match t {
-            ChargeType::Standard => "Standard".to_string(),
-            ChargeType::Custom => "Custom".to_string(),
-        });
+        let charge_type = profile.charging.charge_type.map(|t| t.as_str().to_string());
 
         Self {
             id: profile.id.clone(),

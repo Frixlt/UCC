@@ -1,4 +1,4 @@
-use crate::charging::ChargingPolicy;
+use crate::charging::{ChargeType, ChargingPolicy};
 use crate::cpu::ProfileCpu;
 use crate::error::ValidationError;
 use crate::fan::{FanCurve, FanPoint, PumpPoint, PumpVoltage};
@@ -202,7 +202,7 @@ impl ProfileFanControl {
 }
 
 /// Keyboard backlight references within a profile.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Default)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, Default)]
 #[serde(rename_all = "camelCase")]
 pub struct ProfileKeyboard {
     #[serde(default)]
@@ -211,6 +211,8 @@ pub struct ProfileKeyboard {
     pub keyboard_profile_id: String,
     #[serde(default)]
     pub keyboard_profile_data: String,
+    #[serde(flatten, default, skip_serializing_if = "std::collections::BTreeMap::is_empty")]
+    pub extra: std::collections::BTreeMap<String, serde_json::Value>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -282,23 +284,41 @@ where
 }
 
 /// Complete UCC system performance and hardware configuration profile.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
+#[derive(Debug, Clone, PartialEq)]
 pub struct UccProfile {
     pub id: String,
     pub name: String,
-    #[serde(default)]
     pub description: String,
-    #[serde(default)]
     pub display: ProfileDisplay,
-    #[serde(default)]
     pub cpu: ProfileCpu,
-    #[serde(default)]
     pub webcam: ProfileWebcam,
-    #[serde(default)]
     pub fan: ProfileFanControl,
-    #[serde(default)]
     pub keyboard: ProfileKeyboard,
+    pub odm_profile_name: Option<String>,
+    pub odm_power_limits: Vec<u32>,
+    pub nvidia_ctgp_offset: Option<i32>,
+    pub selected_keyboard_profile: Option<String>,
+    pub charging: ChargingPolicy,
+    pub extra: std::collections::BTreeMap<String, serde_json::Value>,
+}
+
+#[derive(Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct UccProfileWire {
+    id: String,
+    name: String,
+    #[serde(default)]
+    description: String,
+    #[serde(default)]
+    display: ProfileDisplay,
+    #[serde(default)]
+    cpu: ProfileCpu,
+    #[serde(default)]
+    webcam: ProfileWebcam,
+    #[serde(default)]
+    fan: ProfileFanControl,
+    #[serde(default)]
+    keyboard: ProfileKeyboard,
     #[serde(
         default,
         rename = "odmProfile",
@@ -306,7 +326,7 @@ pub struct UccProfile {
         deserialize_with = "deserialize_odm_profile",
         serialize_with = "serialize_odm_profile"
     )]
-    pub odm_profile_name: Option<String>,
+    odm_profile_name: Option<String>,
     #[serde(
         default,
         rename = "odmPowerLimits",
@@ -314,13 +334,96 @@ pub struct UccProfile {
         deserialize_with = "deserialize_odm_power_limits",
         serialize_with = "serialize_odm_power_limits"
     )]
-    pub odm_power_limits: Vec<u32>,
+    odm_power_limits: Vec<u32>,
     #[serde(default, rename = "nvidiaCTGPOffset", skip_serializing_if = "Option::is_none")]
-    pub nvidia_ctgp_offset: Option<i32>,
+    nvidia_ctgp_offset: Option<i32>,
     #[serde(default, rename = "selectedKeyboardProfile", skip_serializing_if = "Option::is_none")]
-    pub selected_keyboard_profile: Option<String>,
-    #[serde(default)]
-    pub charging: ChargingPolicy,
+    selected_keyboard_profile: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    charging: Option<ChargingPolicy>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    charging_profile: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    charging_priority: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    charge_type: Option<ChargeType>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    charge_start_threshold: Option<u8>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    charge_end_threshold: Option<u8>,
+    #[serde(flatten, default, skip_serializing_if = "std::collections::BTreeMap::is_empty")]
+    extra: std::collections::BTreeMap<String, serde_json::Value>,
+}
+
+impl<'de> Deserialize<'de> for UccProfile {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        let wire = UccProfileWire::deserialize(deserializer)?;
+        let mut charging = wire.charging.unwrap_or_default();
+        if wire.charging_profile.is_some() {
+            charging.charging_profile = wire.charging_profile;
+        }
+        if wire.charging_priority.is_some() {
+            charging.charging_priority = wire.charging_priority;
+        }
+        if wire.charge_type.is_some() {
+            charging.charge_type = wire.charge_type;
+        }
+        if wire.charge_start_threshold.is_some() {
+            charging.start_threshold = wire.charge_start_threshold;
+        }
+        if wire.charge_end_threshold.is_some() {
+            charging.end_threshold = wire.charge_end_threshold;
+        }
+        Ok(Self {
+            id: wire.id,
+            name: wire.name,
+            description: wire.description,
+            display: wire.display,
+            cpu: wire.cpu,
+            webcam: wire.webcam,
+            fan: wire.fan,
+            keyboard: wire.keyboard,
+            odm_profile_name: wire.odm_profile_name,
+            odm_power_limits: wire.odm_power_limits,
+            nvidia_ctgp_offset: wire.nvidia_ctgp_offset,
+            selected_keyboard_profile: wire.selected_keyboard_profile,
+            charging,
+            extra: wire.extra,
+        })
+    }
+}
+
+impl Serialize for UccProfile {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        let wire = UccProfileWire {
+            id: self.id.clone(),
+            name: self.name.clone(),
+            description: self.description.clone(),
+            display: self.display.clone(),
+            cpu: self.cpu.clone(),
+            webcam: self.webcam.clone(),
+            fan: self.fan.clone(),
+            keyboard: self.keyboard.clone(),
+            odm_profile_name: self.odm_profile_name.clone(),
+            odm_power_limits: self.odm_power_limits.clone(),
+            nvidia_ctgp_offset: self.nvidia_ctgp_offset,
+            selected_keyboard_profile: self.selected_keyboard_profile.clone(),
+            charging: None,
+            charging_profile: self.charging.charging_profile.clone(),
+            charging_priority: self.charging.charging_priority.clone(),
+            charge_type: self.charging.charge_type,
+            charge_start_threshold: self.charging.start_threshold,
+            charge_end_threshold: self.charging.end_threshold,
+            extra: self.extra.clone(),
+        };
+        wire.serialize(serializer)
+    }
 }
 
 impl UccProfile {
@@ -339,6 +442,7 @@ impl UccProfile {
             nvidia_ctgp_offset: None,
             selected_keyboard_profile: None,
             charging: ChargingPolicy::default(),
+            extra: std::collections::BTreeMap::new(),
         }
     }
 

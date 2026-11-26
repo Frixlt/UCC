@@ -6,6 +6,41 @@ use serde::{Deserialize, Serialize};
 pub enum ChargeType {
     Standard,
     Custom,
+    Trickle,
+    Fast,
+    Adaptive,
+    #[serde(alias = "Long Life")]
+    LongLife,
+    Bypass,
+}
+
+impl ChargeType {
+    /// Canonical wire/sysfs string representation.
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Standard => "Standard",
+            Self::Custom => "Custom",
+            Self::Trickle => "Trickle",
+            Self::Fast => "Fast",
+            Self::Adaptive => "Adaptive",
+            Self::LongLife => "LongLife",
+            Self::Bypass => "Bypass",
+        }
+    }
+
+    /// Parses a charge type string returned by kernel sysfs or C++/Rust configs.
+    pub fn parse(s: &str) -> Option<Self> {
+        match s.trim() {
+            "Standard" => Some(Self::Standard),
+            "Custom" => Some(Self::Custom),
+            "Trickle" => Some(Self::Trickle),
+            "Fast" => Some(Self::Fast),
+            "Adaptive" => Some(Self::Adaptive),
+            "LongLife" | "Long Life" => Some(Self::LongLife),
+            "Bypass" => Some(Self::Bypass),
+            _ => None,
+        }
+    }
 }
 
 /// Global and profile-level battery charging policy and threshold settings.

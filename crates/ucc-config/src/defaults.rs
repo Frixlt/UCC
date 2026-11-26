@@ -48,13 +48,13 @@ pub fn default_max_energy_save_profile() -> UccProfile {
     profile.cpu = ProfileCpu {
         governor: "powersave".to_string(),
         energy_performance_preference: "power".to_string(),
-        no_turbo: true,
+        no_turbo: false,
         ..Default::default()
     };
 
     profile.fan = ProfileFanControl {
         use_control: true,
-        fan_profile: "silent".to_string(),
+        fan_profile: "fan-silent".to_string(),
         same_speed: true,
         auto_control_wc: true,
         enable_water_cooler: false,
@@ -108,7 +108,7 @@ pub fn default_quiet_profile() -> UccProfile {
 
     profile.fan = ProfileFanControl {
         use_control: true,
-        fan_profile: "quiet".to_string(),
+        fan_profile: "fan-silent".to_string(),
         same_speed: true,
         auto_control_wc: true,
         enable_water_cooler: false,
@@ -162,7 +162,7 @@ pub fn default_office_profile() -> UccProfile {
 
     profile.fan = ProfileFanControl {
         use_control: true,
-        fan_profile: "balanced".to_string(),
+        fan_profile: "fan-quiet".to_string(),
         same_speed: true,
         auto_control_wc: true,
         enable_water_cooler: false,
@@ -216,11 +216,11 @@ pub fn default_high_performance_profile() -> UccProfile {
 
     profile.fan = ProfileFanControl {
         use_control: true,
-        fan_profile: "balanced".to_string(),
+        fan_profile: "fan-balanced".to_string(),
         same_speed: true,
-        auto_control_wc: false,
-        manual_fan_speed: Some(85),
-        enable_water_cooler: true,
+        auto_control_wc: true,
+        manual_fan_speed: None,
+        enable_water_cooler: false,
         table_cpu: vec![
             FanPoint::new(30, 30),
             FanPoint::new(45, 50),
