@@ -13,7 +13,7 @@ fn t_hw_14a_sysfs_parse_zone_id_handles_hid_prefixed_kbd_backlight_names() {
     let tmp = tempfile::tempdir().unwrap();
     let root = tmp.path();
     let base = root.join("sys/bus/hid/drivers/ite_8291/0003:048D:CE00.0001/leds");
-    for suffix in ["_10", "_2", "_21"] {
+    for suffix in ["_10", "_2", "_21", "_5"] {
         let dir = base.join(format!("0003:048D:CE00.0001:rgb:kbd_backlight{suffix}"));
         std::fs::create_dir_all(&dir).unwrap();
         std::fs::write(dir.join("max_brightness"), "255\n").unwrap();
@@ -26,10 +26,10 @@ fn t_hw_14a_sysfs_parse_zone_id_handles_hid_prefixed_kbd_backlight_names() {
         .detect_keyboard()
         .expect("detect_keyboard must succeed")
         .expect("HID-prefixed per-key keyboard should be detected");
-    assert_eq!(caps.zones, 3);
+    assert_eq!(caps.zones, 4);
     assert_eq!(
         caps.led_ids,
-        vec![2, 10, 21],
+        vec![2, 5, 10, 21],
         "HID/ITE-prefixed zone IDs must parse numeric suffix rather than fallback indices"
     );
 }
@@ -81,7 +81,7 @@ fn t_hw_14c_lightbar_reconfigure_resets_animation_state() {
         "managed": true,
         "welcome_anim": false,
         "power_settings": {
-            "ac": { "enabled": true, "brightness_val": 200, "mode": "Pulse (stays on)", "color_mode": "Fixed", "red": 255, "green": 0, "blue": 0 }
+            "ac": { "enabled": true, "brightness_val": 200, "mode": "Pulse (stays on)", "color_mode": [255, 0, 0] }
         }
     }))
     .unwrap();

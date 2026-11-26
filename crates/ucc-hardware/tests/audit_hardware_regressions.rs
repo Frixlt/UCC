@@ -86,6 +86,10 @@ fn t_hw_06_power_devices_skips_nvidia_smi_when_dgpu_suspended_in_d3cold() {
     std::fs::write(pci_dev.join("vendor"), "0x10de\n").unwrap();
     std::fs::write(pci_dev.join("class"), "0x030000\n").unwrap();
     std::fs::write(pci_dev.join("power/runtime_status"), "suspended\n").unwrap();
+    std::fs::write(pci_dev.join("power/control"), "auto\n").unwrap();
+    let nvidia_proc = tmp.path().join("proc/driver/nvidia");
+    std::fs::create_dir_all(&nvidia_proc).unwrap();
+    std::fs::write(nvidia_proc.join("version"), "NVRM version: 550.0\n").unwrap();
 
     type RecordedCalls = Arc<Mutex<Vec<(String, Vec<String>)>>>;
     let calls: RecordedCalls = Arc::new(Mutex::new(Vec::new()));
@@ -104,7 +108,16 @@ fn t_hw_06_power_devices_skips_nvidia_smi_when_dgpu_suspended_in_d3cold() {
             "enabled": true,
             "keepNvidiaAwake": false,
             "cpu": {},
-            "devices": []
+            "devices": [
+                {
+                    "type": "pci",
+                    "name": "NVIDIA dGPU",
+                    "path": "/sys/bus/pci/devices/0000:01:00.0/power/control",
+                    "ac_val": "auto",
+                    "type_c_val": "auto",
+                    "bat_val": "auto"
+                }
+            ]
         }))
         .is_ok());
     ctrl.apply("bat");
