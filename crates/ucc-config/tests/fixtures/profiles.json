@@ -1,0 +1,74 @@
+{
+  "profiles": [
+    {
+      "id": "quiet",
+      "name": "Quiet",
+      "display": {
+        "brightness": 50,
+        "useBrightness": true,
+        "refreshRate": 60,
+        "useRefRate": false
+      },
+      "cpu": {
+        "governor": "powersave",
+        "epp": "power",
+        "noTurbo": true
+      },
+      "fan": {
+        "fanProfile": "quiet",
+        "useControl": true,
+        "autoControlWC": true
+      },
+      "odmProfile": {
+        "name": "quiet"
+      }
+    },
+    {
+      "id": "balanced",
+      "name": "Balanced",
+      "display": {
+        "brightness": 75,
+        "useBrightness": true,
+        "refreshRate": 120,
+        "useRefRate": false
+      },
+      "cpu": {
+        "governor": "powersave",
+        "epp": "balance_performance",
+        "noTurbo": false
+      },
+      "fan": {
+        "fanProfile": "balanced",
+        "useControl": true,
+        "autoControlWC": true
+      },
+      "odmProfile": {
+        "name": "balanced"
+      }
+    },
+    {
+      "id": "enthusiast",
+      "name": "Enthusiast",
+      "display": {
+        "brightness": 100,
+        "useBrightness": true,
+        "refreshRate": 240,
+        "useRefRate": true
+      },
+      "cpu": {
+        "governor": "performance",
+        "epp": "performance",
+        "noTurbo": false
+      },
+      "fan": {
+        "fanProfile": "performance",
+        "useControl": true,
+        "autoControlWC": false,
+        "manualFanSpeed": 85
+      },
+      "odmProfile": {
+        "name": "enthusiast"
+      }
+    }
+  ]
+}

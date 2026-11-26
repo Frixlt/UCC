@@ -1,0 +1,9 @@
+{
+  "activeProfile": "balanced",
+  "manualPowerMode": "auto",
+  "powerPolicy": {
+    "acProfile": "enthusiast",
+    "typeCProfile": "balanced",
+    "batteryProfile": "quiet"
+  }
+}

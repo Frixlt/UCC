@@ -12,13 +12,9 @@ use ucc_config::{
 static ENV_LOCK: Mutex<()> = Mutex::new(());
 
 fn get_fixture_path(name: &str) -> PathBuf {
-    for prefix in &["../../artifacts/rust-migration/fixtures", "../../../../artifacts/rust-migration/fixtures"] {
-        let p = Path::new(env!("CARGO_MANIFEST_DIR")).join(prefix).join(name);
-        if p.exists() {
-            return p;
-        }
-    }
-    Path::new("/home/frixit/Рабочий стол/fork control center/UCC-Revorked/artifacts/rust-migration/fixtures").join(name)
+    Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("tests/fixtures")
+        .join(name)
 }
 
 fn create_unique_temp_dir(prefix: &str) -> PathBuf {
@@ -166,10 +162,11 @@ fn test_public_defaults_canonical_ids_and_no_personal_power_limits() {
 #[test]
 fn test_load_and_roundtrip_legacy_fixture_settings() {
     let fixture_path = get_fixture_path("settings.json");
-    if !fixture_path.exists() {
-        eprintln!("Skipping fixture test: {:?} not found", fixture_path);
-        return;
-    }
+    assert!(
+        fixture_path.exists(),
+        "Fixture {:?} must exist",
+        fixture_path
+    );
 
     let settings =
         ConfigManager::load_from_path(&fixture_path).expect("failed to load settings.json fixture");
@@ -192,10 +189,11 @@ fn test_load_and_roundtrip_legacy_fixture_settings() {
 #[test]
 fn test_load_and_roundtrip_legacy_fixture_profiles() {
     let fixture_path = get_fixture_path("profiles.json");
-    if !fixture_path.exists() {
-        eprintln!("Skipping fixture test: {:?} not found", fixture_path);
-        return;
-    }
+    assert!(
+        fixture_path.exists(),
+        "Fixture {:?} must exist",
+        fixture_path
+    );
 
     let content = fs::read_to_string(&fixture_path).expect("read profiles.json");
     let catalog = ProfilesCatalog::from_json(&content).expect("parse profiles.json catalog");
@@ -214,10 +212,11 @@ fn test_load_and_roundtrip_legacy_fixture_profiles() {
 #[test]
 fn test_load_personal_import_settings_fixture() {
     let fixture_path = get_fixture_path("personal-import-settings.json");
-    if !fixture_path.exists() {
-        eprintln!("Skipping fixture test: {:?} not found", fixture_path);
-        return;
-    }
+    assert!(
+        fixture_path.exists(),
+        "Fixture {:?} must exist",
+        fixture_path
+    );
 
     let settings = ConfigManager::load_from_path(&fixture_path)
         .expect("failed to load personal-import-settings.json");
