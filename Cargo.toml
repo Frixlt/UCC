@@ -8,6 +8,7 @@ members = [
     "crates/uccd",
     "crates/ucc-cli",
     "crates/ucc-desktop",
+    "crates/ucc-session-agent",
     "crates/ucc-lighting",
     "crates/xtask",
 ]

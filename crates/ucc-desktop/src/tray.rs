@@ -55,6 +55,20 @@ impl UccTray {
         }
     }
 
+    pub fn set_profiles(&mut self, profiles: Vec<String>, active_idx: usize) {
+        self.profiles = profiles;
+        let valid_idx = if !self.profiles.is_empty() && active_idx < self.profiles.len() {
+            active_idx
+        } else {
+            0
+        };
+        self.active_profile.store(valid_idx, Ordering::SeqCst);
+    }
+
+    pub fn profiles(&self) -> &[String] {
+        &self.profiles
+    }
+
     pub fn set_fan_auto(&self, fan_auto: bool) {
         self.fan_auto.store(fan_auto, Ordering::SeqCst);
     }
@@ -162,4 +176,40 @@ pub async fn spawn_tray(
 ) -> Result<ksni::Handle<UccTray>, ksni::Error> {
     let tray = UccTray::new(profiles, active_profile_idx, action_tx);
     tray.spawn().await
+}
+
+pub async fn update_active_profile(handle: &ksni::Handle<UccTray>, index: usize) {
+    let _ = handle
+        .update(move |tray| {
+            tray.set_active_profile(index);
+        })
+        .await;
+}
+
+pub async fn update_profiles(
+    handle: &ksni::Handle<UccTray>,
+    profiles: Vec<String>,
+    active_idx: usize,
+) {
+    let _ = handle
+        .update(move |tray| {
+            tray.set_profiles(profiles, active_idx);
+        })
+        .await;
+}
+
+pub async fn update_fan_auto(handle: &ksni::Handle<UccTray>, fan_auto: bool) {
+    let _ = handle
+        .update(move |tray| {
+            tray.set_fan_auto(fan_auto);
+        })
+        .await;
+}
+
+pub async fn update_water_cooler_connected(handle: &ksni::Handle<UccTray>, connected: bool) {
+    let _ = handle
+        .update(move |tray| {
+            tray.set_water_cooler_connected(connected);
+        })
+        .await;
 }

@@ -1168,11 +1168,12 @@ dependencies = [
  "nix",
  "serde",
  "serde_json",
- "thiserror",
  "tokio",
  "tracing",
- "ucc-core",
+ "tracing-subscriber",
+ "ucc-config",
  "ucc-dbus",
+ "zbus",
 ]
 
 [[package]]
@@ -1203,6 +1204,20 @@ dependencies = [
  "tracing",
  "ucc-core",
  "ucc-hardware",
+]
+
+[[package]]
+name = "ucc-session-agent"
+version = "0.3.0"
+dependencies = [
+ "nix",
+ "serde_json",
+ "tokio",
+ "tracing",
+ "tracing-subscriber",
+ "ucc-config",
+ "ucc-dbus",
+ "zbus",
 ]
 
 [[package]]
