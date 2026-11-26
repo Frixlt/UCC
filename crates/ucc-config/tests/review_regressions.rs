@@ -23,16 +23,50 @@ fn fresh_install_assignments_match_baseline_policy() {
 
 #[test]
 fn legacy_settings_writer_obeys_preview_guard() {
+    if std::env::var_os("UCC_TEST_PREVIEW_CHILD").is_none() {
+        let out = std::process::Command::new(std::env::current_exe().unwrap())
+            .args([
+                "--exact",
+                "legacy_settings_writer_obeys_preview_guard",
+                "--nocapture",
+            ])
+            .env("UCC_TEST_PREVIEW_CHILD", "1")
+            .env("UCC_READ_ONLY_PREVIEW", "1")
+            .output()
+            .unwrap();
+        assert!(out.status.success(), "{out:?}");
+        return;
+    }
+    assert!(ucc_config::is_read_only_preview());
     let dir = tempfile::tempdir().unwrap();
     let path = dir.path().join("settings");
-    std::env::set_var("UCC_READ_ONLY_PREVIEW", "1");
     let result = SettingsManager::new(&path).write_settings(&TccSettings::default());
-    std::env::remove_var("UCC_READ_ONLY_PREVIEW");
-    assert!(result.is_err() && !path.exists(), "write_settings created a file in preview: result={result:?} exists={}", path.exists());
+    assert!(
+        result.is_err() && !path.exists(),
+        "write_settings created a file in preview: result={result:?} exists={}",
+        path.exists()
+    );
 }
 
 #[test]
 fn ycbcr_legacy_object_array_is_not_rejected() {
     let input = r#"{"ycbcr420Workaround":[{"eDP-1":true}]}"#;
     assert!(UccSettings::from_json(input).is_ok(), "Legacy workaround entries are objects, not strings");
+}
+
+#[cfg(unix)]
+#[test]
+fn restore_from_backup_preserves_private_mode() {
+    use std::os::unix::fs::PermissionsExt;
+    let dir = tempfile::tempdir().unwrap();
+    let primary = dir.path().join("settings.json");
+    let backup = dir.path().join("settings.json.bak");
+    std::fs::write(&primary, b"corrupt").unwrap();
+    std::fs::write(&backup, create_default_settings().to_json_pretty().unwrap()).unwrap();
+    for p in [&primary, &backup] {
+        std::fs::set_permissions(p, std::fs::Permissions::from_mode(0o600)).unwrap();
+    }
+    ucc_config::ConfigManager::restore_from_backup(&primary).unwrap();
+    let mode = std::fs::metadata(&primary).unwrap().permissions().mode() & 0o777;
+    assert_eq!(mode, 0o600, "restored file mode drifted to {mode:04o}");
 }

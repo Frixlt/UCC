@@ -4,6 +4,7 @@
 //! power policy state machines, and CPU/charging/lighting configuration types.
 
 pub mod charging;
+pub mod cooling;
 pub mod cpu;
 pub mod dto;
 pub mod error;
@@ -14,6 +15,7 @@ pub mod profile;
 
 // Re-exports for convenient access
 pub use charging::{ChargeType, ChargingPolicy};
+pub use cooling::{FanControlLogic, FanLogicType, TemperatureFilter, TemporaryFanCurves};
 pub use cpu::{CpuLimits, ProfileCpu};
 pub use dto::{
     LegacyAppPowerRequestDto, LegacyCpuDto, LegacyDisplayDto, LegacyFanDataDto, LegacyFanDto,

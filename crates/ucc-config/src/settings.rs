@@ -35,6 +35,79 @@ pub struct CustomKeyboardProfile {
     pub json: serde_json::Value,
 }
 
+/// Custom saved fan curve profile entry (`customFanProfiles` in `settings.json`).
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct CustomFanProfile {
+    pub id: String,
+    pub name: String,
+    #[serde(default)]
+    pub json: serde_json::Value,
+}
+
+fn deserialize_custom_fan_profiles<'de, D>(
+    deserializer: D,
+) -> Result<Option<HashMap<String, CustomFanProfile>>, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    let opt = Option::<serde_json::Value>::deserialize(deserializer)?;
+    let Some(val) = opt else {
+        return Ok(None);
+    };
+    if val.is_null() {
+        return Ok(None);
+    }
+
+    fn parse_entry(
+        fallback_id: Option<&str>,
+        raw: serde_json::Value,
+    ) -> Result<CustomFanProfile, String> {
+        let obj_val = match raw {
+            serde_json::Value::String(s) => {
+                serde_json::from_str::<serde_json::Value>(&s).map_err(|e| e.to_string())?
+            }
+            other => other,
+        };
+        let mut entry: CustomFanProfile =
+            serde_json::from_value(obj_val).map_err(|e| e.to_string())?;
+        if entry.id.is_empty() {
+            if let Some(id) = fallback_id {
+                entry.id = id.to_string();
+            }
+        }
+        Ok(entry)
+    }
+
+    let mut out = HashMap::new();
+    match val {
+        serde_json::Value::Object(map) => {
+            for (k, v) in map {
+                let entry = parse_entry(Some(&k), v).map_err(serde::de::Error::custom)?;
+                let key = if entry.id.is_empty() {
+                    k
+                } else {
+                    entry.id.clone()
+                };
+                out.insert(key, entry);
+            }
+        }
+        serde_json::Value::Array(arr) => {
+            for v in arr {
+                let entry = parse_entry(None, v).map_err(serde::de::Error::custom)?;
+                if !entry.id.is_empty() {
+                    out.insert(entry.id.clone(), entry);
+                }
+            }
+        }
+        other => {
+            return Err(serde::de::Error::custom(format!(
+                "expected object or array for customFanProfiles, got {other}"
+            )));
+        }
+    }
+    Ok(Some(out))
+}
+
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct UccSettingsRaw {
@@ -46,6 +119,13 @@ struct UccSettingsRaw {
 
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub custom_keyboard_profiles: Option<HashMap<String, CustomKeyboardProfile>>,
+
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_custom_fan_profiles"
+    )]
+    pub custom_fan_profiles: Option<HashMap<String, CustomFanProfile>>,
 
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub power_devices: Option<serde_json::Value>,
@@ -111,6 +191,10 @@ pub struct UccSettings {
     /// User custom saved keyboard backlight presets.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub custom_keyboard_profiles: Option<HashMap<String, CustomKeyboardProfile>>,
+
+    /// User custom saved fan curve presets (`customFanProfiles`).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub custom_fan_profiles: Option<HashMap<String, CustomFanProfile>>,
 
     /// Power devices management section (ASPM, Wi-Fi powersave, CPU mode overlay).
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -187,6 +271,7 @@ impl<'de> serde::Deserialize<'de> for UccSettings {
             keyboard_layout: raw.keyboard_layout,
             keyboard_backlight_states: raw.keyboard_backlight_states,
             custom_keyboard_profiles: raw.custom_keyboard_profiles,
+            custom_fan_profiles: raw.custom_fan_profiles,
             power_devices: raw.power_devices,
             lightbar: raw.lightbar,
             state_map: raw.state_map,
@@ -355,6 +440,7 @@ pub fn create_default_settings() -> UccSettings {
             },
         ]),
         custom_keyboard_profiles: Some(HashMap::new()),
+        custom_fan_profiles: None,
         power_devices: None,
         lightbar: None,
         state_map,

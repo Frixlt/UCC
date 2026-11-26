@@ -62,14 +62,7 @@ pub fn user_config_path() -> Option<PathBuf> {
 /// Checks whether raw JSON content represents valid settings whose profiles pass domain validation.
 pub fn is_valid_settings_content(content: &str) -> bool {
     match UccSettings::from_json(content) {
-        Ok(settings) => {
-            for profile in settings.profiles.values() {
-                if profile.validate().is_err() {
-                    return false;
-                }
-            }
-            true
-        }
+        Ok(settings) => ConfigManager::validate_settings(&settings).is_ok(),
         Err(_) => false,
     }
 }
@@ -168,13 +161,40 @@ impl ConfigManager {
         }
     }
 
+    /// Validates unified configuration invariants including global charging thresholds and profile structures.
+    pub fn validate_settings(settings: &UccSettings) -> Result<(), ConfigError> {
+        if let Some(start) = settings.charge_start_threshold {
+            if !(0..=100).contains(&start) {
+                return Err(ConfigError::Validation(format!(
+                    "Invalid charge start threshold: {start} not in 0..=100"
+                )));
+            }
+        }
+        if let Some(end) = settings.charge_end_threshold {
+            if !(0..=100).contains(&end) {
+                return Err(ConfigError::Validation(format!(
+                    "Invalid charge end threshold: {end} not in 0..=100"
+                )));
+            }
+        }
+        if let (Some(start), Some(end)) = (settings.charge_start_threshold, settings.charge_end_threshold) {
+            if start >= end {
+                return Err(ConfigError::Validation(format!(
+                    "Invalid global charge thresholds: start ({start}) >= end ({end})"
+                )));
+            }
+        }
+        for profile in settings.profiles.values() {
+            profile.validate()?;
+        }
+        Ok(())
+    }
+
     /// Loads settings directly from an explicit file path.
     pub fn load_from_path(path: &Path) -> Result<UccSettings, ConfigError> {
         let content = fs::read_to_string(path)?;
         let settings = UccSettings::from_json(&content)?;
-        for profile in settings.profiles.values() {
-            profile.validate()?;
-        }
+        Self::validate_settings(&settings)?;
         Ok(settings)
     }
 
@@ -205,19 +225,72 @@ impl ConfigManager {
             return Err(ConfigError::ReadOnlyPreview);
         }
 
+        #[cfg(unix)]
+        let primary_mode = {
+            use std::os::unix::fs::PermissionsExt;
+            fs::metadata(path)
+                .map(|m| m.permissions().mode() & 0o777)
+                .ok()
+        };
+
         for bak_path in Self::backup_paths(path) {
             if bak_path.exists() {
                 if let Ok(settings) = Self::load_from_path(&bak_path) {
                     let json = settings.to_json_pretty()?;
-                    let temp_path = path.with_extension(format!(
-                        "tmp_restore_{}",
+                    let parent = path
+                        .parent()
+                        .filter(|p| !p.as_os_str().is_empty())
+                        .unwrap_or_else(|| Path::new("."));
+                    let file_name = path
+                        .file_name()
+                        .and_then(|s| s.to_str())
+                        .unwrap_or("settings.json");
+                    let temp_path = parent.join(format!(
+                        ".{file_name}.tmp_restore.{}.{}",
+                        std::process::id(),
                         std::time::SystemTime::now()
                             .duration_since(std::time::UNIX_EPOCH)
                             .unwrap_or_default()
                             .as_nanos()
                     ));
-                    fs::write(&temp_path, json.as_bytes())?;
-                    fs::rename(&temp_path, path)?;
+                    let write_res = (|| -> std::io::Result<()> {
+                        use std::io::Write;
+                        let mut opts = fs::OpenOptions::new();
+                        opts.write(true).create_new(true);
+                        #[cfg(unix)]
+                        let mode = {
+                            use std::os::unix::fs::{OpenOptionsExt, PermissionsExt};
+                            let m = primary_mode.unwrap_or_else(|| {
+                                fs::metadata(&bak_path)
+                                    .map(|m| m.permissions().mode() & 0o777)
+                                    .unwrap_or(0o600)
+                            });
+                            opts.mode(m);
+                            m
+                        };
+                        let mut f = opts.open(&temp_path)?;
+                        #[cfg(unix)]
+                        {
+                            use std::os::unix::fs::PermissionsExt;
+                            fs::set_permissions(&temp_path, fs::Permissions::from_mode(mode))?;
+                        }
+                        f.write_all(json.as_bytes())?;
+                        f.flush()?;
+                        f.sync_all()?;
+                        Ok(())
+                    })();
+                    if let Err(e) = write_res {
+                        let _ = fs::remove_file(&temp_path);
+                        return Err(ConfigError::Io(e));
+                    }
+                    if let Err(e) = fs::rename(&temp_path, path) {
+                        let _ = fs::remove_file(&temp_path);
+                        return Err(ConfigError::Io(e));
+                    }
+                    #[cfg(unix)]
+                    if let Ok(dir_f) = fs::File::open(parent) {
+                        let _ = dir_f.sync_all();
+                    }
                     return Ok(settings);
                 }
             }
@@ -246,9 +319,7 @@ impl ConfigManager {
             return Err(ConfigError::ReadOnlyPreview);
         }
 
-        for profile in settings.profiles.values() {
-            profile.validate()?;
-        }
+        Self::validate_settings(settings)?;
 
         let json = settings.to_json_pretty()?;
         write_atomic(path, json.as_bytes())

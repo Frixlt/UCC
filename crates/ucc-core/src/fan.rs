@@ -208,19 +208,17 @@ pub const fn voltage_to_pump_speed(voltage: PumpVoltage) -> u8 {
 }
 
 /// Step-wise (floor) lookup for pump speed based on temperature, matching C++ `FanProfile::getPumpSpeedForTemp`.
+/// Automatically sorts entries by temperature and clamps legacy pump level 4 (V12) to V11 for safe hardware execution.
 pub fn get_pump_speed_for_temp(table: &[PumpPoint], temp: i32) -> PumpVoltage {
-    let mut result = PumpVoltage::Off;
-    for entry in table {
-        if temp >= entry.temp {
-            let speed_clamped = entry.speed.min(4);
-            if let Ok(voltage) = pump_speed_to_voltage(speed_clamped) {
-                result = voltage;
-            }
-        } else {
-            break;
+    let mut matching: Vec<&PumpPoint> = table.iter().filter(|p| temp >= p.temp).collect();
+    matching.sort_by_key(|p| p.temp);
+    if let Some(entry) = matching.last() {
+        let speed_clamped = entry.speed.min(3);
+        if let Ok(voltage) = pump_speed_to_voltage(speed_clamped) {
+            return voltage;
         }
     }
-    result
+    PumpVoltage::Off
 }
 
 /// Full fan profile containing CPU, GPU, pump, and water cooler fan curves.
