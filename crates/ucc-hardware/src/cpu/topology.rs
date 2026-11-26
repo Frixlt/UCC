@@ -168,12 +168,16 @@ pub fn parse_cpu_range_list(s: &str) -> Vec<u32> {
         }
         if let Some((start_s, end_s)) = token.split_once('-') {
             if let (Ok(start), Ok(end)) = (start_s.trim().parse::<u32>(), end_s.trim().parse::<u32>()) {
-                for i in start..=end {
-                    ids.push(i);
+                if start <= end && end <= 4096 {
+                    for i in start..=end {
+                        ids.push(i);
+                    }
                 }
             }
         } else if let Ok(val) = token.parse::<u32>() {
-            ids.push(val);
+            if val <= 4096 {
+                ids.push(val);
+            }
         }
     }
     ids.sort_unstable();

@@ -1,10 +1,14 @@
+pub mod bluez_cooler;
 pub mod cooler;
 pub mod cpu;
 pub mod detection;
 pub mod devices;
+pub mod fan_controller;
 pub mod ioctl;
 pub mod nvml;
+pub mod platform;
 pub mod sysfs;
+pub mod telemetry;
 pub mod traits;
 
 pub use cpu::{
@@ -18,11 +22,20 @@ pub use devices::{
     VALID_EPP, VALID_GOVERNORS, VALID_MODES, WHITELISTED_SYS_PATHS,
 };
 
+pub use bluez_cooler::{
+    detect_lct_model, select_cooler, BluezCoolerClient, BluezGattSession, DiscoveredCooler,
+    LctDeviceModel, SavedCoolerIdentity,
+};
 pub use cooler::{
-    BleWriteLimiter, CoolerError, CoolerPacketEncoder, CoolerState, CoolerStateMachine,
-    PumpVoltage, RgbState, BLE_WRITE_GAP, CMD_FAN, CMD_PUMP, CMD_RESET, CMD_RGB,
-    FAST_RECONNECT_MAX_FAILURES, KEEPALIVE_INTERVAL, KEEPALIVE_MISS_THRESHOLD, NORDIC_UART_CHAR_RX,
-    NORDIC_UART_CHAR_TX, NORDIC_UART_SERVICE_UUID,
+    BleTransport, BleWriteLimiter, CoolerCommand, CoolerCommandQueue, CoolerController,
+    CoolerError, CoolerMode, CoolerPacketEncoder, CoolerState, CoolerStateMachine, FanTarget,
+    MockBleTransport, PumpTarget, PumpVoltage, QueuedCoolerCommand, RgbState, RgbTarget,
+    BLE_WRITE_GAP, CMD_FAN, CMD_PUMP, CMD_RESET, CMD_RGB, FAST_RECONNECT_MAX_FAILURES,
+    KEEPALIVE_INTERVAL, KEEPALIVE_MISS_THRESHOLD, NORDIC_UART_CHAR_RX, NORDIC_UART_CHAR_TX,
+    NORDIC_UART_SERVICE_UUID,
+};
+pub use fan_controller::{
+    spawn_fan_worker, FanController, FanTickSnapshot, FanWorkerConfig, FanWorkerHandle,
 };
 pub use detection::{
     build_laptop_model, classify_manufacturer, detect_device_capabilities, detect_vendor,
@@ -38,13 +51,18 @@ pub use ioctl::{
     TuxedoIoDevice,
 };
 pub use nvml::{
-    GpuRuntimeStatus, NvidiaPowerGuard, NvmlError, NvmlMemory, NvmlTelemetry, NvmlUtilization,
-    NvmlWrapper,
+    GpuRuntimeStatus, NvidiaPowerGuard, NvmlError, NvmlMemory, NvmlTelemetry,
+    NvmlTelemetrySnapshot, NvmlUtilization, NvmlWrapper,
+};
+pub use platform::{
+    MockPlatformBackend, PlatformBackend, PlatformBackendKind, PlatformCapabilities,
+    PlatformError, PlatformWrite, TuxedoIoBackend,
 };
 pub use sysfs::{
     format_cpu_range, parse_cpu_range, SysfsError, SysfsJournalEntry, SysfsNode, SysfsRoot,
     SysfsValue, SysfsWriteJournal,
 };
+pub use telemetry::*;
 pub use traits::{
     Clock, GpuBackend, GpuTelemetry, GpuWrite, HardwareIo, HardwareIoWrite, MockClock,
     MockGpuBackend, MockHardwareIo, MockProcessRunner, MockSysfs, ProcessExecution, ProcessOutput,

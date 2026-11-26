@@ -98,6 +98,7 @@ impl SysfsWriteJournal {
 #[derive(Debug, Clone)]
 pub struct SysfsRoot {
     root_path: PathBuf,
+    canonical_root: PathBuf,
     journal: SysfsWriteJournal,
 }
 
@@ -107,16 +108,21 @@ impl SysfsRoot {
         let root = std::env::var("UCC_SYSFS_ROOT")
             .map(PathBuf::from)
             .unwrap_or_else(|_| PathBuf::from("/"));
+        let canonical_root = fs::canonicalize(&root).unwrap_or_else(|_| root.clone());
         Self {
             root_path: root,
+            canonical_root,
             journal: SysfsWriteJournal::new(),
         }
     }
 
     /// Creates a SysfsRoot rooted at a custom directory (test mode).
     pub fn custom(path: impl Into<PathBuf>) -> Self {
+        let root_path = path.into();
+        let canonical_root = fs::canonicalize(&root_path).unwrap_or_else(|_| root_path.clone());
         Self {
-            root_path: path.into(),
+            root_path,
+            canonical_root,
             journal: SysfsWriteJournal::new(),
         }
     }
@@ -145,7 +151,17 @@ impl SysfsRoot {
 
         // If root is `/`, return the target path directly (preserving absolute paths)
         if self.root_path == Path::new("/") {
+            if !target.starts_with("/sys") && !target.starts_with("/proc") {
+                return Err(SysfsError::UnsafePath(target.to_path_buf()));
+            }
             return Ok(target.to_path_buf());
+        }
+
+        // Check if root_path was swapped with a symlink
+        if let Ok(meta) = fs::symlink_metadata(&self.root_path) {
+            if meta.file_type().is_symlink() {
+                return Err(SysfsError::PermissionDenied(self.root_path.clone()));
+            }
         }
 
         // Otherwise strip leading slash and join with custom root
@@ -161,11 +177,9 @@ impl SysfsRoot {
 
         // Strict symlink boundary enforcement:
         // Ensure resolved canonical path does NOT escape the canonical root.
-        if let Ok(canon_root) = fs::canonicalize(&self.root_path) {
-            if let Ok(canon_target) = fs::canonicalize(&joined) {
-                if !canon_target.starts_with(&canon_root) {
-                    return Err(SysfsError::UnsafePath(joined));
-                }
+        if let Ok(canon_target) = fs::canonicalize(&joined) {
+            if !canon_target.starts_with(&self.canonical_root) {
+                return Err(SysfsError::UnsafePath(joined));
             }
         }
 
@@ -192,15 +206,21 @@ impl SysfsRoot {
 
             #[cfg(target_os = "linux")]
             {
-                if let Ok(canon_root) = fs::canonicalize(&self.root_path) {
-                    let proc_link = fs::read_link(format!("/proc/self/fd/{}", file.as_raw_fd()))?;
-                    let canon_fd = fs::canonicalize(&proc_link)?;
-                    if !canon_fd.starts_with(&canon_root) {
+                if let Ok(meta) = fs::symlink_metadata(&self.root_path) {
+                    if meta.file_type().is_symlink() {
                         return Err(io::Error::new(
                             io::ErrorKind::PermissionDenied,
-                            "Symlink escape detected via descriptor target",
+                            "Root path is a symlink",
                         ));
                     }
+                }
+                let proc_link = fs::read_link(format!("/proc/self/fd/{}", file.as_raw_fd()))?;
+                let canon_fd = fs::canonicalize(&proc_link)?;
+                if !canon_fd.starts_with(&self.canonical_root) {
+                    return Err(io::Error::new(
+                        io::ErrorKind::PermissionDenied,
+                        "Symlink escape detected via descriptor target",
+                    ));
                 }
             }
 

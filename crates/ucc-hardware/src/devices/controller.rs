@@ -12,11 +12,25 @@ pub type ProcessRunner = Arc<dyn Fn(&str, &[&str]) -> bool + Send + Sync>;
 
 pub fn default_process_runner() -> ProcessRunner {
     Arc::new(|program: &str, args: &[&str]| {
-        std::process::Command::new(program)
-            .args(args)
-            .status()
-            .map(|s| s.success())
-            .unwrap_or(false)
+        let mut child = match std::process::Command::new(program).args(args).spawn() {
+            Ok(c) => c,
+            Err(_) => return false,
+        };
+        let (tx, rx) = std::sync::mpsc::channel();
+        let child_id = child.id();
+        std::thread::spawn(move || {
+            let res = child.wait().map(|s| s.success()).unwrap_or(false);
+            let _ = tx.send(res);
+        });
+        match rx.recv_timeout(std::time::Duration::from_secs(3)) {
+            Ok(success) => success,
+            Err(_) => {
+                unsafe {
+                    libc::kill(child_id as libc::pid_t, libc::SIGKILL);
+                }
+                false
+            }
+        }
     })
 }
 
@@ -107,24 +121,42 @@ impl PowerDeviceController {
         }
     }
 
+    fn resolve_root_and_rel(&self, path: &str) -> Option<(crate::SysfsRoot, PathBuf)> {
+        let p = Path::new(path);
+        if let Ok(rest) = p.strip_prefix(&self.sys_path) {
+            return Some((crate::SysfsRoot::custom(&self.sys_path), rest.to_path_buf()));
+        }
+        if let Ok(rest) = p.strip_prefix(&self.proc_path) {
+            return Some((crate::SysfsRoot::custom(&self.proc_path), rest.to_path_buf()));
+        }
+        if let Some(rest) = path.strip_prefix("/sys/") {
+            return Some((crate::SysfsRoot::custom(&self.sys_path), PathBuf::from(rest)));
+        }
+        if let Some(rest) = path.strip_prefix("/proc/") {
+            return Some((crate::SysfsRoot::custom(&self.proc_path), PathBuf::from(rest)));
+        }
+        None
+    }
+
     pub fn read_file(&self, path: &str) -> String {
-        let target = self.mapped_path(path);
-        fs::read_to_string(target)
-            .map(|s| s.trim().to_string())
-            .unwrap_or_default()
+        if let Some((root, rel)) = self.resolve_root_and_rel(path) {
+            root.read_string(&rel).unwrap_or_default()
+        } else {
+            String::new()
+        }
     }
 
     pub fn write_file(&self, path: &str, value: &str) -> bool {
-        let target = self.mapped_path(path);
-        if !target.exists() {
-            return false;
-        }
-        if let Ok(current) = fs::read_to_string(&target) {
-            if current.trim() == value {
-                return true;
+        if let Some((root, rel)) = self.resolve_root_and_rel(path) {
+            if let Ok(current) = root.read_string(&rel) {
+                if current.trim() == value.trim() {
+                    return true;
+                }
             }
+            root.write_string(&rel, value).is_ok()
+        } else {
+            false
         }
-        fs::write(&target, value).is_ok()
     }
 
     fn run_command(&self, program: &str, args: &[&str]) -> bool {

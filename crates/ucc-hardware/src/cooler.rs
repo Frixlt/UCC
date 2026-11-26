@@ -2,6 +2,8 @@
 //!
 //! Controls external LCT water coolers (e.g. LCT21001, LCT22002) over Nordic UART Service (NUS).
 
+use std::collections::VecDeque;
+use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 use thiserror::Error;
 
@@ -204,11 +206,16 @@ impl BleWriteLimiter {
         }
     }
 
-    /// Calculates required delay before next write can be sent
+    /// Calculates required delay before next write can be sent using wall clock.
     pub fn required_delay(&self) -> Duration {
+        self.required_delay_at(Instant::now())
+    }
+
+    /// Deterministic delay calculation relative to a supplied `now` instant.
+    pub fn required_delay_at(&self, now: Instant) -> Duration {
         match self.last_write {
             Some(last) => {
-                let elapsed = last.elapsed();
+                let elapsed = now.saturating_duration_since(last);
                 if elapsed < self.min_gap {
                     self.min_gap - elapsed
                 } else {
@@ -219,9 +226,14 @@ impl BleWriteLimiter {
         }
     }
 
-    /// Record that a write was sent now
+    /// Record that a write was sent now.
     pub fn record_write(&mut self) {
-        self.last_write = Some(Instant::now());
+        self.record_write_at(Instant::now());
+    }
+
+    /// Deterministic write timestamp recording for tests.
+    pub fn record_write_at(&mut self, now: Instant) {
+        self.last_write = Some(now);
     }
 }
 
@@ -305,5 +317,569 @@ impl CoolerStateMachine {
         } else {
             false
         }
+    }
+}
+
+/// Control mode for the external LCT liquid cooler.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum CoolerMode {
+    #[default]
+    Auto,
+    Manual,
+}
+
+/// High-level LCT cooler command queued for throttled BLE transmission.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum CoolerCommand {
+    FanSpeed(u8),
+    PumpVoltage(PumpVoltage),
+    Rgb {
+        red: u8,
+        green: u8,
+        blue: u8,
+        state: RgbState,
+    },
+    TurnOffFan,
+    TurnOffPump,
+    TurnOffLed,
+    Reset,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum CommandSlot {
+    Fan,
+    Pump,
+    Rgb,
+    Reset,
+}
+
+impl CoolerCommand {
+    pub fn validate(self) -> Result<(), CoolerError> {
+        match self {
+            Self::FanSpeed(percent) if percent > 100 => {
+                Err(CoolerError::InvalidFanSpeed(percent))
+            }
+            Self::PumpVoltage(PumpVoltage::V12) => Err(CoolerError::V12Forbidden),
+            _ => Ok(()),
+        }
+    }
+
+    pub fn encode(self) -> Result<[u8; 8], CoolerError> {
+        match self {
+            Self::FanSpeed(percent) => CoolerPacketEncoder::fan_speed(percent),
+            Self::PumpVoltage(voltage) => CoolerPacketEncoder::pump_voltage(voltage),
+            Self::Rgb {
+                red,
+                green,
+                blue,
+                state,
+            } => Ok(CoolerPacketEncoder::rgb(red, green, blue, state)),
+            Self::TurnOffFan => Ok(CoolerPacketEncoder::turn_off(CMD_FAN)),
+            Self::TurnOffPump => Ok(CoolerPacketEncoder::turn_off(CMD_PUMP)),
+            Self::TurnOffLed => Ok(CoolerPacketEncoder::turn_off(CMD_RGB)),
+            Self::Reset => Ok(CoolerPacketEncoder::reset()),
+        }
+    }
+
+    fn slot(self) -> CommandSlot {
+        match self {
+            Self::FanSpeed(_) | Self::TurnOffFan => CommandSlot::Fan,
+            Self::PumpVoltage(_) | Self::TurnOffPump => CommandSlot::Pump,
+            Self::Rgb { .. } | Self::TurnOffLed => CommandSlot::Rgb,
+            Self::Reset => CommandSlot::Reset,
+        }
+    }
+}
+
+/// Queued command stamped with a connection generation to cancel stale pre-disconnect writes.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct QueuedCoolerCommand {
+    pub generation: u64,
+    pub command: CoolerCommand,
+}
+
+/// Coalescing, generation-aware, 80ms rate-limited command queue (`M5.6`).
+pub struct CoolerCommandQueue {
+    generation: u64,
+    queue: VecDeque<QueuedCoolerCommand>,
+    limiter: BleWriteLimiter,
+}
+
+impl Default for CoolerCommandQueue {
+    fn default() -> Self {
+        Self::new(BLE_WRITE_GAP)
+    }
+}
+
+impl CoolerCommandQueue {
+    pub fn new(min_gap: Duration) -> Self {
+        Self {
+            generation: 0,
+            queue: VecDeque::new(),
+            limiter: BleWriteLimiter::new(min_gap),
+        }
+    }
+
+    pub fn generation(&self) -> u64 {
+        self.generation
+    }
+
+    pub fn pending_len(&self) -> usize {
+        self.queue.len()
+    }
+
+    /// Removes any queued fan/pump commands while preserving pending RGB/Reset and the 80ms rate-limiter (`W1-11`).
+    pub fn clear_fan_and_pump(&mut self) {
+        self.queue.retain(|entry| {
+            !matches!(
+                entry.command.slot(),
+                CommandSlot::Fan | CommandSlot::Pump
+            )
+        });
+    }
+
+    /// Cancels all pending commands and invalidates any previously stamped generation.
+    pub fn bump_generation(&mut self) -> u64 {
+        self.generation += 1;
+        self.queue.clear();
+        self.generation
+    }
+
+    /// Validates and enqueues a command, coalescing superseded pending writes for the same subsystem.
+    pub fn enqueue(&mut self, command: CoolerCommand) -> Result<(), CoolerError> {
+        command.validate()?;
+        let slot = command.slot();
+        if let Some(existing) = self.queue.iter_mut().find(|entry| entry.command.slot() == slot) {
+            existing.command = command;
+            existing.generation = self.generation;
+        } else {
+            self.queue.push_back(QueuedCoolerCommand {
+                generation: self.generation,
+                command,
+            });
+        }
+        Ok(())
+    }
+
+    pub fn next_delay_at(&self, now: Instant) -> Duration {
+        self.limiter.required_delay_at(now)
+    }
+
+    /// Peeks at the next ready command without removing it from the queue (`W1-05`).
+    pub fn peek_ready_at(&mut self, now: Instant) -> Option<QueuedCoolerCommand> {
+        while let Some(front) = self.queue.front() {
+            if front.generation != self.generation {
+                self.queue.pop_front();
+                continue;
+            }
+            if !self.limiter.required_delay_at(now).is_zero() {
+                return None;
+            }
+            return Some(*front);
+        }
+        None
+    }
+
+    /// Removes the head command after a confirmed transport write and records the throttle timestamp.
+    pub fn commit_sent_at(&mut self, now: Instant) {
+        self.queue.pop_front();
+        self.limiter.record_write_at(now);
+    }
+
+    /// Leaves the failed command queued for retry on the same connection while advancing the 80ms
+    /// BLE write-gap timer (`W1-05`).
+    pub fn record_write_attempt_at(&mut self, now: Instant) {
+        self.limiter.record_write_at(now);
+    }
+
+    /// Pops the next queued command if its generation is current and the 80ms BLE write gap elapsed.
+    pub fn pop_ready_at(&mut self, now: Instant) -> Option<QueuedCoolerCommand> {
+        let ready = self.peek_ready_at(now)?;
+        self.commit_sent_at(now);
+        Some(ready)
+    }
+}
+
+/// Persisted fan target distinguishing unset from explicit `Off` (`W1-04`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum FanTarget {
+    #[default]
+    Unset,
+    Off,
+    Speed(u8),
+}
+
+/// Persisted pump voltage target (`PumpVoltage::Off` is explicit off).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum PumpTarget {
+    #[default]
+    Unset,
+    Voltage(PumpVoltage),
+}
+
+/// Persisted RGB target distinguishing unset from explicit `Off` (`W1-04`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum RgbTarget {
+    #[default]
+    Unset,
+    Off,
+    Color {
+        red: u8,
+        green: u8,
+        blue: u8,
+        state: RgbState,
+    },
+}
+
+fn from_core_pump_voltage(v: ucc_core::PumpVoltage) -> PumpVoltage {
+    match v {
+        ucc_core::PumpVoltage::V11 => PumpVoltage::V11,
+        ucc_core::PumpVoltage::V12 => PumpVoltage::V12,
+        ucc_core::PumpVoltage::V7 => PumpVoltage::V7,
+        ucc_core::PumpVoltage::V8 => PumpVoltage::V8,
+        ucc_core::PumpVoltage::Off => PumpVoltage::Off,
+    }
+}
+
+/// Abstract BLE NUS TX transport for LCT21001/LCT22002 water coolers.
+pub trait BleTransport: Send + Sync {
+    fn is_connected(&self) -> bool;
+    fn write_packet(&self, packet: [u8; 8]) -> Result<(), CoolerError>;
+}
+
+/// In-memory mock [`BleTransport`] recording all 8-byte packets written.
+#[derive(Debug, Default)]
+pub struct MockBleTransport {
+    connected: std::sync::atomic::AtomicBool,
+    packets: Arc<Mutex<Vec<[u8; 8]>>>,
+}
+
+impl MockBleTransport {
+    pub fn new(connected: bool) -> Self {
+        Self {
+            connected: std::sync::atomic::AtomicBool::new(connected),
+            packets: Arc::new(Mutex::new(Vec::new())),
+        }
+    }
+
+    pub fn set_connected(&self, connected: bool) {
+        self.connected
+            .store(connected, std::sync::atomic::Ordering::SeqCst);
+    }
+
+    pub fn packets(&self) -> Vec<[u8; 8]> {
+        self.packets.lock().unwrap().clone()
+    }
+
+    pub fn clear(&self) {
+        self.packets.lock().unwrap().clear();
+    }
+}
+
+impl BleTransport for MockBleTransport {
+    fn is_connected(&self) -> bool {
+        self.connected.load(std::sync::atomic::Ordering::SeqCst)
+    }
+
+    fn write_packet(&self, packet: [u8; 8]) -> Result<(), CoolerError> {
+        if !self.is_connected() {
+            return Err(CoolerError::NotConnected);
+        }
+        CoolerPacketEncoder::validate_packet(&packet)?;
+        self.packets.lock().unwrap().push(packet);
+        Ok(())
+    }
+}
+
+/// High-level LCT cooler controller combining connection state, coalescing queue,
+/// manual/auto mode, retry-safe queue flush, suspend cancellation, and reconnect restore (`M5.4`–`M5.7`).
+pub struct CoolerController {
+    state_machine: CoolerStateMachine,
+    queue: CoolerCommandQueue,
+    mode: CoolerMode,
+    auto_fan: FanTarget,
+    auto_pump: PumpTarget,
+    manual_fan: FanTarget,
+    manual_pump: PumpTarget,
+    desired_rgb: RgbTarget,
+    suspending: bool,
+}
+
+impl Default for CoolerController {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl CoolerController {
+    pub fn new() -> Self {
+        Self {
+            state_machine: CoolerStateMachine::new(),
+            queue: CoolerCommandQueue::default(),
+            mode: CoolerMode::Auto,
+            auto_fan: FanTarget::Unset,
+            auto_pump: PumpTarget::Unset,
+            manual_fan: FanTarget::Unset,
+            manual_pump: PumpTarget::Unset,
+            desired_rgb: RgbTarget::Unset,
+            suspending: false,
+        }
+    }
+
+    pub fn mode(&self) -> CoolerMode {
+        self.mode
+    }
+
+    /// Switches between [`CoolerMode::Auto`] and [`CoolerMode::Manual`], purging stale queued
+    /// fan/pump commands from the previous mode before enqueuing active targets (`W1-11`).
+    pub fn set_mode(&mut self, mode: CoolerMode) {
+        if self.mode == mode {
+            return;
+        }
+        self.mode = mode;
+        self.queue.clear_fan_and_pump();
+        self.enqueue_active_fan_and_pump();
+    }
+
+    pub fn state(&self) -> CoolerState {
+        self.state_machine.state()
+    }
+
+    pub fn pending_len(&self) -> usize {
+        self.queue.pending_len()
+    }
+
+    pub fn generation(&self) -> u64 {
+        self.queue.generation()
+    }
+
+    pub fn desired_fan_target(&self) -> FanTarget {
+        match self.mode {
+            CoolerMode::Auto => self.auto_fan,
+            CoolerMode::Manual => self.manual_fan,
+        }
+    }
+
+    pub fn desired_pump_target(&self) -> PumpTarget {
+        match self.mode {
+            CoolerMode::Auto => self.auto_pump,
+            CoolerMode::Manual => self.manual_pump,
+        }
+    }
+
+    pub fn desired_rgb_target(&self) -> RgbTarget {
+        self.desired_rgb
+    }
+
+    /// Evaluates water cooler fan & pump curves for `temp_c` (`W1-11`).
+    ///
+    /// Always keeps the Auto targets up to date; only enqueues hardware commands when
+    /// `mode() == CoolerMode::Auto` (never clobbering `Manual` overrides).
+    pub fn apply_profile_temperature(
+        &mut self,
+        profile: &ucc_core::FanProfile,
+        temp_c: i32,
+    ) -> Result<(), CoolerError> {
+        let curve_fan = profile.get_water_cooler_fan_speed_for_temp(temp_c);
+        let next_fan = if curve_fan >= 0 {
+            FanTarget::Speed(curve_fan.clamp(0, 100) as u8)
+        } else {
+            self.auto_fan
+        };
+
+        let next_pump = if !profile.table_pump.is_empty() {
+            PumpTarget::Voltage(from_core_pump_voltage(profile.get_pump_speed_for_temp(temp_c)))
+        } else {
+            self.auto_pump
+        };
+
+        let fan_changed = next_fan != self.auto_fan;
+        let pump_changed = next_pump != self.auto_pump;
+        self.auto_fan = next_fan;
+        self.auto_pump = next_pump;
+
+        if self.mode == CoolerMode::Auto {
+            if fan_changed {
+                Self::enqueue_fan_target(&mut self.queue, self.auto_fan)?;
+            }
+            if pump_changed {
+                Self::enqueue_pump_target(&mut self.queue, self.auto_pump)?;
+            }
+        }
+        Ok(())
+    }
+
+    pub fn set_fan_speed(&mut self, percent: u8) -> Result<(), CoolerError> {
+        let cmd = CoolerCommand::FanSpeed(percent);
+        cmd.validate()?;
+        match self.mode {
+            CoolerMode::Auto => self.auto_fan = FanTarget::Speed(percent),
+            CoolerMode::Manual => self.manual_fan = FanTarget::Speed(percent),
+        }
+        self.queue.enqueue(cmd)
+    }
+
+    pub fn set_pump_voltage(&mut self, voltage: PumpVoltage) -> Result<(), CoolerError> {
+        let cmd = CoolerCommand::PumpVoltage(voltage);
+        cmd.validate()?;
+        match self.mode {
+            CoolerMode::Auto => self.auto_pump = PumpTarget::Voltage(voltage),
+            CoolerMode::Manual => self.manual_pump = PumpTarget::Voltage(voltage),
+        }
+        self.queue.enqueue(cmd)
+    }
+
+    pub fn set_rgb(
+        &mut self,
+        red: u8,
+        green: u8,
+        blue: u8,
+        state: RgbState,
+    ) -> Result<(), CoolerError> {
+        self.desired_rgb = RgbTarget::Color {
+            red,
+            green,
+            blue,
+            state,
+        };
+        self.queue.enqueue(CoolerCommand::Rgb {
+            red,
+            green,
+            blue,
+            state,
+        })
+    }
+
+    pub fn turn_off_fan(&mut self) -> Result<(), CoolerError> {
+        match self.mode {
+            CoolerMode::Auto => self.auto_fan = FanTarget::Off,
+            CoolerMode::Manual => self.manual_fan = FanTarget::Off,
+        }
+        self.queue.enqueue(CoolerCommand::TurnOffFan)
+    }
+
+    pub fn turn_off_pump(&mut self) -> Result<(), CoolerError> {
+        match self.mode {
+            CoolerMode::Auto => self.auto_pump = PumpTarget::Voltage(PumpVoltage::Off),
+            CoolerMode::Manual => self.manual_pump = PumpTarget::Voltage(PumpVoltage::Off),
+        }
+        self.queue.enqueue(CoolerCommand::TurnOffPump)
+    }
+
+    pub fn turn_off_led(&mut self) -> Result<(), CoolerError> {
+        self.desired_rgb = RgbTarget::Off;
+        self.queue.enqueue(CoolerCommand::TurnOffLed)
+    }
+
+    /// Marks the cooler connected, clears stale queued items, and re-enqueues active
+    /// fan/pump/RGB targets, including explicit `Off` states (`W1-04`, `M5.7`).
+    pub fn on_connected(&mut self) {
+        self.state_machine.on_connected();
+        self.queue.bump_generation();
+        self.enqueue_active_fan_and_pump();
+        let _ = match self.desired_rgb {
+            RgbTarget::Unset => Ok(()),
+            RgbTarget::Off => self.queue.enqueue(CoolerCommand::TurnOffLed),
+            RgbTarget::Color {
+                red,
+                green,
+                blue,
+                state,
+            } => self.queue.enqueue(CoolerCommand::Rgb {
+                red,
+                green,
+                blue,
+                state,
+            }),
+        };
+    }
+
+    pub fn on_disconnected(&mut self) {
+        self.state_machine.on_disconnected();
+        self.queue.bump_generation();
+    }
+
+    pub fn on_prepare_for_sleep(&mut self, suspending: bool) {
+        self.suspending = suspending;
+        if suspending {
+            self.queue.bump_generation();
+            self.state_machine.on_disconnected();
+        }
+    }
+
+    /// Pops and transmits ready commands respecting the 80ms gap; leaves any failed packet
+    /// at the head of the queue for retry on the same connection (`W1-05`).
+    pub fn flush_ready(
+        &mut self,
+        transport: &dyn BleTransport,
+        now: Instant,
+    ) -> Result<usize, CoolerError> {
+        if self.suspending || !self.state_machine.is_connected() || !transport.is_connected() {
+            return Ok(0);
+        }
+        let mut sent = 0usize;
+        while let Some(queued) = self.queue.peek_ready_at(now) {
+            let pkt = queued.command.encode()?;
+            match transport.write_packet(pkt) {
+                Ok(()) => {
+                    self.queue.commit_sent_at(now);
+                    sent += 1;
+                }
+                Err(err) => {
+                    self.queue.record_write_attempt_at(now);
+                    return Err(err);
+                }
+            }
+        }
+        Ok(sent)
+    }
+
+    /// Exposed for async BlueZ transport flushing without duplicating queue/state logic.
+    pub(crate) fn peek_ready_at(&mut self, now: Instant) -> Option<QueuedCoolerCommand> {
+        if self.suspending || !self.state_machine.is_connected() {
+            return None;
+        }
+        self.queue.peek_ready_at(now)
+    }
+
+    pub(crate) fn commit_sent_at(&mut self, now: Instant) {
+        self.queue.commit_sent_at(now);
+    }
+
+    pub(crate) fn record_write_attempt_at(&mut self, now: Instant) {
+        self.queue.record_write_attempt_at(now);
+    }
+
+    pub fn next_flush_delay_at(&self, now: Instant) -> Duration {
+        self.queue.next_delay_at(now)
+    }
+
+    fn enqueue_fan_target(
+        queue: &mut CoolerCommandQueue,
+        target: FanTarget,
+    ) -> Result<(), CoolerError> {
+        match target {
+            FanTarget::Unset => Ok(()),
+            FanTarget::Off => queue.enqueue(CoolerCommand::TurnOffFan),
+            FanTarget::Speed(spd) => queue.enqueue(CoolerCommand::FanSpeed(spd)),
+        }
+    }
+
+    fn enqueue_pump_target(
+        queue: &mut CoolerCommandQueue,
+        target: PumpTarget,
+    ) -> Result<(), CoolerError> {
+        match target {
+            PumpTarget::Unset => Ok(()),
+            PumpTarget::Voltage(PumpVoltage::Off) => queue.enqueue(CoolerCommand::TurnOffPump),
+            PumpTarget::Voltage(v) => queue.enqueue(CoolerCommand::PumpVoltage(v)),
+        }
+    }
+
+    fn enqueue_active_fan_and_pump(&mut self) {
+        let fan = self.desired_fan_target();
+        let pump = self.desired_pump_target();
+        let _ = Self::enqueue_fan_target(&mut self.queue, fan);
+        let _ = Self::enqueue_pump_target(&mut self.queue, pump);
     }
 }

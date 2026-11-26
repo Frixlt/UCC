@@ -366,13 +366,15 @@ impl CpuController {
         // Clamp to per-core limits
         freq = freq.clamp(scaling_min, core_max);
 
-        // Snap to closest available frequency >= scaling_min
+        // Snap to closest available frequency >= scaling_min and <= core_max
         if let Some(avail) = core.read_scaling_available_frequencies() {
-            let filtered: Vec<u32> = avail.into_iter().filter(|&f| f >= scaling_min).collect();
+            let filtered: Vec<u32> = avail.into_iter().filter(|&f| f >= scaling_min && f <= core_max).collect();
             if !filtered.is_empty() {
                 freq = find_closest_value(freq, &filtered);
             }
         }
+
+        freq = freq.clamp(scaling_min, core_max);
 
         Some(freq)
     }
@@ -402,17 +404,19 @@ impl CpuController {
 
         let mut freq = match target_min {
             None => core_min,
-            Some(-2) => core_max,
+            Some(-2) => core_max.min(scaling_max),
             Some(val) => (val.clamp(0, u32::MAX as i64) as u32).clamp(core_min, scaling_max),
         };
 
-        // Snap to closest available frequency <= scaling_max
+        // Snap to closest available frequency between core_min and scaling_max
         if let Some(avail) = core.read_scaling_available_frequencies() {
-            let filtered: Vec<u32> = avail.into_iter().filter(|&f| f <= scaling_max).collect();
+            let filtered: Vec<u32> = avail.into_iter().filter(|&f| f >= core_min && f <= scaling_max).collect();
             if !filtered.is_empty() {
                 freq = find_closest_value(freq, &filtered);
             }
         }
+
+        freq = freq.clamp(core_min, scaling_max);
 
         Some(freq)
     }
@@ -421,6 +425,7 @@ impl CpuController {
     pub fn set_governor_scaling_max_frequency(&self, set_max_frequency: Option<i64>) -> Result<(), std::io::Error> {
         let mut scaling_driver_str: Option<String> = None;
         let mut acpi_fallback = false;
+        let mut applied_count = 0;
 
         for core in &self.cores {
             if !core.cpufreq_path.join("scaling_min_freq").exists()
@@ -443,7 +448,15 @@ impl CpuController {
 
             if let Some(effective) = self.compute_effective_max_freq(core, set_max_frequency, acpi_fallback) {
                 core.write_scaling_max_freq(effective)?;
+                applied_count += 1;
             }
+        }
+
+        if set_max_frequency.is_some() && applied_count == 0 {
+            return Err(std::io::Error::new(
+                std::io::ErrorKind::NotFound,
+                "No CPU cores have cpufreq frequency control nodes available",
+            ));
         }
 
         // Handle boost for acpi-cpufreq
@@ -468,6 +481,7 @@ impl CpuController {
 
     /// Set minimum scaling frequency for all online cores.
     pub fn set_governor_scaling_min_frequency(&self, set_min_frequency: Option<i64>) -> Result<(), std::io::Error> {
+        let mut applied_count = 0;
         for core in &self.cores {
             if !core.cpufreq_path.join("scaling_min_freq").exists()
                 || !core.cpufreq_path.join("scaling_max_freq").exists()
@@ -483,8 +497,17 @@ impl CpuController {
 
             if let Some(effective) = self.compute_effective_min_freq(core, set_min_frequency) {
                 core.write_scaling_min_freq(effective)?;
+                applied_count += 1;
             }
         }
+
+        if set_min_frequency.is_some() && applied_count == 0 {
+            return Err(std::io::Error::new(
+                std::io::ErrorKind::NotFound,
+                "No CPU cores have cpufreq frequency control nodes available",
+            ));
+        }
+
         Ok(())
     }
 

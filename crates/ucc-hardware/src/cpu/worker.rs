@@ -112,7 +112,10 @@ impl CpuWorker {
             let epp = &cpu.energy_performance_preference;
             if self.is_epp_available(epp) {
                 if let Err(e) = self.cpu_ctrl.set_energy_performance_preference(Some(epp)) {
-                    if e.kind() != std::io::ErrorKind::NotFound {
+                    if e.raw_os_error() == Some(libc::EBUSY) {
+                        self.no_epp_write_quirk = true;
+                        warn!("CpuWorker: EPP write returned EBUSY. Disabling EPP management");
+                    } else if e.kind() != std::io::ErrorKind::NotFound {
                         return Err(format!("Failed to apply CPU EPP '{epp}': {e}"));
                     }
                 }
@@ -246,14 +249,19 @@ impl CpuWorker {
                 .and_then(|c| c.read_scaling_driver())
                 .as_deref() == Some("acpi-cpufreq");
 
+        if self.cpu_ctrl.cores.is_empty() && (cpu.min_freq_khz.is_some() || cpu.max_freq_khz.is_some()) {
+            return false;
+        }
+
         for core in &self.cpu_ctrl.cores {
             if core.core_index == 0 || core.read_online().unwrap_or(false) {
                 if let Some(req_min) = cpu.min_freq_khz {
                     let current_min = core.read_scaling_min_freq();
                     let expected_min = self.cpu_ctrl.compute_effective_min_freq(core, Some(req_min as i64));
-                    if let (Some(cur), Some(exp)) = (current_min, expected_min) {
-                        if cur != exp {
-                            debug!("CpuWorker: Core {} min freq {} != expected {}", core.core_index, cur, exp);
+                    match (current_min, expected_min) {
+                        (Some(cur), Some(exp)) if cur == exp => {},
+                        _ => {
+                            debug!("CpuWorker: Core {} min freq mismatch or missing nodes", core.core_index);
                             return false;
                         }
                     }
@@ -262,9 +270,10 @@ impl CpuWorker {
                 if let Some(req_max) = cpu.max_freq_khz {
                     let current_max = core.read_scaling_max_freq();
                     let expected_max = self.cpu_ctrl.compute_effective_max_freq(core, Some(req_max as i64), acpi_fallback);
-                    if let (Some(cur), Some(exp)) = (current_max, expected_max) {
-                        if cur != exp {
-                            debug!("CpuWorker: Core {} max freq {} != expected {}", core.core_index, cur, exp);
+                    match (current_max, expected_max) {
+                        (Some(cur), Some(exp)) if cur == exp => {},
+                        _ => {
+                            debug!("CpuWorker: Core {} max freq mismatch or missing nodes", core.core_index);
                             return false;
                         }
                     }

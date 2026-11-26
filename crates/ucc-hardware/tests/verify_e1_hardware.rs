@@ -1,10 +1,28 @@
 use libloading::Library;
+use std::process::Command;
 use std::{
     fs,
-    path::Path,
-    sync::{Arc, Barrier},
+    path::{Path, PathBuf},
+    sync::{Arc, Barrier, Mutex},
 };
 use ucc_hardware::{set_uniwill_tdp, MockHardwareIo, NvidiaPowerGuard, NvmlWrapper, SysfsRoot};
+
+static TEST_MUTEX: Mutex<()> = Mutex::new(());
+
+fn compile_stand_nvml(dir: &Path) -> PathBuf {
+    let manifest_dir = Path::new(env!("CARGO_MANIFEST_DIR"));
+    let src = manifest_dir.join("../../stand-fixtures/nvml.c");
+    let so_path = dir.join("libnvidia-ml.so.1");
+    let status = Command::new("cc")
+        .args(["-shared", "-fPIC"])
+        .arg(&src)
+        .arg("-o")
+        .arg(&so_path)
+        .status()
+        .expect("cc must be available");
+    assert!(status.success(), "failed to compile stand-fixtures/nvml.c");
+    so_path
+}
 
 fn gpu(root: &Path, id: &str, status: &str) -> std::path::PathBuf {
     let dev = root.join(id);
@@ -18,7 +36,10 @@ fn gpu(root: &Path, id: &str, status: &str) -> std::path::PathBuf {
 
 #[test]
 fn nvml_index_order_is_not_an_environment_override() {
-    let lib = unsafe { Library::new("libnvidia-ml.so.1").unwrap() };
+    let _lock = TEST_MUTEX.lock().unwrap();
+    let lib_dir = tempfile::tempdir().unwrap();
+    let so_path = compile_stand_nvml(lib_dir.path());
+    let lib = unsafe { Library::new(&so_path).unwrap() };
     let count = unsafe {
         lib.get::<unsafe extern "C" fn() -> u32>(b"nvmlAuditSleepingProbes")
             .unwrap()
@@ -29,7 +50,8 @@ fn nvml_index_order_is_not_an_environment_override() {
     // Only the fake driver knows its actual device order.
     assert!(std::env::var_os("UCC_AUDIT_REVERSED_NVML_INDEX").is_none());
     std::env::set_var("UCC_E1_FIXTURE_REVERSED_ORDER", "1");
-    let wrapper = NvmlWrapper::new(NvidiaPowerGuard::new(dir.path())).unwrap();
+    let wrapper =
+        NvmlWrapper::with_library_path(NvidiaPowerGuard::new(dir.path()), &so_path).unwrap();
     let _ = wrapper.get_telemetry(0);
     std::env::remove_var("UCC_E1_FIXTURE_REVERSED_ORDER");
     assert_eq!(unsafe { count() }, 0, "handle requested for suspended BDF");
@@ -37,14 +59,19 @@ fn nvml_index_order_is_not_an_environment_override() {
 
 #[test]
 fn concurrent_first_queries_leave_no_nvml_initialization_reference() {
-    let lib = unsafe { Library::new("libnvidia-ml.so.1").unwrap() };
+    let _lock = TEST_MUTEX.lock().unwrap();
+    let lib_dir = tempfile::tempdir().unwrap();
+    let so_path = compile_stand_nvml(lib_dir.path());
+    let lib = unsafe { Library::new(&so_path).unwrap() };
     let refs = unsafe {
         lib.get::<unsafe extern "C" fn() -> u32>(b"nvmlAuditRefCount")
             .unwrap()
     };
     let dir = tempfile::tempdir().unwrap();
     let status = gpu(dir.path(), "0000:02:00.0", "suspended");
-    let wrapper = Arc::new(NvmlWrapper::new(NvidiaPowerGuard::new(dir.path())).unwrap());
+    let wrapper = Arc::new(
+        NvmlWrapper::with_library_path(NvidiaPowerGuard::new(dir.path()), &so_path).unwrap(),
+    );
     fs::write(status, "active").unwrap();
     std::env::set_var("UCC_E1_FIXTURE_SLOW_INIT", "1");
     let gate = Arc::new(Barrier::new(3));
@@ -84,6 +111,38 @@ fn caller_tdp_range_does_not_bypass_unavailable_hardware_limits() {
 
 #[test]
 fn ancestor_replacement_cannot_truncate_an_external_file() {
+    let _lock = TEST_MUTEX.lock().unwrap();
+    if std::env::var_os("UCC_PRELOAD_CHILD").is_none() {
+        let preload_dir = tempfile::tempdir().unwrap();
+        let src = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../extra-fixtures/open-ancestor.c");
+        let so_path = preload_dir.path().join("open-ancestor.so");
+        let cc_status = Command::new("cc")
+            .args(["-shared", "-fPIC"])
+            .arg(&src)
+            .args(["-ldl", "-o"])
+            .arg(&so_path)
+            .status()
+            .expect("cc must be available");
+        assert!(cc_status.success(), "failed to compile open-ancestor.c");
+
+        let exe = std::env::current_exe().unwrap();
+        let status = Command::new(exe)
+            .env("LD_PRELOAD", &so_path)
+            .env("UCC_PRELOAD_CHILD", "1")
+            .args([
+                "--exact",
+                "ancestor_replacement_cannot_truncate_an_external_file",
+                "--nocapture",
+            ])
+            .status()
+            .unwrap();
+        assert!(
+            status.success(),
+            "preload child failed for ancestor_replacement_cannot_truncate_an_external_file"
+        );
+        return;
+    }
+
     let dir = tempfile::tempdir().unwrap();
     let root = dir.path().join("root");
     let parent = root.join("sub");
@@ -105,9 +164,12 @@ fn ancestor_replacement_cannot_truncate_an_external_file() {
         std::env::remove_var(key);
     }
     assert!(
-        fs::symlink_metadata(parent).unwrap().is_symlink(),
-        "shim must swap ancestor before opening"
+        fs::symlink_metadata(&parent)
+            .map(|m| m.is_symlink())
+            .unwrap_or(false),
+        "LD_PRELOAD open-ancestor fixture must swap parent to a symlink"
     );
+    assert!(result.is_err(), "swapped symlink write must be rejected: {result:?}");
     assert_eq!(
         fs::read_to_string(external_file).unwrap(),
         "must survive",
