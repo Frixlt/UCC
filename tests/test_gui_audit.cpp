@@ -46,6 +46,9 @@ class AuditDaemon : public QDBusVirtualObject {
   bool visualFixture=false;
   bool coolerAuto=false;
   bool coolerEnabled=false;
+  bool chargeWindowTest=false;
+  int chargeStart=40,chargeEnd=80;
+  QString chargeType="Custom";
   QString customProfile,lastSavedProfile,chargingMode="stationary";
 public:
   QString introspect(const QString &) const override {
@@ -80,8 +83,14 @@ public:
     else if(method=="IsWaterCoolerEnabled") result=coolerEnabled;
     else if(method=="IsWaterCoolerAutoControlEnabled") result=coolerAuto;
     else if (method=="TestVisualFixture") {visualFixture=true;result=true;}
+    else if (method=="TestChargeWindow") {chargeWindowTest=true;chargeStart=40;chargeEnd=80;chargeType="Custom";result=true;}
+    else if (chargeWindowTest && method=="GetChargeStartAvailableThresholds") {result=QString("[40,60]");}
+    else if (chargeWindowTest && method=="GetChargeEndAvailableThresholds") {result=QString("[80,90,100]");}
+    else if (chargeWindowTest && method=="GetChargeType") {result=chargeType;}
+    else if (chargeWindowTest && method=="GetChargeStartThreshold") {result=chargeStart;}
+    else if (chargeWindowTest && method=="GetChargeEndThreshold") {result=chargeEnd;}
     else if (method=="TestStats") result=QString::fromUtf8(QJsonDocument(QJsonObject{{"writes",writes},{"reads",reads}}).toJson());
-    else if (method=="TestReset") { customProfile.clear();lastSavedProfile.clear();chargingMode="stationary";writes={};reads={};runtimeProfile.clear();driverHealth.clear();lastAppliedProfile.clear();lastDeviceSettings.clear();lastLightbar.clear();failReads=false;failControl=false;visualFixture=false;coolerAuto=false;coolerEnabled=false;result=true; }
+    else if (method=="TestReset") { customProfile.clear();lastSavedProfile.clear();chargingMode="stationary";writes={};reads={};runtimeProfile.clear();driverHealth.clear();lastAppliedProfile.clear();lastDeviceSettings.clear();lastLightbar.clear();failReads=false;failControl=false;visualFixture=false;coolerAuto=false;coolerEnabled=false;chargeWindowTest=false;chargeStart=40;chargeEnd=80;chargeType="Custom";result=true; }
     else if (method=="TestFailReads") { failReads=msg.arguments().value(0).toBool();result=true; }
     else if (method=="TriggerLightbarAnimation" || method=="ScanPowerDevices" || method.startsWith("Register") || method.startsWith("Unregister") || method.startsWith("Set") || method.startsWith("TurnOff") || method=="EnableWaterCooler" || method.startsWith("Apply") || method.startsWith("Save") || method.startsWith("Delete") || method.startsWith("Revert")) {
       if(failControl) {bus.send(msg.createReply(false));return true;}
@@ -1010,6 +1019,33 @@ private slots:
     QVERIFY2(stats().value("writes").toArray().isEmpty(), "Read-only prototype must never dispatch hardware or settings writes");
     QCOMPARE(client->getWaterCoolerFanSpeed().value_or(-1),100);
     QVERIFY(stats().value("reads").toObject().value("GetWaterCoolerFanSpeed").toInt()>0);
+  }
+  void fanControlPumpComboFindsDiscreteIntCodes() {
+    ucc::FanControlTab tab(client.get(),profiles.get(),true);
+    auto *combo=pump(tab);
+    QVERIFY(combo);
+    QCOMPARE(combo->itemData(0).typeId(), static_cast<int>(QMetaType::Int));
+    QVERIFY2(combo->findData(0)>=0,"Pump combo must store int 0 (Off) so findData(int) matches D-Bus codes");
+    QVERIFY2(combo->findData(2)>=0,"Pump combo must store int 2 (8V) / discrete codes");
+  }
+  void batterySettingsRaisesWindowSetsEndBeforeStart() {
+#ifdef UCC_READ_ONLY_PREVIEW
+    QSKIP("Only applies to writable build");
+#endif
+    control("TestChargeWindow");
+    ucc::BatterySettingsWidget widget(client.get());
+    auto *limit=widget.findChild<QComboBox*>("globalChargeLimit");QVERIFY(limit);
+    QTRY_COMPARE(limit->currentData().toString(),QString("stationary"));
+    limit->setCurrentIndex(limit->findData("reduced"));
+    widget.findChild<QPushButton*>("saveBatterySettings")->click();
+    const auto wr=stats()["writes"].toArray();
+    int idxStart=-1,idxEnd=-1;
+    for(int i=0;i<wr.size();++i) {
+      if(wr[i].toString()=="SetChargeStartThreshold") idxStart=i;
+      if(wr[i].toString()=="SetChargeEndThreshold") idxEnd=i;
+    }
+    QVERIFY(idxStart>=0 && idxEnd>=0);
+    QVERIFY2(idxEnd<idxStart,"Raising charge window 40-80 -> 60-90 must raise SetChargeEndThreshold BEFORE SetChargeStartThreshold");
   }
   void cleanupTestCase() { profiles.reset();client.reset();daemon.terminate();daemon.waitForFinished(); }
 };

@@ -3,6 +3,7 @@
 #include "PreviewMode.hpp"
 #include "version.h"
 #include <QtTest>
+#include <QLoggingCategory>
 #include <QFile>
 #include <QDir>
 #include <QTemporaryDir>
@@ -21,7 +22,7 @@ class TestAppLogging : public QObject {
  Q_OBJECT
 private slots:
  void init() {AppLogging::shutdown();QSettings("UniwillControlCenter","diagnostics").clear();if(!AppLogging::directory().isEmpty()) QDir(AppLogging::directory()).removeRecursively();}
- void cleanup() {AppLogging::shutdown();}
+ void cleanup() {AppLogging::shutdown();QLoggingCategory::setFilterRules(QString());}
  void freshInstallStartsLogging() {
   AppLogging::initialize();
   if(readOnlyPreview) {QVERIFY(!AppLogging::isEnabled());QVERIFY(!QDir(AppLogging::directory()).exists());}
@@ -69,6 +70,15 @@ private slots:
   if(readOnlyPreview) QSKIP("Preview has no file logging");
   QProcess child;child.start(QCoreApplication::applicationFilePath(),{"--fatal-probe"});QVERIFY(child.waitForFinished(10000));QCOMPARE(child.exitStatus(),QProcess::CrashExit);
   bool found=false;for(const auto &name:QDir(AppLogging::directory()).entryList({"ucc-gui-*.log"},QDir::Files)) {QFile file(AppLogging::directory()+"/"+name);if(file.open(QIODevice::ReadOnly)) found |= file.readAll().contains("FATAL fatal-probe-marker");}QVERIFY(found);
+ }
+ void debugLoggingOverridesSystemDebugFalseFilterRule() {
+  if(readOnlyPreview) QSKIP("Preview has no file logging");
+  QLoggingCategory::setFilterRules("*.debug=false");
+  QVERIFY(AppLogging::setEnabled(true));
+  qDebug("audit-qtlogging-ini-debug-marker");
+  QFile file(AppLogging::currentFile());QVERIFY(file.open(QIODevice::ReadOnly));
+  const auto data=file.readAll();
+  QVERIFY2(data.contains("audit-qtlogging-ini-debug-marker"),"AppLogging::configure(true) must override system *.debug=false qtlogging.ini rules");
  }
 };
 int main(int argc,char **argv) {
