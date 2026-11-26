@@ -731,7 +731,7 @@
       "requirement": "CPU/RAPL, GPU NVIDIA/AMD/Intel i915/xe, power/clock/temp/fan/util/VRAM/voltage, units/sentinels",
       "baseline_references": "HardwareMonitorWorker/NvmlWrapper",
       "scope": "required",
-      "implementation_status": "defect",
+      "implementation_status": "partial",
       "hardware_status": "hardware_blocked",
       "shell_decision": false,
       "legacy_findings": [
@@ -742,7 +742,7 @@
       "cases": [
         "crates/ucc-cli/tests/telemetry.rs"
       ],
-      "notes": "Closed M7 findings (M7-A01..M7-A07) and all M7 hardware-contract / topology findings (M7-R01..M7-R03: NVML v1/v2 memory ABI, NvAPI initial-BDF & cross-domain conflict rejection, strict RAPL package affinity) in ucc-hardware (telemetry_suite). Wired into LiveUccdBackend on private D-Bus (daemon_integration); live hardware soak (M13) & CLI parity checks remain open.",
+      "notes": "CPU/RAPL and GPU telemetry are integrated into the private-bus daemon tests. Physical sensors and CLI parity against production hardware remain open.",
       "verified_sha": "e16f9ea",
       "verification_layers": {
         "wire": "verified",
@@ -753,7 +753,6 @@
         "hardware": "blocked",
         "install": "planned"
       },
-      "status": "partial",
       "rust_targets": [
         "crates/ucc-hardware/src/nvml.rs",
         "crates/ucc-hardware/src/telemetry/collector.rs",
@@ -779,7 +778,7 @@
         "crates/ucc-hardware/tests/verify_e16_edges.rs",
         "crates/ucc-hardware/tests/wave1_nvml_remediation.rs"
       ],
-      "notes": "Per-BDF cache isolation and D3cold cadence gating are verified in telemetry_suite and wave1_nvml_remediation (W1-08, M7-A01, M7-A02). Live uccd integration (M8) and physical RTX D3cold acceptance (M13) remain open.",
+      "notes": "BDF cache and D3cold gating pass tracked fixture tests. Physical RTX idle and live cadence remain open.",
       "verified_sha": "e16f9ea",
       "verification_layers": {
         "wire": "verified",
@@ -790,7 +789,6 @@
         "hardware": "blocked",
         "install": "planned"
       },
-      "status": "partial",
       "rust_targets": [
         "crates/ucc-hardware/src/nvml.rs",
         "crates/ucc-hardware/src/telemetry/collector.rs",
@@ -805,12 +803,12 @@
       "requirement": "10 metrics, horizon, grouped/unified charts, zoom/pan/markers/toggles, local prefs, устойчивое обновление",
       "baseline_references": "MetricsHistoryStore/MonitorTab",
       "scope": "required",
-      "implementation_status": "planned",
+      "implementation_status": "partial",
       "hardware_status": "hardware_pending",
       "shell_decision": false,
       "legacy_findings": [],
       "cases": [],
-      "notes": "MetricsHistoryStore keeps chronological ordering under clock rollbacks (M7-A05) and decode_history_binary rejects duplicate metric blocks and non-finite values (M7-A06) while keeping C++ binary parity. Live uccd D-Bus exposure (M8) and GUI chart migration (M10) remain open.",
+      "notes": "Bounded 10-series history and the binary codec pass telemetry fixtures. The daemon exposes history through D-Bus. Full chart and live-soak acceptance remain open.",
       "verified_sha": "e16f9ea",
       "verification_layers": {
         "wire": "planned",
@@ -821,7 +819,6 @@
         "hardware": "pending",
         "install": "planned"
       },
-      "status": "partial",
       "rust_targets": [
         "crates/ucc-hardware/src/telemetry/history.rs",
         "crates/ucc-hardware/tests/telemetry_suite.rs"
@@ -984,7 +981,7 @@
       "cases": [
         "ucc-gui/tests/test_gui_audit.cpp"
       ],
-      "notes": "Прототип crates/ucc-gui (Iced) исключён (M10.5 по ADR-01 v2); чистка Qt6-клиента от KF6/QML/Bluetooth запланирована в M10.1–M10.7.",
+      "notes": "Iced was retired by ADR-01. The standalone Qt6 Widgets build and GUI audit pass. Live Wayland visual and accessibility acceptance remain open.",
       "verified_sha": "e16f9ea",
       "verification_layers": {
         "wire": "verified",
@@ -1050,12 +1047,12 @@
       "requirement": "Manual/cooler snapshot, stop before NVIDIA sleep, start только if previously active, failed-start retry, private snapshot",
       "baseline_references": "SleepState, units, helper",
       "scope": "required",
-      "implementation_status": "planned",
+      "implementation_status": "partial",
       "hardware_status": "hardware_pending",
       "shell_decision": false,
       "legacy_findings": [],
       "cases": [],
-      "notes": "Rust sleep helper и согласованный shutdown не подключены.",
+      "notes": "Rust ucc-sleep, private state persistence and systemd wiring are implemented. Physical suspend/resume and failed-start retry acceptance remain open.",
       "verified_sha": "e16f9ea",
       "verification_layers": {
         "wire": "planned",
@@ -1064,7 +1061,7 @@
         "error": "partial",
         "signals": "planned",
         "hardware": "pending",
-        "install": "planned"
+        "install": "staged"
       }
     },
     {
@@ -1073,14 +1070,14 @@
       "requirement": "UCC/TCC/Python, exact LED colors, unresolved report, no guessed limits, offline checks, package upgrade/rollback",
       "baseline_references": "contrib и import/deploy tests",
       "scope": "required",
-      "implementation_status": "planned",
+      "implementation_status": "partial",
       "hardware_status": "hardware_pending",
       "shell_decision": false,
       "legacy_findings": [
         "CFG-05"
       ],
       "cases": [],
-      "notes": "Legacy DTO есть. UCC/TCC/Python import, цвета, upgrade/rollback и helper требуют сквозной проверки. CFG-05.",
+      "notes": "Rust ucc-import-check is built and staged. Full legacy import, upgrade and rollback remain open.",
       "verified_sha": "e16f9ea",
       "verification_layers": {
         "wire": "planned",
@@ -1089,7 +1086,7 @@
         "error": "defect",
         "signals": "planned",
         "hardware": "pending",
-        "install": "planned"
+        "install": "staged"
       }
     },
     {
@@ -1098,12 +1095,12 @@
       "requirement": "Все текущие быстрые controls GNOME/Plasma учтены; перенос функций и решение о встраивании отдельно",
       "baseline_references": "TrayBackend, extension.js",
       "scope": "required",
-      "implementation_status": "planned",
+      "implementation_status": "partial",
       "hardware_status": "hardware_pending",
       "shell_decision": true,
       "legacy_findings": [],
       "cases": [],
-      "notes": "SNI prototype. GNOME/Plasma adapters и ADR-03 остаются.",
+      "notes": "Rust tray and session agent are built and staged with their XDG entries. Live desktop and multi-session acceptance remain open.",
       "verified_sha": "e16f9ea",
       "verification_layers": {
         "wire": "planned",
@@ -1112,7 +1109,7 @@
         "error": "partial",
         "signals": "planned",
         "hardware": "pending",
-        "install": "planned"
+        "install": "staged"
       }
     },
     {
@@ -1153,7 +1150,7 @@
       "requirement": "Arch, DEB/RPM/Nix recipes, service/autostart, driver separation, licenses/assets/source release",
       "baseline_references": "Корневые рецепты, CI",
       "scope": "required",
-      "implementation_status": "planned",
+      "implementation_status": "partial",
       "hardware_status": "hardware_pending",
       "shell_decision": false,
       "legacy_findings": [
@@ -1161,7 +1158,7 @@
         "BUILD-02"
       ],
       "cases": [],
-      "notes": "Release/CI/service deployment остаются на C++. Rust установочные пакеты и rollback в M12/M13.",
+      "notes": "Arch package verified with the seven Rust executables, Qt GUI and autostarts. Vendored source builds offline. Native DEB/RPM/Nix and clean install/upgrade/rollback continue under M12.",
       "verified_sha": "e16f9ea",
       "verification_layers": {
         "wire": "planned",
@@ -1170,7 +1167,7 @@
         "error": "defect",
         "signals": "planned",
         "hardware": "pending",
-        "install": "planned"
+        "install": "staged"
       }
     },
     {
@@ -1179,12 +1176,12 @@
       "requirement": "Независимые действия при закрытии крышки (screen_off/suspend/lock/hibernate/poweroff/ignore) для AC/Type-C/Battery, ингибитор handle-lid-switch, отложенный переход в сон при отключении питания, DPMS только встроенной панели в сессии, строгий WakeupPolicy (крышка PNP0C0D и клавиатура i8042 KBD)",
       "baseline_references": "PowerDeviceController, LidController, WakeupPolicy, LidDisplayHandler, PowerDevicesTab",
       "scope": "required",
-      "implementation_status": "planned",
+      "implementation_status": "partial",
       "hardware_status": "hardware_pending",
       "shell_decision": false,
       "legacy_findings": [],
       "cases": [],
-      "notes": "LidController (ignore-on-AC + 3s AC-unplug debounce) and WakeupPolicy sysfs validation implemented and tested in crates/uccd/src/lid.rs and daemon_integration. Live systemd-logind Inhibit RPC & ucc-sleep binary remain open.",
+      "notes": "Rust logind listener, lid/wakeup rules, sleep helper and Hyprland DPMS paths exist. Physical lid and wakeup acceptance remains open.",
       "verified_sha": "e16f9ea",
       "verification_layers": {
         "wire": "planned",
@@ -1194,8 +1191,7 @@
         "signals": "planned",
         "hardware": "pending",
         "install": "planned"
-      },
-      "status": "partial"
+      }
     },
     {
       "id": "F46",

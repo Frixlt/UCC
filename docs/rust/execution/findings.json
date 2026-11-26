@@ -958,8 +958,8 @@
       ],
       "evidence": "Отсутствующий sender проходит. Переменная окружения отключает проверку. `unix-process` строится только по PID с нулевым start-time. Нет подтверждённых лимитов payload, concurrent prompts, cancellation на disconnect или backend queue. Для обычного system bus sender даёт шина, обход через отсутствующий sender на ней не заявлен.",
       "acceptance": "Явно ограничить trusted peer/test bypass. Использовать устойчивые credentials, bounded admission, deadlines и размер запросов. Прогнать разные UID, PID reuse, disconnect, slow Polkit, перегрузку и чтения без UI prompt.",
-      "status": "resolved",
-      "resolution": "Verified: invariant enforced, all 245+ tests and edge probes pass"
+      "status": "open",
+      "resolution": "Interactive authorization is concurrency-limited and timed out. Read authorization has a deadline. Per-client read-load behavior and the full overload matrix await acceptance."
     },
     {
       "id": "IPC-04",
@@ -1060,8 +1060,8 @@
       ],
       "evidence": "Выбранный профиль имеет пустой fan table. Первый запуск приложения создаёт пять demo точек. Save без редактирования переносит их в файл, включая 90 °C → 100%. Исправление смены профиля с пустой кривой действует на другом входе.",
       "acceptance": "Развести демонстрационный state и редактируемые настройки. Проверить первое открытие, смену, отмену, сохранение без правок и reload для CPU/GPU/pump/WC.",
-      "status": "resolved",
-      "resolution": "Verified: invariant enforced, all 245+ tests and edge probes pass"
+      "status": "superseded_by_adr_01",
+      "resolution": "Affected Iced GUI removed. The supported Qt6 client has separate acceptance criteria under M10."
     },
     {
       "id": "GUI-02",
@@ -1074,8 +1074,8 @@
       ],
       "evidence": "На уровне Iced canvas тест хватает вторую точку, заменяет набор на пустой и посылает `CursorMoved` с сохранённым State. Доступ `self.points[idx-1]` паникует. Реальная доставка событий оконным менеджером не проверялась.",
       "acceptance": "Привязать drag к текущей кривой и проверять индекс, сбрасывать на смене профиля, длины, focus loss и release. Отдельно проверить tiny canvas и крайние температуры.",
-      "status": "resolved",
-      "resolution": "Verified: invariant enforced, all 245+ tests and edge probes pass"
+      "status": "superseded_by_adr_01",
+      "resolution": "Affected Iced GUI removed. The supported Qt6 client has separate acceptance criteria under M10."
     },
     {
       "id": "GUI-03",
@@ -1090,8 +1090,8 @@
       ],
       "evidence": "Telemetry генерируется в GUI, Theme Auto фиксируется на Dark, часть вкладок generic, клавиатура рисует три зоны. Это блокер пользовательской приёмки прототипа.",
       "acceptance": "Маркировать simulated/offline/live и выводить freshness, подключить реальный backend, завершить baseline разделы и проверить GNOME/KDE/Hyprland/X11, IME/DPI/accessibility.",
-      "status": "resolved",
-      "resolution": "Verified: invariant enforced, all 245+ tests and edge probes pass"
+      "status": "superseded_by_adr_01",
+      "resolution": "Affected Iced GUI removed. The supported Qt6 client has separate acceptance criteria under M10."
     },
     {
       "id": "DESK-01",
@@ -1105,8 +1105,8 @@
       ],
       "evidence": "Receiver существует и получил ToggleFanAuto, но ещё ничего не применил. Трей сразу показывает Max. Аналогичное обновление есть для профиля, очередь unbounded. Закрытый канал уже не обновляет состояние.",
       "acceptance": "Отдельные pending и подтверждённый state от backend, bounded queue, отказ и sync после reconnect. Проверить отрицательное подтверждение, перестановку ответов и invalid profile id.",
-      "status": "resolved",
-      "resolution": "Verified: invariant enforced, all 245+ tests and edge probes pass"
+      "status": "open",
+      "resolution": "Tray now waits for the daemon RPC response for profile switches. Reconnect and confirmed water cooler state when readback fails still need acceptance."
     },
     {
       "id": "BUILD-01",
@@ -1119,8 +1119,8 @@
       ],
       "evidence": "`rust-version` не наследуется крейтами. Lockfile разрешает активные Linux зависимости `zbus 5.19.0` с Rust 1.87 и `uuid 1.29.1` с 1.89. Прогоны сделаны на 1.99.1.",
       "acceptance": "Выбрать фактический MSRV, наследовать его, закрепить проверяемый toolchain и добавить locked CI на MSRV и актуальном toolchain.",
-      "status": "resolved",
-      "resolution": "Verified: invariant enforced, all 245+ tests and edge probes pass"
+      "status": "partial",
+      "resolution": "Workspace MSRV and locked dependency metadata agree at 1.89. Workspace and Clippy verified using pinned Rust 1.99.1; CI at the minimum remains open."
     },
     {
       "id": "TEST-01",
@@ -1135,7 +1135,7 @@
       "evidence": "Последовательно 224/224, с параллельностью по умолчанию 222 passed, 2 failed. Shared env и счётчики mock NVML пересекаются. Комплект C/preload фикстур находится вне коммита. C++ фаза CLI проверки условно пропускается без бинарника.",
       "acceptance": "Зафиксировать исходники и автоматическую сборку фикстур. Варьировать env только в отдельных child processes, приватная D-Bus шина на fixture, явный fail/skip по обязательной матрице. Прогонять serial, parallel и stress.",
       "status": "resolved",
-      "resolution": "Verified: invariant enforced, all 245+ tests and edge probes pass"
+      "resolution": "NVML test libraries are built from tracked fixtures, test targets pass in the parallel workspace suite, and generated output is excluded from the distribution."
     },
     {
       "id": "TEST-02",
@@ -1165,8 +1165,8 @@
       ],
       "evidence": "`xtask` реализует генерацию. В snapshot нет Cargo alias для `cargo xtask`. Rust man/completions не включены в рабочий пакет.",
       "acceptance": "Воспроизводимый вызов и package smoke-test с проверкой путей, содержимого completions и man.",
-      "status": "resolved",
-      "resolution": "Verified: invariant enforced, all 245+ tests and edge probes pass"
+      "status": "partial",
+      "resolution": "610f8a8 connects man and completions generation to the shared runtime installer. Verified in the native Arch package. Native DEB/RPM/Nix package builds remain open."
     }
   ]
 }

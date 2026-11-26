@@ -8882,7 +8882,7 @@
       "id": "DB-S001",
       "name": "ProfileChanged",
       "baseline_cpp_arguments": "const QString &profileId, const QString &keyboardProfileId, const QString &fanProfileId",
-      "runtime_signature": null,
+      "runtime_signature": "sss",
       "status": "wire_verified_semantics_simulated",
       "cases": {
         "exact_wire_shape": {
@@ -8927,7 +8927,7 @@
       "id": "DB-S002",
       "name": "ModeReapplyPendingChanged",
       "baseline_cpp_arguments": "bool pending",
-      "runtime_signature": null,
+      "runtime_signature": "b",
       "status": "wire_verified_semantics_simulated",
       "cases": {
         "exact_wire_shape": {
@@ -8972,7 +8972,7 @@
       "id": "DB-S003",
       "name": "PowerStateChanged",
       "baseline_cpp_arguments": "const QString &state",
-      "runtime_signature": null,
+      "runtime_signature": "s",
       "status": "wire_verified_semantics_simulated",
       "cases": {
         "exact_wire_shape": {
@@ -9017,7 +9017,7 @@
       "id": "DB-S004",
       "name": "PowerPolicyChanged",
       "baseline_cpp_arguments": "const QString &json",
-      "runtime_signature": null,
+      "runtime_signature": "s",
       "status": "wire_verified_semantics_simulated",
       "cases": {
         "exact_wire_shape": {
@@ -9062,7 +9062,7 @@
       "id": "DB-S005",
       "name": "PowerDeviceStatusChanged",
       "baseline_cpp_arguments": "const QString &json",
-      "runtime_signature": null,
+      "runtime_signature": "s",
       "status": "wire_verified_semantics_simulated",
       "cases": {
         "exact_wire_shape": {
@@ -9107,7 +9107,7 @@
       "id": "DB-S006",
       "name": "LightbarSettingsChanged",
       "baseline_cpp_arguments": "const QString &json",
-      "runtime_signature": null,
+      "runtime_signature": "s",
       "status": "wire_verified_semantics_simulated",
       "cases": {
         "exact_wire_shape": {
@@ -9152,7 +9152,7 @@
       "id": "DB-S007",
       "name": "WaterCoolerStatusChanged",
       "baseline_cpp_arguments": "const QString &status",
-      "runtime_signature": null,
+      "runtime_signature": "s",
       "status": "wire_verified_semantics_simulated",
       "cases": {
         "exact_wire_shape": {
@@ -9194,5 +9194,27 @@
       "feature_id": "F17"
     }
   ],
-  "verified_sha": "e16f9ea"
+  "verified_sha": "e16f9ea",
+  "current_isolated_verification": {
+    "sha": "610f8a8",
+    "method_signatures_matched_to_baseline_registry": 122,
+    "signal_signatures_matched_to_baseline_registry": 7,
+    "interfaces": [
+      "/com/uniwill/uccd",
+      "/de/uniwill/uccd"
+    ],
+    "additional_methods": [
+      {
+        "name": "SetWebcam",
+        "in_signature": "b",
+        "out_signature": "b"
+      }
+    ],
+    "evidence": [
+      "crates/ucc-dbus/tests/v4_audit_introspection.rs",
+      "crates/ucc-dbus/tests/contract_tests.rs",
+      "crates/uccd/tests/daemon_integration.rs"
+    ],
+    "remaining": "Physical signal and authorization acceptance, backend side effects and old client interoperability."
+  }
 }

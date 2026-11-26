@@ -4,68 +4,40 @@
   "baseline_sha": "45921b0b7021448a81575a840b2b77d93da8b298",
   "integration_branch": "rust/migration",
   "integration_base_sha": "e16f9ea",
-  "wave": "m8_outcomes_recheck_closed",
-  "status": "workspace_and_clippy_clean; 387_tests_across_77_summaries_and_all_outcomes_and_followup_probes_passing; m8_partial_pending_helpers_and_hw",
-  "execution_mode": "concurrent_subagents_2_plus_2",
-  "execution_mode_note": "4 autonomous subagents active: W1 (backend), W2 (frontend), R1 (parity_reviewer), R2 (test_engineer)",
-  "verification_mode": "independent_peer_review",
-  "verification_mode_note": "R1 (parity_reviewer) and R2 (test_engineer) actively performing independent review, parity verification and acceptance registries sync",
-  "roles": {
-    "W1": {
-      "role": "rust_backend",
-      "worktree": ".worktrees/w1",
-      "branch": "rust/w1",
-      "current_ticket": "M4.1/M4.2/M4.3",
-      "conversation_id": "632e6a2d-67fd-4670-a48a-176fdad1b1a3"
-    },
-    "W2": {
-      "role": "rust_frontend",
-      "worktree": ".worktrees/w2",
-      "branch": "rust/w2",
-      "current_ticket": "M4.4/M4.5/M4.6/M4.7",
-      "conversation_id": "09727207-8554-48a3-8d62-749d3ff11ba2"
-    },
-    "R1": {
-      "role": "parity_reviewer",
-      "worktree": null,
-      "branch": null,
-      "current_ticket": "M4.8-parity-audit",
-      "conversation_id": "3ad6bb52-962c-403d-b103-37ec3fe14949"
-    },
-    "R2": {
-      "role": "test_engineer",
-      "worktree": ".worktrees/r2",
-      "branch": "rust/r2-tests",
-      "current_ticket": "M4.8-test-matrix",
-      "conversation_id": "dc3756a1-00c7-4a63-bba9-a45584f5f133"
-    }
-  },
+  "wave": "m12_rust_runtime_packaging",
+  "status": "rust_cpp_preview_and_arch_verified; native_deb_rpm_nix_and_hardware_acceptance_open",
+  "execution_mode": "single_agent_integration",
+  "execution_mode_note": "Packaging handoff and CPU restore fix completed in one integration pass.",
+  "verification_mode": "isolated_integration_verification",
+  "verification_mode_note": "Earlier independent audits are recorded below. Current evidence comes from the isolated workspace, CTest, source archive and package staging runs.",
+  "roles": {},
   "open_decisions": [],
   "unconfirmed_statuses_revised": {
-    "M1.3": "prototype_implemented; pending_runtime_accessibility_verification",
-    "M1.4": "prototype_implemented; pending_runtime_wayland_verification",
+    "M1.3": "superseded_by_adr_01",
+    "M1.4": "superseded_by_adr_01",
     "M1.5": "prototype_implemented; pending_runtime_compositor_verification",
-    "M1.9": "accepted_standalone_rust_sni_tray_adr_03"
+    "M1.9": "accepted_standalone_rust_sni_tray_adr_03",
+    "M1.2": "superseded_by_adr_01"
   },
   "environment_blockers": [
-    "test_gnome_async.js: gjs not installed in Hyprland session",
-    "test_ite8291_brightness.py: external tuxedo-drivers source tree argument not bundled"
+    "Native Debian, RPM and Nix build tools are unavailable on the Arch verification host.",
+    "Physical hardware and compositor acceptance have not been run in this pass."
   ],
   "next_ready_tickets": [
-    "M5.8: Live water cooler LCT22002 acceptance test (after M8 uccd wiring)",
-    "M7.1-M7.7: Telemetry (CPU/RAPL, i915/xe, NVML cadence, bounded 10-series history + binary codec)",
-    "M8.1-M8.9: uccd daemon orchestration over PlatformBackend/FanController/ucc-lighting, LidController + WakeupPolicy, ucc-sleep, ucc-hardware",
-    "M9.1-M9.9: Rust ucc-desktop-tray (DESK-01) and ucc-session-agent (notifications, Hyprland refresh + LidDisplayHandler)"
+    "M12.3: Build native DEB, RPM and Nix packages and check paths and links on their target distributions.",
+    "M12.4/M12.9: Verify clean package installation, upgrade and rollback with settings and sleep hook state preserved.",
+    "M8.7/M8.8/M9.8: Complete isolated daemon and desktop interop and validate the real compositor sessions.",
+    "M5.8/M13: Run physical hardware acceptance for the water cooler, fans, lighting, CPU and GPU power and suspend."
   ],
   "acceptance_summary": {
     "audit_sha": "e16f9ea",
-    "wire_parity": "verified (122 D-Bus methods, 7 signals, CLI commands matching C++ baseline)",
+    "wire_parity": "both interfaces: all 122 baseline method signatures and 7 signals match the registry; Rust exposes SetWebcam(b) -> b as an additional method",
     "semantics": "partial_remediation (19 P1 and 14 P2 findings open across HW, CORE, CFG, IPC, CLI, GUI, DESK)",
-    "authorization": "defects_tracked (IPC-01 fallback polkit bypass, IPC-02 owner loss, IPC-03 rate-limiting)",
+    "authorization": "authorization tests pass on a private bus; IPC-03 read-load acceptance remains open",
     "error_handling": "partial (CLI-04 unwrap_or(false) error erasure, HW-04 CPU write reporting)",
     "signals": "simulated_only (7 signals wire-verified; hardware daemon emission pending)",
     "hardware_writes": "blocked (all live /sys and /dev writes blocked until 33 findings pass verification)",
-    "packaging_install": "planned (BUILD-01 MSRV alignment, BUILD-02 xtask packaging)"
+    "packaging_install": "Arch archive verified; native DEB/RPM/Nix builds and real install, upgrade and rollback acceptance pending"
   },
   "remediation_tickets": [
     {
@@ -190,9 +162,9 @@
     ]
   },
   "last_verified": {
-    "command": "cargo clippy --workspace --all-targets --locked --offline -- -D warnings && cargo test --workspace --locked --offline -q && cargo test --workspace --locked --offline -q -- --test-threads=1",
-    "top_suites": 77,
-    "top_passed": 387,
+    "command": "cargo clippy --workspace --all-targets --locked --offline -- -D warnings; dbus-run-session -- cargo test --workspace --locked --offline; ctest --output-on-failure --parallel 2",
+    "top_suites": 93,
+    "top_passed": 465,
     "top_failed": 0,
     "top_ignored": 0,
     "clippy_warnings": 0,
@@ -203,9 +175,16 @@
     "extended_recheck_probes_passed": 6,
     "transaction_recheck_probes_passed": 15,
     "config_backup_umask_probe_passed": 1,
-    "cpp_ctest_passed": 41
+    "cpp_ctest_passed": 41,
+    "cpu_restore_handoff": "failed_cpu_restore_is_carried_to_the_next_daemon passed on a private bus",
+    "runtime_staging": "all seven Cargo-built executables, both XDG autostarts, systemd sleep alias, D-Bus policy, man and completions verified",
+    "offline_source_archive": "make dist from 610f8a8; Cargo metadata and workspace binaries checked offline with an empty CARGO_HOME",
+    "dbus_introspection": "122 baseline methods and 7 signal signatures per interface, plus SetWebcam(b) -> b",
+    "arch_makepkg": "0.3.0-1-x86_64 built and checked; all seven packaged ELF build IDs match Cargo outputs; Rust links, both autostarts, unit alias, CLI assets and package metadata verified",
+    "read_only_preview": "ucc-gui compiled with UCC_READ_ONLY_PREVIEW=ON in an isolated CMake build"
   },
   "completed_in_current_wave": [
+    "M8.3 and M12: retained a failed CPU restore snapshot across daemon handoff (d0e12e9); switched package recipes to the Rust runtime, preserving the standalone Qt6 GUI per ADR-01 (610f8a8).",
     "M8.1-M8.3 / M8.9 (m8_outcomes_recheck 5/5): Closed all 5 outcome defects across crates/uccd/src/backend.rs and crates/uccd/src/orchestrator.rs: reuse single preflight read_perf_profile() baseline across Phase 2/rollback and fail closed on non-Unavailable errors (odm_read_error_after_preflight), loop custom profile persist_or_reapply without disk write before active check and serialize inactive saves under hw_reconcile_lock (failed_reapply_of_a_superseded_edit), epoch-guard restore_device_writes/rollback_hardware with reconcile_to_latest_committed supersession handoff plus Phase-3 seqlock drift repair (stale_revision_rollback), prevent post-deadline CPU sysfs writes in write_sysfs_if_changed/restore_cpu_defaults while inheriting unrestored CpuDefaultsSnapshot via ShutdownOutcome::Completed(Option<CpuDefaultsSnapshot>) and preserving fan-auto safety after worker drain, and pass expected_stored_profile + StaleRevision retry in reconcile_power_state (power_worker_battery_revision). Added 5 permanent m8_outcomes_* regression tests in crates/uccd/tests/daemon_integration.rs. Verified with 387 passed Rust tests across 77 summaries (daemon_integration 85/85, parallel and --test-threads=1, 0 Clippy warnings), 5/5 m8_outcomes_recheck x4, 7/7 m8_neighbor_recheck, 7/7 m8_handoff_corrected, 6/6 m8_extended_recheck, 15/15 m8_transaction_recheck, and 1/1 full_current_config (umask 022); M8 remains partial pending live hardware stand, real Wayland sessions, and full deb/Arch/Nix package builds",
     "M7-R02: Closed initial singleton BDF drift before first sample & cross-PCI-domain bus/slot collision in NvApiState (crates/ucc-hardware/src/nvml.rs)",
     "M7-R03: Closed incomplete CPU affinity package lookup (require readable physical_package_id for ALL CPUs in local_cpulist, crates/ucc-hardware/src/telemetry/gpu.rs)",
@@ -214,8 +193,10 @@
     "M8.1-M8.3 / M8.9 (Wave 1..M8-COMMIT-06 + full-rust-review UCC-01..UCC-22 Remediations): Added InFlightTxGuard uncommitted TDP/ODM baseline isolation (UCC-01), in-lock active profile existence validation on state commit (UCC-02), failing TDP channel idx+1 & ODM rollback inclusion (UCC-03), drained shutdown rollback when drain budget active with shutdown_wait_expired suppression on timeout (UCC-04), power-state-bound last_applied_profile_state tracking (UCC-05), pre-commit display brightness/webcam error checking & rollback (UCC-06), FanController consecutive write-failure firmware-auto failsafe (UCC-07), complete UCC_READ_ONLY_PREVIEW guard across enter_hardware_op/activate_hardware/workers/shutdown/config RPCs (UCC-08), SetDisplayRefreshRate honest false & SetFnLockStatus Result<(), String> D-Bus error propagation (UCC-09, UCC-12), ConfigManager::restore_from_backup Unix mode preservation under umask (UCC-13), Debian manifest alignment with usr/lib/ucc helpers & removed stale pixmaps (UCC-14, UCC-15), AboutPage checkbox hit-rect & PowerDevicesTab lid selector grid for <=1024px C++ GUI tests (UCC-16, UCC-17), dedicated 20ms uccd-worker-lightbar scheduler (UCC-18), and legacy C++ D-Bus JSON parity including custom keyboard array, SystemInfo fields, CpuTopology/DriverHealth/PrimeState/DisplayModes, min/max CPU freq keys, custom-only profile list, and 5 built-in C++ fan presets (UCC-10, UCC-11, UCC-19..UCC-22). Verified with 367 passed Rust test summaries across 77 targets (0 Clippy warnings), 15/15 m8_transaction_recheck, 7/7 m8_handoff_recheck, 1/1 full_current_config (umask 022), and 41/41 C++ ctest (including test_gui_audit); M8 remains partial pending live hardware stand, real Wayland sessions, and full deb/Arch/Nix package builds"
   ],
   "open_and_next": {
-    "M8_remaining": "Wire live BluezCoolerClient keepalive/reconnect loop, logind Inhibit/PrepareForSleep signal listener, ucc-sleep (M8.4), ucc-hardware (M8.5), ucc-import-check (M8.6), fault-injection suite (M8.7), and C++ GUI/CLI interop on private D-Bus (M8.8)",
+    "M8_remaining": "Daemon BlueZ supervision, logind listener and all three helper binaries are implemented. Physical resume, the remaining fault/IPC matrix and old GUI/CLI interoperability acceptance remain open.",
     "M5.8": "Hardware test pass with physical LCT cooler remains open",
-    "M13": "Physical hardware acceptance (RTX D3cold, RAPL, fans, lighting) remains open"
+    "M13": "Physical hardware acceptance (RTX D3cold, RAPL, fans, lighting) remains open",
+    "M9_remaining": "Rust tray and session agent are built and staged. Live notification/compositor, multi-session and complete desktop acceptance remain open.",
+    "M12_remaining": "DEB/RPM/Nix native builds, package install/upgrade/downgrade and remaining release metadata, preview UI, CI and SBOM checks."
   }
 }

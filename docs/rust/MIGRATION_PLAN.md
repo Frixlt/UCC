@@ -470,7 +470,7 @@ Pump code `0` — высокий режим 11V, `2` — 7V, `3` — 8V, `4` —
 - [ ] M8.2 Реализовать single-instance/name ownership и запуск Type=dbus; не сообщать readiness до готовности API.
 - [ ] M8.3 Реализовать сигналы завершения и bounded shutdown с fan-auto, CPU restore, BLE/NVML cleanup.
 - [ ] M8.4 Перенести ucc-sleep prepare/resume, ownership/permissions/symlink validation и retry после failed start.
-- [ ] M8.5 Перенести ucc-hardware --audit/--fan-auto с сохранением exact DMI gate.
+- [ ] M8.5 Перенести ucc-hardware --audit/--fan-auto с проверкой поддержки устройства.
 - [ ] M8.6 Перенести ucc-import-check с проверкой всех профилей/curves/LED IDs.
 - [ ] M8.7 Проверить restart, corrupt config, unavailable device, D-Bus restart, slow auth, queue overload, sleep cancellation.
 - [ ] M8.8 Старый C++ GUI/CLI тестируется с новым Rust daemon на изолированной шине и затем в управляемом аппаратном переходе.
