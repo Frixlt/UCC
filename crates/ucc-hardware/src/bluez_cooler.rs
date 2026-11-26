@@ -189,14 +189,14 @@ impl BluezCoolerClient {
                 .get("UUIDs")
                 .and_then(|v| Vec::<String>::try_from(v.clone()).ok())
                 .unwrap_or_default();
-            let has_nus = uuids
+            let _has_nus = uuids
                 .iter()
                 .any(|u| u.eq_ignore_ascii_case(NORDIC_UART_SERVICE_UUID));
 
-            let model = match detect_lct_model(&name) {
-                Some(m) => m,
-                None if has_nus => LctDeviceModel::Lct21001,
-                None => continue,
+            // Strict name match prevents auto-connecting to non-cooler Nordic UART BLE peripherals
+            // (e.g. watches, microcontrollers) per ISSUE-36.
+            let Some(model) = detect_lct_model(&name) else {
+                continue;
             };
 
             let address = dev_props
@@ -303,7 +303,7 @@ impl BluezCoolerClient {
 
         let Some(tx_path) = tx_opt else {
             let _ = tokio::time::timeout(
-                Duration::from_millis(20),
+                Duration::from_millis(500),
                 dev_proxy.call_method("Disconnect", &()),
             )
             .await;
@@ -320,7 +320,7 @@ impl BluezCoolerClient {
             .await
             else {
                 let _ = tokio::time::timeout(
-                    Duration::from_millis(20),
+                    Duration::from_millis(500),
                     dev_proxy.call_method("Disconnect", &()),
                 )
                 .await;
@@ -335,7 +335,7 @@ impl BluezCoolerClient {
                 );
             if !notify_ok {
                 let _ = tokio::time::timeout(
-                    Duration::from_millis(20),
+                    Duration::from_millis(500),
                     dev_proxy.call_method("Disconnect", &()),
                 )
                 .await;
@@ -359,6 +359,27 @@ impl BluezCoolerClient {
             conn: self.conn.clone(),
             bus_name: self.bus_name.clone(),
         })
+    }
+
+    /// Starts BlueZ LE/adapter discovery on any available `org.bluez.Adapter1` objects (`ISSUE-36`).
+    pub async fn start_discovery(&self) -> Result<(), CoolerError> {
+        let objects = self.get_managed_objects().await?;
+        for (path, ifaces) in &objects {
+            if !ifaces.contains_key("org.bluez.Adapter1") {
+                continue;
+            }
+            if let Ok(adapter) = Proxy::new(
+                &self.conn,
+                self.bus_name.clone(),
+                path.as_str().to_string(),
+                "org.bluez.Adapter1",
+            )
+            .await
+            {
+                let _ = adapter.call_method("StartDiscovery", &()).await;
+            }
+        }
+        Ok(())
     }
 
     /// Discovers coolers and retries with backoff until a trusted match connects (late-adapter lifecycle).

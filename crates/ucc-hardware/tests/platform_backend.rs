@@ -17,6 +17,8 @@ fn tuxedo_io_backend_uniwill_reads_and_writes_through_seam() {
     hw.set_i32_read(requests::R_UW_FAN_TEMP2, 52);
     hw.set_i32_read(requests::R_UW_FANSPEED, 100);
     hw.set_i32_read(requests::R_UW_TDP0, 65);
+    hw.set_i32_read(requests::R_UW_TDP1, 80);
+    hw.set_i32_read(requests::R_UW_TDP2, 100);
     hw.set_i32_read(requests::R_UW_TDP0_MIN, 15);
     hw.set_i32_read(requests::R_UW_TDP0_MAX, 115);
 

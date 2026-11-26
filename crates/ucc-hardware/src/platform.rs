@@ -6,7 +6,10 @@
 //! switches, extended EC register access, and WMI event streams) extend this seam alongside
 //! `uccd` integration (`M8`) and the native Rust `UwccBackend` (`/dev/uwcc`, `M14` / `ADR-05`).
 
-use crate::detection::{detect_device_capabilities, DeviceCapabilities, DeviceVendor, DmiInfo};
+use crate::detection::{
+    detect_device_capabilities, probe_uniwill_tdp_channels, DeviceCapabilities, DeviceVendor,
+    DmiInfo,
+};
 use crate::ioctl::{
     read_clevo_fan_speed_percent, read_uniwill_fan_speed_percent, read_uniwill_fan_temp,
     read_uniwill_tdp_limits, requests, set_clevo_fan_speed, set_clevo_fans_auto, set_perf_profile,
@@ -168,6 +171,8 @@ pub struct TuxedoIoBackend<H: HardwareIo> {
     hw: H,
     capabilities: PlatformCapabilities,
     platform_profile_path: Option<std::path::PathBuf>,
+    sysfs: Option<std::sync::Arc<dyn Sysfs>>,
+    cached_perf_profile: std::sync::Mutex<Option<i32>>,
 }
 
 fn detect_readable_platform_profile(
@@ -185,7 +190,7 @@ fn detect_readable_platform_profile(
     }
     candidates
         .into_iter()
-        .find(|p| sys.exists(p) && std::fs::read_to_string(p).is_ok())
+        .find(|p| sys.exists(p) && sys.read(p).is_ok())
 }
 
 fn map_platform_profile_str_to_code(vendor: DeviceVendor, raw: &str) -> Option<i32> {
@@ -211,14 +216,41 @@ fn map_platform_profile_str_to_code(vendor: DeviceVendor, raw: &str) -> Option<i
 impl<H: HardwareIo> TuxedoIoBackend<H> {
     /// Probes capabilities through `hw` (optionally enriched with `dmi` and `sysfs`).
     pub fn new(hw: H, dmi: Option<&DmiInfo>, sysfs: Option<&dyn Sysfs>) -> Self {
+        Self::build(hw, dmi, sysfs, None)
+    }
+
+    /// Probes capabilities using a shared owned [`Sysfs`] handle for runtime sysfs reads.
+    pub fn with_sysfs(
+        hw: H,
+        dmi: Option<&DmiInfo>,
+        sysfs: std::sync::Arc<dyn Sysfs>,
+    ) -> Self {
+        let sys_ref: &dyn Sysfs = sysfs.as_ref();
+        Self::build(hw, dmi, Some(sys_ref), Some(sysfs.clone()))
+    }
+
+    fn build(
+        hw: H,
+        dmi: Option<&DmiInfo>,
+        sysfs: Option<&dyn Sysfs>,
+        owned_sysfs: Option<std::sync::Arc<dyn Sysfs>>,
+    ) -> Self {
         let device = detect_device_capabilities(&hw, dmi, sysfs);
         let platform_profile_path = detect_readable_platform_profile(device.device_id, sysfs);
+        let initial_perf_profile = platform_profile_path
+            .as_ref()
+            .zip(sysfs)
+            .and_then(|(path, sys)| sys.read(path).ok())
+            .and_then(|raw| map_platform_profile_str_to_code(device.vendor, &raw));
         let backend = if device.vendor == DeviceVendor::Unsupported {
             PlatformBackendKind::Unsupported
         } else {
             PlatformBackendKind::TuxedoIo
         };
-        let tdp_channels = if device.tdp_control { 3 } else { 0 };
+        let tdp_channels = match device.vendor {
+            DeviceVendor::Uniwill => probe_uniwill_tdp_channels(&hw),
+            _ => 0,
+        };
         let perf_profiles_available = match device.vendor {
             DeviceVendor::Clevo => 4,
             DeviceVendor::Uniwill => hw
@@ -237,6 +269,8 @@ impl<H: HardwareIo> TuxedoIoBackend<H> {
                 perf_profiles_available,
             },
             platform_profile_path,
+            sysfs: owned_sysfs,
+            cached_perf_profile: std::sync::Mutex::new(initial_perf_profile),
         }
     }
 
@@ -274,7 +308,13 @@ impl<H: HardwareIo> PlatformBackend for TuxedoIoBackend<H> {
 
     fn read_fan_temp(&self, fan_idx: usize) -> Result<i32, PlatformError> {
         match self.require_available()? {
-            DeviceVendor::Uniwill => Ok(read_uniwill_fan_temp(&self.hw, fan_idx)?),
+            DeviceVendor::Uniwill => {
+                let temp = read_uniwill_fan_temp(&self.hw, fan_idx)?;
+                if temp <= 0 {
+                    return Err(PlatformError::SensorUnavailable(fan_idx));
+                }
+                Ok(temp)
+            }
             DeviceVendor::Clevo => {
                 let req = match fan_idx {
                     0 => requests::R_CL_FANINFO1,
@@ -351,12 +391,25 @@ impl<H: HardwareIo> PlatformBackend for TuxedoIoBackend<H> {
         let path = self.platform_profile_path.as_ref().ok_or({
             PlatformError::Unsupported("Reading perf profile unsupported")
         })?;
-        let raw = std::fs::read_to_string(path).map_err(|_| {
-            PlatformError::Unsupported("Reading perf profile from sysfs unavailable")
-        })?;
-        map_platform_profile_str_to_code(vendor, &raw).ok_or(PlatformError::Unsupported(
-            "Unrecognized platform_profile sysfs value",
-        ))
+        if let Some(ref sys) = self.sysfs {
+            let raw = sys.read(path).map_err(|_| {
+                PlatformError::Unsupported("Reading perf profile from sysfs unavailable")
+            })?;
+            return map_platform_profile_str_to_code(vendor, &raw).ok_or(
+                PlatformError::Unsupported("Unrecognized platform_profile sysfs value"),
+            );
+        }
+        if let Ok(raw) = std::fs::read_to_string(path) {
+            if let Some(code) = map_platform_profile_str_to_code(vendor, &raw) {
+                return Ok(code);
+            }
+        }
+        self.cached_perf_profile
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .ok_or(PlatformError::Unsupported(
+                "Reading perf profile from sysfs unavailable",
+            ))
     }
 
     fn set_perf_profile(&self, profile_code: i32) -> Result<(), PlatformError> {
@@ -366,7 +419,12 @@ impl<H: HardwareIo> PlatformBackend for TuxedoIoBackend<H> {
             self.capabilities.perf_profiles_available,
             profile_code,
         )?;
-        Ok(set_perf_profile(&self.hw, vendor, profile_code)?)
+        set_perf_profile(&self.hw, vendor, profile_code)?;
+        *self
+            .cached_perf_profile
+            .lock()
+            .unwrap_or_else(|e| e.into_inner()) = Some(profile_code);
+        Ok(())
     }
 
     fn set_mode_enable(&self, enable: bool) -> Result<(), PlatformError> {

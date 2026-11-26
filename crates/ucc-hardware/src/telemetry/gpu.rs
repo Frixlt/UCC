@@ -142,8 +142,11 @@ fn parse_max_amd_freq_mhz(content: &str) -> Option<f64> {
 /// Never substitutes CPU package temperature for GPU temperature (`M7.2`).
 pub fn read_intel_igpu_sysfs(sysfs: &dyn Sysfs, card_dir: &Path, now: Instant) -> IGpuSnapshot {
     let i915_cur = card_dir.join("gt_act_freq_mhz");
+    let i915_multi_gt_cur = card_dir.join("gt/gt0/rps_act_freq_mhz");
     let (freq_path, max_path) = if sysfs.exists(&i915_cur) {
         (i915_cur, card_dir.join("gt_RP0_freq_mhz"))
+    } else if sysfs.exists(&i915_multi_gt_cur) {
+        (i915_multi_gt_cur, card_dir.join("gt/gt0/rps_RP0_freq_mhz"))
     } else {
         (
             card_dir.join("device/tile0/gt0/freq0/act_freq"),
@@ -191,6 +194,18 @@ pub fn read_intel_igpu_sysfs(sysfs: &dyn Sysfs, card_dir: &Path, now: Instant) -
         power_w,
         collected_at: now,
     }
+}
+
+/// Reads cumulative microjoule counter from Intel iGPU `hwmon*/energy1_input` (`ISSUE-22`).
+pub fn read_intel_igpu_energy_uj(sysfs: &dyn Sysfs, card_dir: &Path) -> Option<u64> {
+    let mut hwmons = sysfs.read_dir(&card_dir.join("device/hwmon")).ok()?;
+    hwmons.sort();
+    for h in hwmons {
+        if let Some(val) = read_i64(sysfs, &h.join("energy1_input")).filter(|&v| v >= 0) {
+            return Some(val as u64);
+        }
+    }
+    None
 }
 
 /// Reads AMD iGPU telemetry from `hwmon` (`temp1_input`, `freq1_input`, `power1_average`/`power1_input`),

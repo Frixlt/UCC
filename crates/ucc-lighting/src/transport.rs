@@ -105,10 +105,10 @@ impl SysfsLedTransport {
     }
 
     fn parse_zone_id(name: &str, fallback_idx: usize) -> u32 {
-        if name == "rgb:kbd_backlight" {
+        if name == "rgb:kbd_backlight" || name.ends_with(":rgb:kbd_backlight") {
             return 0;
         }
-        if let Some(rest) = name.strip_prefix("rgb:kbd_backlight_") {
+        if let Some((_, rest)) = name.split_once("rgb:kbd_backlight_") {
             if let Ok(num) = rest.parse::<u32>() {
                 return num;
             }
@@ -377,8 +377,8 @@ impl LightingTransport for SysfsLedTransport {
         };
         entries.sort();
 
-        // Prioritize `lightbar` then `rgb:lightbar` matching C++ LightbarController::discover()
-        for preferred in ["rgb:lightbar", "lightbar"] {
+        // Prioritize `rgb:lightbar` ahead of plain `lightbar` (insert reverse order at index 0)
+        for preferred in ["lightbar", "rgb:lightbar"] {
             if let Some(pos) = entries
                 .iter()
                 .position(|p| p.file_name().and_then(|n| n.to_str()) == Some(preferred))

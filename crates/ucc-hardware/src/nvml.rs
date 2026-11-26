@@ -305,19 +305,24 @@ impl NvApiState {
     }
 
     fn ensure_initialized(&mut self) {
-        if self.attempted {
+        if self._lib.is_some() && !self.gpu_handles.is_empty() {
             return;
         }
-        self.attempted = true;
+        if self.attempted && self.gpu_handles.is_empty() && self._lib.is_none() {
+            return;
+        }
         let Some(ref path) = self.library_path else {
+            self.attempted = true;
             return;
         };
         let Ok(lib) = (unsafe { Library::new(path) }) else {
+            self.attempted = true;
             return;
         };
         let Ok(query_sym) = (unsafe {
             lib.get::<unsafe extern "C" fn(u32) -> *mut c_void>(b"nvapi_QueryInterface")
         }) else {
+            self.attempted = true;
             return;
         };
         let query = *query_sym;
@@ -329,6 +334,7 @@ impl NvApiState {
             let bus_ptr = query(NVAPI_GPU_GET_BUS_ID);
             let slot_ptr = query(NVAPI_GPU_GET_BUS_SLOT_ID);
             if init_ptr.is_null() || enum_ptr.is_null() || volt_ptr.is_null() {
+                self.attempted = true;
                 return;
             }
             let fn_init: unsafe extern "C" fn() -> i32 = std::mem::transmute(init_ptr);
@@ -360,6 +366,7 @@ impl NvApiState {
                 }
                 return;
             }
+            self.attempted = true;
             self.gpu_handles = raw_handles[..usize::min(count as usize, raw_handles.len())]
                 .iter()
                 .map(|p| *p as usize)
@@ -881,8 +888,12 @@ impl NvmlWrapper {
         unsafe {
             let mut handle: *mut c_void = std::ptr::null_mut();
             let ret = (self.fn_device_get_handle_by_index)(0, &mut handle);
-            if ret != NVML_SUCCESS {
-                return Err(NvmlError::NvmlCall(ret));
+            if ret != NVML_SUCCESS || handle.is_null() {
+                return Err(if ret != NVML_SUCCESS {
+                    NvmlError::NvmlCall(ret)
+                } else {
+                    NvmlError::NoGpuFound
+                });
             }
             Ok(handle)
         }

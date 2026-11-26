@@ -4,8 +4,8 @@ use crate::nvml::{NvmlWrapper, NVIDIA_PCI_VENDOR_ID};
 use crate::telemetry::cpu::{CpuTelemetryReader, CpuTelemetrySnapshot, RaplEnergyCounter};
 use crate::telemetry::gpu::{
     find_intel_gpu_rapl_path_for_card, nvidia_device_telemetry_due, read_amd_gpu_hwmon,
-    read_amd_igpu_sysfs, read_intel_igpu_sysfs, read_pci_slot_name, DGpuSnapshot, GpuVendor,
-    IGpuSnapshot,
+    read_amd_igpu_sysfs, read_intel_igpu_energy_uj, read_intel_igpu_sysfs, read_pci_slot_name,
+    DGpuSnapshot, GpuVendor, IGpuSnapshot,
 };
 use crate::telemetry::history::{MetricId, MetricsHistoryStore};
 use crate::traits::Sysfs;
@@ -129,6 +129,7 @@ pub struct TelemetryCollector {
     config: TelemetryConfig,
     cpu_reader: CpuTelemetryReader,
     intel_igpu_rapl: Option<RaplEnergyCounter>,
+    intel_prev_hwmon_energy: Option<(u64, Instant)>,
     history: Arc<MetricsHistoryStore>,
     cycle_counter: u32,
     nvidia_cache: HashMap<String, DGpuSnapshot>,
@@ -147,6 +148,7 @@ impl TelemetryCollector {
             config,
             cpu_reader,
             intel_igpu_rapl: None,
+            intel_prev_hwmon_energy: None,
             history,
             cycle_counter: 0,
             nvidia_cache: HashMap::new(),
@@ -415,6 +417,20 @@ const AMD_IGPU_DEVICE_IDS: &[u16] = &[
                 }
             }
         }
+        if snap.power_w.is_none() {
+            if let Some(curr_uj) = read_intel_igpu_energy_uj(self.sysfs.as_ref(), card_path) {
+                if let Some((prev_uj, prev_t)) = self.intel_prev_hwmon_energy {
+                    let dt = now.saturating_duration_since(prev_t).as_secs_f64();
+                    if dt > 0.0 && curr_uj >= prev_uj {
+                        let watts = (curr_uj - prev_uj) as f64 / 1_000_000.0 / dt;
+                        if watts.is_finite() && (0.0..=1000.0).contains(&watts) {
+                            snap.power_w = Some(watts);
+                        }
+                    }
+                }
+                self.intel_prev_hwmon_energy = Some((curr_uj, now));
+            }
+        }
         snap
     }
 
@@ -593,27 +609,81 @@ const AMD_IGPU_DEVICE_IDS: &[u16] = &[
         (Some(sample), true)
     }
 
+    fn discover_amd_dgpu(&self) -> Option<(PathBuf, Option<PathBuf>)> {
+        let pci_root = self.pci_root();
+        let Ok(mut entries) = self.sysfs.read_dir(&pci_root) else {
+            return None;
+        };
+        entries.sort();
+
+        for base in entries {
+            let (vendor, dev_id) = Self::read_pci_vendor_device(self.sysfs.as_ref(), &base);
+            if vendor != Some(0x1002) {
+                continue;
+            }
+            let Ok(class) = self.sysfs.read(&base.join("class")) else {
+                continue;
+            };
+            let cls = class.trim().to_ascii_lowercase();
+            if !cls.starts_with("0x03") && !cls.starts_with("03") {
+                continue;
+            }
+            if dev_id.is_some_and(|did| Self::AMD_IGPU_DEVICE_IDS.contains(&did)) {
+                continue;
+            }
+            let is_boot_vga = self
+                .sysfs
+                .read(&base.join("boot_vga"))
+                .map(|v| v.trim() == "1")
+                .unwrap_or(false);
+            if dev_id.is_none() && is_boot_vga {
+                continue;
+            }
+            let mut hwmon_path = None;
+            if let Ok(mut hwmons) = self.sysfs.read_dir(&base.join("hwmon")) {
+                hwmons.sort();
+                hwmon_path = hwmons.into_iter().next();
+            }
+            return Some((base, hwmon_path));
+        }
+        None
+    }
+
     fn poll_dgpu(&mut self, now: Instant) -> (Option<DGpuSnapshot>, bool) {
         let (nv, is_new) = self.poll_nvidia_dgpu(now);
         if nv.is_some() {
             return (nv, is_new);
         }
-        if let Some(ref amd_hwmon) = self.config.amd_dgpu_hwmon {
-            let (temp_c, power_w, core_freq_mhz) =
-                read_amd_gpu_hwmon(self.sysfs.as_ref(), amd_hwmon);
-            let bdf = read_pci_slot_name(self.sysfs.as_ref(), &amd_hwmon.join("device/uevent"));
+
+        let (amd_pci_dir, amd_hwmon_opt) = if let Some(ref amd_hwmon) = self.config.amd_dgpu_hwmon {
+            (amd_hwmon.join("device"), Some(amd_hwmon.clone()))
+        } else if let Some((pci, hwmon)) = self.discover_amd_dgpu() {
+            (pci, hwmon)
+        } else {
+            return (None, false);
+        };
+
+        let rt_status = self
+            .sysfs
+            .read(&amd_pci_dir.join("power/runtime_status"))
+            .unwrap_or_default();
+        let is_sleeping = matches!(rt_status.trim(), "suspended" | "suspending");
+        let bdf = read_pci_slot_name(self.sysfs.as_ref(), &amd_pci_dir.join("uevent"))
+            .or_else(|| amd_pci_dir.file_name().and_then(|n| n.to_str()).map(str::to_string));
+
+        if is_sleeping {
             return (
                 Some(DGpuSnapshot {
                     vendor: GpuVendor::Amd,
                     bdf,
-                    is_sleeping: false,
+                    is_sleeping: true,
                     from_cache: false,
-                    d0_metrics_usage: true,
-                    temp_c,
-                    core_freq_mhz,
+                    d0_metrics_usage: false,
+                    temp_c: None,
+                    core_freq_mhz: None,
                     max_core_freq_mhz: None,
                     vram_freq_mhz: None,
-                    power_w,
+                    power_w: None,
                     default_power_limit_w: None,
                     max_power_limit_w: None,
                     enforced_power_limit_w: None,
@@ -630,10 +700,44 @@ const AMD_IGPU_DEVICE_IDS: &[u16] = &[
                     core_voltage_mv: None,
                     collected_at: now,
                 }),
-                true,
+                false,
             );
         }
-        (None, false)
+
+        let (temp_c, power_w, core_freq_mhz) = amd_hwmon_opt
+            .as_deref()
+            .map(|hw| read_amd_gpu_hwmon(self.sysfs.as_ref(), hw))
+            .unwrap_or((None, None, None));
+        (
+            Some(DGpuSnapshot {
+                vendor: GpuVendor::Amd,
+                bdf,
+                is_sleeping: false,
+                from_cache: false,
+                d0_metrics_usage: true,
+                temp_c,
+                core_freq_mhz,
+                max_core_freq_mhz: None,
+                vram_freq_mhz: None,
+                power_w,
+                default_power_limit_w: None,
+                max_power_limit_w: None,
+                enforced_power_limit_w: None,
+                compute_util_pct: None,
+                memory_util_pct: None,
+                vram_used_mib: None,
+                vram_total_mib: None,
+                perf_limit_reason: None,
+                encoder_util_pct: None,
+                decoder_util_pct: None,
+                current_pstate: None,
+                gr_clock_offset_mhz: None,
+                mem_clock_offset_mhz: None,
+                core_voltage_mv: None,
+                collected_at: now,
+            }),
+            true,
+        )
     }
 
     /// Runs one telemetry cycle, stores fresh finite values in [`MetricsHistoryStore`], and returns the snapshot.

@@ -10,25 +10,47 @@ use ucc_core::UccProfile;
 
 pub type ProcessRunner = Arc<dyn Fn(&str, &[&str]) -> bool + Send + Sync>;
 
+fn resolve_trusted_program(program: &str) -> &str {
+    if program.contains('/') {
+        return program;
+    }
+    for dir in ["/usr/bin", "/usr/sbin", "/bin", "/sbin"] {
+        let candidate = Path::new(dir).join(program);
+        if candidate.exists() {
+            // Return static path literals when possible, else fall through
+            match (dir, program) {
+                ("/usr/bin", "nvidia-smi") => return "/usr/bin/nvidia-smi",
+                ("/usr/bin", "systemctl") => return "/usr/bin/systemctl",
+                ("/usr/bin", "iw") => return "/usr/bin/iw",
+                ("/usr/sbin", "iw") => return "/usr/sbin/iw",
+                ("/sbin", "iw") => return "/sbin/iw",
+                _ => {}
+            }
+        }
+    }
+    program
+}
+
 pub fn default_process_runner() -> ProcessRunner {
     Arc::new(|program: &str, args: &[&str]| {
-        let mut child = match std::process::Command::new(program).args(args).spawn() {
+        let resolved = resolve_trusted_program(program);
+        let mut child = match std::process::Command::new(resolved).args(args).spawn() {
             Ok(c) => c,
             Err(_) => return false,
         };
-        let (tx, rx) = std::sync::mpsc::channel();
-        let child_id = child.id();
-        std::thread::spawn(move || {
-            let res = child.wait().map(|s| s.success()).unwrap_or(false);
-            let _ = tx.send(res);
-        });
-        match rx.recv_timeout(std::time::Duration::from_secs(3)) {
-            Ok(success) => success,
-            Err(_) => {
-                unsafe {
-                    libc::kill(child_id as libc::pid_t, libc::SIGKILL);
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(3);
+        loop {
+            match child.try_wait() {
+                Ok(Some(status)) => return status.success(),
+                Ok(None) => {
+                    if std::time::Instant::now() >= deadline {
+                        let _ = child.kill();
+                        let _ = child.wait();
+                        return false;
+                    }
+                    std::thread::sleep(std::time::Duration::from_millis(20));
                 }
-                false
+                Err(_) => return false,
             }
         }
     })
@@ -229,6 +251,7 @@ impl PowerDeviceController {
             let keep_awake = config.get("keepNvidiaAwake").and_then(|k| k.as_bool()).unwrap_or(false);
             let mut wake_nvidia = false;
             let mut manage_nvidia = false;
+            let mut any_nvidia_active = false;
 
             if let Some(devices) = config.get("devices").and_then(|d| d.as_array()) {
                 for dev in devices {
@@ -240,6 +263,10 @@ impl PowerDeviceController {
                                 let class = self.read_file(&parent.join("class").to_string_lossy());
                                 if vendor == "0x10de" && class.starts_with("0x03") {
                                     manage_nvidia = true;
+                                    let rt_status = self.read_file(&parent.join("power/runtime_status").to_string_lossy());
+                                    if rt_status.is_empty() || rt_status == "active" {
+                                        any_nvidia_active = true;
+                                    }
                                     let mode_key = format!("{}_val", mode);
                                     let mode_val = dev.get(&mode_key).and_then(|v| v.as_str()).unwrap_or("auto");
                                     if keep_awake || mode_val == "on" {
@@ -252,8 +279,11 @@ impl PowerDeviceController {
                 }
             }
 
-            // Undo persistence before allowing runtime suspend
-            if manage_nvidia && self.proc_path.join("driver/nvidia/version").exists() {
+            // Never invoke nvidia-smi -pm 0 while NVIDIA dGPU is already suspended in D3cold (`ISSUE-21`).
+            if manage_nvidia
+                && (wake_nvidia || any_nvidia_active)
+                && self.proc_path.join("driver/nvidia/version").exists()
+            {
                 result["nvidiaPersistenceEnabled"] = json!(wake_nvidia);
                 let pm_val = if wake_nvidia { "1" } else { "0" };
                 let applied = self.run_command("nvidia-smi", &["-pm", pm_val]);
@@ -399,14 +429,16 @@ impl PowerDeviceController {
             }
         }
 
-        // 2. Enumerate Wi-Fi devices
+        // 2. Enumerate Wi-Fi devices (validate against allowlist before inserting)
         let net_dir = self.sys_path.join("class/net");
         if let Ok(entries) = fs::read_dir(net_dir) {
             for entry in entries.flatten() {
                 if entry.path().join("wireless").exists() {
                     let iface = entry.file_name().to_string_lossy().to_string();
-                    let name = format!("Wi-Fi power save ({})", iface);
-                    append_device("wifi", &iface, &name, "off", "on");
+                    if is_valid_path("wifi", &iface) {
+                        let name = format!("Wi-Fi power save ({})", iface);
+                        append_device("wifi", &iface, &name, "off", "on");
+                    }
                 }
             }
         }

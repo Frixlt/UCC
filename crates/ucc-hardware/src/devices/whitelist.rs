@@ -232,6 +232,30 @@ pub fn validate_settings_json(settings: &Value) -> Result<(), String> {
         }
     }
 
+    if let Some(lid_val) = obj.get("lid") {
+        let lid_obj = lid_val.as_object().ok_or("Invalid lid policy")?;
+        const VALID_LID_ACTIONS: &[&str] =
+            &["screen_off", "ignore", "suspend", "hibernate", "poweroff", "lock"];
+        for (k, v) in lid_obj {
+            match k.as_str() {
+                "ac" | "type_c" | "bat" => {
+                    let act = v
+                        .as_str()
+                        .ok_or_else(|| format!("Invalid lid action type for {k}"))?;
+                    if !VALID_LID_ACTIONS.contains(&act) {
+                        return Err(format!("Invalid lid action for {k}: {act}"));
+                    }
+                }
+                "wakeOnlyLidAndKeyboard" => {
+                    if !v.is_boolean() {
+                        return Err("Invalid wakeOnlyLidAndKeyboard flag".to_string());
+                    }
+                }
+                other => return Err(format!("Invalid lid policy field: {other}")),
+            }
+        }
+    }
+
     if let Some(devices_val) = obj.get("devices") {
         let devices = devices_val.as_array().ok_or("Invalid device list")?;
         if devices.len() > 2048 {

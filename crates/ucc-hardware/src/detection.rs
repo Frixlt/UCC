@@ -282,6 +282,19 @@ pub struct DeviceCapabilities {
 ///
 /// Complies with `FT-F01-02`: Clevo, Uniwill and Dummy are selected from
 /// hardware capabilities, never from laptop marketing name.
+/// Probes the active Uniwill TDP channel count (`0..=3`) by querying `R_UW_TDP2..0` (`ISSUE-20`).
+pub fn probe_uniwill_tdp_channels(hardware: &dyn HardwareIo) -> usize {
+    if hardware.read_i32(requests::R_UW_TDP2).is_ok() {
+        3
+    } else if hardware.read_i32(requests::R_UW_TDP1).is_ok() {
+        2
+    } else if hardware.read_i32(requests::R_UW_TDP0).is_ok() {
+        1
+    } else {
+        0
+    }
+}
+
 pub fn detect_vendor(hardware: &dyn HardwareIo) -> DeviceVendor {
     if !hardware.is_available() {
         return DeviceVendor::Unsupported;
@@ -580,6 +593,7 @@ pub fn detect_device_capabilities(
             let water_cooler = is_water_cooler_supported(device_id);
             let ctgp = is_ctgp_supported(device_id, sysfs);
             let hwp = sysfs.map(is_hwp_dynamic_boost_supported).unwrap_or(false);
+            let tdp_control = probe_uniwill_tdp_channels(hardware) > 0;
 
             DeviceCapabilities {
                 vendor,
@@ -588,7 +602,7 @@ pub fn detect_device_capabilities(
                 fans_min_speed: min_speed,
                 fans_off_available: off_available,
                 fan_control: true,
-                tdp_control: true,
+                tdp_control,
                 webcam_switch: false,
                 flightmode_switch: false,
                 touchpad_switch: false,

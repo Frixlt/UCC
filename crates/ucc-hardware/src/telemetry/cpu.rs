@@ -75,7 +75,7 @@ impl RaplEnergyCounter {
         };
 
         let watts = (delta_uj as f64) / 1_000_000.0 / dt_s;
-        if watts.is_finite() && watts >= 0.0 {
+        if watts.is_finite() && (0.0..=1000.0).contains(&watts) {
             Some(watts)
         } else {
             None
