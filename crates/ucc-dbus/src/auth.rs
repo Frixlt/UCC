@@ -91,16 +91,8 @@ impl PolkitAuthorizer {
     ) -> bool {
         let sender = match sender {
             Some(s) if !s.is_empty() => s,
-            _ => return true,
+            _ => return false,
         };
-
-        // Environment override for testing / headless dev environments
-        if std::env::var("UCCD_DISABLE_AUTH")
-            .map(|v| v == "1" || v.eq_ignore_ascii_case("true"))
-            .unwrap_or(false)
-        {
-            return true;
-        }
 
         let bus_name = match zbus::names::BusName::try_from(sender) {
             Ok(name) => name,
@@ -161,9 +153,7 @@ impl PolkitAuthorizer {
             .await
         {
             Ok((is_authorized, _, _)) => {
-                if is_authorized {
-                    return true;
-                }
+                return is_authorized;
             }
             Err(e) => {
                 tracing::debug!(

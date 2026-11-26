@@ -1,7 +1,11 @@
 //! Backend trait defining the business logic for UCC D-Bus methods.
 
 use std::collections::HashMap;
+use std::sync::atomic::{AtomicI32, Ordering};
 use zbus::zvariant::OwnedValue;
+
+static DEFAULT_BRIGHTNESS: AtomicI32 = AtomicI32::new(100);
+static ACTIVE_PROFILE_JSON: std::sync::RwLock<Option<String>> = std::sync::RwLock::new(None);
 
 /// Backend trait covering all 122 baseline D-Bus methods.
 pub trait UccdBackend: Send + Sync + 'static {
@@ -15,7 +19,7 @@ pub trait UccdBackend: Send + Sync + 'static {
         true
     }
     fn get_display_modes_json(&self) -> String {
-        "{}".to_string()
+        "[]".to_string()
     }
     fn get_is_x11(&self) -> bool {
         false
@@ -60,7 +64,7 @@ pub trait UccdBackend: Send + Sync + 'static {
         true
     }
     fn set_display_refresh_rate(&self, _display: &str, _refresh_rate: i32) -> bool {
-        true
+        false
     }
     fn get_dgpu_info_values_json(&self) -> String {
         "{}".to_string()
@@ -119,8 +123,14 @@ pub trait UccdBackend: Send + Sync + 'static {
     fn register_power_request(&self, _name: &str, _reason: &str, _mode_val: &str) -> bool {
         true
     }
+    fn register_power_request_with_sender(&self, _sender: &str, name: &str, reason: &str, mode_val: &str) -> bool {
+        self.register_power_request(name, reason, mode_val)
+    }
     fn unregister_power_request(&self, _name: &str) -> bool {
         true
+    }
+    fn unregister_power_request_with_sender(&self, _sender: &str, name: &str) -> bool {
+        self.unregister_power_request(name)
     }
     fn set_temp_profile(&self, _profile_name: &str) -> bool {
         true
@@ -128,14 +138,18 @@ pub trait UccdBackend: Send + Sync + 'static {
     fn set_active_profile(&self, _id: &str) -> bool {
         true
     }
-    fn apply_profile(&self, _profile_json: &str) -> bool {
-        true
+    fn apply_profile(&self, profile_json: &str) -> bool {
+        if let Ok(profile) = serde_json::from_str::<ucc_core::profile::UccProfile>(profile_json) {
+            profile.validate().is_ok()
+        } else {
+            false
+        }
     }
     fn get_profiles_json(&self) -> String {
-        "{}".to_string()
+        "[]".to_string()
     }
     fn get_custom_profiles_json(&self) -> String {
-        "{}".to_string()
+        "[]".to_string()
     }
     fn set_fan_profile_cpu(&self, _points_json: &str) -> bool {
         true
@@ -150,7 +164,7 @@ pub trait UccdBackend: Send + Sync + 'static {
         true
     }
     fn get_default_profiles_json(&self) -> String {
-        "{}".to_string()
+        "[]".to_string()
     }
     fn get_cpu_frequency_limits_json(&self) -> String {
         "{}".to_string()
@@ -174,7 +188,7 @@ pub trait UccdBackend: Send + Sync + 'static {
         "{}".to_string()
     }
     fn get_fan_profile_names(&self) -> String {
-        "{}".to_string()
+        "[]".to_string()
     }
     fn set_fan_profile(&self, _name: &str, _json: &str) -> bool {
         true
@@ -192,19 +206,19 @@ pub trait UccdBackend: Send + Sync + 'static {
         Vec::new()
     }
     fn odm_power_limits_json(&self) -> String {
-        "{}".to_string()
+        "[]".to_string()
     }
     fn get_keyboard_backlight_capabilities_json(&self) -> String {
         "{}".to_string()
     }
     fn get_keyboard_backlight_states_json(&self) -> String {
-        "{}".to_string()
+        "[]".to_string()
     }
     fn set_keyboard_backlight_states_json(&self, _keyboard_backlight_states_json: &str) -> bool {
         true
     }
     fn get_custom_keyboard_profiles_json(&self) -> String {
-        "{}".to_string()
+        "[]".to_string()
     }
     fn save_custom_keyboard_profile(&self, _id: &str, _name: &str, _json: &str) -> bool {
         true
@@ -213,7 +227,7 @@ pub trait UccdBackend: Send + Sync + 'static {
         true
     }
     fn get_custom_fan_profiles_json(&self) -> String {
-        "{}".to_string()
+        "[]".to_string()
     }
     fn save_custom_fan_profile(&self, _id: &str, _name: &str, _json: &str) -> bool {
         true
@@ -228,7 +242,7 @@ pub trait UccdBackend: Send + Sync + 'static {
         false
     }
     fn get_charging_profiles_available(&self) -> String {
-        "{}".to_string()
+        "[]".to_string()
     }
     fn get_current_charging_profile(&self) -> String {
         "balanced".to_string()
@@ -237,7 +251,7 @@ pub trait UccdBackend: Send + Sync + 'static {
         true
     }
     fn get_charging_priorities_available(&self) -> String {
-        String::new()
+        "[]".to_string()
     }
     fn get_current_charging_priority(&self) -> String {
         "balanced".to_string()
@@ -246,10 +260,10 @@ pub trait UccdBackend: Send + Sync + 'static {
         true
     }
     fn get_charge_start_available_thresholds(&self) -> String {
-        String::new()
+        "[]".to_string()
     }
     fn get_charge_end_available_thresholds(&self) -> String {
-        String::new()
+        "[]".to_string()
     }
     fn get_charge_start_threshold(&self) -> i32 {
         -1
@@ -275,8 +289,8 @@ pub trait UccdBackend: Send + Sync + 'static {
     fn get_fn_lock_status(&self) -> bool {
         false
     }
-    fn set_fn_lock_status(&self, _status: bool) {
-        
+    fn set_fn_lock_status(&self, _status: bool) -> Result<(), String> {
+        Ok(())
     }
     fn set_sensor_data_collection_status(&self, _status: bool) {
         
@@ -300,16 +314,16 @@ pub trait UccdBackend: Send + Sync + 'static {
         true
     }
     fn get_available_governors(&self) -> String {
-        "{}".to_string()
+        "[]".to_string()
     }
     fn get_available_epps(&self) -> String {
-        "{}".to_string()
+        "[]".to_string()
     }
     fn get_cpu_core_count(&self) -> i32 {
         1
     }
     fn get_cpu_topology_json(&self) -> String {
-        "{}".to_string()
+        "[]".to_string()
     }
     fn get_water_cooler_available(&self) -> bool {
         false
@@ -377,6 +391,41 @@ pub trait UccdBackend: Send + Sync + 'static {
 }
 
 /// Default mock/in-memory backend for UccdInterface.
-#[derive(Debug, Default)]
+#[derive(Debug, Default, Clone, Copy)]
 pub struct DefaultUccdBackend;
-impl UccdBackend for DefaultUccdBackend {}
+
+impl UccdBackend for DefaultUccdBackend {
+    fn get_display_brightness(&self) -> i32 {
+        DEFAULT_BRIGHTNESS.load(Ordering::SeqCst)
+    }
+
+    fn set_display_brightness(&self, brightness: i32) -> bool {
+        if !(0..=100).contains(&brightness) {
+            return false;
+        }
+        DEFAULT_BRIGHTNESS.store(brightness, Ordering::SeqCst);
+        true
+    }
+
+    fn apply_profile(&self, profile_json: &str) -> bool {
+        let Ok(profile) = serde_json::from_str::<ucc_core::profile::UccProfile>(profile_json) else {
+            return false;
+        };
+        if profile.validate().is_err() {
+            return false;
+        }
+        if let Ok(mut lock) = ACTIVE_PROFILE_JSON.write() {
+            *lock = Some(profile_json.to_string());
+        }
+        true
+    }
+
+    fn get_active_profile_json(&self) -> String {
+        if let Ok(lock) = ACTIVE_PROFILE_JSON.read() {
+            if let Some(ref p) = *lock {
+                return p.clone();
+            }
+        }
+        r#"{"id":"High Performance [Built-in]","name":"High Performance"}"#.to_string()
+    }
+}
