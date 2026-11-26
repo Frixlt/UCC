@@ -548,22 +548,26 @@ impl LiveUccdBackend {
         if self.shutdown_wait_expired.load(Ordering::SeqCst) {
             return false;
         }
-        if !self.sysfs.exists(path) {
+        if self.sysfs.read(path).is_ok_and(|cur| cur.trim() == target.trim()) {
             return true;
-        }
-        if let Ok(cur) = self.sysfs.read(path) {
-            if self.shutdown_wait_expired.load(Ordering::SeqCst) {
-                return false;
-            }
-            if cur.trim() == target.trim() {
-                return true;
-            }
         }
         if self.shutdown_wait_expired.load(Ordering::SeqCst) {
             return false;
         }
-        let _ = self.sysfs.write(path, target);
-        true
+        if let Err(err) = self.sysfs.write(path, target) {
+            warn!("Failed restoring CPU sysfs node {}: {err}", path.display());
+            return false;
+        }
+        if self.shutdown_wait_expired.load(Ordering::SeqCst) {
+            return false;
+        }
+        match self.sysfs.read(path) {
+            Ok(cur) if cur.trim() == target.trim() => true,
+            result => {
+                warn!("Could not verify restored CPU sysfs node {}: {result:?}", path.display());
+                false
+            }
+        }
     }
 
     #[must_use]

@@ -4985,3 +4985,39 @@ async fn m8_outcomes_power_worker_reapplies_edited_battery_profile() {
     assert_eq!((active.odm_power_limits[0], actual), (62, 62));
 }
 
+
+#[tokio::test]
+async fn failed_cpu_restore_is_carried_to_the_next_daemon() {
+    let root = tempfile::tempdir().unwrap();
+    let no_turbo = root.path().join("sys/devices/system/cpu/intel_pstate/no_turbo");
+    let mut config = create_default_settings();
+    config.cpu_settings_enabled = Some(false);
+    ConfigManager::with_custom_path(root.path().join("settings.json"))
+        .save(&config)
+        .unwrap();
+    let (first, _, sysfs, _) = build_custom_backend(
+        root.path(),
+        true,
+        |s| s.set_file(&no_turbo, "0"),
+        |p| p,
+    );
+    let name = "org.test.uccd.reg.failed_cpu_cleanup_handoff";
+    let runtime = start_runtime(first, name, false).await;
+    sysfs.set_file(&no_turbo, "1");
+    sysfs.set_write_error(&no_turbo);
+    runtime.shutdown(Duration::from_secs(2)).await;
+    assert_eq!(sysfs.get_file(&no_turbo).as_deref(), Some("1"));
+
+    sysfs.fail_writes.lock().unwrap().remove(&no_turbo);
+    let (second, _, _, _) = build_custom_backend_with_sysfs(
+        root.path(),
+        true,
+        Some(sysfs.clone()),
+        |_| {},
+        |p| p,
+    );
+    let runtime = start_runtime(second, name, false).await;
+    let restored = sysfs.get_file(&no_turbo);
+    runtime.shutdown(Duration::from_secs(2)).await;
+    assert_eq!(restored.as_deref(), Some("0"));
+}
