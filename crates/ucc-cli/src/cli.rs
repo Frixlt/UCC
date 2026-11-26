@@ -135,6 +135,9 @@ pub enum Commands {
 
     /// Generate groff man page to stdout
     Man,
+
+    /// Show version information
+    Version,
 }
 
 #[derive(Args, Debug, Clone)]
@@ -301,9 +304,9 @@ pub enum CoolerAction {
         percent: i32,
     },
 
-    /// Set water cooler pump level code (1=Low, 2=Med, 3=High)
+    /// Set water cooler pump voltage/level code (0=11V High, 2=7V Low, 3=8V Med, 4=Off; 1=12V rejected)
     Pump {
-        /// Voltage/speed code
+        /// Voltage/speed code (0=11V High, 2=7V Low, 3=8V Med, 4=Off)
         code: i32,
     },
 
@@ -406,8 +409,10 @@ pub enum ToggleAction {
 #[derive(Subcommand, Debug, Clone)]
 pub enum LightbarAction {
     /// Read lightbar configuration settings
-    #[command(visible_alias = "status")]
     Get,
+
+    /// Read live lightbar status
+    Status,
 
     /// Set lightbar settings from JSON string
     Set {
@@ -424,9 +429,11 @@ pub enum LightbarAction {
 
 #[derive(Subcommand, Debug, Clone)]
 pub enum DevicesAction {
-    /// Read power device settings or status
-    #[command(visible_alias = "status")]
+    /// Read power device settings
     Get,
+
+    /// Read connected power device status
+    Status,
 
     /// Trigger scan for power devices
     Scan,

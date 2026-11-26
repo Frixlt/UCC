@@ -2,13 +2,15 @@
 
 use serde_json::{json, Value};
 use crate::cli::KeyboardAction;
-use crate::client::CliClient;
+use crate::client::{with_rpc_timeout, CliClient};
 use crate::format::*;
 
 pub async fn run_keyboard(client: &CliClient, action: &KeyboardAction, json_mode: bool) -> Result<(), i32> {
     match action {
         KeyboardAction::Info => {
-            let info_raw = client.proxy().get_keyboard_backlight_capabilities_json().await.map_err(|_| 1)?;
+            let info_raw = with_rpc_timeout(client.proxy().get_keyboard_backlight_capabilities_json())
+                .await
+                .map_err(|_| 1)?;
             let val: Value = serde_json::from_str(&info_raw).unwrap_or(Value::Object(serde_json::Map::new()));
 
             if json_mode {
@@ -48,7 +50,9 @@ pub async fn run_keyboard(client: &CliClient, action: &KeyboardAction, json_mode
             Ok(())
         }
         KeyboardAction::Get => {
-            let states_raw = client.proxy().get_keyboard_backlight_states_json().await.map_err(|_| 1)?;
+            let states_raw = with_rpc_timeout(client.proxy().get_keyboard_backlight_states_json())
+                .await
+                .map_err(|_| 1)?;
             let val: Value = serde_json::from_str(&states_raw).unwrap_or(Value::Object(serde_json::Map::new()));
 
             if json_mode {
@@ -56,8 +60,22 @@ pub async fn run_keyboard(client: &CliClient, action: &KeyboardAction, json_mode
                 return Ok(());
             }
 
-            let brightness = val.get("brightness").and_then(|v| v.as_i64()).unwrap_or(0);
-            let arr = val.get("states").and_then(|v| v.as_array()).cloned().unwrap_or_default();
+            let (brightness, arr) = if let Some(zones) = val.as_array() {
+                let first_br = zones
+                    .first()
+                    .and_then(|z| z.get("brightness"))
+                    .and_then(|v| v.as_i64())
+                    .unwrap_or(0);
+                (first_br, zones.clone())
+            } else {
+                let br = val.get("brightness").and_then(|v| v.as_i64()).unwrap_or(0);
+                let zones = val
+                    .get("states")
+                    .and_then(|v| v.as_array())
+                    .cloned()
+                    .unwrap_or_default();
+                (br, zones)
+            };
 
             println!("=== Keyboard Backlight State ===");
             println!("  {:<24} {}", "Global brightness:", brightness);
@@ -119,11 +137,15 @@ pub async fn run_keyboard(client: &CliClient, action: &KeyboardAction, json_mode
             Ok(())
         }
         KeyboardAction::Set { json } => {
-            let res = client.proxy().set_keyboard_backlight_states_json(json).await.unwrap_or(false);
+            let res = with_rpc_timeout(client.proxy().set_keyboard_backlight_states_json(json))
+                .await
+                .unwrap_or(false);
             ok(res)
         }
         KeyboardAction::Color { r, g, b, brightness } => {
-            let info_raw = client.proxy().get_keyboard_backlight_capabilities_json().await.unwrap_or_else(|_| "{}".to_string());
+            let info_raw = with_rpc_timeout(client.proxy().get_keyboard_backlight_capabilities_json())
+                .await
+                .unwrap_or_else(|_| "{}".to_string());
             let cap_val: Value = serde_json::from_str(&info_raw).unwrap_or(Value::Null);
             let zones = cap_val.get("zones").and_then(|v| v.as_i64()).unwrap_or(1).max(1) as usize;
             let br = brightness.unwrap_or(128);
@@ -143,12 +165,19 @@ pub async fn run_keyboard(client: &CliClient, action: &KeyboardAction, json_mode
                 "states": states,
             });
             let payload = serde_json::to_string(&root).unwrap_or_else(|_| "{}".to_string());
-            let res = client.proxy().set_keyboard_backlight_states_json(&payload).await.unwrap_or(false);
+            let res = with_rpc_timeout(client.proxy().set_keyboard_backlight_states_json(&payload))
+                .await
+                .unwrap_or(false);
             ok(res)
         }
         KeyboardAction::Profiles => {
             let assignments = client.load_local_assignments().await;
-            let raw = client.proxy().get_custom_keyboard_profiles_json().await.unwrap_or_else(|_| "[]".to_string());
+            let raw = with_rpc_timeout(client.proxy().get_custom_keyboard_profiles_json())
+                .await
+                .map_err(|_| {
+                    eprintln!("Error: Could not retrieve keyboard profiles");
+                    1
+                })?;
             let val: Value = serde_json::from_str(&raw).unwrap_or(Value::Array(vec![]));
 
             if json_mode {
@@ -175,14 +204,29 @@ pub async fn run_keyboard(client: &CliClient, action: &KeyboardAction, json_mode
             Ok(())
         }
         KeyboardAction::Activate { id } => {
-            let raw = client.proxy().get_custom_keyboard_profiles_json().await.map_err(|_| 1)?;
+            let raw = with_rpc_timeout(client.proxy().get_custom_keyboard_profiles_json())
+                .await
+                .map_err(|_| 1)?;
             let val: Value = serde_json::from_str(&raw).unwrap_or(Value::Array(vec![]));
             if let Some(arr) = val.as_array() {
                 for item in arr {
-                    if item.get("id").and_then(|s| s.as_str()) == Some(id) {
-                        if let Some(json_content) = item.get("json").and_then(|v| v.as_str()) {
-                            let res = client.proxy().set_keyboard_backlight_states_json(json_content).await.unwrap_or(false);
-                            return ok(res);
+                    if item.get("id").and_then(|s| s.as_str()) == Some(id)
+                        || item.get("name").and_then(|s| s.as_str()) == Some(id)
+                    {
+                        if let Some(json_field) = item.get("json") {
+                            let payload = match json_field {
+                                Value::String(s) => Some(s.clone()),
+                                Value::Object(_) | Value::Array(_) => serde_json::to_string(json_field).ok(),
+                                _ => None,
+                            };
+                            if let Some(json_content) = payload {
+                                let res = with_rpc_timeout(
+                                    client.proxy().set_keyboard_backlight_states_json(&json_content),
+                                )
+                                .await
+                                .unwrap_or(false);
+                                return ok(res);
+                            }
                         }
                     }
                 }

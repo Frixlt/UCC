@@ -1121,12 +1121,8 @@ dependencies = [
  "clap",
  "clap_complete",
  "clap_mangen",
- "serde",
  "serde_json",
- "thiserror",
  "tokio",
- "ucc-config",
- "ucc-core",
  "ucc-dbus",
  "zbus",
 ]

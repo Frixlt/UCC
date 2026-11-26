@@ -2,19 +2,63 @@
 
 use serde_json::Value;
 use crate::cli::ProfileAction;
-use crate::client::CliClient;
+use crate::client::{with_rpc_timeout, CliClient};
 use crate::format::*;
 
 pub async fn run_profile(client: &CliClient, action: &ProfileAction, json_mode: bool) -> Result<(), i32> {
     match action {
         ProfileAction::List => {
-            let assignments = client.load_local_assignments().await;
-            let defaults_raw = client.proxy().get_default_profiles_json().await.unwrap_or_else(|_| "[]".to_string());
-            let customs_raw = client.proxy().get_custom_profiles_json().await.unwrap_or_else(|_| "[]".to_string());
-            let active = client.get_active_profile_json().await;
+            let (assignments, defaults_res, customs_res, all_res, active) = tokio::join!(
+                client.load_local_assignments(),
+                with_rpc_timeout(client.proxy().get_default_profiles_json()),
+                with_rpc_timeout(client.proxy().get_custom_profiles_json()),
+                with_rpc_timeout(client.proxy().get_profiles_json()),
+                client.get_active_profile_json(),
+            );
 
-            let defaults_val: Value = serde_json::from_str(&defaults_raw).unwrap_or(Value::Array(vec![]));
-            let customs_val: Value = serde_json::from_str(&customs_raw).unwrap_or(Value::Array(vec![]));
+            if defaults_res.is_err() && customs_res.is_err() && all_res.is_err() {
+                eprintln!("Error: Could not retrieve profiles");
+                return Err(1);
+            }
+
+            let defaults_arr: Vec<Value> = defaults_res
+                .ok()
+                .and_then(|s| serde_json::from_str::<Value>(&s).ok())
+                .and_then(|v| v.as_array().cloned())
+                .unwrap_or_default();
+            let mut customs_arr: Vec<Value> = customs_res
+                .ok()
+                .and_then(|s| serde_json::from_str::<Value>(&s).ok())
+                .and_then(|v| v.as_array().cloned())
+                .unwrap_or_default();
+
+            if let Ok(all_raw) = all_res {
+                if let Some(all_arr) = serde_json::from_str::<Value>(&all_raw)
+                    .ok()
+                    .and_then(|v| v.as_array().cloned())
+                {
+                    let mut seen: std::collections::HashSet<String> = defaults_arr
+                        .iter()
+                        .chain(customs_arr.iter())
+                        .map(|p| {
+                            let id = profile_id(p);
+                            if id.is_empty() { profile_name(p) } else { id }
+                        })
+                        .collect();
+                    for item in all_arr {
+                        let key = {
+                            let id = profile_id(&item);
+                            if id.is_empty() { profile_name(&item) } else { id }
+                        };
+                        if !key.is_empty() && seen.insert(key) {
+                            customs_arr.push(item);
+                        }
+                    }
+                }
+            }
+
+            let defaults_val = Value::Array(defaults_arr.clone());
+            let customs_val = Value::Array(customs_arr.clone());
 
             if json_mode {
                 let out = serde_json::json!({
@@ -26,24 +70,33 @@ pub async fn run_profile(client: &CliClient, action: &ProfileAction, json_mode: 
                 return Ok(());
             }
 
-            if let Some(arr) = defaults_val.as_array() {
-                println!("Built-in profiles:");
-                for v in arr {
-                    let id = v.get("id").and_then(|s| s.as_str()).unwrap_or("");
-                    let name = v.get("name").and_then(|s| s.as_str()).unwrap_or("");
-                    println!("  {:<36}  {}", id, name);
-                }
+            println!("Built-in profiles:");
+            for v in &defaults_arr {
+                let id = v.get("id").and_then(|s| s.as_str()).unwrap_or("");
+                let name = v.get("name").and_then(|s| s.as_str()).unwrap_or("");
+                let states = assignments
+                    .profile_states
+                    .get(id)
+                    .or_else(|| assignments.profile_states.get(name))
+                    .map(|s| s.as_slice())
+                    .unwrap_or(&[]);
+                let tag = assignment_tag(states);
+                println!("  {:<36}  {}{}", id, name, tag);
             }
 
-            if let Some(arr) = customs_val.as_array() {
-                if !arr.is_empty() {
-                    println!("\nCustom profiles:");
-                    for v in arr {
-                        let id = v.get("id").and_then(|s| s.as_str()).unwrap_or("");
-                        let name = v.get("name").and_then(|s| s.as_str()).unwrap_or("");
-                        let tag = assignment_tag(assignments.profile_states.get(id).map(|v| v.as_slice()).unwrap_or(&[]));
-                        println!("  {:<36}  {}{}", id, name, tag);
-                    }
+            if !customs_arr.is_empty() {
+                println!("\nCustom profiles:");
+                for v in &customs_arr {
+                    let id = v.get("id").and_then(|s| s.as_str()).unwrap_or("");
+                    let name = v.get("name").and_then(|s| s.as_str()).unwrap_or("");
+                    let states = assignments
+                        .profile_states
+                        .get(id)
+                        .or_else(|| assignments.profile_states.get(name))
+                        .map(|s| s.as_slice())
+                        .unwrap_or(&[]);
+                    let tag = assignment_tag(states);
+                    println!("  {:<36}  {}{}", id, name, tag);
                 }
             }
 
@@ -55,33 +108,23 @@ pub async fn run_profile(client: &CliClient, action: &ProfileAction, json_mode: 
         }
         ProfileAction::Get { id } => {
             let prof = if let Some(ref prof_id) = id {
-                // Find in defaults or customs
-                let mut found = None;
-                if let Ok(def_raw) = client.proxy().get_default_profiles_json().await {
-                    if let Ok(val) = serde_json::from_str::<Value>(&def_raw) {
-                        if let Some(arr) = val.as_array() {
-                            for item in arr {
-                                if item.get("id").and_then(|s| s.as_str()) == Some(prof_id) {
-                                    found = Some(item.clone());
-                                    break;
-                                }
-                            }
-                        }
-                    }
+                let find_in = |raw: Result<String, zbus::Error>| -> Option<Value> {
+                    let s = raw.ok()?;
+                    let val: Value = serde_json::from_str(&s).ok()?;
+                    val.as_array()?
+                        .iter()
+                        .find(|item| item.get("id").and_then(|s| s.as_str()) == Some(prof_id))
+                        .cloned()
+                };
+                let def_res = with_rpc_timeout(client.proxy().get_default_profiles_json()).await;
+                let mut found = find_in(def_res);
+                if found.is_none() {
+                    let cust_res = with_rpc_timeout(client.proxy().get_custom_profiles_json()).await;
+                    found = find_in(cust_res);
                 }
                 if found.is_none() {
-                    if let Ok(cust_raw) = client.proxy().get_custom_profiles_json().await {
-                        if let Ok(val) = serde_json::from_str::<Value>(&cust_raw) {
-                            if let Some(arr) = val.as_array() {
-                                for item in arr {
-                                    if item.get("id").and_then(|s| s.as_str()) == Some(prof_id) {
-                                        found = Some(item.clone());
-                                        break;
-                                    }
-                                }
-                            }
-                        }
-                    }
+                    let all_res = with_rpc_timeout(client.proxy().get_profiles_json()).await;
+                    found = find_in(all_res);
                 }
                 found
             } else {
@@ -104,11 +147,15 @@ pub async fn run_profile(client: &CliClient, action: &ProfileAction, json_mode: 
             Ok(())
         }
         ProfileAction::Set { id } => {
-            let res = client.proxy().set_active_profile(id).await.unwrap_or(false);
+            let res = with_rpc_timeout(client.proxy().set_active_profile(id))
+                .await
+                .unwrap_or(false);
             ok(res)
         }
         ProfileAction::Defaults => {
-            let def_raw = client.proxy().get_default_profiles_json().await.map_err(|_| 1)?;
+            let def_raw = with_rpc_timeout(client.proxy().get_default_profiles_json())
+                .await
+                .map_err(|_| 1)?;
             let val: Value = serde_json::from_str(&def_raw).unwrap_or(Value::Array(vec![]));
             if json_mode {
                 print_json(&val);
@@ -127,7 +174,9 @@ pub async fn run_profile(client: &CliClient, action: &ProfileAction, json_mode: 
             Ok(())
         }
         ProfileAction::Customs => {
-            let cust_raw = client.proxy().get_custom_profiles_json().await.map_err(|_| 1)?;
+            let cust_raw = with_rpc_timeout(client.proxy().get_custom_profiles_json())
+                .await
+                .map_err(|_| 1)?;
             let val: Value = serde_json::from_str(&cust_raw).unwrap_or(Value::Array(vec![]));
             if json_mode {
                 print_json(&val);
@@ -150,15 +199,21 @@ pub async fn run_profile(client: &CliClient, action: &ProfileAction, json_mode: 
             Ok(())
         }
         ProfileAction::Apply { json } => {
-            let res = client.proxy().apply_profile(json).await.unwrap_or(false);
+            let res = with_rpc_timeout(client.proxy().apply_profile(json))
+                .await
+                .unwrap_or(false);
             ok(res)
         }
         ProfileAction::Save { json } => {
-            let res = client.proxy().save_custom_profile(json).await.unwrap_or(false);
+            let res = with_rpc_timeout(client.proxy().save_custom_profile(json))
+                .await
+                .unwrap_or(false);
             ok(res)
         }
         ProfileAction::Delete { id } => {
-            let res = client.proxy().delete_custom_profile(id).await.unwrap_or(false);
+            let res = with_rpc_timeout(client.proxy().delete_custom_profile(id))
+                .await
+                .unwrap_or(false);
             ok(res)
         }
     }
@@ -185,7 +240,11 @@ pub fn print_profile_summary(obj: &Value, show_header: bool) {
         if let Some(gov) = cpu.get("governor").and_then(|v| v.as_str()) {
             println!("  {:<24} {}", "Governor:", gov);
         }
-        if let Some(epp) = cpu.get("epp").and_then(|v| v.as_str()) {
+        if let Some(epp) = cpu
+            .get("energyPerformancePreference")
+            .or_else(|| cpu.get("epp"))
+            .and_then(|v| v.as_str())
+        {
             println!("  {:<24} {}", "EPP:", epp);
         }
     }
@@ -199,14 +258,26 @@ pub fn print_profile_summary(obj: &Value, show_header: bool) {
     }
 
     if let Some(disp) = obj.get("display").and_then(|v| v.as_object()) {
-        if let Some(b) = disp.get("brightness").and_then(|v| v.as_i64()) {
-            println!("  {:<24} {} %", "Display brightness:", b);
+        let use_brightness = disp
+            .get("useBrightness")
+            .and_then(|v| v.as_bool())
+            .unwrap_or(false);
+        if use_brightness {
+            if let Some(b) = disp.get("brightness").and_then(|v| v.as_i64()) {
+                println!("  {:<24} {} %", "Display brightness:", b);
+            }
         }
     }
 
-    if let Some(limits) = obj.get("odmPowerLimits").and_then(|v| v.as_array()) {
+    if let Some(limits) = obj.get("odmPowerLimits").and_then(|v| {
+        v.as_array()
+            .or_else(|| v.get("tdpValues").and_then(|t| t.as_array()))
+    }) {
         if !limits.is_empty() {
-            let vals: Vec<String> = limits.iter().filter_map(|v| v.as_i64().map(|n| format!("{}W", n))).collect();
+            let vals: Vec<String> = limits
+                .iter()
+                .filter_map(|v| v.as_i64().map(|n| format!("{}W", n)))
+                .collect();
             println!("  {:<24} {}", "Power limits (PL1/2/4):", vals.join(" / "));
         }
     }

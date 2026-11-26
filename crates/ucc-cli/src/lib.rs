@@ -56,6 +56,10 @@ where
             }
             return 0;
         }
+        Commands::Version => {
+            println!("ucc-cli {}", env!("CARGO_PKG_VERSION"));
+            return 0;
+        }
         _ => {}
     }
 
@@ -103,7 +107,7 @@ where
         Commands::Lightbar { ref action } => commands::lightbar::run_lightbar(&client, action, cli.json).await,
         Commands::Devices { ref action } => commands::devices::run_devices(&client, action, cli.json).await,
         Commands::Power { ref action } => commands::power::run_power(&client, action, cli.json).await,
-        Commands::Completions { .. } | Commands::Man => unreachable!(),
+        Commands::Completions { .. } | Commands::Man | Commands::Version => unreachable!(),
     };
 
     match result {

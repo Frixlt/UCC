@@ -109,11 +109,11 @@ pub fn profile_id(obj: &Value) -> String {
         .to_string()
 }
 
-/// Parse boolean string ("on"/"off", "true"/"false", "1"/"0").
+/// Parse boolean string ("on"/"off", "true"/"false", "1"/"0", "enabled"/"disabled").
 pub fn parse_bool_arg(s: &str) -> Option<bool> {
     match s.trim().to_lowercase().as_str() {
-        "on" | "true" | "1" | "yes" | "enable" => Some(true),
-        "off" | "false" | "0" | "no" | "disable" => Some(false),
+        "on" | "true" | "1" | "yes" | "enable" | "enabled" => Some(true),
+        "off" | "false" | "0" | "no" | "disable" | "disabled" => Some(false),
         _ => None,
     }
 }

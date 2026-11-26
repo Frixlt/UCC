@@ -2,17 +2,23 @@
 
 use serde_json::{json, Value};
 use crate::cli::CpuAction;
-use crate::client::CliClient;
+use crate::client::{with_rpc_timeout, CliClient};
 use crate::format::*;
 
 pub async fn run_cpu(client: &CliClient, action: &Option<CpuAction>, json_mode: bool) -> Result<(), i32> {
     match action {
         None | Some(CpuAction::Status) => {
-            let cores = client.proxy().get_cpu_core_count().await.ok().filter(|&c| c > 0);
-            let cpu = client.get_cpu_metrics().await;
-            let govs_raw = client.proxy().get_available_governors().await.unwrap_or_else(|_| "[]".to_string());
-            let epps_raw = client.proxy().get_available_epps().await.unwrap_or_else(|_| "[]".to_string());
-            let limits_raw = client.proxy().get_cpu_frequency_limits_json().await.unwrap_or_else(|_| "{}".to_string());
+            let (cores_res, cpu, govs_res, epps_res, limits_res) = tokio::join!(
+                with_rpc_timeout(client.proxy().get_cpu_core_count()),
+                client.get_cpu_metrics(),
+                with_rpc_timeout(client.proxy().get_available_governors()),
+                with_rpc_timeout(client.proxy().get_available_epps()),
+                with_rpc_timeout(client.proxy().get_cpu_frequency_limits_json()),
+            );
+            let cores = cores_res.ok().filter(|&c| c > 0);
+            let govs_raw = govs_res.unwrap_or_else(|_| "[]".to_string());
+            let epps_raw = epps_res.unwrap_or_else(|_| "[]".to_string());
+            let limits_raw = limits_res.unwrap_or_else(|_| "{}".to_string());
 
             let govs_val: Value = serde_json::from_str(&govs_raw).unwrap_or(Value::Array(vec![]));
             let epps_val: Value = serde_json::from_str(&epps_raw).unwrap_or(Value::Array(vec![]));
@@ -70,7 +76,9 @@ pub async fn run_cpu(client: &CliClient, action: &Option<CpuAction>, json_mode: 
                 eprintln!("Error: Setting CPU governor directly via D-Bus is unsupported; configure via profile");
                 Err(1)
             } else {
-                let govs_raw = client.proxy().get_available_governors().await.map_err(|_| 1)?;
+                let govs_raw = with_rpc_timeout(client.proxy().get_available_governors())
+                    .await
+                    .map_err(|_| 1)?;
                 let val: Value = serde_json::from_str(&govs_raw).unwrap_or(Value::Array(vec![]));
                 if json_mode {
                     print_json(&val);
@@ -86,7 +94,9 @@ pub async fn run_cpu(client: &CliClient, action: &Option<CpuAction>, json_mode: 
                 eprintln!("Error: Setting CPU EPP directly via D-Bus is unsupported; configure via profile");
                 Err(1)
             } else {
-                let epps_raw = client.proxy().get_available_epps().await.map_err(|_| 1)?;
+                let epps_raw = with_rpc_timeout(client.proxy().get_available_epps())
+                    .await
+                    .map_err(|_| 1)?;
                 let val: Value = serde_json::from_str(&epps_raw).unwrap_or(Value::Array(vec![]));
                 if json_mode {
                     print_json(&val);

@@ -2,15 +2,31 @@
 
 use serde_json::Value;
 use crate::cli::FanAction;
-use crate::client::CliClient;
+use crate::client::{with_rpc_timeout, CliClient};
 use crate::format::*;
+
+fn extract_json_field_string(v: &Value) -> Option<String> {
+    match v {
+        Value::String(s) => Some(s.clone()),
+        Value::Object(_) | Value::Array(_) => serde_json::to_string(v).ok(),
+        _ => None,
+    }
+}
 
 pub async fn run_fan(client: &CliClient, action: &FanAction, json_mode: bool) -> Result<(), i32> {
     match action {
         FanAction::List => {
-            let assignments = client.load_local_assignments().await;
-            let names_raw = client.proxy().get_fan_profile_names().await.unwrap_or_else(|_| "[]".to_string());
-            let customs_raw = client.proxy().get_custom_fan_profiles_json().await.unwrap_or_else(|_| "[]".to_string());
+            let (assignments, names_res, customs_res) = tokio::join!(
+                client.load_local_assignments(),
+                with_rpc_timeout(client.proxy().get_fan_profile_names()),
+                with_rpc_timeout(client.proxy().get_custom_fan_profiles_json()),
+            );
+
+            let names_raw = names_res.map_err(|_| {
+                eprintln!("Error: Could not retrieve fan profiles");
+                1
+            })?;
+            let customs_raw = customs_res.unwrap_or_else(|_| "[]".to_string());
 
             let names_val: Value = serde_json::from_str(&names_raw).unwrap_or(Value::Array(vec![]));
             let customs_val: Value = serde_json::from_str(&customs_raw).unwrap_or(Value::Array(vec![]));
@@ -27,8 +43,14 @@ pub async fn run_fan(client: &CliClient, action: &FanAction, json_mode: bool) ->
             if let Some(arr) = names_val.as_array() {
                 println!("Fan profiles:");
                 for v in arr {
-                    let id = v.get("id").and_then(|s| s.as_str()).unwrap_or("");
-                    let name = v.get("name").and_then(|s| s.as_str()).unwrap_or("");
+                    let (id, name) = if let Some(s) = v.as_str() {
+                        (s, s)
+                    } else {
+                        (
+                            v.get("id").and_then(|s| s.as_str()).unwrap_or(""),
+                            v.get("name").and_then(|s| s.as_str()).unwrap_or(""),
+                        )
+                    };
                     let tag = assignment_tag(assignments.fan_states.get(id).map(|v| v.as_slice()).unwrap_or(&[]));
                     println!("  {:<36}  {}{}", id, name, tag);
                 }
@@ -49,12 +71,12 @@ pub async fn run_fan(client: &CliClient, action: &FanAction, json_mode: bool) ->
             Ok(())
         }
         FanAction::Get { id } => {
-            let mut prof_json = client.proxy().get_fan_profile(id).await.ok();
+            let mut prof_json = with_rpc_timeout(client.proxy().get_fan_profile(id)).await.ok();
             let mut display_name = id.clone();
 
             if prof_json.as_deref() == Some("{}") || prof_json.is_none() {
                 // Check custom profiles
-                if let Ok(cust_raw) = client.proxy().get_custom_fan_profiles_json().await {
+                if let Ok(cust_raw) = with_rpc_timeout(client.proxy().get_custom_fan_profiles_json()).await {
                     if let Ok(val) = serde_json::from_str::<Value>(&cust_raw) {
                         if let Some(arr) = val.as_array() {
                             for item in arr {
@@ -62,7 +84,7 @@ pub async fn run_fan(client: &CliClient, action: &FanAction, json_mode: bool) ->
                                     if let Some(n) = item.get("name").and_then(|s| s.as_str()) {
                                         display_name = n.to_string();
                                     }
-                                    prof_json = item.get("json").and_then(|v| v.as_str()).map(|s| s.to_string());
+                                    prof_json = item.get("json").and_then(extract_json_field_string);
                                     break;
                                 }
                             }
@@ -112,14 +134,14 @@ pub async fn run_fan(client: &CliClient, action: &FanAction, json_mode: bool) ->
         }
         FanAction::Set { id } => {
             // Find fan profile JSON and apply
-            let mut found_json = client.proxy().get_fan_profile(id).await.ok();
+            let mut found_json = with_rpc_timeout(client.proxy().get_fan_profile(id)).await.ok();
             if found_json.as_deref() == Some("{}") || found_json.is_none() {
-                if let Ok(cust_raw) = client.proxy().get_custom_fan_profiles_json().await {
+                if let Ok(cust_raw) = with_rpc_timeout(client.proxy().get_custom_fan_profiles_json()).await {
                     if let Ok(val) = serde_json::from_str::<Value>(&cust_raw) {
                         if let Some(arr) = val.as_array() {
                             for item in arr {
                                 if item.get("id").and_then(|s| s.as_str()) == Some(id) {
-                                    found_json = item.get("json").and_then(|v| v.as_str()).map(|s| s.to_string());
+                                    found_json = item.get("json").and_then(extract_json_field_string);
                                     break;
                                 }
                             }
@@ -156,15 +178,21 @@ pub async fn run_fan(client: &CliClient, action: &FanAction, json_mode: bool) ->
             if let Some(v) = val.get("waterCoolerFan") { dst.insert("waterCoolerFan".into(), v.clone()); }
 
             let apply_json = serde_json::to_string(&Value::Object(dst)).unwrap_or_default();
-            let res = client.proxy().apply_fan_profiles(&apply_json).await.unwrap_or(false);
+            let res = with_rpc_timeout(client.proxy().apply_fan_profiles(&apply_json))
+                .await
+                .unwrap_or(false);
             ok(res)
         }
         FanAction::Apply { json } => {
-            let res = client.proxy().apply_fan_profiles(json).await.unwrap_or(false);
+            let res = with_rpc_timeout(client.proxy().apply_fan_profiles(json))
+                .await
+                .unwrap_or(false);
             ok(res)
         }
         FanAction::Revert => {
-            let res = client.proxy().revert_fan_profiles().await.unwrap_or(false);
+            let res = with_rpc_timeout(client.proxy().revert_fan_profiles())
+                .await
+                .unwrap_or(false);
             ok(res)
         }
     }

@@ -2,13 +2,13 @@
 
 use serde_json::Value;
 use crate::cli::PowerAction;
-use crate::client::CliClient;
+use crate::client::{with_rpc_timeout, CliClient};
 use crate::format::*;
 
 pub async fn run_power(client: &CliClient, action: &PowerAction, json_mode: bool) -> Result<(), i32> {
     match action {
         PowerAction::Status => {
-            let raw = match client.proxy().get_power_policy_json().await {
+            let raw = match with_rpc_timeout(client.proxy().get_power_policy_json()).await {
                 Ok(s) => s,
                 Err(_) => {
                     eprintln!("Error: Could not retrieve power policy");
@@ -24,7 +24,9 @@ pub async fn run_power(client: &CliClient, action: &PowerAction, json_mode: bool
             Ok(())
         }
         PowerAction::Mode { mode } => {
-            let res = client.proxy().set_manual_power_mode(mode).await.unwrap_or(false);
+            let res = with_rpc_timeout(client.proxy().set_manual_power_mode(mode))
+                .await
+                .unwrap_or(false);
             ok(res)
         }
     }

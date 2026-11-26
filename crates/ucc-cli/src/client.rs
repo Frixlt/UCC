@@ -87,6 +87,50 @@ fn json_number_as_i32(val: &Value) -> Option<i32> {
         })
 }
 
+fn value_to_i64(v: &zbus::zvariant::Value<'_>) -> Option<i64> {
+    i64::try_from(v)
+        .ok()
+        .or_else(|| u64::try_from(v).ok().and_then(|u| i64::try_from(u).ok()))
+        .or_else(|| i32::try_from(v).ok().map(i64::from))
+        .or_else(|| u32::try_from(v).ok().map(i64::from))
+}
+
+fn owned_value_to_i64(v: &zbus::zvariant::OwnedValue) -> Option<i64> {
+    v.downcast_ref::<i64>()
+        .ok()
+        .or_else(|| v.downcast_ref::<u64>().ok().and_then(|u| i64::try_from(u).ok()))
+        .or_else(|| v.downcast_ref::<i32>().ok().map(i64::from))
+        .or_else(|| v.downcast_ref::<u32>().ok().map(i64::from))
+}
+
+fn fan_map_entry_is_stale(map: &HashMap<String, zbus::zvariant::OwnedValue>, field: &str) -> bool {
+    if let Some(ts) = map.get("timestamp").and_then(owned_value_to_i64) {
+        if ts <= 0 {
+            return true;
+        }
+    }
+    if let Some(entry) = map.get(field) {
+        if let Ok(sub) = <HashMap<String, zbus::zvariant::OwnedValue>>::try_from(entry.clone()) {
+            if let Some(ts) = sub.get("timestamp").and_then(owned_value_to_i64) {
+                if ts <= 0 {
+                    return true;
+                }
+            }
+        } else if let zbus::zvariant::Value::Dict(ref dict) = **entry {
+            for (k, val) in dict.iter() {
+                if matches!(<&str>::try_from(k), Ok("timestamp")) {
+                    if let Some(ts) = value_to_i64(val) {
+                        if ts <= 0 {
+                            return true;
+                        }
+                    }
+                }
+            }
+        }
+    }
+    false
+}
+
 fn extract_variant_i32(v: &zbus::zvariant::OwnedValue) -> Option<i32> {
     if let Ok(val) = v.downcast_ref::<i32>() {
         return Some(val);
@@ -274,15 +318,19 @@ impl CliClient {
 
         // Temperature and fan speed from GetFanDataCPU or sensors
         if let Ok(raw_fan) = with_rpc_timeout(self.proxy.get_fan_data_cpu()).await {
-            if let Some(temp) = raw_fan.get("temp").and_then(extract_variant_i32) {
-                if temp >= 0 {
-                    m.temperature = Some(temp);
+            if !fan_map_entry_is_stale(&raw_fan, "temp") {
+                if let Some(temp) = raw_fan.get("temp").and_then(extract_variant_i32) {
+                    if temp >= 0 {
+                        m.temperature = Some(temp);
+                    }
                 }
             }
-            if let Some(spd) = raw_fan.get("speed").and_then(extract_variant_i32) {
-                if spd >= 0 {
-                    m.fan_percent = Some(spd);
-                    m.fan_rpm = Some(spd * 60);
+            if !fan_map_entry_is_stale(&raw_fan, "speed") {
+                if let Some(spd) = raw_fan.get("speed").and_then(extract_variant_i32) {
+                    if spd >= 0 {
+                        m.fan_percent = Some(spd);
+                        m.fan_rpm = Some(spd * 60);
+                    }
                 }
             }
         }
@@ -328,10 +376,18 @@ impl CliClient {
 
         // Fan speeds from GPU1 and GPU2
         let gpu1_spd = with_rpc_timeout(self.proxy.get_fan_data_gpu1()).await.ok().and_then(|map| {
-            map.get("speed").and_then(extract_variant_i32)
+            if fan_map_entry_is_stale(&map, "speed") {
+                None
+            } else {
+                map.get("speed").and_then(extract_variant_i32)
+            }
         });
         let gpu2_spd = with_rpc_timeout(self.proxy.get_fan_data_gpu2()).await.ok().and_then(|map| {
-            map.get("speed").and_then(extract_variant_i32)
+            if fan_map_entry_is_stale(&map, "speed") {
+                None
+            } else {
+                map.get("speed").and_then(extract_variant_i32)
+            }
         });
 
         match (gpu1_spd, gpu2_spd) {
@@ -391,8 +447,8 @@ impl CliClient {
             supported,
             connected,
             enabled,
-            fan_speed: fan_speed.filter(|&v| v >= 0),
-            pump_level: pump_level.filter(|&v| v >= 0),
+            fan_speed: if connected { fan_speed.filter(|&v| v >= 0) } else { None },
+            pump_level: if connected { pump_level.filter(|&v| v >= 0) } else { None },
         }
     }
 
@@ -461,6 +517,52 @@ impl CliClient {
                         let list = assignments.profile_states.entry(prof_id.to_string()).or_default();
                         if !list.contains(state) {
                             list.push(state.clone());
+                        }
+                    }
+                }
+            }
+        }
+
+        // profiles: can be EITHER { "power_ac": "profile_id" } OR { "profile_id": { ...UccProfile... } }
+        if let Some(profiles_obj) = settings.get("profiles").and_then(|v| v.as_object()) {
+            for (k, v) in profiles_obj {
+                if let Some(prof_id) = v.as_str() {
+                    if !prof_id.is_empty() {
+                        let list = assignments.profile_states.entry(prof_id.to_string()).or_default();
+                        if !list.contains(k) {
+                            list.push(k.clone());
+                        }
+                    }
+                } else if v.is_object() {
+                    let states = assignments.profile_states.get(k).cloned().unwrap_or_default();
+                    if !states.is_empty() {
+                        if let Some(fan_id) = v.get("fan").and_then(|f| f.get("fanProfile")).and_then(|s| s.as_str()) {
+                            if !fan_id.is_empty() {
+                                let flist = assignments.fan_states.entry(fan_id.to_string()).or_default();
+                                for s in &states {
+                                    if !flist.contains(s) {
+                                        flist.push(s.clone());
+                                    }
+                                }
+                            }
+                        }
+                        if let Some(kb_id) = v
+                            .get("selectedKeyboardProfile")
+                            .and_then(|s| s.as_str())
+                            .filter(|s| !s.is_empty())
+                            .or_else(|| {
+                                v.get("keyboard")
+                                    .and_then(|kb| kb.get("keyboardProfileId"))
+                                    .and_then(|s| s.as_str())
+                                    .filter(|s| !s.is_empty())
+                            })
+                        {
+                            let klist = assignments.kb_states.entry(kb_id.to_string()).or_default();
+                            for s in &states {
+                                if !klist.contains(s) {
+                                    klist.push(s.clone());
+                                }
+                            }
                         }
                     }
                 }

@@ -1,23 +1,23 @@
 //! Statemap command implementation.
 
+use serde_json::Value;
 use crate::cli::StatemapAction;
-use crate::client::CliClient;
+use crate::client::{with_rpc_timeout, CliClient};
 use crate::format::*;
 
 pub async fn run_statemap(client: &CliClient, action: &StatemapAction, json_mode: bool) -> Result<(), i32> {
     match action {
         StatemapAction::Get => {
-            let settings = match client.get_settings_json().await {
-                Some(s) => s,
-                None => {
-                    if json_mode {
-                        println!("{{}}");
-                    } else {
-                        println!("No settings available");
-                    }
-                    return Ok(());
-                }
-            };
+            let raw = with_rpc_timeout(client.proxy().get_settings_json())
+                .await
+                .map_err(|_| {
+                    eprintln!("Error: Could not retrieve settings");
+                    1
+                })?;
+            let settings: Value = serde_json::from_str(&raw).map_err(|_| {
+                eprintln!("Error: Invalid settings JSON");
+                1
+            })?;
 
             if json_mode {
                 print_json(&settings);
@@ -62,7 +62,9 @@ pub async fn run_statemap(client: &CliClient, action: &StatemapAction, json_mode
             Ok(())
         }
         StatemapAction::Set { state, profile_id } => {
-            let res = client.proxy().set_state_map(state, profile_id).await.unwrap_or(false);
+            let res = with_rpc_timeout(client.proxy().set_state_map(state, profile_id))
+                .await
+                .unwrap_or(false);
             ok(res)
         }
     }

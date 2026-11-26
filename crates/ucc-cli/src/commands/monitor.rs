@@ -6,6 +6,10 @@ use crate::cli::MonitorArgs;
 use crate::client::CliClient;
 
 pub async fn run_monitor(client: &CliClient, args: &MonitorArgs, json_mode: bool) -> Result<(), i32> {
+    if args.count < 0 {
+        eprintln!("Error: --count must be >= 0 (0 = continuous)");
+        return Err(1);
+    }
     let mut remaining = args.count;
     let interval = Duration::from_secs(args.interval.max(1));
     let mut first = true;

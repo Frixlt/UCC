@@ -1,18 +1,22 @@
 //! GPU command implementation.
 
 use serde_json::json;
-use crate::client::CliClient;
+use crate::client::{with_rpc_timeout, CliClient};
 use crate::format::*;
 
 pub async fn run_gpu(client: &CliClient, json_mode: bool) -> Result<(), i32> {
-    let gpu = client.get_gpu_metrics().await;
-    let igpu = client.get_igpu_metrics().await;
+    let (gpu, igpu, ctgp_avail_res, ctgp_max_res, ctgp_def_res, active_prof) = tokio::join!(
+        client.get_gpu_metrics(),
+        client.get_igpu_metrics(),
+        with_rpc_timeout(client.proxy().get_nvidia_power_ctrl_available()),
+        with_rpc_timeout(client.proxy().get_nvidia_power_ctrl_max_power_limit()),
+        with_rpc_timeout(client.proxy().get_nvidia_power_ctrl_default_power_limit()),
+        client.get_active_profile_json(),
+    );
 
-    let ctgp_avail = client.proxy().get_nvidia_power_ctrl_available().await.ok();
-    let ctgp_max = client.proxy().get_nvidia_power_ctrl_max_power_limit().await.ok().filter(|&v| v > 0);
-    let ctgp_def = client.proxy().get_nvidia_power_ctrl_default_power_limit().await.ok().filter(|&v| v > 0);
-
-    let active_prof = client.get_active_profile_json().await;
+    let ctgp_avail = ctgp_avail_res.ok();
+    let ctgp_max = ctgp_max_res.ok().filter(|&v| v > 0);
+    let ctgp_def = ctgp_def_res.ok().filter(|&v| v > 0);
     let ctgp_off = active_prof.as_ref().and_then(|p| p.get("nvidiaCTGPOffset")).and_then(|v| v.as_i64()).map(|n| n as i32);
 
     if json_mode {
