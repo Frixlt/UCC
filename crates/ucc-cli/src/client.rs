@@ -8,6 +8,17 @@ use zbus::Connection;
 pub const DAEMON_CONNECT_ERR: &str =
     "Error: Cannot connect to uccd daemon (com.uniwill.uccd on system bus).\nMake sure uccd is running: systemctl status uccd";
 
+pub const DEFAULT_RPC_TIMEOUT: std::time::Duration = std::time::Duration::from_millis(1500);
+
+pub async fn with_rpc_timeout<T>(
+    fut: impl std::future::Future<Output = zbus::Result<T>>,
+) -> zbus::Result<T> {
+    match tokio::time::timeout(DEFAULT_RPC_TIMEOUT, fut).await {
+        Ok(res) => res,
+        Err(_) => Err(zbus::Error::Failure("RPC call deadline exceeded".to_string())),
+    }
+}
+
 #[derive(Debug, Default, Clone)]
 pub struct LocalAssignments {
     pub profile_states: HashMap<String, Vec<String>>,
@@ -66,18 +77,33 @@ pub struct ChargingMetrics {
     pub end_threshold: Option<i32>,
 }
 
+fn json_number_as_i32(val: &Value) -> Option<i32> {
+    val.as_i64()
+        .and_then(|n| i32::try_from(n).ok())
+        .or_else(|| {
+            val.as_f64()
+                .filter(|f| f.is_finite())
+                .map(|f| f.round() as i32)
+        })
+}
+
 fn extract_variant_i32(v: &zbus::zvariant::OwnedValue) -> Option<i32> {
     if let Ok(val) = v.downcast_ref::<i32>() {
         return Some(val);
     }
+    if let Ok(val) = v.downcast_ref::<f64>() {
+        if val.is_finite() {
+            return Some(val.round() as i32);
+        }
+    }
     if let Ok(val) = v.downcast_ref::<u32>() {
-        return Some(val as i32);
+        return i32::try_from(val).ok();
     }
     if let Ok(val) = v.downcast_ref::<i64>() {
-        return Some(val as i32);
+        return i32::try_from(val).ok();
     }
     if let Ok(val) = v.downcast_ref::<u64>() {
-        return Some(val as i32);
+        return i32::try_from(val).ok();
     }
     if let Ok(val) = v.downcast_ref::<u8>() {
         return Some(val as i32);
@@ -208,7 +234,7 @@ impl CliClient {
     }
 
     pub async fn get_system_info_json(&self) -> Option<Value> {
-        if let Ok(raw) = self.proxy.get_system_info_json().await {
+        if let Ok(raw) = with_rpc_timeout(self.proxy.get_system_info_json()).await {
             serde_json::from_str(&raw).ok()
         } else {
             None
@@ -216,11 +242,11 @@ impl CliClient {
     }
 
     pub async fn get_power_state(&self) -> Option<String> {
-        self.proxy.get_power_state().await.ok()
+        with_rpc_timeout(self.proxy.get_power_state()).await.ok()
     }
 
     pub async fn get_active_profile_json(&self) -> Option<Value> {
-        if let Ok(raw) = self.proxy.get_active_profile_json().await {
+        if let Ok(raw) = with_rpc_timeout(self.proxy.get_active_profile_json()).await {
             serde_json::from_str(&raw).ok()
         } else {
             None
@@ -228,7 +254,7 @@ impl CliClient {
     }
 
     pub async fn get_power_policy_json(&self) -> Option<Value> {
-        if let Ok(raw) = self.proxy.get_power_policy_json().await {
+        if let Ok(raw) = with_rpc_timeout(self.proxy.get_power_policy_json()).await {
             serde_json::from_str(&raw).ok()
         } else {
             None
@@ -236,7 +262,7 @@ impl CliClient {
     }
 
     pub async fn get_settings_json(&self) -> Option<Value> {
-        if let Ok(raw) = self.proxy.get_settings_json().await {
+        if let Ok(raw) = with_rpc_timeout(self.proxy.get_settings_json()).await {
             serde_json::from_str(&raw).ok()
         } else {
             None
@@ -247,7 +273,7 @@ impl CliClient {
         let mut m = CpuMetrics::default();
 
         // Temperature and fan speed from GetFanDataCPU or sensors
-        if let Ok(raw_fan) = self.proxy.get_fan_data_cpu().await {
+        if let Ok(raw_fan) = with_rpc_timeout(self.proxy.get_fan_data_cpu()).await {
             if let Some(temp) = raw_fan.get("temp").and_then(extract_variant_i32) {
                 if temp >= 0 {
                     m.temperature = Some(temp);
@@ -262,14 +288,14 @@ impl CliClient {
         }
 
         // Frequency
-        if let Ok(freq) = self.proxy.get_cpu_frequency_mhz().await {
+        if let Ok(freq) = with_rpc_timeout(self.proxy.get_cpu_frequency_mhz()).await {
             if freq > 0 {
                 m.frequency = Some(freq);
             }
         }
 
         // Power from GetCpuPowerValuesJSON
-        if let Ok(raw_pow) = self.proxy.get_cpu_power_values_json().await {
+        if let Ok(raw_pow) = with_rpc_timeout(self.proxy.get_cpu_power_values_json()).await {
             if let Ok(val) = serde_json::from_str::<Value>(&raw_pow) {
                 if let Some(p) = val.get("powerDraw").and_then(|v| v.as_f64()) {
                     if p >= 0.0 {
@@ -286,13 +312,13 @@ impl CliClient {
         let mut m = GpuMetrics::default();
 
         // Live dGPU data
-        if let Ok(raw) = self.proxy.get_dgpu_info_values_json().await {
+        if let Ok(raw) = with_rpc_timeout(self.proxy.get_dgpu_info_values_json()).await {
             if let Ok(val) = serde_json::from_str::<Value>(&raw) {
-                if let Some(t) = val.get("temp").and_then(|v| v.as_i64()) {
-                    if t >= 0 { m.temperature = Some(t as i32); }
+                if let Some(t) = val.get("temp").and_then(json_number_as_i32) {
+                    if t >= 0 { m.temperature = Some(t); }
                 }
-                if let Some(f) = val.get("coreFrequency").or_else(|| val.get("coreFreq")).and_then(|v| v.as_i64()) {
-                    if f >= 0 { m.frequency = Some(f as i32); }
+                if let Some(f) = val.get("coreFrequency").or_else(|| val.get("coreFreq")).and_then(json_number_as_i32) {
+                    if f >= 0 { m.frequency = Some(f); }
                 }
                 if let Some(p) = val.get("powerDraw").and_then(|v| v.as_f64()) {
                     if p >= 0.0 { m.power = Some(p); }
@@ -300,22 +326,11 @@ impl CliClient {
             }
         }
 
-        // Fall back to iGPU temp/power if dGPU temp is absent
-        if m.temperature.is_none() {
-            if let Ok(raw_i) = self.proxy.get_igpu_info_values_json().await {
-                if let Ok(val) = serde_json::from_str::<Value>(&raw_i) {
-                    if let Some(t) = val.get("temp").and_then(|v| v.as_i64()) {
-                        if t >= 0 { m.temperature = Some(t as i32); }
-                    }
-                }
-            }
-        }
-
         // Fan speeds from GPU1 and GPU2
-        let gpu1_spd = self.proxy.get_fan_data_gpu1().await.ok().and_then(|map| {
+        let gpu1_spd = with_rpc_timeout(self.proxy.get_fan_data_gpu1()).await.ok().and_then(|map| {
             map.get("speed").and_then(extract_variant_i32)
         });
-        let gpu2_spd = self.proxy.get_fan_data_gpu2().await.ok().and_then(|map| {
+        let gpu2_spd = with_rpc_timeout(self.proxy.get_fan_data_gpu2()).await.ok().and_then(|map| {
             map.get("speed").and_then(extract_variant_i32)
         });
 
@@ -341,13 +356,13 @@ impl CliClient {
 
     pub async fn get_igpu_metrics(&self) -> IGpuMetrics {
         let mut m = IGpuMetrics::default();
-        if let Ok(raw) = self.proxy.get_igpu_info_values_json().await {
+        if let Ok(raw) = with_rpc_timeout(self.proxy.get_igpu_info_values_json()).await {
             if let Ok(val) = serde_json::from_str::<Value>(&raw) {
-                if let Some(t) = val.get("temp").and_then(|v| v.as_i64()) {
-                    if t >= 0 { m.temperature = Some(t as i32); }
+                if let Some(t) = val.get("temp").and_then(json_number_as_i32) {
+                    if t >= 0 { m.temperature = Some(t); }
                 }
-                if let Some(f) = val.get("coreFrequency").and_then(|v| v.as_i64()) {
-                    if f >= 0 { m.frequency = Some(f as i32); }
+                if let Some(f) = val.get("coreFrequency").or_else(|| val.get("coreFreq")).and_then(json_number_as_i32) {
+                    if f >= 0 { m.frequency = Some(f); }
                 }
                 if let Some(p) = val.get("powerDraw").and_then(|v| v.as_f64()) {
                     if p >= 0.0 { m.power = Some(p); }
@@ -359,18 +374,18 @@ impl CliClient {
 
     pub async fn get_hardware_metrics(&self) -> HardwareMetrics {
         HardwareMetrics {
-            display_brightness: self.proxy.get_display_brightness().await.ok(),
-            webcam_enabled: self.proxy.get_webcam_sw_status().await.ok(),
-            fn_lock: self.proxy.get_fn_lock_status().await.ok(),
+            display_brightness: with_rpc_timeout(self.proxy.get_display_brightness()).await.ok(),
+            webcam_enabled: with_rpc_timeout(self.proxy.get_webcam_sw_status()).await.ok(),
+            fn_lock: with_rpc_timeout(self.proxy.get_fn_lock_status()).await.ok(),
         }
     }
 
     pub async fn get_water_cooler_metrics(&self) -> WaterCoolerMetrics {
-        let supported = self.proxy.get_water_cooler_supported().await.unwrap_or(false);
-        let connected = self.proxy.get_water_cooler_connected().await.unwrap_or(false);
-        let enabled = self.proxy.is_water_cooler_enabled().await.ok();
-        let fan_speed = self.proxy.get_water_cooler_fan_speed().await.ok();
-        let pump_level = self.proxy.get_water_cooler_pump_level().await.ok();
+        let supported = with_rpc_timeout(self.proxy.get_water_cooler_supported()).await.unwrap_or(false);
+        let connected = with_rpc_timeout(self.proxy.get_water_cooler_connected()).await.unwrap_or(false);
+        let enabled = with_rpc_timeout(self.proxy.is_water_cooler_enabled()).await.ok();
+        let fan_speed = with_rpc_timeout(self.proxy.get_water_cooler_fan_speed()).await.ok();
+        let pump_level = with_rpc_timeout(self.proxy.get_water_cooler_pump_level()).await.ok();
 
         WaterCoolerMetrics {
             supported,
@@ -382,7 +397,7 @@ impl CliClient {
     }
 
     pub async fn get_charging_metrics(&self) -> ChargingMetrics {
-        let profiles_avail = self.proxy.get_charging_profiles_available().await.ok();
+        let profiles_avail = with_rpc_timeout(self.proxy.get_charging_profiles_available()).await.ok();
         let has_hw = if let Some(ref raw) = profiles_avail {
             if let Ok(val) = serde_json::from_str::<Value>(raw) {
                 val.as_array().is_some_and(|a| !a.is_empty())
@@ -397,11 +412,11 @@ impl CliClient {
             return ChargingMetrics { available: false, ..Default::default() };
         }
 
-        let profile = self.proxy.get_current_charging_profile().await.ok().filter(|s| !s.is_empty());
-        let priority = self.proxy.get_current_charging_priority().await.ok().filter(|s| !s.is_empty());
-        let charge_type = self.proxy.get_charge_type().await.ok().filter(|s| !s.is_empty() && s != "Unknown" && s != "N/A");
+        let profile = with_rpc_timeout(self.proxy.get_current_charging_profile()).await.ok().filter(|s| !s.is_empty());
+        let priority = with_rpc_timeout(self.proxy.get_current_charging_priority()).await.ok().filter(|s| !s.is_empty());
+        let charge_type = with_rpc_timeout(self.proxy.get_charge_type()).await.ok().filter(|s| !s.is_empty() && s != "Unknown" && s != "N/A");
 
-        let end_avail = self.proxy.get_charge_end_available_thresholds().await.ok();
+        let end_avail = with_rpc_timeout(self.proxy.get_charge_end_available_thresholds()).await.ok();
         let has_thresholds = if let Some(ref raw) = end_avail {
             if let Ok(val) = serde_json::from_str::<Value>(raw) {
                 val.as_array().is_some_and(|a| !a.is_empty())
@@ -414,8 +429,8 @@ impl CliClient {
 
         let (start_threshold, end_threshold) = if has_thresholds {
             (
-                self.proxy.get_charge_start_threshold().await.ok().filter(|&v| v >= 0),
-                self.proxy.get_charge_end_threshold().await.ok().filter(|&v| v >= 0),
+                with_rpc_timeout(self.proxy.get_charge_start_threshold()).await.ok().filter(|&v| v >= 0),
+                with_rpc_timeout(self.proxy.get_charge_end_threshold()).await.ok().filter(|&v| v >= 0),
             )
         } else {
             (None, None)
@@ -486,5 +501,32 @@ impl CliClient {
         }
 
         assignments
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use zbus::zvariant::{OwnedValue, Value};
+
+    #[test]
+    fn test_json_number_as_i32_parses_int_and_float() {
+        assert_eq!(json_number_as_i32(&serde_json::json!(49)), Some(49));
+        assert_eq!(json_number_as_i32(&serde_json::json!(49.0)), Some(49));
+        assert_eq!(json_number_as_i32(&serde_json::json!(950.4)), Some(950));
+        assert_eq!(json_number_as_i32(&serde_json::json!(-1.0)), Some(-1));
+        assert_eq!(json_number_as_i32(&serde_json::json!("bad")), None);
+    }
+
+    #[test]
+    fn test_extract_variant_i32_nested_and_flat() {
+        let flat = OwnedValue::from(55i32);
+        assert_eq!(extract_variant_i32(&flat), Some(55));
+
+        let mut inner = std::collections::HashMap::<String, OwnedValue>::new();
+        inner.insert("timestamp".to_string(), OwnedValue::from(1234567i64));
+        inner.insert("data".to_string(), OwnedValue::from(42i32));
+        let nested = OwnedValue::try_from(Value::from(inner)).unwrap();
+        assert_eq!(extract_variant_i32(&nested), Some(42));
     }
 }

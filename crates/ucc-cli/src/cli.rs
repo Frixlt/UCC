@@ -9,9 +9,14 @@ use clap_complete::Shell;
     name = "ucc-cli",
     about = "Command-line interface for Frixit / Uniwill Control Center",
     version,
+    disable_version_flag = true,
     arg_required_else_help = true
 )]
 pub struct Cli {
+    /// Print version
+    #[arg(short = 'v', short_alias = 'V', long = "version", action = clap::ArgAction::Version)]
+    pub version: Option<bool>,
+
     /// Output structured JSON instead of human-readable text
     #[arg(short = 'j', long = "json", global = true)]
     pub json: bool,

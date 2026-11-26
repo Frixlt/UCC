@@ -35,9 +35,14 @@ impl UccTray {
         active_profile_idx: usize,
         action_tx: mpsc::UnboundedSender<TrayAction>,
     ) -> Self {
+        let valid_idx = if !profiles.is_empty() && active_profile_idx < profiles.len() {
+            active_profile_idx
+        } else {
+            0
+        };
         Self {
             profiles,
-            active_profile: Arc::new(AtomicUsize::new(active_profile_idx)),
+            active_profile: Arc::new(AtomicUsize::new(valid_idx)),
             fan_auto: Arc::new(AtomicBool::new(true)),
             water_cooler_connected: Arc::new(AtomicBool::new(false)),
             action_tx,
@@ -48,6 +53,10 @@ impl UccTray {
         if index < self.profiles.len() {
             self.active_profile.store(index, Ordering::SeqCst);
         }
+    }
+
+    pub fn set_fan_auto(&self, fan_auto: bool) {
+        self.fan_auto.store(fan_auto, Ordering::SeqCst);
     }
 
     pub fn set_water_cooler_connected(&self, connected: bool) {
@@ -98,8 +107,8 @@ impl Tray for UccTray {
             MenuItem::RadioGroup(RadioGroup {
                 selected: current_profile,
                 select: Box::new(move |this: &mut Self, idx: usize| {
-                    if profile_tx.send(TrayAction::SelectProfile(idx)).is_ok() {
-                        this.active_profile.store(idx, Ordering::SeqCst);
+                    if idx < this.profiles.len() {
+                        let _ = profile_tx.send(TrayAction::SelectProfile(idx));
                     }
                 }),
                 options: profiles
@@ -117,11 +126,8 @@ impl Tray for UccTray {
                 } else {
                     "Fan: Max (click for Auto)".into()
                 },
-                activate: Box::new(move |this: &mut Self| {
-                    if fan_tx.send(TrayAction::ToggleFanAuto).is_ok() {
-                        let new_val = !this.fan_auto.load(Ordering::SeqCst);
-                        this.fan_auto.store(new_val, Ordering::SeqCst);
-                    }
+                activate: Box::new(move |_| {
+                    let _ = fan_tx.send(TrayAction::ToggleFanAuto);
                 }),
                 ..Default::default()
             }),

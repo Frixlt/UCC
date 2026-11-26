@@ -16,8 +16,10 @@ pub async fn run_monitor(client: &CliClient, args: &MonitorArgs, json_mode: bool
         }
         first = false;
 
-        let cpu = client.get_cpu_metrics().await;
-        let gpu = client.get_gpu_metrics().await;
+        let (cpu, gpu) = tokio::join!(
+            client.get_cpu_metrics(),
+            client.get_gpu_metrics(),
+        );
 
         if json_mode {
             let row = json!({

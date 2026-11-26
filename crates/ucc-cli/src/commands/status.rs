@@ -5,16 +5,18 @@ use crate::client::CliClient;
 use crate::format::*;
 
 pub async fn run_status(client: &CliClient, json_mode: bool) -> Result<(), i32> {
-    let sys_info = client.get_system_info_json().await;
-    let power_state = client.get_power_state().await;
-    let active_profile = client.get_active_profile_json().await;
-    let power_policy = client.get_power_policy_json().await;
-    let cpu = client.get_cpu_metrics().await;
-    let gpu = client.get_gpu_metrics().await;
-    let igpu = client.get_igpu_metrics().await;
-    let hw = client.get_hardware_metrics().await;
-    let wc = client.get_water_cooler_metrics().await;
-    let ch = client.get_charging_metrics().await;
+    let (sys_info, power_state, active_profile, power_policy, cpu, gpu, igpu, hw, wc, ch) = tokio::join!(
+        client.get_system_info_json(),
+        client.get_power_state(),
+        client.get_active_profile_json(),
+        client.get_power_policy_json(),
+        client.get_cpu_metrics(),
+        client.get_gpu_metrics(),
+        client.get_igpu_metrics(),
+        client.get_hardware_metrics(),
+        client.get_water_cooler_metrics(),
+        client.get_charging_metrics(),
+    );
 
     if json_mode {
         let mut root = json!({
