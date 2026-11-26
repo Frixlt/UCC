@@ -1,4 +1,4 @@
-ucc (0.3.0-1) unstable; urgency=medium
+ucc (0.3.0) unstable; urgency=medium
 
   * Document the Frixit combined fork; update source links and release version.
   * Debian packaging remains experimental; see docs/BUILDING.md.

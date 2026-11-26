@@ -39,6 +39,10 @@ target_compile_options( ucc-cli PRIVATE
 )
 
 # Installation
+if(UCC_PACKAGE_RUST_RUNTIME)
+  return()
+endif()
+
 include( GNUInstallDirs )
 install( TARGETS ucc-cli
   RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR}

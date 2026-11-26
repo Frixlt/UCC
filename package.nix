@@ -4,12 +4,14 @@
   coreutils,
   gawk,
   kdePackages,
-  kf6 ? null,
   gnugrep,
   procps,
   util-linux,
   which,
   stdenv,
+  cargo,
+  rustc,
+  rustPlatform,
   nlohmann_json,
   pkg-config,
   libxrandr,
@@ -27,9 +29,15 @@ stdenv.mkDerivation {
 
   inherit src;
 
+  cargoDeps = rustPlatform.importCargoLock {
+    lockFile = "${src}/Cargo.lock";
+  };
+
   nativeBuildInputs = [
     cmake
-    kdePackages.extra-cmake-modules
+    cargo
+    rustc
+    rustPlatform.cargoSetupHook
     pkg-config
     makeWrapper
     kdePackages.wrapQtAppsHook
@@ -38,17 +46,9 @@ stdenv.mkDerivation {
   buildInputs = [
     kdePackages.qtbase
     kdePackages.qtcharts
-    kdePackages.qtdeclarative
-    kdePackages.qtconnectivity
     kdePackages.qtwayland
     kdePackages.plasma-integration
     kdePackages.breeze
-    kdePackages.kconfig
-    kdePackages.kcoreaddons
-    kdePackages.kpackage
-    kdePackages.kwindowsystem
-    kdePackages.kstatusnotifieritem
-    kdePackages.libplasma
     nlohmann_json
     libxrandr
     libxcb-cursor
@@ -61,13 +61,29 @@ stdenv.mkDerivation {
   cmakeFlags = [
     "-DCMAKE_BUILD_TYPE=Release"
     "-DBUILD_GUI=ON"
-    "-DBUILD_TRAY=ON"
+    "-DBUILD_TRAY=OFF"
     "-DBUILD_GNOME=ON"
-    "-DBUILD_CLI=ON"
-    "-DUCC_AUTOSTART_DIR=share/xdg/autostart"
+    "-DBUILD_CLI=OFF"
+    "-DUCC_PACKAGE_RUST_RUNTIME=ON"
+    "-DUCC_AUTOSTART_DIR=etc/xdg/autostart"
   ];
 
+  postPatch = ''
+    rustSourceRoot="$PWD"
+  '';
+
+  postBuild = ''
+    (cd "$rustSourceRoot" &&
+      cargo build --workspace --bins --release --locked --offline --target-dir "$NIX_BUILD_TOP/rust-target")
+  '';
+
+  postInstall = ''
+    "$NIX_BUILD_TOP/rust-target/release/xtask" install-runtime "$out" "$NIX_BUILD_TOP/rust-target/release"
+  '';
+
+  dontWrapQtApps = true;
   postFixup = ''
+    wrapQtApp "$out/bin/ucc-gui"
     wrapProgram $out/bin/uccd \
       --prefix PATH : "${
         lib.makeBinPath [
@@ -95,12 +111,13 @@ stdenv.mkDerivation {
           "$out/share/dbus-1/system-services/com.uniwill.uccd.service"
       fi
     fi
-    for svc in uccd-pre-sleep.service uccd-sleep.service; do
-      if [ -f "$out/lib/systemd/system/$svc" ]; then
-        substituteInPlace "$out/lib/systemd/system/$svc" \
-          --replace-fail "/usr/bin/systemctl" "${systemd}/bin/systemctl"
-      fi
-    done
+    if [ -f "$out/lib/systemd/system/uccd.service" ] && grep -q '/usr/lib/ucc/ucc-hardware' "$out/lib/systemd/system/uccd.service"; then
+      substituteInPlace "$out/lib/systemd/system/uccd.service" \
+        --replace-fail "/usr/lib/ucc/ucc-hardware" "$out/lib/ucc/ucc-hardware"
+    fi
+    substituteInPlace "$out/lib/systemd/system/uccd-sleep.service" \
+      --replace-fail "/usr/lib/ucc/ucc-sleep" "$out/lib/ucc/ucc-sleep" \
+      --replace-fail "[Service]" "$(printf '[Service]\nEnvironment=UCC_SYSTEMCTL=%s/bin/systemctl' "${systemd}")"
 
     if [ -f "$out/lib/systemd/system/uccd.service" ]; then
       if ! grep -q '^Type=dbus$' "$out/lib/systemd/system/uccd.service"; then
@@ -113,7 +130,7 @@ stdenv.mkDerivation {
   '';
 
   meta = with lib; {
-    description = "Uniwill Control Center - System control application suite (daemon, GUI, CLI, Plasma applet)";
+    description = "Uniwill Control Center - System control application suite (daemon, GUI, CLI, tray)";
     homepage = "https://github.com/Frixlt/UCC";
     license = licenses.gpl3Plus;
     platforms = platforms.linux;

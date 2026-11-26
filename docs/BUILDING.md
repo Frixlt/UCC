@@ -5,53 +5,35 @@
 
 ## Зависимости
 
-Linux, CMake 3.20+, C++20-компилятор, Ninja/Make, Git, pkg-config,
-Qt 6 Core/DBus/Gui/Widgets/Qml/Quick/QuickControls2/Bluetooth/Charts и libudev.
-Для тестов нужны Qt Test, Python 3 и dbus-run-session. GJS и Node.js добавляют
-проверки GNOME. Локально проверено с Qt 6.12; это версия проверки, не минимальная
-заявленная версия Qt.
+Для релизной сборки нужны Linux, Rust и Cargo, CMake 3.20+, C++20-компилятор,
+Ninja, Git, pkg-config, Qt 6 Core/DBus/Gui/Widgets/Charts и libxcb. Версия Rust
+закреплена в [rust-toolchain.toml](../rust-toolchain.toml). Для тестов C++ также
+нужны Qt Test, Qt Bluetooth, libudev и dbus-run-session. GJS и Node.js запускают
+проверки GNOME.
 
 В Arch/CachyOS:
 
 ```bash
-sudo pacman -S --needed base-devel cmake ninja git pkgconf \
-  qt6-base qt6-charts qt6-connectivity qt6-declarative qt6-wayland \
-  systemd-libs dbus polkit bluez python gjs nodejs libxcb nlohmann-json \
-  kwindowsystem kstatusnotifieritem
+sudo pacman -S --needed base-devel rust cmake ninja git pkgconf \
+  qt6-base qt6-charts qt6-connectivity qt6-wayland systemd-libs \
+  dbus polkit bluez python gjs nodejs libxcb nlohmann-json
 ```
 
-KWindowSystem и KStatusNotifierItem нужны для проверенного пути активации трея
-в KDE Wayland. CMake умеет собрать fallback без них, но его поведение фокуса
-зависит от Qt/композитора. KDE Plasma для самостоятельного трея не требуется.
-
-Для Qt-сборки без Plasma-апплета в Debian 13:
-
-```bash
-sudo apt install build-essential cmake ninja-build git pkg-config \
-  qt6-base-dev qt6-declarative-dev qt6-connectivity-dev qt6-charts-dev \
-  qt6-svg-dev qt6-wayland libudev-dev libxcb1-dev \
-  libkf6windowsystem-dev libkf6statusnotifieritem-dev \
-  dbus bluez polkitd python3 gjs nodejs nlohmann-json3-dev
-```
-
-Набор пакетов Debian приведён как инструкция для сборки; бинарный DEB этого
-релиза не проверен. Для `BUILD_TRAY=ON` дополнительно нужны ECM, KF6 Config,
-CoreAddons и Plasma development files.
+В Debian потребуются зависимости из [debian/control](../debian/control).
+Релизный GUI использует Qt Widgets. Rust-трей регистрируется в
+StatusNotifierItem, а пользовательский агент запускается через XDG autostart.
 
 ## Исходники и опции
 
 ```bash
 git clone https://github.com/Frixlt/UCC.git
 cd UCC
-git checkout v0.3.0
-cmake -S . -B build -G Ninja \
-  -DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREFIX=/usr \
-  -DCMAKE_INSTALL_LIBDIR=lib -DBUILD_TRAY=OFF -DBUILD_TESTS=ON
-cmake --build build -j2
+make build
 ```
 
-На занятом ноутбуке используйте `-j1`; тестирование не требует нагрузочного
-прогона CPU/GPU. Бинарники находятся в `build/bin`, библиотека — `build/lib`.
+Окно GUI собирается в `build/bin/ucc-gui`. Rust-демон, CLI, фоновые клиенты и
+утилиты находятся в `target/release/`. Для изолированных legacy-тестов
+конфигурируйте отдельный CMake build с `BUILD_TESTS=ON`, `BUILD_TRAY=OFF`.
 
 | Опция | По умолчанию | Назначение |
 | --- | --- | --- |
@@ -62,6 +44,7 @@ cmake --build build -j2
 | BUILD_TRAY | ON | Дополнительный Plasma-апплет; для обычной Qt-сборки задайте OFF |
 | BUILD_GNOME | ON | Установка файлов GNOME extension |
 | BUILD_TESTS | OFF | Тесты Qt/Python/GNOME |
+| UCC_PACKAGE_RUST_RUNTIME | OFF | Установка GUI и интеграционных файлов для Rust-бинарников |
 | UCC_READ_ONLY_PREVIEW | OFF | Клиенты с заблокированными аппаратными записями |
 
 ## Arch-пакет
@@ -88,7 +71,7 @@ sudo pacman -U ./frixit-control-center-0.3.0-1-x86_64.pkg.tar.zst
 
 ```bash
 sudo cmake --install build
-sudo ldconfig
+sudo target/release/xtask install-runtime /usr target/release
 sudo install -d -m 0755 /etc/ucc
 sudo systemctl daemon-reload
 sudo systemctl reload dbus
@@ -143,10 +126,13 @@ ucc-cli lightbar status
 но блокирует аппаратные команды и сохранение профилей/политик. Не устанавливайте
 preview вместо рабочего пакета.
 
-DEB/RPM/Nix-рецепты унаследованы и требуют отдельной проверки установленных файлов,
-зависимостей и service paths. Nix input нашего форка: `github:Frixlt/UCC`, модуль
-`ucc.nixosModules.default`, опция `services.uccd.enable`. Наличие рецепта не означает
-проверенный релиз для этого дистрибутива.
+`make dist` архивирует текущий коммит и добавляет зависимости Rust из `Cargo.lock`.
+Зависимости загружаются на этапе подготовки архива. `make deb` и `make rpm`
+собирают из этого архива в офлайн-режиме Cargo. Для Rust-комплекта во временном
+каталоге используйте `cargo xtask dist <каталог> target/release` после сборки.
+
+Nix input форка — `github:Frixlt/UCC`, модуль `ucc.nixosModules.default` и опция
+`services.uccd.enable`. Для локального checkout используйте `nix build .#ucc`.
 
 ## Hyprland
 

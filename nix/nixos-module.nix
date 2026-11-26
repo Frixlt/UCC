@@ -48,7 +48,7 @@ in
     enableSleepHandler = lib.mkOption {
       type = lib.types.bool;
       default = true;
-      description = "Restart `uccd` on suspend/hibernate via a small systemd helper unit.";
+      description = "Preserve and restore UCC state on suspend and hibernate.";
     };
   };
 
@@ -70,6 +70,13 @@ in
     services.dbus.packages = [ cfg.package ];
     environment.pathsToLink = [ "/share/polkit-1" ];
 
+    environment.etc = {
+      "xdg/autostart/ucc-desktop-tray.desktop".source =
+        "${cfg.package}/etc/xdg/autostart/ucc-desktop-tray.desktop";
+      "xdg/autostart/ucc-session-agent.desktop".source =
+        "${cfg.package}/etc/xdg/autostart/ucc-session-agent.desktop";
+    };
+
     systemd.tmpfiles.rules = [
       "d /etc/ucc 0755 root root - -"
     ];
@@ -87,6 +94,7 @@ in
         ExecStartPre = "-${cfg.package}/bin/uccd --stop";
         ExecStart =
           "${cfg.package}/bin/uccd --start" + lib.optionalString (cfg.extraArgs != [ ]) " ${extraArgsString}";
+        ExecStopPost = "-${cfg.package}/lib/ucc/ucc-hardware --fan-auto";
         Environment = [
           "PATH=/run/wrappers/bin:/run/current-system/sw/bin:${uccdToolsPath}${nvidiaBinPath}"
         ]
@@ -108,67 +116,39 @@ in
         ReadWritePaths = [
           "/etc/ucc"
           "/run"
+          "/sys/devices"
+          "-/proc/sys/kernel/nmi_watchdog"
+          "-/proc/sys/vm/dirty_writeback_centisecs"
+          "-/sys/module/snd_hda_intel/parameters/power_save"
+          "-/sys/module/pcie_aspm/parameters/policy"
         ];
       };
     };
 
-    # Stop UCCD *before* the system enters sleep so that NVML is cleanly
-    # shut down while the NVIDIA GPU is still fully operational.  Without
-    # this, the NVML/CUDA cleanup runs *after* a suspend-resume cycle when
-    # the nvidia_uvm driver state is stale, causing the CUDA teardown
-    # thread to deadlock in uvm_va_space_mm_shutdown.  That stuck thread
-    # (in uninterruptible "D" state) survives SIGKILL, blocks the kernel
-    # process freezer on the next suspend attempt, and can cascade into
-    # GSP heartbeat timeouts, KWin DRM-master loss, and an unresponsive
-    # desktop.
-    #
-    # Ordering: uccd-pre-sleep → nvidia-suspend → systemd-suspend
-    systemd.services.uccd-pre-sleep = lib.mkIf cfg.enableSleepHandler {
-      description = "Stop UCCD before system sleep";
-      documentation = [ "man:uccd(8)" ];
+    systemd.services.uccd-sleep = lib.mkIf cfg.enableSleepHandler {
+      description = "Preserve UCCD runtime settings across system sleep";
+      after = [ "dbus.service" ];
       before = [
-        "systemd-suspend.service"
-        "systemd-hibernate.service"
-        "systemd-hybrid-sleep.service"
-        "systemd-suspend-then-hibernate.service"
+        "sleep.target"
         "nvidia-suspend.service"
         "nvidia-hibernate.service"
       ];
-      wantedBy = [
-        "suspend.target"
-        "hibernate.target"
-        "hybrid-sleep.target"
-        "suspend-then-hibernate.target"
-      ];
+      requiredBy = [ "sleep.target" ];
 
-      serviceConfig = {
-        Type = "oneshot";
-        ExecStart = "${config.systemd.package}/bin/systemctl stop uccd.service";
+      unitConfig = {
+        DefaultDependencies = false;
+        StopWhenUnneeded = true;
       };
-    };
-
-    # Start UCCD again after the system resumes.  At this point the NVIDIA
-    # driver has already restored GPU state (nvidia-resume.service), so
-    # UCCD initialises NVML against a clean, fully operational GPU.
-    systemd.services.uccd-sleep = lib.mkIf cfg.enableSleepHandler {
-      description = "Start UCCD after system resume";
-      documentation = [ "man:uccd(8)" ];
-      after = [
-        "suspend.target"
-        "hibernate.target"
-        "hybrid-sleep.target"
-        "suspend-then-hibernate.target"
-      ];
-      wantedBy = [
-        "suspend.target"
-        "hibernate.target"
-        "hybrid-sleep.target"
-        "suspend-then-hibernate.target"
-      ];
-
       serviceConfig = {
         Type = "oneshot";
-        ExecStart = "${config.systemd.package}/bin/systemctl start uccd.service";
+        RemainAfterExit = true;
+        ExecStart = "${cfg.package}/lib/ucc/ucc-sleep prepare";
+        ExecStopPost = "${cfg.package}/lib/ucc/ucc-sleep resume";
+        Environment = [ "UCC_SYSTEMCTL=${config.systemd.package}/bin/systemctl" ];
+        TimeoutStartSec = "60s";
+        TimeoutStopSec = "30s";
+        User = "root";
+        UMask = "0077";
       };
     };
   };

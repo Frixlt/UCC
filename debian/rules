@@ -2,6 +2,7 @@
 # -*- makefile -*-
 
 export DEB_BUILD_MAINT_OPTIONS = hardening=+all
+RUST_TARGET_DIR = $(CURDIR)/target/deb
 
 %:
 	dh $@ -Scmake
@@ -10,18 +11,21 @@ override_dh_auto_configure:
 	dh_auto_configure -- \
 		-DCMAKE_BUILD_TYPE=RelWithDebInfo \
 		-DBUILD_GUI=ON \
-		-DBUILD_TRAY=ON \
+		-DBUILD_TRAY=OFF \
 		-DBUILD_GNOME=ON \
-		-DBUILD_CLI=ON
+		-DBUILD_CLI=OFF \
+		-DUCC_PACKAGE_RUST_RUNTIME=ON
+
+override_dh_auto_build:
+	dh_auto_build
+	cargo build --workspace --release --locked --offline --bins --target-dir "$(RUST_TARGET_DIR)"
 
 override_dh_auto_install:
-	DESTDIR=$(CURDIR)/debian/tmp cmake --install obj-x86_64-linux-gnu
+	dh_auto_install --destdir=$(CURDIR)/debian/tmp
+	"$(RUST_TARGET_DIR)/release/xtask" install-runtime debian/tmp/usr "$(RUST_TARGET_DIR)/release"
 	# Create configuration directory
 	mkdir -p debian/tmp/etc/ucc
 	chmod 755 debian/tmp/etc/ucc
-
-override_dh_installdocs:
-	dh_installdocs README.md
 
 override_dh_installsystemd:
 	dh_installsystemd --name=uccd

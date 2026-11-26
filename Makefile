@@ -26,9 +26,6 @@ ARCHIVE := $(DISTNAME).tar.gz
 # Temporary directory used when creating the dist tarball
 TMPDIR := dist/$(DISTNAME)-tmp
 
-# Exclude patterns for tar (paths are relative to repo root)
-EXCLUDES := --exclude='build*' --exclude=dist --exclude=.git --exclude='$(TMPDIR)' --exclude='*.o' --exclude='*.a' --exclude='*.so*'
-
 help:
 	@echo "Uniwill Control Center - Build and Package Targets"
 	@echo ""
@@ -51,8 +48,11 @@ help:
 all: build
 
 build:
-	@echo "Building UCC..."
-	@./build-local.sh
+	cargo build --workspace --bins --release --locked --target-dir target
+	cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release \
+		-DCMAKE_INSTALL_PREFIX=/usr -DCMAKE_INSTALL_LIBDIR=lib \
+		-DBUILD_TRAY=OFF -DBUILD_CLI=OFF -DUCC_PACKAGE_RUST_RUNTIME=ON
+	cmake --build build --parallel 2
 
 clean:
 	@echo "Cleaning build artifacts..."
@@ -72,7 +72,9 @@ dist:
 	@mkdir -p dist
 	@rm -rf $(TMPDIR); mkdir -p $(TMPDIR)
 	@echo "Preparing source tree in $(TMPDIR)/ucc-$(VERSION)..."
-	@rsync -a $(EXCLUDES) ./ $(TMPDIR)/ucc-$(VERSION)
+	@git archive --format=tar --prefix=ucc-$(VERSION)/ --output=$(TMPDIR)/source.tar HEAD
+	@tar xf $(TMPDIR)/source.tar -C $(TMPDIR)
+	@bash contrib/package-rust-vendor.sh $(TMPDIR)/ucc-$(VERSION)
 	@tar czf dist/$(ARCHIVE) -C $(TMPDIR) ucc-$(VERSION)
 	@rm -rf $(TMPDIR)
 	@echo "Created dist/$(ARCHIVE)"
@@ -84,7 +86,7 @@ print-name:
 
 rpm: dist
 	@echo "Building RPM packages..."
-	@mkdir -p dist/rpmbuild/{BUILD,BUILDROOT,RPMS,SOURCES,SPECS,SRPMS}
+	@mkdir -p $(addprefix dist/rpmbuild/,BUILD BUILDROOT RPMS SOURCES SPECS SRPMS)
 	@cp dist/$(ARCHIVE) dist/rpmbuild/SOURCES/
 	@# Create modified spec file with correct version, release, and source filename
 	@sed -e 's/^Version:.*/Version:        $(VERSION)/' \
@@ -102,7 +104,7 @@ rpm: dist
 
 srpm: dist
 	@echo "Building SRPM package..."
-	@mkdir -p dist/rpmbuild/{BUILD,BUILDROOT,RPMS,SOURCES,SPECS,SRPMS}
+	@mkdir -p $(addprefix dist/rpmbuild/,BUILD BUILDROOT RPMS SOURCES SPECS SRPMS)
 	@cp dist/$(ARCHIVE) dist/rpmbuild/SOURCES/
 	@# Create modified spec file with correct version, release, and source filename
 	@sed -e 's/^Version:.*/Version:        $(VERSION)/' \
@@ -120,33 +122,19 @@ srpm: dist
 deb: dist
 	@echo "Building Debian packages..."
 	@mkdir -p dist/deb
-	@cd dist && tar xzf $(ARCHIVE)
-	@cp -r debian dist/ucc-$(VERSION)/
-	@# Update changelog with timestamp
-	@sed -i '1s/(.*)/(0.2.0+$(RELEASE_TS))/' dist/ucc-$(VERSION)/debian/changelog
-	@cd dist/ucc-$(VERSION) && debuild -uc -us
+	@cd dist/deb && tar xzf ../$(ARCHIVE)
+	@sed -i '1s/(.*)/($(VERSION)+$(RELEASE_TS))/' dist/deb/ucc-$(VERSION)/debian/changelog
+	@cd dist/deb/ucc-$(VERSION) && debuild -uc -us
 	@echo "Debian packages created in dist/"
 
-arch: dist
+arch:
 	@echo "Building Arch Linux package..."
 	@mkdir -p dist/arch
-	@cp PKGBUILD dist/arch/
-	@cp ucc.install dist/arch/
-	@cd dist/arch && \
-		sed -i "s/pkgver=.*/pkgver=$(VERSION)/" PKGBUILD && \
-		sed -i "s/pkgrel=.*/pkgrel=1/" PKGBUILD && \
-		cp ../$(ARCHIVE) ./ucc-$(VERSION).tar.gz && \
-		BUILDDIR=$$(pwd)/build SRCDEST=$$(pwd) makepkg -sf --noconfirm
+	@cp PKGBUILD ucc.install dist/arch/
+	@cd dist/arch && UCC_SOURCE_DIR="$(CURDIR)" makepkg -sf --noconfirm
 	@echo "Arch package created in dist/arch/"
 
-nix: dist
+nix:
 	@echo "Building Nix package..."
-	@mkdir -p dist/nix
-	@cp default.nix dist/nix/
-	@cd dist/nix && \
-		SHA=$$(sha256sum ../$(ARCHIVE) | cut -d' ' -f1) && \
-		sed -i "s/hash = .*/hash = \"sha256-$${SHA}=\";/" default.nix && \
-		nix-build default.nix
+	@nix build .#ucc
 	@echo "Nix package built (check result symlink)"
-
-

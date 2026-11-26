@@ -6,10 +6,8 @@ pkgdesc='Frixit Control Center: personal ControlCenter behavior integrated with 
 arch=('x86_64')
 url='https://github.com/Frixlt/UCC'
 license=('GPL-3.0-or-later')
-depends=('qt6-base' 'qt6-charts' 'qt6-connectivity' 'qt6-declarative'
-         'systemd-libs' 'dbus' 'polkit' 'hicolor-icon-theme' 'libxcb'
-         'kwindowsystem' 'kstatusnotifieritem')
-makedepends=('cmake' 'ninja' 'git' 'pkgconf' 'nlohmann-json')
+depends=('qt6-base' 'qt6-charts' 'systemd-libs' 'dbus' 'polkit' 'hicolor-icon-theme' 'libxcb')
+makedepends=('cmake' 'ninja' 'git' 'pkgconf' 'nlohmann-json' 'qt6-connectivity' 'rust')
 checkdepends=('python' 'gjs' 'nodejs')
 optdepends=('tuxedo-drivers: hardware interface required by uccd'
             'bluez: Bluetooth water cooler'
@@ -28,17 +26,24 @@ else
   sha256sums=('SKIP')
 fi
 
+prepare() {
+  local source_root=${UCC_SOURCE_DIR:-$srcdir/UCC-$pkgver}
+  (cd "$source_root" && cargo fetch --locked)
+}
+
 build() {
   local source_root=${UCC_SOURCE_DIR:-$srcdir/UCC-$pkgver}
+  (cd "$source_root" && cargo build --workspace --bins --release --locked --offline --target-dir "$srcdir/rust")
   cmake -S "$source_root" -B "$srcdir/build" -G Ninja \
     -DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREFIX=/usr -DCMAKE_INSTALL_LIBDIR=lib \
     -DBUILD_GUI=ON -DBUILD_CLI=ON -DBUILD_DESKTOP_TRAY=ON -DBUILD_SESSION_AGENT=ON \
-    -DBUILD_TRAY=OFF -DBUILD_GNOME=ON -DBUILD_TESTS=ON
+    -DBUILD_TRAY=OFF -DBUILD_GNOME=ON -DBUILD_TESTS=ON -DUCC_PACKAGE_RUST_RUNTIME=ON
   cmake --build "$srcdir/build" -j2
 }
 
 check() {
   local source_root=${UCC_SOURCE_DIR:-$srcdir/UCC-$pkgver}
+  (cd "$source_root" && dbus-run-session -- cargo test --workspace --locked --offline --target-dir "$srcdir/rust")
   ctest --test-dir "$srcdir/build" -j1 --output-on-failure -E '^test_gui_audit$'
   dbus-run-session -- bash "$source_root/tests/run_gui_audit_test.sh" \
     "$srcdir/build/bin/test_gui_audit" dashboardShowsDriverFailureAndClearsAfterRecovery \
@@ -49,6 +54,7 @@ check() {
 
 package() {
   DESTDIR="$pkgdir" cmake --install "$srcdir/build"
+  "$srcdir/rust/release/xtask" install-runtime "$pkgdir/usr" "$srcdir/rust/release"
   install -dm755 "$pkgdir/etc/ucc"
   install -Dm644 "${UCC_SOURCE_DIR:-$srcdir/UCC-$pkgver}/COPYING" \
     "$pkgdir/usr/share/licenses/$pkgname/COPYING"

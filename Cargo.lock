@@ -1359,6 +1359,7 @@ name = "xtask"
 version = "0.3.0"
 dependencies = [
  "clap_complete",
+ "tempfile",
  "thiserror",
  "ucc-cli",
 ]

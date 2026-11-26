@@ -1,14 +1,11 @@
 usr/bin/uccd
 usr/bin/ucc-gui
 usr/bin/ucc-cli
+usr/bin/ucc-desktop-tray
+usr/bin/ucc-session-agent
 usr/lib/ucc/ucc-hardware
 usr/lib/ucc/ucc-sleep
-usr/lib/*/libucc-dbus.so*
-usr/lib/*/qt6/plugins/plasma/applets/com.uniwill.ucc.so
-usr/lib/*/qt6/qml/com/uniwill/ucc/private/libucc-declarative.so
-usr/lib/*/qt6/qml/com/uniwill/ucc/private/qmldir
-usr/lib/*/qt6/qml/com/uniwill/ucc/private/ucc-declarative.qmltypes
-usr/lib/*/qt6/qml/com/uniwill/ucc/private/kde-qmlmodule.version
+usr/lib/ucc/ucc-import-check
 usr/lib/systemd/system/uccd.service
 usr/lib/systemd/system/uccd-pre-sleep.service
 usr/lib/systemd/system/uccd-sleep.service
@@ -16,6 +13,7 @@ usr/share/dbus-1/system-services/com.uniwill.uccd.service
 usr/share/dbus-1/system.d/com.uniwill.uccd.conf
 usr/share/polkit-1/actions/com.uniwill.uccd.policy
 usr/share/applications/ucc-gui.desktop
+usr/share/doc/ucc
 usr/share/icons/hicolor/*/apps/ucc-gui.png
 usr/share/icons/hicolor/*/apps/ucc-tray.png
 usr/share/icons/hicolor/scalable/apps/ucc-gui*.svg
@@ -27,3 +25,7 @@ usr/share/gnome-shell/extensions/ucc@uniwill.com/extension.js
 usr/share/gnome-shell/extensions/ucc@uniwill.com/uccdClient.js
 usr/share/gnome-shell/extensions/ucc@uniwill.com/stylesheet.css
 etc/ucc
+etc/xdg/autostart/ucc-desktop-tray.desktop
+etc/xdg/autostart/ucc-session-agent.desktop
+usr/share/zsh/site-functions/_ucc-cli
+usr/share/fish/vendor_completions.d/ucc-cli.fish

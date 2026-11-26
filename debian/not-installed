@@ -1,4 +1,0 @@
-# Files installed but intentionally not packaged
-# The libucc-declarative.so library is only needed in the QML module directory
-# and is duplicated by cmake install. We only install the QML module version.
-usr/lib/*/libucc-declarative.so

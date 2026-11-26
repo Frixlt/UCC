@@ -2,6 +2,7 @@
 Description=Preserve UCCD runtime settings across system sleep
 Documentation=man:uccd(8)
 DefaultDependencies=no
+After=dbus.service
 Before=sleep.target nvidia-suspend.service nvidia-hibernate.service
 StopWhenUnneeded=yes
 

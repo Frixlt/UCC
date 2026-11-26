@@ -10,27 +10,19 @@ URL:            https://github.com/Frixlt/UCC
 Source0:        https://github.com/Frixlt/UCC/releases/download/v%{version}/frixit-control-center-%{version}.tar.gz
 
 BuildRequires:  cmake >= 3.20
-BuildRequires:  extra-cmake-modules
+BuildRequires:  cargo
+BuildRequires:  rust
 BuildRequires:  gcc-c++
+BuildRequires:  nlohmann-json-devel
 BuildRequires:  qt6-qtbase-devel >= 6.0
-BuildRequires:  qt6-qtdeclarative-devel
-BuildRequires:  qt6-qtconnectivity-devel
 BuildRequires:  qt6-qtcharts-devel
-BuildRequires:  kf6-kconfig-devel
-BuildRequires:  kf6-kcoreaddons-devel
-BuildRequires:  kf6-kpackage-devel
-BuildRequires:  kf6-kwindowsystem-devel
-BuildRequires:  libplasma-devel >= 6.0
 BuildRequires:  systemd-devel
 BuildRequires:  libXrandr-devel
 BuildRequires:  libgudev-devel
 
 Requires:       systemd
 Requires:       qt6-qtbase >= 6.0
-Requires:       qt6-qtdeclarative
-Requires:       qt6-qtconnectivity
 Requires:       qt6-qtcharts
-Requires:       plasma-workspace >= 6.0
 Requires:       tuxedo-drivers
 Requires:       polkit
 Requires(post): systemd
@@ -44,28 +36,31 @@ suite for Uniwill computers. It provides:
 - Daemon (uccd): Background service for system control and monitoring
 - GUI (ucc-gui): Main graphical user interface
 - CLI (ucc-cli): Command-line interface for scripting and headless use
-- Plasma Applet: KDE system tray applet for quick access
+- System tray client for quick access
 
 Features include fan control, keyboard backlight management, display settings,
 CPU power management, and water cooler control for supported systems.
 
 %prep
-%autosetup -n UCC-%{version}
+%autosetup -n ucc-%{version}
 
 %build
+cargo build --workspace --release --locked --offline --bins --target-dir target/rpm
 %cmake \
   -DCMAKE_BUILD_TYPE=Release \
   -DCMAKE_INSTALL_PREFIX=/usr \
   -DCMAKE_INSTALL_LIBDIR=%{_libdir} \
   -DCMAKE_INSTALL_RPATH="" \
   -DBUILD_GUI=ON \
-  -DBUILD_TRAY=ON \
+  -DBUILD_TRAY=OFF \
   -DBUILD_GNOME=ON \
-  -DBUILD_CLI=ON
+  -DBUILD_CLI=OFF \
+  -DUCC_PACKAGE_RUST_RUNTIME=ON
 %cmake_build -j
 
 %install
 %cmake_install
+target/rpm/release/xtask install-runtime "%{buildroot}%{_prefix}" target/rpm/release
 
 # Create configuration directory
 mkdir -p %{buildroot}%{_sysconfdir}/ucc
@@ -85,19 +80,17 @@ systemctl daemon-reload > /dev/null 2>&1 || true
 
 %files
 %license LICENSE
-%doc README.md
+%{_docdir}/ucc/
 %{_bindir}/uccd
 %{_bindir}/ucc-gui
 %{_bindir}/ucc-cli
-%{_libdir}/libucc-dbus.so*
-# libucc-declarative.so is installed twice by cmake (KDE_INSTALL_TARGETS_DEFAULT_ARGS
-# and ecm_finalize_qml_module). Only the QML module copy is needed.
-%exclude %{_libdir}/libucc-declarative.so
-%{_libdir}/qt6/plugins/plasma/applets/com.uniwill.ucc.so
-%{_libdir}/qt6/qml/com/uniwill/ucc/private/libucc-declarative.so
-%{_libdir}/qt6/qml/com/uniwill/ucc/private/qmldir
-%{_libdir}/qt6/qml/com/uniwill/ucc/private/ucc-declarative.qmltypes
-%{_libdir}/qt6/qml/com/uniwill/ucc/private/kde-qmlmodule.version
+%{_bindir}/ucc-desktop-tray
+%{_bindir}/ucc-session-agent
+/usr/lib/ucc/ucc-hardware
+/usr/lib/ucc/ucc-sleep
+/usr/lib/ucc/ucc-import-check
+%{_sysconfdir}/xdg/autostart/ucc-desktop-tray.desktop
+%{_sysconfdir}/xdg/autostart/ucc-session-agent.desktop
 %{_unitdir}/uccd.service
 %{_unitdir}/uccd-pre-sleep.service
 %{_unitdir}/uccd-sleep.service
@@ -135,6 +128,8 @@ systemctl daemon-reload > /dev/null 2>&1 || true
 %{_datadir}/icons/hicolor/128x128/apps/ucc-tray.png
 %{_mandir}/man1/ucc-cli.1*
 %{_datadir}/bash-completion/completions/ucc-cli
+%{_datadir}/zsh/site-functions/_ucc-cli
+%{_datadir}/fish/vendor_completions.d/ucc-cli.fish
 # GNOME Shell extension
 %{_datadir}/gnome-shell/extensions/ucc@uniwill.com/metadata.json
 %{_datadir}/gnome-shell/extensions/ucc@uniwill.com/extension.js

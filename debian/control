@@ -2,20 +2,15 @@ Source: ucc
 Section: utils
 Priority: optional
 Maintainer: Erhan Bilgili <erhan.bilgili@gmail.com>
-Build-Depends: cmake (>= 3.20),
-               extra-cmake-modules,
+Build-Depends: debhelper (>= 13),
+               cargo,
+               rustc (>= 1.89),
+               cmake (>= 3.20),
                g++ (>= 9),
                nlohmann-json3-dev,
                qt6-base-dev (>= 6.0),
-               qt6-declarative-dev,
-               qt6-connectivity-dev,
                qt6-charts-dev,
                qt6-tools-dev,
-               libplasma-dev (>= 6.0),
-               libkf6config-dev,
-               libkf6coreaddons-dev,
-               libkf6package-dev,
-               libkf6windowsystem-dev,
                libsystemd-dev,
                libxrandr-dev,
                libudev-dev,
@@ -31,12 +26,11 @@ Depends: ${shlibs:Depends}, ${misc:Depends},
          systemd,
          tuxedo-drivers,
          qt6-qpa-plugins,
-         plasma-workspace (>= 6.0),
          policykit-1
 Description: Uniwill Control Center
  Uniwill Control Center (UCC) is a comprehensive system control application
  suite for Uniwill (Tuxedo, XMG etc.) computers. Includes the system daemon,
- graphical user interface, command-line tool and KDE Plasma system-tray applet.
+ graphical user interface, command-line tool and a system tray client.
  .
  Features:
   - Fan control management
@@ -45,4 +39,4 @@ Description: Uniwill Control Center
   - CPU power management
   - Water cooler monitoring and control
   - System monitoring
-  - KDE Plasma applet for system tray integration
+  - System tray integration

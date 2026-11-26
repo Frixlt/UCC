@@ -185,3 +185,64 @@ fn t_client_01_cpp_libucc_dbus_bool_methods_use_call_method_bool() {
         );
     }
 }
+
+#[test]
+fn dist_stages_all_runtime_binaries_from_cargo_target_dir() {
+    use std::fs;
+    use std::os::unix::fs::PermissionsExt;
+    use std::process::Command;
+
+    let temp = tempfile::tempdir().unwrap();
+    let target = temp.path().join("custom target");
+    let bins = target.join("release");
+    let dest = target.join("dist");
+    fs::create_dir_all(&bins).unwrap();
+    let expected = [
+        ("uccd", "bin"),
+        ("ucc-cli", "bin"),
+        ("ucc-desktop-tray", "bin"),
+        ("ucc-session-agent", "bin"),
+        ("ucc-hardware", "lib/ucc"),
+        ("ucc-sleep", "lib/ucc"),
+        ("ucc-import-check", "lib/ucc"),
+    ];
+    let create_executable = |name: &str| {
+        let file = bins.join(name);
+        fs::write(&file, name).unwrap();
+        fs::set_permissions(file, fs::Permissions::from_mode(0o755)).unwrap();
+    };
+    let run = || {
+        Command::new(env!("CARGO_BIN_EXE_xtask"))
+            .arg("dist")
+            .env("CARGO_TARGET_DIR", &target)
+            .output()
+            .unwrap()
+    };
+
+    create_executable("uccd");
+    let incomplete = run();
+    assert!(!incomplete.status.success());
+    assert!(String::from_utf8_lossy(&incomplete.stderr).contains("ucc-cli"));
+    assert!(!dest.exists());
+
+    for (name, _) in expected {
+        create_executable(name);
+    }
+    let complete = run();
+    assert!(
+        complete.status.success(),
+        "{}",
+        String::from_utf8_lossy(&complete.stderr)
+    );
+    for (name, subdir) in expected {
+        let file = dest.join(subdir).join(name);
+        assert_eq!(fs::read_to_string(&file).unwrap(), name);
+        assert_ne!(file.metadata().unwrap().permissions().mode() & 0o111, 0);
+    }
+    assert!(dest.join("share/man/man1/ucc-cli.1").is_file());
+    assert!(dest.join("lib/systemd/system/uccd.service").is_file());
+    assert_eq!(
+        fs::read_link(dest.join("lib/systemd/system/uccd-pre-sleep.service")).unwrap(),
+        PathBuf::from("uccd-sleep.service")
+    );
+}

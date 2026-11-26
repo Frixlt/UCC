@@ -1,12 +1,38 @@
 cmake_minimum_required(VERSION 3.16)
 project(uccd VERSION ${CMAKE_PROJECT_VERSION})
 
+# Install systemd service files
+install(FILES uccd.service uccd-pre-sleep.service uccd-sleep.service
+  DESTINATION lib/systemd/system
+)
+
+# Install DBus system service file for activation
+install(FILES com.uniwill.uccd.service
+  DESTINATION share/dbus-1/system-services
+)
+
+# Install DBus policy file to allow user access
+install(FILES com.uniwill.uccd.conf
+  DESTINATION share/dbus-1/system.d
+)
+
+# Install Polkit policy file for authorization
+install(FILES com.uniwill.uccd.policy
+  DESTINATION share/polkit-1/actions
+)
+
+if(UCC_PACKAGE_RUST_RUNTIME AND NOT BUILD_TESTS)
+  return()
+endif()
+
 # Add 3rdparty
 add_subdirectory(3rdparty)
 
 add_executable(ucc-hardware src/hardware-helper.cpp)
 target_link_libraries(ucc-hardware PRIVATE tuxedo_io_lib)
-install(TARGETS ucc-hardware RUNTIME DESTINATION lib/ucc)
+if(NOT UCC_PACKAGE_RUST_RUNTIME)
+  install(TARGETS ucc-hardware RUNTIME DESTINATION lib/ucc)
+endif()
 
 # Set default build type to RelWithDebInfo if not specified
 if(NOT CMAKE_BUILD_TYPE)
@@ -31,12 +57,16 @@ target_link_libraries(ucc-sleep PRIVATE Qt6::Core Qt6::DBus)
 if(UCC_READ_ONLY_PREVIEW)
   target_compile_definitions(ucc-sleep PRIVATE UCC_READ_ONLY_PREVIEW)
 endif()
-install(TARGETS ucc-sleep RUNTIME DESTINATION lib/ucc)
+if(NOT UCC_PACKAGE_RUST_RUNTIME)
+  install(TARGETS ucc-sleep RUNTIME DESTINATION lib/ucc)
+endif()
 
 add_executable(ucc-import-check src/import-check.cpp)
 target_include_directories(ucc-import-check PRIVATE inc)
 target_link_libraries(ucc-import-check PRIVATE Qt6::Core)
-install(TARGETS ucc-import-check RUNTIME DESTINATION lib/ucc)
+if(NOT UCC_PACKAGE_RUST_RUNTIME)
+  install(TARGETS ucc-import-check RUNTIME DESTINATION lib/ucc)
+endif()
 
 # Main executable
 add_executable(uccd
@@ -103,26 +133,6 @@ target_link_options(uccd PRIVATE
 )
 
 # Installation target
-install(TARGETS uccd
-  RUNTIME DESTINATION bin
-)
-
-# Install systemd service files
-install(FILES uccd.service uccd-pre-sleep.service uccd-sleep.service
-  DESTINATION lib/systemd/system
-)
-
-# Install DBus system service file for activation
-install(FILES com.uniwill.uccd.service
-  DESTINATION share/dbus-1/system-services
-)
-
-# Install DBus policy file to allow user access
-install(FILES com.uniwill.uccd.conf
-  DESTINATION share/dbus-1/system.d
-)
-
-# Install Polkit policy file for authorization
-install(FILES com.uniwill.uccd.policy
-  DESTINATION share/polkit-1/actions
-)
+if(NOT UCC_PACKAGE_RUST_RUNTIME)
+  install(TARGETS uccd RUNTIME DESTINATION bin)
+endif()

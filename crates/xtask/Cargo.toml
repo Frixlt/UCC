@@ -10,3 +10,6 @@ rust-version.workspace = true
 thiserror = { workspace = true }
 ucc-cli = { path = "../ucc-cli" }
 clap_complete = "4.5"
+
+[dev-dependencies]
+tempfile = "3"

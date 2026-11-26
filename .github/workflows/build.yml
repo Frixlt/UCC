@@ -11,6 +11,23 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  rust:
+    name: rust clippy & tests
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install D-Bus runtime
+        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends dbus
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: 1.99.1
+          components: clippy
+      - name: Clippy
+        run: cargo clippy --workspace --all-targets --locked -- -D warnings
+      - name: Workspace tests
+        run: dbus-run-session -- sh -c 'cargo test --workspace --locked --no-fail-fast'
+
   build:
     name: cmake (${{ matrix.build_type }})
     runs-on: ubuntu-24.04

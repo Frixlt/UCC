@@ -11,7 +11,7 @@ Type=dbus
 BusName=com.uniwill.uccd
 ExecStart=/usr/bin/uccd --start
 # Restore firmware cooling even after a crash or forced termination.
-ExecStopPost=/usr/lib/ucc/ucc-hardware --fan-auto
+ExecStopPost=-/usr/lib/ucc/ucc-hardware --fan-auto
 Restart=on-failure
 RestartSec=5s
 TimeoutStopSec=10s
@@ -37,7 +37,6 @@ RestrictNamespaces=yes
 LockPersonality=yes
 MemoryDenyWriteExecute=yes
 CapabilityBoundingSet=CAP_SYS_RAWIO CAP_NET_ADMIN CAP_SYS_ADMIN
-AmbientCapabilities=CAP_SYS_RAWIO CAP_NET_ADMIN CAP_SYS_ADMIN
 
 [Install]
 WantedBy=multi-user.target

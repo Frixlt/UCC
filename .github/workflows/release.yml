@@ -20,7 +20,7 @@ jobs:
       - name: Install build and test dependencies
         run: |
           pacman -Syu --noconfirm
-          pacman -S --needed --noconfirm git cmake ninja pkgconf nlohmann-json \
+          pacman -S --needed --noconfirm git cmake ninja pkgconf nlohmann-json rust \
             qt6-base qt6-charts qt6-connectivity qt6-declarative qt6-wayland \
             systemd-libs dbus polkit hicolor-icon-theme libxcb \
             kwindowsystem kstatusnotifieritem python gjs nodejs ttf-dejavu
@@ -44,13 +44,31 @@ jobs:
           useradd -m builder
           chown -R builder:builder "$GITHUB_WORKSPACE"
           runuser -u builder -- env UCC_SOURCE_DIR="$GITHUB_WORKSPACE" makepkg --nodeps --noconfirm
+      - name: Verify packaged Rust binaries and desktop autostart
+        shell: bash
+        run: |
+          stage=$(mktemp -d)
+          tar -xf frixit-control-center-*.pkg.tar.zst -C "$stage"
+          for path in usr/bin/uccd usr/bin/ucc-cli usr/bin/ucc-desktop-tray usr/bin/ucc-session-agent usr/lib/ucc/ucc-hardware usr/lib/ucc/ucc-sleep usr/lib/ucc/ucc-import-check; do
+            test -x "$stage/$path"
+            dynamic=$(readelf -d "$stage/$path")
+            if grep -Eq 'NEEDED.*(libQt|libucc-dbus)' <<< "$dynamic"; then
+              echo "Unexpected legacy runtime dependency in $path" >&2
+              exit 1
+            fi
+          done
+          test -f "$stage/etc/xdg/autostart/ucc-desktop-tray.desktop"
+          test -f "$stage/etc/xdg/autostart/ucc-session-agent.desktop"
       - name: Create source archive, evidence and checksums
         shell: bash
         run: |
           git config --global --add safe.directory "$GITHUB_WORKSPACE"
           mkdir release-assets
           version=${GITHUB_REF_NAME#v}
-          git archive --format=tar --prefix="UCC-$version/" "$GITHUB_SHA" | gzip -n > "release-assets/frixit-control-center-$version.tar.gz"
+          git archive --format=tar --prefix="ucc-$version/" "$GITHUB_SHA" | tar -x -C release-assets
+          bash contrib/package-rust-vendor.sh "release-assets/ucc-$version"
+          tar -czf "release-assets/frixit-control-center-$version.tar.gz" -C release-assets "ucc-$version"
+          rm -r "release-assets/ucc-$version"
           cp frixit-control-center-*.pkg.tar.zst release-assets/
           cp src/build/Testing/Temporary/LastTest.log release-assets/ctest.log
           cp docs/releases/0.3.0.md release-assets/RELEASE-NOTES.md
