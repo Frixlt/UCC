@@ -9,6 +9,8 @@
 #include <QPainter>
 #include <QProcess>
 #include <QProcessEnvironment>
+#include <QFileInfo>
+#include <QStandardPaths>
 #include "WindowActivation.hpp"
 #ifdef UCC_HAVE_KSTATUSNOTIFIERITEM
 #include <KStatusNotifierItem>
@@ -135,7 +137,9 @@ void DesktopTray::openControlCenter() {
   connect(watcher,&QDBusPendingCallWatcher::finished,this,[this,watcher,token] {
     const QDBusPendingReply<> reply=*watcher;watcher->deleteLater();
     if(reply.isError()) {
-      QProcess process;process.setProgram(QCoreApplication::applicationDirPath()+"/ucc-gui");process.setArguments({"--show"});
+      QString guiProgram=QCoreApplication::applicationDirPath()+"/ucc-gui";
+      if(!QFileInfo(guiProgram).isExecutable()) guiProgram=QStandardPaths::findExecutable("ucc-gui");
+      QProcess process;process.setProgram(guiProgram.isEmpty() ? QStringLiteral("ucc-gui") : guiProgram);process.setArguments({"--show"});
       auto environment=QProcessEnvironment::systemEnvironment();
       if(!token.isEmpty()) environment.insert("XDG_ACTIVATION_TOKEN",token);
       process.setProcessEnvironment(environment);

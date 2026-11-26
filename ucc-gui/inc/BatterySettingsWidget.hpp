@@ -87,9 +87,16 @@ private:
         const auto starts=QJsonDocument::fromJson(m_current.value("GetChargeStartAvailableThresholds").toString().toUtf8()).array();
         const auto ends=QJsonDocument::fromJson(m_current.value("GetChargeEndAvailableThresholds").toString().toUtf8()).array();
         if(!starts.contains(start) || !ends.contains(end)) {m_status->setText("This charge limit is not supported by the battery.");return;}
+        const int curStart=m_current.value("GetChargeStartThreshold").toInt();
+        const int curEnd=m_current.value("GetChargeEndThreshold").toInt();
         if(m_current.value("GetChargeType").toString()!="Custom") ok=m_client->setChargeType("Custom") && ok;
-        if(m_current.value("GetChargeStartThreshold").toInt()!=start) ok=m_client->setChargeStartThreshold(start) && ok;
-        if(m_current.value("GetChargeEndThreshold").toInt()!=end) ok=m_client->setChargeEndThreshold(end) && ok;
+        if(end>curEnd) {
+          if(curEnd!=end) ok=m_client->setChargeEndThreshold(end) && ok;
+          if(curStart!=start) ok=m_client->setChargeStartThreshold(start) && ok;
+        } else {
+          if(curStart!=start) ok=m_client->setChargeStartThreshold(start) && ok;
+          if(curEnd!=end) ok=m_client->setChargeEndThreshold(end) && ok;
+        }
       }
     }
     if(ok) {reload();m_status->setText("Charging settings saved.");}

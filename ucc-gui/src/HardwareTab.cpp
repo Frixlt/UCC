@@ -16,6 +16,8 @@
  */
 
 #include "HardwareTab.hpp"
+#include "AsyncRead.hpp"
+#include "PreviewMode.hpp"
 
 #include <QWidget>
 #include <QVBoxLayout>
@@ -101,6 +103,20 @@ void HardwareTab::initializeFromMonitor()
 
   m_webcamCheckBox->setChecked( m_systemMonitor->webcamEnabled() );
   m_fnLockCheckBox->setChecked( m_systemMonitor->fnLock() );
+  m_webcamCheckBox->setEnabled( m_webcamSWAvailable && !readOnlyPreview );
+  m_fnLockCheckBox->setEnabled( m_fnLockSupported && !readOnlyPreview );
+  m_displayBrightnessSlider->setEnabled( brightness >= 0 && !readOnlyPreview );
+
+  readUccdBatch( this, {"WebcamSWAvailable", "GetFnLockSupported"}, [this](const QVariantMap &caps) {
+    if (caps.contains("WebcamSWAvailable"))
+      m_webcamSWAvailable = caps.value("WebcamSWAvailable").toBool();
+    if (caps.contains("GetFnLockSupported"))
+      m_fnLockSupported = caps.value("GetFnLockSupported").toBool();
+    if (m_webcamCheckBox)
+      m_webcamCheckBox->setEnabled( m_webcamSWAvailable && !readOnlyPreview );
+    if (m_fnLockCheckBox)
+      m_fnLockCheckBox->setEnabled( m_fnLockSupported && !readOnlyPreview );
+  });
 
   m_updatingFromMonitor = false;
 }
@@ -145,7 +161,7 @@ void HardwareTab::onDisplayBrightnessUpdated()
 
   m_updatingFromMonitor = true;
   int brightness = m_systemMonitor->displayBrightness();
-  m_displayBrightnessSlider->setEnabled(brightness >= 0);
+  m_displayBrightnessSlider->setEnabled(brightness >= 0 && !readOnlyPreview);
   if (brightness >= 0) m_displayBrightnessSlider->setValue(brightness);
   m_displayBrightnessValueLabel->setText(brightness >= 0 ? QString::number(brightness) + "%" : "—");
   m_updatingFromMonitor = false;

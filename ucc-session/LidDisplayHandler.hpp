@@ -126,13 +126,7 @@ private:
     if (m_backend != RefreshBackend::Hyprland || m_command.isEmpty() || !m_runner)
       return;
     const QString action = on ? QStringLiteral("on") : QStringLiteral("off");
-    const QString script = QStringLiteral(
-        "for _, m in ipairs(hl.get_monitors()) do "
-        "if m.name:match(\"^eDP%%-\") or m.name:match(\"^LVDS%%-\") then "
-        "hl.dispatch(hl.dsp.dpms({action=\"%1\", monitor=m})) "
-        "end end")
-        .arg(action);
-    m_runner(m_command, {QStringLiteral("eval"), script});
+    m_runner(m_command, {QStringLiteral("dispatch"), QStringLiteral("dpms"), action});
   }
 
   RefreshBackend m_backend;

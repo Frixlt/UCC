@@ -215,10 +215,10 @@ void FanControlTab::setupUI()
 
     QLabel *pumpVoltageLabel = new QLabel( "Pump Voltage:" );
     m_pumpVoltageCombo = new QComboBox();
-    m_pumpVoltageCombo->addItem( "Off", QVariant::fromValue( PumpVoltage::Off ) );
-    m_pumpVoltageCombo->addItem( "7V",  QVariant::fromValue( PumpVoltage::V7  ) );
-    m_pumpVoltageCombo->addItem( "8V",  QVariant::fromValue( PumpVoltage::V8  ) );
-    m_pumpVoltageCombo->addItem( "11V", QVariant::fromValue( PumpVoltage::V11 ) );
+    m_pumpVoltageCombo->addItem( "Off", static_cast<int>( PumpVoltage::Off ) );
+    m_pumpVoltageCombo->addItem( "7V",  static_cast<int>( PumpVoltage::V7  ) );
+    m_pumpVoltageCombo->addItem( "8V",  static_cast<int>( PumpVoltage::V8  ) );
+    m_pumpVoltageCombo->addItem( "11V", static_cast<int>( PumpVoltage::V11 ) );
 
     // 12V option is intentionally omitted for safety of the pump.
     // m_pumpVoltageCombo->addItem( "12V", QVariant::fromValue( PumpVoltage::V12 ) );
@@ -231,6 +231,7 @@ void FanControlTab::setupUI()
 
     QLabel *fanSpeedLabel = new QLabel( "Fan Speed:" );
     m_fanSpeedSlider = new QSlider( Qt::Horizontal );
+    m_fanSpeedSlider->setTracking( false );
     m_fanSpeedSlider->setMinimum( 0 );
     m_fanSpeedSlider->setMaximum( 100 );
     m_fanSpeedSlider->setValue( 0 );

@@ -62,6 +62,8 @@ private:
 
     SystemMonitor *m_systemMonitor;
     bool m_updatingFromMonitor = false;
+    bool m_webcamSWAvailable = true;
+    bool m_fnLockSupported = true;
 
     // Display controls
     QSlider *m_displayBrightnessSlider = nullptr;

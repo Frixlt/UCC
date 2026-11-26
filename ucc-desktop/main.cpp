@@ -2,6 +2,8 @@
 #include <QApplication>
 #include <QDBusConnection>
 #include <QDebug>
+#include <QElapsedTimer>
+#include <QThread>
 #include <cstdio>
 #include <unistd.h>
 #include "DesktopTray.hpp"
@@ -13,6 +15,12 @@ int main(int argc,char **argv) {
   QApplication app(argc,argv);app.setApplicationName("ucc-desktop-tray");app.setDesktopFileName("ucc-gui");app.setApplicationDisplayName("Frixit Control Center");app.setOrganizationName("UniwillControlCenter");app.setQuitOnLastWindowClosed(false);
   const auto service=ucc::readOnlyPreview ? "com.uniwill.UccDesktopTrayPreview" : "com.uniwill.UccDesktopTray";
   auto bus=QDBusConnection::sessionBus();if(!bus.isConnected()) {qCritical("No desktop session bus");return 1;}if(!bus.registerService(service)) return 0;
-  if(!QSystemTrayIcon::isSystemTrayAvailable()) {qCritical("No system tray is available in this desktop session");return 1;}
+  // Wait briefly on Wayland login while StatusNotifierWatcher initializes without failing fatally.
+  QElapsedTimer trayWait;trayWait.start();
+  while(!QSystemTrayIcon::isSystemTrayAvailable() && trayWait.elapsed()<15000) {
+    QCoreApplication::processEvents();
+    QThread::msleep(250);
+  }
+  if(!QSystemTrayIcon::isSystemTrayAvailable()) {qWarning("System tray not registered yet; waiting in background");}
   SessionSignals shutdownSignals;ucc::UccdClient client;ucc::DesktopTray tray(&client);return app.exec();
 }

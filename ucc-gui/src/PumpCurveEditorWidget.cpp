@@ -369,8 +369,8 @@ void PumpCurveEditorWidget::mouseMoveEvent(QMouseEvent* e) {
 
     if (m_draggedIndex < 0) return;
 
-    // Drag horizontally (temperature only; levels are fixed 1..4)
-    const int left = 110, right = 20;
+    // Drag horizontally (temperature only; levels are fixed 1..3)
+    const int left = 80, right = 20;
     double plotW = width() - left - right;
     double deltaX = e->pos().x() - m_dragStartX;
     double deltaTemp = deltaX / plotW * 80.0;

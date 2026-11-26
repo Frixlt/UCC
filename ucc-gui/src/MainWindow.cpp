@@ -2363,10 +2363,17 @@ void MainWindow::onSaveClicked()
   if ( !stateMapUpdates.empty() )
     m_profileManager->setBatchStateMap( stateMapUpdates );
 
-  // Indicate saving; actual success will be reflected when ProfileManager signals
-  m_saveInProgress = true;
-  statusBar()->showMessage( "Saving profile..." );
-  updateButtonStates();
+  if ( isCustom || !stateMapUpdates.empty() )
+  {
+    // Indicate saving; actual success will be reflected when ProfileManager signals
+    m_saveInProgress = true;
+    statusBar()->showMessage( "Saving profile..." );
+    updateButtonStates();
+  }
+  else
+  {
+    statusBar()->showMessage( "Built-in profile updated" );
+  }
 }
 
 void MainWindow::onSaveFanProfilesClicked()

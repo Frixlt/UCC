@@ -93,7 +93,7 @@ private:
     // No local Bluetooth objects in GUI proxy
 
     QList<DeviceInfo> m_discoveredDevices;
-    LCTDeviceModel m_connectedModel;
+    LCTDeviceModel m_connectedModel = LCTDeviceModel::Unknown;
     bool m_isConnected = false;
     bool m_isDiscovering = false;
 

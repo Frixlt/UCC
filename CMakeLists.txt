@@ -69,9 +69,6 @@ find_package( Qt6 REQUIRED COMPONENTS
   DBus
   Gui
   Widgets
-  Qml
-  Quick
-  QuickControls2
 )
 
 include( GNUInstallDirs )

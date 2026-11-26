@@ -10,6 +10,8 @@
 # This directory hosts a Plasma applet in `applet/` with a QML extension
 # module in `src/`.
 
+find_package(Qt6 REQUIRED COMPONENTS Core Gui Widgets DBus Qml Quick QuickControls2)
+
 if(CMAKE_SOURCE_DIR STREQUAL CMAKE_CURRENT_SOURCE_DIR)
   cmake_minimum_required(VERSION 3.20)
 
@@ -26,8 +28,6 @@ if(CMAKE_SOURCE_DIR STREQUAL CMAKE_CURRENT_SOURCE_DIR)
 
   set(CMAKE_AUTOMOC ON)
   set(CMAKE_AUTORCC ON)
-
-  find_package(Qt6 REQUIRED COMPONENTS Core Gui Widgets DBus Qml Quick QuickControls2)
 
   find_package(ECM REQUIRED NO_MODULE)
   set(CMAKE_MODULE_PATH ${ECM_MODULE_PATH})

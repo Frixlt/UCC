@@ -250,9 +250,10 @@ export class UccdClient {
 
     async getAvailableODMProfiles()           { return await this._call('ODMProfilesAvailable') ?? []; }
     async getWaterCoolerSupported()           { return await this._call('GetWaterCoolerSupported'); }
+    async getWaterCoolerConnected()           { return await this._call('GetWaterCoolerConnected') ?? false; }
     async isWaterCoolerEnabled()              { return await this._call('IsWaterCoolerEnabled'); }
     async isDeviceSupported()                 { return await this._call('IsDeviceSupported'); }
-    async getKeyboardBacklightControlEnabled(){ return await this._call('GetKeyboardBacklightControlEnabled') ?? false; }
+    async getKeyboardBacklightControlEnabled(){ return await this._call('GetKeyboardBacklightControlSupported') ?? false; }
     async getSystemInfoJSON()                 { return await this._call('GetSystemInfoJSON'); }
 
     async getFanProfile(name) { return await this._call('GetFanProfile', [name], 's'); }

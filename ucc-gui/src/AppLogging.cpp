@@ -6,6 +6,7 @@
 #include <QDateTime>
 #include <QDir>
 #include <QFile>
+#include <QLoggingCategory>
 #include <QSettings>
 #include <QStandardPaths>
 #include <QtLogging>
@@ -67,6 +68,7 @@ void handler(QtMsgType type,const QMessageLogContext &context,const QString &mes
 }
 bool configure(bool enabled) {
   auto &s=state();std::lock_guard lock(s.mutex);
+  if(enabled) QLoggingCategory::setFilterRules(QStringLiteral("*.debug=true"));
   if(enabled==s.enabled && (!enabled || s.file.isOpen())) return true;
   if(enabled) {
     if(!openFile()) return false;

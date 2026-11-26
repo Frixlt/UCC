@@ -410,7 +410,7 @@ bool UccdClient::setStateMap( const std::string &state, const std::string &profi
 {
   const QString qState = QString::fromStdString( state );
   const QString qProfileId = QString::fromStdString( profileId );
-  return callVoidMethod( "SetStateMap", qState, qProfileId );
+  return callMethod< bool >( "SetStateMap", qState, qProfileId ).value_or( false );
 }
 
 bool UccdClient::setBatchStateMap( const std::map< std::string, std::string > &entries )
@@ -419,28 +419,28 @@ bool UccdClient::setBatchStateMap( const std::map< std::string, std::string > &e
   for ( const auto &[state, profileId] : entries )
     obj[QString::fromStdString( state )] = QString::fromStdString( profileId );
   QString json = QJsonDocument( obj ).toJson( QJsonDocument::Compact );
-  return callVoidMethod( "SetBatchStateMap", json );
+  return callMethod< bool >( "SetBatchStateMap", json ).value_or( false );
 }
 
 bool UccdClient::setActiveProfile( const std::string &profileId )
 {
   const QString id = QString::fromStdString( profileId );
-  return callVoidMethod( "SetActiveProfile", id );
+  return callMethod< bool >( "SetActiveProfile", id ).value_or( false );
 }
 
 bool UccdClient::applyProfile( const std::string &profileJSON )
 {
-  return callVoidMethod( "ApplyProfile", QString::fromStdString( profileJSON ) );
+  return callMethod< bool >( "ApplyProfile", QString::fromStdString( profileJSON ) ).value_or( false );
 }
 
 bool UccdClient::saveCustomProfile( [[maybe_unused]] [[maybe_unused]] const std::string &profileJSON )
 {
-  return callVoidMethod( "SaveCustomProfile", QString::fromStdString( profileJSON ) );
+  return callMethod< bool >( "SaveCustomProfile", QString::fromStdString( profileJSON ) ).value_or( false );
 }
 
 bool UccdClient::deleteCustomProfile( [[maybe_unused]] const std::string &profileId )
 {
-  return callVoidMethod( "DeleteCustomProfile", QString::fromStdString( profileId ) );
+  return callMethod< bool >( "DeleteCustomProfile", QString::fromStdString( profileId ) ).value_or( false );
 }
 
 std::optional< std::string > UccdClient::getFanProfile( const std::string &fanProfileId )
@@ -474,7 +474,7 @@ std::optional< int > UccdClient::getDisplayBrightness()
 
 bool UccdClient::setWebcamEnabled( bool enabled )
 {
-  return callVoidMethod( "SetWebcam", enabled );
+  return callMethod< bool >( "SetWebcam", enabled ).value_or( false );
 }
 
 std::optional< bool > UccdClient::getWebcamEnabled()
@@ -541,7 +541,7 @@ std::optional< bool > UccdClient::getYCbCr420Workaround()
 bool UccdClient::setDisplayRefreshRate( const std::string &display, int refreshRate )
 {
   const QString qDisplay = QString::fromStdString( display );
-  return callVoidMethod( "SetDisplayRefreshRate", qDisplay, refreshRate );
+  return callMethod< bool >( "SetDisplayRefreshRate", qDisplay, refreshRate ).value_or( false );
 }
 
 bool UccdClient::setCpuScalingGovernor( [[maybe_unused]] const std::string &governor )
@@ -694,7 +694,7 @@ std::optional< std::vector< int > > UccdClient::getODMPowerLimits()
 
 bool UccdClient::setChargingProfile( const std::string &profileDescriptor )
 {
-  return callVoidMethod( "SetChargingProfile", QString::fromStdString( profileDescriptor ) );
+  return callMethod< bool >( "SetChargingProfile", QString::fromStdString( profileDescriptor ) ).value_or( false );
 }
 
 std::optional< std::string > UccdClient::getChargingProfilesAvailable()
@@ -731,7 +731,7 @@ std::optional< std::string > UccdClient::getCurrentChargingPriority()
 
 bool UccdClient::setChargingPriority( const std::string &priorityDescriptor )
 {
-  return callVoidMethod( "SetChargingPriority", QString::fromStdString( priorityDescriptor ) );
+  return callMethod< bool >( "SetChargingPriority", QString::fromStdString( priorityDescriptor ) ).value_or( false );
 }
 
 std::optional< std::string > UccdClient::getChargeStartAvailableThresholds()
@@ -762,12 +762,12 @@ std::optional< int > UccdClient::getChargeEndThreshold()
 
 bool UccdClient::setChargeStartThreshold( int value )
 {
-  return callVoidMethod( "SetChargeStartThreshold", value );
+  return callMethod< bool >( "SetChargeStartThreshold", value ).value_or( false );
 }
 
 bool UccdClient::setChargeEndThreshold( int value )
 {
-  return callVoidMethod( "SetChargeEndThreshold", value );
+  return callMethod< bool >( "SetChargeEndThreshold", value ).value_or( false );
 }
 
 std::optional< std::string > UccdClient::getChargeType()
@@ -780,12 +780,12 @@ std::optional< std::string > UccdClient::getChargeType()
 
 bool UccdClient::setChargeType( const std::string &type )
 {
-  return callVoidMethod( "SetChargeType", QString::fromStdString( type ) );
+  return callMethod< bool >( "SetChargeType", QString::fromStdString( type ) ).value_or( false );
 }
 
 bool UccdClient::setNVIDIAPowerOffset( int offset )
 {
-  return callVoidMethod( "SetNVIDIAPowerOffset", offset );
+  return callMethod< bool >( "SetNVIDIAPowerOffset", offset ).value_or( false );
 }
 
 std::optional< int > UccdClient::getNVIDIAPowerOffset()

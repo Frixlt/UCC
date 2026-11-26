@@ -134,12 +134,12 @@ private slots:
     // Close on AC (screen_off) -> dpms off
     handler.onLidStateChanged(true);
     QCOMPARE(calls.size(), size_t(1));
-    QVERIFY(calls[0].second.join(' ').contains("action=\"off\""));
+    QVERIFY(calls[0].second.join(' ').contains("dispatch dpms off"));
 
     // Open -> dpms on
     handler.onLidStateChanged(false);
     QCOMPARE(calls.size(), size_t(2));
-    QVERIFY(calls[1].second.join(' ').contains("action=\"on\""));
+    QVERIFY(calls[1].second.join(' ').contains("dispatch dpms on"));
 
     // Close on Battery (suspend) -> no DPMS off
     calls.clear();

@@ -16,9 +16,10 @@ set( CMAKE_CXX_EXTENSIONS OFF )
 find_package( Qt6 REQUIRED COMPONENTS Core DBus )
 
 # Library sources
-add_library( ucc-dbus SHARED
+add_library( ucc-dbus STATIC
   UccdClient.cpp
 )
+set_target_properties( ucc-dbus PROPERTIES POSITION_INDEPENDENT_CODE ON )
 if(UCC_READ_ONLY_PREVIEW)
   target_compile_definitions(ucc-dbus PUBLIC UCC_READ_ONLY_PREVIEW)
   # A preview must never resolve the installed write-enabled client library.
@@ -43,14 +44,4 @@ target_compile_options( ucc-dbus PRIVATE
   -Werror
 )
 
-# Set library properties
-set_target_properties( ucc-dbus PROPERTIES
-  VERSION ${PROJECT_VERSION}
-  SOVERSION ${PROJECT_VERSION_MAJOR}
-)
-
-# Installation
-include( GNUInstallDirs )
-install( TARGETS ucc-dbus
-  LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR}
-)
+# Internal helper library linked statically into clients (ADR-01).

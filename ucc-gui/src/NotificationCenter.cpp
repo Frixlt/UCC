@@ -41,8 +41,17 @@ int NotificationCenter::unreadCount() const {
 void NotificationCenter::addEvent(const QString &section,const QString &message,const QDateTime &time) {
   if(message.trimmed().isEmpty() || message=="Ready") return;
   m_events.prepend({section,message,time,true});
-  if(m_events.size()>200) m_events.removeLast();
-  refresh();
+  auto *item=new QListWidgetItem;
+  QSize hint;
+  auto *card=buildCard(m_events.first(),hint);
+  item->setSizeHint(hint);
+  m_list->insertItem(0,item);
+  m_list->setItemWidget(item,card);
+  if(m_events.size()>200) {
+    m_events.removeLast();
+    delete m_list->takeItem(m_list->count()-1);
+  }
+  syncChrome();
 }
 void NotificationCenter::markAllRead() { for(auto &event:m_events) event.unread=false;refresh(); }
 void NotificationCenter::clearAll() {m_events.clear();refresh();}
@@ -59,27 +68,39 @@ void NotificationCenter::refreshBell() {
   m_bell->setToolTip(caption);m_bell->setAccessibleName(caption);
   m_bell->setProperty("unreadCount",unreadCount());
 }
+QWidget *NotificationCenter::buildCard(const Event &event,QSize &hintOut) {
+  auto *card=new QWidget;auto *layout=new QVBoxLayout(card);
+  layout->setContentsMargins(12,10,12,10);layout->setSpacing(5);
+  auto *title=new QLabel((event.unread ? QStringLiteral("●  ") : QString())+event.section);
+  title->setTextFormat(Qt::PlainText);title->setObjectName("notificationTitle");
+  title->setProperty("unread",event.unread);title->setWordWrap(true);layout->addWidget(title);
+  auto *message=new QLabel(event.message);message->setTextFormat(Qt::PlainText);
+  message->setWordWrap(true);message->setMaximumWidth(356);layout->addWidget(message);
+  const QString date=event.time.date()==QDate::currentDate() ? tr("Today") : QLocale().toString(event.time.date(),QLocale::ShortFormat);
+  auto *time=new QLabel(date+QStringLiteral(", ")+event.time.toString("HH:mm:ss"));time->setObjectName("muted");layout->addWidget(time);
+  // Mouse events belong to the list so a click can mark this event as read.
+  card->setAttribute(Qt::WA_TransparentForMouseEvents);
+  card->setFixedWidth(374);
+  hintOut=QSize(374,layout->heightForWidth(374));
+  return card;
+}
+void NotificationCenter::syncChrome() {
+  const bool hasEvents=!m_events.isEmpty();m_list->setVisible(hasEvents);m_empty->setVisible(!hasEvents);
+  m_read->setEnabled(unreadCount()>0);m_clear->setEnabled(hasEvents);
+  const int targetHeight=hasEvents ? 450 : 190;
+  if(height()!=targetHeight) setFixedHeight(targetHeight);
+  refreshBell();
+}
 void NotificationCenter::refresh() {
   m_list->clear();
   for(const auto &event:m_events) {
     auto *item=new QListWidgetItem(m_list);
-    auto *card=new QWidget;auto *layout=new QVBoxLayout(card);
-    layout->setContentsMargins(12,10,12,10);layout->setSpacing(5);
-    auto *title=new QLabel((event.unread ? QStringLiteral("●  ") : QString())+event.section);
-    title->setTextFormat(Qt::PlainText);title->setObjectName("notificationTitle");
-    title->setProperty("unread",event.unread);title->setWordWrap(true);layout->addWidget(title);
-    auto *message=new QLabel(event.message);message->setTextFormat(Qt::PlainText);
-    message->setWordWrap(true);message->setMaximumWidth(356);layout->addWidget(message);
-    const QString date=event.time.date()==QDate::currentDate() ? tr("Today") : QLocale().toString(event.time.date(),QLocale::ShortFormat);
-    auto *time=new QLabel(date+QStringLiteral(", ")+event.time.toString("HH:mm:ss"));time->setObjectName("muted");layout->addWidget(time);
-    // Mouse events belong to the list so a click can mark this event as read.
-    card->setAttribute(Qt::WA_TransparentForMouseEvents);
-    card->setFixedWidth(374);item->setSizeHint(QSize(374,layout->heightForWidth(374)));
+    QSize hint;
+    auto *card=buildCard(event,hint);
+    item->setSizeHint(hint);
     m_list->setItemWidget(item,card);
   }
-  const bool hasEvents=!m_events.isEmpty();m_list->setVisible(hasEvents);m_empty->setVisible(!hasEvents);
-  m_read->setEnabled(unreadCount()>0);m_clear->setEnabled(hasEvents);
-  setFixedHeight(hasEvents ? 450 : 190);refreshBell();
+  syncChrome();
 }
 void NotificationCenter::openPanel() {
   if(isVisible()) {hide();return;}

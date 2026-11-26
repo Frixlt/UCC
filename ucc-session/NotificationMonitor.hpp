@@ -4,6 +4,7 @@
 #include <QProcess>
 #include <QTimer>
 #include <QElapsedTimer>
+#include <QDBusConnection>
 #include <functional>
 
 // dbus-monitor can observe method calls; a normal signal subscription cannot.
@@ -11,7 +12,7 @@
 class NotificationMonitor:public QObject {
 public:
   explicit NotificationMonitor(std::function<void()> notify,QObject *parent=nullptr)
-    :QObject(parent),m_notify(std::move(notify)) {
+    :QObject(parent),m_notify(std::move(notify)),m_selfSender(QDBusConnection::sessionBus().baseService().toUtf8()) {
     m_restart.setSingleShot(true);m_restart.setInterval(5000);
     connect(&m_restart,&QTimer::timeout,this,[this]{start();});
     connect(&m_process,&QProcess::readyReadStandardOutput,this,[this]{feed(m_process.readAllStandardOutput());});
@@ -27,7 +28,7 @@ public:
   void feed(const QByteArray &bytes) {
     for(char c:bytes) {
       if(c=='\n') {
-        if(!m_dropping && isNotification(m_pending) && (!m_last.isValid() || m_last.elapsed()>=100)) {m_last.start();m_notify();}
+        if(!m_dropping && isNotification(m_pending) && !isSelfNotification(m_pending) && (!m_last.isValid() || m_last.elapsed()>=100)) {m_last.start();m_notify();}
         m_pending.clear();m_dropping=false;
       } else if(!m_dropping) {
         if(m_pending.size()<4096) m_pending+=c;else {m_pending.clear();m_dropping=true;}
@@ -38,11 +39,15 @@ public:
     return line.startsWith("method call ") && line.contains(" interface=org.freedesktop.Notifications;") &&
       line.trimmed().endsWith(" member=Notify");
   }
+  bool isSelfNotification(const QByteArray &line) const {
+    return !m_selfSender.isEmpty() && line.contains("sender=" + m_selfSender);
+  }
 private:
   QProcess m_process;
   QTimer m_restart;
   QElapsedTimer m_last;
   std::function<void()> m_notify;
+  QByteArray m_selfSender;
   QByteArray m_pending;
   bool m_dropping=false,m_stopping=false;
 };

@@ -684,7 +684,7 @@ class UccIndicator extends PanelMenu.Button {
         if (!raw || this._destroyed || generation !== this._connectionGeneration) return;
         try {
             const src = JSON.parse(raw);
-            const dst = {};
+            const dst = { fanProfileId };
             if (src.tableCPU)            dst.cpu            = src.tableCPU;
             if (src.tableGPU)            dst.gpu            = src.tableGPU;
             if (src.tablePump)           dst.pump           = src.tablePump;
@@ -1003,8 +1003,9 @@ class UccIndicator extends PanelMenu.Button {
             this._client.getWebcamEnabled(),
             this._client.getFnLock(),
             this._client.getDisplayBrightness(),
-            this._client.isWaterCoolerEnabled()
-        ]), ([ap, ps, webcam, fn, br, wcEn]) => {
+            this._client.isWaterCoolerEnabled(),
+            this._client.getWaterCoolerConnected()
+        ]), ([ap, ps, webcam, fn, br, wcEn, wcConn]) => {
             const s = this._state;
 
             // Active profile
@@ -1031,16 +1032,15 @@ class UccIndicator extends PanelMenu.Button {
                 } catch { /* ignore */ }
             }
 
-            // Power state
+            // Power state & water cooler connection
             if (ps && ps !== s.powerState) {
                 s.powerState = ps;
                 this._powerLabel.text = mapPowerState(ps);
-                // Derive wcConnected from power state (matches KDE applet)
-                const wasWcConnected = s.wcConnected;
-                s.wcConnected = (mapPowerState(ps) === 'AC w/ Water Cooler');
-                if (s.wcConnected !== wasWcConnected) {
-                    this._updateWaterCoolerControlsEnabled();
-                }
+            }
+            const nextWcConnected = Boolean(wcConn);
+            if (nextWcConnected !== s.wcConnected) {
+                s.wcConnected = nextWcConnected;
+                this._updateWaterCoolerControlsEnabled();
             }
 
             // Hardware toggles

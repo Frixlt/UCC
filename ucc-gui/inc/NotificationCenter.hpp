@@ -23,7 +23,9 @@ private:
   QListWidget *m_list;
   QLabel *m_empty;
   void refresh();
+  void syncChrome();
   void refreshBell();
   void openPanel();
+  static QWidget *buildCard(const Event &event, QSize &hintOut);
 };
 }

@@ -22,7 +22,6 @@ find_package( Qt6 REQUIRED COMPONENTS
   Gui
   Widgets
   DBus
-  Bluetooth
   Charts
 )
 
@@ -79,7 +78,6 @@ set( UCC_GUI_LIBRARIES
   Qt6::Gui
   Qt6::Widgets
   Qt6::DBus
-  Qt6::Bluetooth
   Qt6::Charts
   ucc-dbus
 )
