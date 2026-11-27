@@ -2720,6 +2720,40 @@
       "blockers": []
     },
     {
+      "id": "M10.10",
+      "milestone": "M10",
+      "wave": "V10",
+      "title": "Привести весь пользовательский интерфейс ucc-rusted к единому стилю, дизайну и иконографике: единый логотип/значки в GUI, .desktop и About; динамическая отрисовка иконки трея ucc-desktop-tray по источнику питания (AC/Type-C/Battery), ручному режиму M, профилю, заряду и СЖО; согласование размещения переключателя гашения клавиатуры по крышке, custom popup для per-item тултипов в трее и концепта пользовательских модулей (modules.d).",
+      "status": "planned",
+      "status_basis": "Planned after live ucc-rusted user feedback (2026-11-27); requires user design review and sign-off before implementation.",
+      "suggested_role": null,
+      "assigned_agent_id": null,
+      "depends_on": [
+        "M10.8",
+        "M10.9"
+      ],
+      "dependency_refinement_required": false,
+      "owned_paths": [
+        "crates/ucc-desktop/src/tray.rs",
+        "ucc-gui/src/",
+        "packaging/"
+      ],
+      "feature_ids": [
+        "F35",
+        "F37",
+        "F42"
+      ],
+      "test_ids": [],
+      "implementation_sha": null,
+      "r1_review": null,
+      "r2_evidence": [],
+      "integration_sha": null,
+      "children": [],
+      "blockers": [
+        "Requires user design approval before implementation"
+      ]
+    },
+    {
       "id": "M11.1",
       "milestone": "M11",
       "wave": "V11",

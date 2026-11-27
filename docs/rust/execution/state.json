@@ -27,7 +27,8 @@
     "M7.5/M10.7: Verify tray-click activation interactively and measure RTX 5080 D3cold suspend without compositor/mpvpaper load.",
     "M12.9/M13.5: Perform reboot/login autostart check and package downgrade/rollback drill.",
     "M13.3/M13.4/M13.6: Run extended soak, real suspend-to-RAM/power transitions, and full GUI 10-page hardware walkthrough.",
-    "M13.7..M13.11: Retire legacy C++ runtime from active build after M13 checks and finalize strict EN/RU + AI-agent documentation."
+    "M13.7..M13.11: Retire legacy C++ runtime from active build after M13 checks and finalize strict EN/RU + AI-agent documentation.",
+    "M10.10: Agree on unified design, icon set, dynamic power-source tray icons, custom popup tooltips, lid-backlight placement, and plugin modules.d contract with user before implementation."
   ],
   "acceptance_summary": {
     "audit_sha": "e16f9ea",
