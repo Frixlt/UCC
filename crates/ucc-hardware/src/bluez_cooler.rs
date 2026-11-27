@@ -350,14 +350,24 @@ impl BluezCoolerClient {
             }
         }
 
-        let tx_proxy = Proxy::new(
+        let tx_proxy = match Proxy::new(
             &self.conn,
             self.bus_name.clone(),
             tx_path,
             "org.bluez.GattCharacteristic1",
         )
         .await
-        .map_err(|_| CoolerError::NotConnected)?;
+        {
+            Ok(proxy) => proxy,
+            Err(_) => {
+                let _ = tokio::time::timeout(
+                    Duration::from_millis(500),
+                    dev_proxy.call_method("Disconnect", &()),
+                )
+                .await;
+                return Err(CoolerError::NotConnected);
+            }
+        };
 
         Ok(BluezGattSession {
             dev_proxy,

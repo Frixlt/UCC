@@ -148,6 +148,7 @@ void FanControlTab::setupUI()
 
   m_removeFanProfileButton = new QPushButton( "Remove" );
   m_removeFanProfileButton->setMinimumWidth( 90 );
+  m_removeFanProfileButton->setEnabled( false );
 
   selectLayout->addWidget( m_fanProfileCombo, 1 );
   selectLayout->addWidget( m_applyFanProfilesButton );
@@ -383,6 +384,17 @@ bool customFanHasWaterCoolerCurves( const QJsonObject &entry )
 }
 } // namespace
 
+void FanControlTab::setWaterCoolerSupported( bool supported )
+{
+  m_waterCoolerSupported = supported;
+  if ( auto *subTabs = findChild< QTabWidget * >( QStringLiteral( "coolingPages" ) );
+       subTabs && subTabs->count() > 1 )
+  {
+    subTabs->setTabVisible( 1, supported );
+  }
+  updateWaterCoolerPolling();
+}
+
 void FanControlTab::setWaterCoolerMode( bool wcMode )
 {
   if ( m_waterCoolerMode == wcMode )
@@ -471,6 +483,7 @@ void FanControlTab::updateButtonStates( bool uccdConnected )
   if ( m_applyFanProfilesButton )   m_applyFanProfilesButton->setEnabled( uccdConnected );
   if ( m_saveFanProfilesButton )    m_saveFanProfilesButton->setEnabled( isCustom );
   if ( m_copyFanProfileButton )     m_copyFanProfileButton->setEnabled( !id.isEmpty() );
+  if ( m_removeFanProfileButton )   m_removeFanProfileButton->setEnabled( isCustom && uccdConnected );
   if ( m_revertFanProfilesButton )  m_revertFanProfilesButton->setEnabled( isCustom && uccdConnected );
 
   // Only allow renaming custom fan profiles

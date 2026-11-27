@@ -39,30 +39,39 @@ pub fn write_atomic(target_path: impl AsRef<Path>, content: &[u8]) -> Result<(),
         return Err(ConfigError::ReadOnlyPreview);
     }
 
-    // Resolve symlink targets so atomic writes update the underlying file instead of
-    // replacing the symlink itself or inheriting 0o777 symlink metadata (`ISSUE-16`).
+    // Resolve symlink targets only when they resolve to an existing file inside the
+    // same configuration directory; reject broken or escaping symlinks (`P0-08`).
     let resolved_storage: PathBuf;
-    let target_path = match fs::symlink_metadata(target_path.as_ref()) {
+    let raw_target = target_path.as_ref();
+    let target_path = match fs::symlink_metadata(raw_target) {
         Ok(meta) if meta.file_type().is_symlink() => {
-            resolved_storage = match fs::canonicalize(target_path.as_ref()) {
-                Ok(canonical) => canonical,
-                Err(_) => {
-                    let link_dest = fs::read_link(target_path.as_ref())?;
-                    if link_dest.is_absolute() {
-                        link_dest
-                    } else {
-                        target_path
-                            .as_ref()
-                            .parent()
-                            .filter(|p| !p.as_os_str().is_empty())
-                            .unwrap_or_else(|| Path::new("."))
-                            .join(link_dest)
-                    }
-                }
-            };
+            let canonical = fs::canonicalize(raw_target).map_err(|_| {
+                ConfigError::PermissionDenied(format!(
+                    "Refusing to write through broken symlink {}",
+                    raw_target.display()
+                ))
+            })?;
+            let raw_parent = raw_target
+                .parent()
+                .filter(|p| !p.as_os_str().is_empty())
+                .unwrap_or_else(|| Path::new("."));
+            let canon_parent = fs::canonicalize(raw_parent).map_err(|_| {
+                ConfigError::PermissionDenied(format!(
+                    "Refusing to write through symlink with unresolvable parent {}",
+                    raw_target.display()
+                ))
+            })?;
+            if !canonical.starts_with(&canon_parent) {
+                return Err(ConfigError::PermissionDenied(format!(
+                    "Refusing to write through symlink {} escaping directory {}",
+                    raw_target.display(),
+                    canon_parent.display()
+                )));
+            }
+            resolved_storage = canonical;
             resolved_storage.as_path()
         }
-        _ => target_path.as_ref(),
+        _ => raw_target,
     };
 
     let parent = target_path

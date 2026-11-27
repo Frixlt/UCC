@@ -1,4 +1,6 @@
 use std::fs;
+use std::path::Path;
+use std::process::Command;
 use ucc_hardware::SysfsRoot;
 
 #[test]
@@ -26,8 +28,44 @@ fn contained_write_survives_symlink_swap_after_validation() {
     };
 
     if !shim_active {
-        eprintln!(
-            "Notice: open-swap.so LD_PRELOAD shim not active; skipping symlink swap race probe"
+        assert!(
+            std::env::var_os("UCC_VERIFY_3F4_REEXEC").is_none(),
+            "open-swap.so LD_PRELOAD shim failed to activate in re-execed child process"
+        );
+        let shim_src = Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../../stand-fixtures/open-swap.c")
+            .canonicalize()
+            .expect("stand-fixtures/open-swap.c must exist");
+        let shim_so = dir.path().join("open-swap.so");
+        let compile = Command::new("cc")
+            .args(["-shared", "-fPIC", "-O2"])
+            .arg(&shim_src)
+            .arg("-o")
+            .arg(&shim_so)
+            .arg("-ldl")
+            .output()
+            .expect("cc must be available to compile open-swap.c");
+        assert!(
+            compile.status.success(),
+            "compiling open-swap.c failed: {}",
+            String::from_utf8_lossy(&compile.stderr)
+        );
+        let exe = std::env::current_exe().expect("locate current test executable");
+        let child = Command::new(&exe)
+            .args([
+                "--exact",
+                "contained_write_survives_symlink_swap_after_validation",
+                "--nocapture",
+            ])
+            .env("LD_PRELOAD", &shim_so)
+            .env("UCC_VERIFY_3F4_REEXEC", "1")
+            .output()
+            .expect("re-exec verify_3f4_sysfs with LD_PRELOAD");
+        assert!(
+            child.status.success(),
+            "LD_PRELOAD verify_3f4_sysfs child failed:\nstdout: {}\nstderr: {}",
+            String::from_utf8_lossy(&child.stdout),
+            String::from_utf8_lossy(&child.stderr)
         );
         return;
     }

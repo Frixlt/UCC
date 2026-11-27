@@ -413,7 +413,8 @@ impl LiveUccdBackend {
         {
             return;
         }
-        if let Some(states) = self.lock_mutex(&self.lid_saved_keyboard_states).take() {
+        let saved_kbd = self.lock_mutex(&self.lid_saved_keyboard_states).take();
+        if let Some(states) = saved_kbd {
             let mut ctrl = self.lock_mutex(&self.keyboard_ctrl);
             if !ctrl.is_available() {
                 let _ = ctrl.init();
@@ -429,7 +430,8 @@ impl LiveUccdBackend {
                 }
             }
         }
-        if let Some(saved_wc_rgb) = self.lock_mutex(&self.lid_saved_wc_rgb).take() {
+        let saved_wc = self.lock_mutex(&self.lid_saved_wc_rgb).take();
+        if let Some(saved_wc_rgb) = saved_wc {
             let mut cooler = self.lock_mutex(&self.cooler_controller);
             match saved_wc_rgb {
                 RgbTarget::Color {

@@ -102,6 +102,13 @@ private slots:
     monitor.setDisplayBrightness(30);
     for (int value = 31; value <= 80; ++value) monitor.setDisplayBrightness(value);
     QVERIFY(elapsed.elapsed() < 100);
+#ifdef UCC_READ_ONLY_PREVIEW
+    QTest::qWait(450);
+    const auto reply = QDBusConnection::systemBus().call(QDBusMessage::createMethodCall(
+      "com.uniwill.uccd","/com/uniwill/uccd","com.uniwill.uccd","GetTestBrightnessWrites"));
+    QCOMPARE(reply.arguments().value(0).toInt(),0);
+    QVERIFY(beats > 20);
+#else
     QTRY_COMPARE_WITH_TIMEOUT(monitor.displayBrightness(),80,2000);
     const auto reply = QDBusConnection::systemBus().call(QDBusMessage::createMethodCall(
       "com.uniwill.uccd","/com/uniwill/uccd","com.uniwill.uccd","GetTestBrightnessWrites"));
@@ -112,6 +119,7 @@ private slots:
     QCOMPARE(monitor.displayBrightness(),80);
     monitor.setDisplayBrightness(60);
     QTRY_COMPARE_WITH_TIMEOUT(monitor.displayBrightness(),60,1500);
+#endif
   }
   void synchronousBrightnessSetterHonorsDaemonFailure() {
     ucc::UccdClient client;

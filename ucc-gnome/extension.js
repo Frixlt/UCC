@@ -397,11 +397,15 @@ class UccIndicator extends PanelMenu.Button {
             toggle_mode: true,
             label: 'OFF',
         });
-        this._fnLockSwitch.connect('clicked', () => {
+        this._fnLockSwitch.connect('clicked', async () => {
             const val = this._fnLockSwitch.checked;
-            this._client.setFnLock(val);
-            this._state.fnLock = val;
-            this._fnLockSwitch.label = val ? 'ON' : 'OFF';
+            const prev = this._state.fnLock;
+            const ok = await this._client.setFnLock(val);
+            if (this._destroyed) return;
+            const resolved = ok ? val : prev;
+            this._state.fnLock = resolved;
+            this._fnLockSwitch.checked = resolved;
+            this._fnLockSwitch.label = resolved ? 'ON' : 'OFF';
         });
         fnRow.add_child(this._fnLockSwitch);
         box.add_child(fnRow);
@@ -418,11 +422,15 @@ class UccIndicator extends PanelMenu.Button {
             toggle_mode: true,
             label: 'OFF',
         });
-        this._webcamSwitch.connect('clicked', () => {
+        this._webcamSwitch.connect('clicked', async () => {
             const val = this._webcamSwitch.checked;
-            this._client.setWebcamEnabled(val);
-            this._state.webcamEnabled = val;
-            this._webcamSwitch.label = val ? 'ON' : 'OFF';
+            const prev = this._state.webcamEnabled;
+            const ok = await this._client.setWebcamEnabled(val);
+            if (this._destroyed) return;
+            const resolved = ok ? val : prev;
+            this._state.webcamEnabled = resolved;
+            this._webcamSwitch.checked = resolved;
+            this._webcamSwitch.label = resolved ? 'ON' : 'OFF';
         });
         camRow.add_child(this._webcamSwitch);
         box.add_child(camRow);
@@ -693,7 +701,7 @@ class UccIndicator extends PanelMenu.Button {
         } catch { /* ignore parse errors */ }
     }
 
-    _applyKeyboardProfile(kbProfileId) {
+    async _applyKeyboardProfile(kbProfileId) {
         const s = this._state;
         const idx = s.keyboardProfileIds.indexOf(kbProfileId);
         if (idx < 0) return;
@@ -701,7 +709,19 @@ class UccIndicator extends PanelMenu.Button {
         if (!profileData) return;
         const json = profileData.json;
         if (json) {
-            this._client.setKeyboardBacklight(typeof json === 'string' ? json : JSON.stringify(json));
+            let payload = null;
+            try {
+                const parsed = typeof json === 'string' ? JSON.parse(json) : {...json};
+                if (parsed && typeof parsed === 'object') {
+                    parsed.keyboardProfileId = kbProfileId;
+                    payload = JSON.stringify(parsed);
+                }
+            } catch {
+                payload = typeof json === 'string' ? json : JSON.stringify(json);
+            }
+            if (payload) {
+                await this._client.setKeyboardBacklight(payload);
+            }
         }
     }
 
@@ -1056,10 +1076,18 @@ class UccIndicator extends PanelMenu.Button {
                 this._fnLockSwitch.label = fn ? 'ON' : 'OFF';
             }
 
-            if (br !== null && br !== s.displayBrightness) {
-                s.displayBrightness = br;
-                this._brightnessSlider.value = br / 100;
-                this._brightnessValueLabel.text = `${br}%`;
+            if (br !== null && br >= 0) {
+                this._brightnessSlider.reactive = true;
+                this._brightnessSlider.opacity = 255;
+                if (br !== s.displayBrightness) {
+                    s.displayBrightness = br;
+                    this._brightnessSlider.value = br / 100;
+                    this._brightnessValueLabel.text = `${br}%`;
+                }
+            } else if (br !== null && br < 0) {
+                this._brightnessSlider.reactive = false;
+                this._brightnessSlider.opacity = 128;
+                this._brightnessValueLabel.text = '—';
             }
 
             // Water cooler
@@ -1088,10 +1116,10 @@ class UccIndicator extends PanelMenu.Button {
         this._lGpuPower.valueLabel.text  = fmtF(s.gpuPower, 'W');
         this._lCpuFan.valueLabel.text    = s.cpuFanRPM >= 0
             ? `${s.cpuFanRPM} RPM (${s.cpuFanPct}%)`
-            : '—';
+            : (s.cpuFanPct >= 0 ? `${s.cpuFanPct}%` : '—');
         this._lGpuFan.valueLabel.text    = s.gpuFanRPM >= 0
             ? `${s.gpuFanRPM} RPM (${s.gpuFanPct}%)`
-            : '—';
+            : (s.gpuFanPct >= 0 ? `${s.gpuFanPct}%` : '—');
 
         if (s.waterCoolerSupported) {
             this._lWcFan.valueLabel.text  = fmt(s.wcFanSpeed, '%');

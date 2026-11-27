@@ -90,6 +90,7 @@ public:
   /** Switch between air Cooler Settings (false) and Watercool Settings (true) filtering. */
   void setWaterCoolerMode( bool wcMode );
   bool isWaterCoolerMode() const { return m_waterCoolerMode; }
+  void setWaterCoolerSupported( bool supported );
 
   /** Update button enable states. */
   void updateButtonStates( bool uccdConnected );

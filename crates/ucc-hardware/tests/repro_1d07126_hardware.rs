@@ -355,3 +355,169 @@ fn r20_cpu_topology_x86_cfg_does_not_hardcode_x86_64_cpuid() {
         topology_path.display()
     );
 }
+
+#[test]
+fn r21_ble_write_value_has_explicit_timeout_and_tx_proxy_cleanup() {
+    let bluez_path = Path::new(env!("CARGO_MANIFEST_DIR")).join("src/bluez_cooler.rs");
+    let source = fs::read_to_string(&bluez_path)
+        .unwrap_or_else(|e| panic!("Failed to read {}: {e}", bluez_path.display()));
+
+    // 1. `write_packet` must wrap `WriteValue` in an explicit `tokio::time::timeout`.
+    let wp_start = source
+        .find("pub async fn write_packet")
+        .expect("bluez_cooler.rs must define `pub async fn write_packet`");
+    let wp_end = source[wp_start..]
+        .find("pub async fn flush_controller")
+        .map(|off| wp_start + off)
+        .unwrap_or(source.len());
+    let wp_body = &source[wp_start..wp_end];
+    assert!(
+        wp_body.contains("timeout("),
+        "R21: BluezGattSession::write_packet must wrap GATT WriteValue in an explicit tokio::time::timeout"
+    );
+
+    // 2. If constructing `tx_proxy` fails after `Connect` / `StartNotify`, `connect_cooler` must
+    //    disconnect `dev_proxy` instead of leaking a connected BLE session.
+    let tx_start = source
+        .find("let tx_proxy =")
+        .expect("bluez_cooler.rs must construct `tx_proxy`");
+    let tx_end = source[tx_start..]
+        .find("Ok(BluezGattSession")
+        .map(|off| tx_start + off)
+        .unwrap_or(source.len());
+    let tx_section = &source[tx_start..tx_end];
+    assert!(
+        tx_section.contains("Disconnect"),
+        "R21: connect_cooler must disconnect dev_proxy when tx_proxy construction fails"
+    );
+}
+
+#[test]
+fn p0_05_sysfs_root_production_enforces_sys_proc_prefix_and_ignores_env() {
+    use ucc_hardware::SysfsRoot;
+
+    struct EnvGuard(Option<String>);
+    impl Drop for EnvGuard {
+        fn drop(&mut self) {
+            match &self.0 {
+                Some(v) => std::env::set_var("UCC_SYSFS_ROOT", v),
+                None => std::env::remove_var("UCC_SYSFS_ROOT"),
+            }
+        }
+    }
+
+    let tmp = TempDir::new().unwrap();
+    let _guard = EnvGuard(std::env::var("UCC_SYSFS_ROOT").ok());
+    std::env::set_var("UCC_SYSFS_ROOT", tmp.path());
+
+    let prod = SysfsRoot::production();
+    assert_eq!(
+        prod.root_path(),
+        Path::new("/"),
+        "P0-05: SysfsRoot::production() must ignore UCC_SYSFS_ROOT and stay rooted at `/`"
+    );
+    assert!(
+        prod.resolve("/etc/passwd").is_err(),
+        "P0-05: SysfsRoot::production() must reject paths outside /sys and /proc"
+    );
+    assert!(
+        prod.resolve("/tmp/ucc_escape").is_err(),
+        "P0-05: SysfsRoot::production() must reject /tmp paths"
+    );
+
+    // Verify `read_string` does not blindly call `fs::read_to_string(&full_path)` without symlink protection.
+    let sysfs_src_path = Path::new(env!("CARGO_MANIFEST_DIR")).join("src/sysfs.rs");
+    let sysfs_src = fs::read_to_string(&sysfs_src_path)
+        .unwrap_or_else(|e| panic!("Failed to read {}: {e}", sysfs_src_path.display()));
+    let read_start = sysfs_src
+        .find("pub fn read_string")
+        .expect("sysfs.rs must define `pub fn read_string`");
+    let read_end = sysfs_src[read_start..]
+        .find("pub fn write_string")
+        .map(|off| read_start + off)
+        .unwrap_or(sysfs_src.len());
+    let read_body = &sysfs_src[read_start..read_end];
+    assert!(
+        read_body.contains("O_NOFOLLOW")
+            || read_body.contains("symlink_metadata")
+            || read_body.contains("/proc/self/fd/"),
+        "P0-05: SysfsRoot::read_string must enforce symlink/descriptor boundary checks instead of raw fs::read_to_string"
+    );
+}
+
+#[test]
+fn p0_07_nvapi_filters_null_gpu_handles() {
+    let nvml_path = Path::new(env!("CARGO_MANIFEST_DIR")).join("src/nvml.rs");
+    let source = fs::read_to_string(&nvml_path)
+        .unwrap_or_else(|e| panic!("Failed to read {}: {e}", nvml_path.display()));
+
+    let handles_start = source
+        .find("self.gpu_handles =")
+        .expect("nvml.rs must populate `self.gpu_handles`");
+    let handles_end = source[handles_start..]
+        .find(';')
+        .map(|off| handles_start + off + 1)
+        .unwrap_or(source.len());
+    let handles_stmt = &source[handles_start..handles_end];
+
+    let filters_at_enum = handles_stmt.contains("is_null()");
+    let checks_before_bus = source
+        .find("fn find_handle_by_bdf")
+        .map(|start| {
+            let section = &source[start..source.len().min(start + 1500)];
+            section.contains("is_null()")
+        })
+        .unwrap_or(false);
+
+    assert!(
+        filters_at_enum || checks_before_bus,
+        "P0-07: nvml.rs must filter `!p.is_null()` before storing NVAPI GPU handles or calling fn_bus/fn_voltage"
+    );
+}
+
+#[test]
+fn m_sec_08_resolve_trusted_program_fails_closed_no_path_fallback() {
+    use std::os::unix::fs::PermissionsExt;
+    use ucc_hardware::default_process_runner;
+
+    let tmp = TempDir::new().unwrap();
+    let marker = tmp.path().join("pwned.marker");
+    let evil_bin = tmp.path().join("evil_helper");
+    fs::write(
+        &evil_bin,
+        format!(
+            "#!/bin/sh\necho executed > \"{}\"\nexit 0\n",
+            marker.display()
+        ),
+    )
+    .unwrap();
+    fs::set_permissions(&evil_bin, fs::Permissions::from_mode(0o755)).unwrap();
+
+    let runner = default_process_runner();
+    let ok = runner(evil_bin.to_str().unwrap(), &[]);
+    assert!(
+        !ok && !marker.exists(),
+        "M-SEC-08: default_process_runner must reject arbitrary /tmp/... executable paths"
+    );
+
+    // Source verification: resolve_trusted_program must fail closed (Option) with no bare PATH fallback.
+    let ctrl_path = Path::new(env!("CARGO_MANIFEST_DIR")).join("src/devices/controller.rs");
+    let source = fs::read_to_string(&ctrl_path)
+        .unwrap_or_else(|e| panic!("Failed to read {}: {e}", ctrl_path.display()));
+    let fn_start = source
+        .find("fn resolve_trusted_program")
+        .expect("devices/controller.rs must define resolve_trusted_program");
+    let fn_end = source[fn_start..]
+        .find("pub fn default_process_runner")
+        .map(|off| fn_start + off)
+        .unwrap_or(source.len());
+    let fn_body = &source[fn_start..fn_end];
+    assert!(
+        !fn_body.contains("if program.contains('/') {\n        return program;\n    }"),
+        "M-SEC-08: resolve_trusted_program must not blindly accept arbitrary slash-containing paths"
+    );
+    assert!(
+        fn_body.contains("Option<"),
+        "M-SEC-08: resolve_trusted_program must return Option and fail closed instead of falling back to untrusted PATH"
+    );
+}

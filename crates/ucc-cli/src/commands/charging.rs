@@ -72,18 +72,19 @@ pub async fn run_charging(
             Ok(())
         }
         ChargingAction::SetProfile { profile } => {
-            let res =
+            let res = crate::client::unwrap_write_rpc(
                 crate::client::with_write_rpc_timeout(client.proxy().set_charging_profile(profile))
-                    .await
-                    .unwrap_or(false);
+                    .await,
+            );
             ok(res)
         }
         ChargingAction::SetPriority { priority } => {
-            let res = crate::client::with_write_rpc_timeout(
-                client.proxy().set_charging_priority(priority),
-            )
-            .await
-            .unwrap_or(false);
+            let res = crate::client::unwrap_write_rpc(
+                crate::client::with_write_rpc_timeout(
+                    client.proxy().set_charging_priority(priority),
+                )
+                .await,
+            );
             ok(res)
         }
         ChargingAction::SetThresholds { start, end } => {
@@ -105,20 +106,22 @@ pub async fn run_charging(
                     .filter(|&v| v >= 0);
 
             if *end >= prev_end.unwrap_or(0) {
-                let e = crate::client::with_write_rpc_timeout(
-                    client.proxy().set_charge_end_threshold(*end),
-                )
-                .await
-                .unwrap_or(false);
+                let e = crate::client::unwrap_write_rpc(
+                    crate::client::with_write_rpc_timeout(
+                        client.proxy().set_charge_end_threshold(*end),
+                    )
+                    .await,
+                );
                 if !e {
                     eprintln!("Error: failed to set charge end threshold");
                     return Err(1);
                 }
-                let s = crate::client::with_write_rpc_timeout(
-                    client.proxy().set_charge_start_threshold(*start),
-                )
-                .await
-                .unwrap_or(false);
+                let s = crate::client::unwrap_write_rpc(
+                    crate::client::with_write_rpc_timeout(
+                        client.proxy().set_charge_start_threshold(*start),
+                    )
+                    .await,
+                );
                 if !s {
                     eprintln!(
                         "Error: failed to set charge start threshold, rolling back end threshold"
@@ -141,20 +144,22 @@ pub async fn run_charging(
                     return Err(1);
                 }
             } else {
-                let s = crate::client::with_write_rpc_timeout(
-                    client.proxy().set_charge_start_threshold(*start),
-                )
-                .await
-                .unwrap_or(false);
+                let s = crate::client::unwrap_write_rpc(
+                    crate::client::with_write_rpc_timeout(
+                        client.proxy().set_charge_start_threshold(*start),
+                    )
+                    .await,
+                );
                 if !s {
                     eprintln!("Error: failed to set charge start threshold");
                     return Err(1);
                 }
-                let e = crate::client::with_write_rpc_timeout(
-                    client.proxy().set_charge_end_threshold(*end),
-                )
-                .await
-                .unwrap_or(false);
+                let e = crate::client::unwrap_write_rpc(
+                    crate::client::with_write_rpc_timeout(
+                        client.proxy().set_charge_end_threshold(*end),
+                    )
+                    .await,
+                );
                 if !e {
                     eprintln!(
                         "Error: failed to set charge end threshold, rolling back start threshold"

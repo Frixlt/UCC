@@ -27,6 +27,9 @@
 #include <QDBusInterface>
 #include <QDBusReply>
 #include <QDBusArgument>
+#include <QCoreApplication>
+#include <QPointer>
+#include <thread>
 #include "DetectLayout.hpp"
 #include "AssignKeyZones.hpp"
 
@@ -41,11 +44,9 @@ KeyboardVisualizerWidget::KeyboardVisualizerWidget( int zones, int maxBrightness
   , m_calibratedLayout( calibratedLayout )
   , m_ledIds( ledIds )
 {
-  // Detect keyboard layout
-  QString layout = calibratedLayout ? QStringLiteral("us") : detectKeyboardLayout();
-
-  // Load appropriate zone mappings
-  m_zoneMappings = assignKeyZones(layout);
+  // Initialize immediately with US layout so widget construction never blocks on subprocesses;
+  // detect the active desktop keyboard layout asynchronously when non-calibrated.
+  m_zoneMappings = assignKeyZones( QStringLiteral( "us" ) );
 
   // Initialize m_keys with default entries for all zones
   m_keys.resize( m_zones );
@@ -71,6 +72,41 @@ KeyboardVisualizerWidget::KeyboardVisualizerWidget( int zones, int maxBrightness
   m_colorDialog->setOption( QColorDialog::DontUseNativeDialog, true );
 
   connect( m_colorDialog, &QColorDialog::colorSelected, this, &KeyboardVisualizerWidget::onColorChanged );
+
+  if ( !calibratedLayout )
+  {
+    QPointer< KeyboardVisualizerWidget > self( this );
+    QPointer< QCoreApplication > app( QCoreApplication::instance() );
+    if ( app )
+    {
+      std::thread( [self, app]() {
+        const QString detected = detectKeyboardLayout();
+        if ( detected.isEmpty() || detected == QLatin1String( "us" ) )
+          return;
+        if ( QCoreApplication *inst = app.data() )
+        {
+          QMetaObject::invokeMethod(
+            inst,
+            [self, detected]() {
+              if ( !self )
+                return;
+              self->m_zoneMappings = assignKeyZones( detected );
+              for ( int i = 0; i < static_cast< int >( self->m_keys.size() ); ++i )
+                self->m_keys[i].label = self->getKeyLabel( i );
+              if ( self->m_keyboardWidget )
+              {
+                for ( auto *button : self->m_keyboardWidget->findChildren< QPushButton * >() )
+                {
+                  const int zone = button->property( "zoneId" ).toInt();
+                  button->setText( self->getKeyLabel( zone ) );
+                }
+              }
+            },
+            Qt::QueuedConnection );
+        }
+      } ).detach();
+    }
+  }
 }
 
 void KeyboardVisualizerWidget::setupKeyboardLayout()

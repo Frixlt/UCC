@@ -577,8 +577,9 @@ fn n30_concurrent_save_custom_profile_respects_max_limit() {
     let fn_start = source
         .find("fn persist_or_reapply_custom_profile")
         .or_else(|| source.find("fn save_custom_profile"))
-        .or_else(|| source.find("MAX_CUSTOM_PROFILES"))
-        .expect("profile_tx.rs must reference persist_or_reapply_custom_profile");
+        .expect(
+            "profile_tx.rs must reference persist_or_reapply_custom_profile or save_custom_profile",
+        );
     let update_pos = source[fn_start..]
         .find(".update_settings(|s|")
         .expect("save_custom_profile must call update_settings");
@@ -587,5 +588,162 @@ fn n30_concurrent_save_custom_profile_respects_max_limit() {
     assert!(
         update_block.contains("MAX_CUSTOM_PROFILES"),
         "N30: MAX_CUSTOM_PROFILES must be re-checked atomically inside update_settings write lock"
+    );
+}
+
+/// R03: `GetPrimeState` must offload subprocess waiting so a slow `prime-select` helper (sleeping
+/// up to 2s) does not stall the Tokio async worker or block concurrent independent D-Bus RPCs.
+#[tokio::test(flavor = "current_thread")]
+async fn r03_get_prime_state_does_not_block_tokio_async_worker() {
+    use std::time::Instant;
+    use ucc_dbus::{UccdProxy, DBUS_PATH};
+
+    let daemon = PrivateDbusDaemon::spawn();
+    let tmp = tempfile::tempdir().unwrap();
+
+    // Place a slow fake `prime-select` helper under `<sys_root>/usr/bin/prime-select`.
+    let bin_dir = tmp.path().join("usr/bin");
+    std::fs::create_dir_all(&bin_dir).unwrap();
+    let prime_bin = bin_dir.join("prime-select");
+    std::fs::write(&prime_bin, "#!/bin/sh\nsleep 0.8\necho nvidia\n").unwrap();
+    std::fs::set_permissions(&prime_bin, std::fs::Permissions::from_mode(0o755)).unwrap();
+
+    let backend = build_backend(tmp.path(), true);
+    let daemon_conn = Builder::address(daemon.address.as_str())
+        .unwrap()
+        .build()
+        .await
+        .unwrap();
+    let bus_name = format!("org.test.uccd.r03_{}", std::process::id());
+    let runtime = DaemonRuntime::start_on_connection(
+        daemon_conn,
+        bus_name.clone(),
+        Arc::clone(&backend),
+        Arc::new(AllowAllAuthorizer),
+        true,
+    )
+    .await
+    .unwrap();
+
+    let client_conn = Builder::address(daemon.address.as_str())
+        .unwrap()
+        .build()
+        .await
+        .unwrap();
+    let proxy = UccdProxy::builder(&client_conn)
+        .destination(bus_name.clone())
+        .unwrap()
+        .path(DBUS_PATH)
+        .unwrap()
+        .build()
+        .await
+        .unwrap();
+
+    let prime_proxy = proxy.clone();
+    let prime_task = tokio::spawn(async move { prime_proxy.get_prime_state().await });
+
+    // Give the server a moment to enter `GetPrimeState`.
+    tokio::time::sleep(Duration::from_millis(60)).await;
+
+    let probe_start = Instant::now();
+    let power_state = proxy.get_power_state().await.unwrap();
+    let probe_elapsed = probe_start.elapsed();
+    assert!(!power_state.is_empty());
+
+    let prime_state = prime_task.await.unwrap().unwrap();
+    runtime.shutdown(Duration::from_secs(2)).await;
+
+    assert_eq!(prime_state, "dGPU");
+    assert!(
+        probe_elapsed < Duration::from_millis(400),
+        "R03: GetPrimeState blocked the single Tokio async worker for {:?} while waiting on prime-select",
+        probe_elapsed
+    );
+
+    // Source guard: `ucc-dbus/src/interface.rs` must offload `get_prime_state` rather than calling it inline.
+    let interface_path =
+        PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../ucc-dbus/src/interface.rs");
+    let iface_src = std::fs::read_to_string(&interface_path)
+        .unwrap_or_else(|e| panic!("failed to read {}: {e}", interface_path.display()));
+    let fn_start = iface_src
+        .find("pub async fn get_prime_state")
+        .expect("get_prime_state must exist in ucc-dbus/src/interface.rs");
+    let fn_block = &iface_src[fn_start..iface_src.len().min(fn_start + 700)];
+    assert!(
+        !fn_block.contains("self.backend.get_prime_state()")
+            || fn_block.contains("spawn_blocking")
+            || fn_block.contains("offload"),
+        "R03: interface.rs `get_prime_state` must offload blocking prime-select execution off the Tokio async worker"
+    );
+}
+
+/// P0-02: `lighting_power.rs` must not hold `lid_saved_keyboard_states` or `lid_saved_wc_rgb`
+/// `MutexGuard` across an `if let` body while acquiring `keyboard_ctrl` / `cooler_controller`
+/// (AB-BA lock inversion with `on_lid_state_changed`).
+#[test]
+fn p0_02_lighting_power_lid_and_restore_no_abba_deadlock() {
+    let manifest_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+    let lp_path = manifest_dir.join("src/backend/lighting_power.rs");
+    let lp_src = std::fs::read_to_string(&lp_path)
+        .unwrap_or_else(|e| panic!("failed to read {}: {e}", lp_path.display()));
+
+    // Source guard: Rust 2021 `if let Some(...) = self.lock_mutex(&self.lid_saved_*).take()`
+    // retains the MutexGuard across the entire `if let` block while acquiring keyboard_ctrl/cooler_controller.
+    assert!(
+        !lp_src.contains("if let Some(states) = self.lock_mutex(&self.lid_saved_keyboard_states)"),
+        "P0-02: restore_lid_lighting must drop lid_saved_keyboard_states MutexGuard before locking keyboard_ctrl"
+    );
+    assert!(
+        !lp_src.contains("= self.lock_mutex(&self.lid_saved_wc_rgb).take()")
+            || !lp_src.contains("if let Some(RgbTarget::Color"),
+        "P0-02: restore_lid_lighting must drop lid_saved_wc_rgb MutexGuard before locking cooler_controller"
+    );
+
+    // Concurrent stress test with a hard 5s watchdog deadline so any AB-BA deadlock fails deterministically.
+    let tmp = tempfile::tempdir().unwrap();
+    let backend = build_backend(tmp.path(), true);
+    assert!(backend.set_power_device_settings_json(
+        &json!({
+            "lid": {
+                "turnOffKeyboardBacklightOnLidClose": true,
+                "turnOffWaterCoolerLedOnLidClose": true
+            }
+        })
+        .to_string(),
+    ));
+    assert!(backend.set_keyboard_backlight_states_json(
+        &json!([{"brightness": 180, "red": 255, "green": 128, "blue": 64}]).to_string(),
+    ));
+
+    let (done_tx, done_rx) = std::sync::mpsc::channel();
+    let b_worker = Arc::clone(&backend);
+    std::thread::spawn(move || {
+        let barrier = Arc::new(Barrier::new(2));
+        let b1 = Arc::clone(&b_worker);
+        let bar1 = Arc::clone(&barrier);
+        let t1 = std::thread::spawn(move || {
+            bar1.wait();
+            for _ in 0..100 {
+                b1.on_lid_state_changed(true);
+                b1.on_lid_state_changed(false);
+            }
+        });
+
+        let b2 = Arc::clone(&b_worker);
+        let bar2 = Arc::clone(&barrier);
+        let t2 = std::thread::spawn(move || {
+            bar2.wait();
+            for _ in 0..100 {
+                b2.restore_lid_lighting();
+            }
+        });
+
+        t1.join().unwrap();
+        t2.join().unwrap();
+        let _ = done_tx.send(());
+    });
+
+    done_rx.recv_timeout(Duration::from_secs(5)).expect(
+        "P0-02: concurrent on_lid_state_changed + restore_lid_lighting deadlocked past 5s deadline",
     );
 }

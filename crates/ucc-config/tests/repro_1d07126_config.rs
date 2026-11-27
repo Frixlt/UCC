@@ -53,3 +53,78 @@ fn r13_persistence_uses_libc_o_nofollow_not_hardcoded_octal() {
         persistence_path.display()
     );
 }
+
+#[test]
+fn p0_08_write_atomic_rejects_broken_and_untrusted_symlinks() {
+    use std::os::unix::fs::symlink;
+    use tempfile::TempDir;
+    use ucc_config::write_atomic;
+
+    let tmp = TempDir::new().unwrap();
+    let cfg_dir = tmp.path().join("cfg");
+    let outside_dir = tmp.path().join("outside");
+    fs::create_dir_all(&cfg_dir).unwrap();
+    fs::create_dir_all(&outside_dir).unwrap();
+
+    // Create a broken symlink inside cfg_dir pointing outside to a non-existent victim file.
+    let victim = outside_dir.join("victim.json");
+    let broken_link = cfg_dir.join("settings.json");
+    symlink(&victim, &broken_link).unwrap();
+
+    let res = write_atomic(&broken_link, br#"{"attacker":true}"#);
+    assert!(
+        res.is_err(),
+        "P0-08: write_atomic must reject broken symlink pointing outside target directory, got {:?}",
+        res
+    );
+    assert!(
+        !victim.exists(),
+        "P0-08: write_atomic must not create victim file {} through broken symlink",
+        victim.display()
+    );
+}
+
+#[test]
+fn m_cfg_02_platform_paths_never_falls_back_to_tmp_ucc() {
+    use ucc_config::{resolve_platform_paths, PathPlatform};
+
+    let unix = resolve_platform_paths(PathPlatform::Unix, |_| None);
+    assert_ne!(
+        unix.user_config_dir,
+        Path::new("/tmp/ucc"),
+        "M-CFG-02: Unix user_config_dir must never fall back to world-writable /tmp/ucc"
+    );
+    assert!(
+        !unix.user_config_dir.starts_with("/tmp"),
+        "M-CFG-02: Unix user_config_dir must not fall back under /tmp, got {}",
+        unix.user_config_dir.display()
+    );
+
+    let win = resolve_platform_paths(PathPlatform::Windows, |_| None);
+    let win_str = win.user_config_dir.to_string_lossy();
+    assert!(
+        !win_str.contains(r"ucc-rusted\ucc-rusted") && !win_str.contains("ucc-rusted/ucc-rusted"),
+        "M-CFG-02: Windows user_config_dir fallback must not double `ucc-rusted\\ucc-rusted`, got {win_str}"
+    );
+}
+
+#[test]
+fn m_cfg_06_load_from_path_enforces_max_size_limit() {
+    use tempfile::TempDir;
+    use ucc_config::{create_default_settings, ConfigManager};
+
+    let tmp = TempDir::new().unwrap();
+    let oversized_path = tmp.path().join("oversized_settings.json");
+
+    // Build a valid JSON settings payload padded with >16 MiB of leading whitespace.
+    let valid_json = create_default_settings().to_json().unwrap();
+    let mut payload = vec![b' '; 16 * 1024 * 1024];
+    payload.extend_from_slice(valid_json.as_bytes());
+    fs::write(&oversized_path, &payload).unwrap();
+
+    let res = ConfigManager::load_from_path(&oversized_path);
+    assert!(
+        res.is_err(),
+        "M-CFG-06: ConfigManager::load_from_path must reject oversized (>16 MiB) config files to prevent OOM"
+    );
+}

@@ -77,7 +77,7 @@ public slots:
   void refresh();
   void setActiveProfile( const QString &profileId );
   void setActiveProfileByIndex( int index );
-  void saveProfile( const QString &profileJSON );
+  bool saveProfile( const QString &profileJSON );
   void deleteProfile( const QString &profileId );
   QString getProfileDetails( const QString &profileId );
   QString createProfileFromDefault( const QString &name );
@@ -105,6 +105,7 @@ public slots:
   QString getSettingsJSON();
   bool setStateMap( const QString &state, const QString &profileId );
   bool setBatchStateMap( const std::map< QString, QString > &entries );
+  QString resolveStateMapToProfileId( const QString &state );
 
 signals:
   void defaultProfilesChanged();
@@ -126,7 +127,6 @@ private:
                          const std::string &keyboardProfileId,
                          const std::string &fanProfileId );
   void onPowerStateChanged( const QString &state );
-  QString resolveStateMapToProfileId( const QString &state );
   void updateAllProfiles();
   void updateActiveProfileIndex();
   void loadCustomProfilesFromSettings();

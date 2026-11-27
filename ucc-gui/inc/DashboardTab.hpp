@@ -56,6 +56,7 @@ namespace ucc
     /** Trigger an immediate water-cooler status query and emit waterCoolerStatusChanged. */
     void refreshWaterCoolerStatus();
     void refreshDriverHealth();
+    void setWaterCoolerSupported( bool supported );
     void setDriverHealth(const QJsonObject &status);
 
   signals:
@@ -131,6 +132,7 @@ namespace ucc
     bool m_waterCoolerAutoControl = true;
     QGridLayout *m_waterCoolerGrid = nullptr;
     QLabel *m_waterCoolerHeader = nullptr;
+    QWidget *m_waterCoolerCard = nullptr;
     QCheckBox *m_waterCoolerEnableCheckBox = nullptr;
 
     bool m_waterCoolerSupported = false;

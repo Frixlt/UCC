@@ -154,10 +154,10 @@ pub async fn run_keyboard(
             Ok(())
         }
         KeyboardAction::Set { json } => {
-            let res =
+            let res = crate::client::unwrap_write_rpc(
                 with_write_rpc_timeout(client.proxy().set_keyboard_backlight_states_json(json))
-                    .await
-                    .unwrap_or(false);
+                    .await,
+            );
             ok(res)
         }
         KeyboardAction::Color {
@@ -193,10 +193,10 @@ pub async fn run_keyboard(
                 "states": states,
             });
             let payload = serde_json::to_string(&root).unwrap_or_else(|_| "{}".to_string());
-            let res =
+            let res = crate::client::unwrap_write_rpc(
                 with_write_rpc_timeout(client.proxy().set_keyboard_backlight_states_json(&payload))
-                    .await
-                    .unwrap_or(false);
+                    .await,
+            );
             ok(res)
         }
         KeyboardAction::Profiles => {
@@ -257,13 +257,14 @@ pub async fn run_keyboard(
                                 _ => None,
                             };
                             if let Some(json_content) = payload {
-                                let res = with_write_rpc_timeout(
-                                    client
-                                        .proxy()
-                                        .set_keyboard_backlight_states_json(&json_content),
-                                )
-                                .await
-                                .unwrap_or(false);
+                                let res = crate::client::unwrap_write_rpc(
+                                    with_write_rpc_timeout(
+                                        client
+                                            .proxy()
+                                            .set_keyboard_backlight_states_json(&json_content),
+                                    )
+                                    .await,
+                                );
                                 return ok(res);
                             }
                         }

@@ -27,9 +27,9 @@ pub async fn run_brightness(
             Ok(())
         }
         BrightnessAction::Set { value } => {
-            let res = with_write_rpc_timeout(client.proxy().set_display_brightness(*value))
-                .await
-                .unwrap_or(false);
+            let res = crate::client::unwrap_write_rpc(
+                with_write_rpc_timeout(client.proxy().set_display_brightness(*value)).await,
+            );
             ok(res)
         }
     }
@@ -64,9 +64,9 @@ pub async fn run_webcam(
                     return Err(1);
                 }
             };
-            let res = with_write_rpc_timeout(client.proxy().set_webcam(enable))
-                .await
-                .unwrap_or(false);
+            let res = crate::client::unwrap_write_rpc(
+                with_write_rpc_timeout(client.proxy().set_webcam(enable)).await,
+            );
             ok(res)
         }
     }
@@ -101,9 +101,11 @@ pub async fn run_fnlock(
                     return Err(1);
                 }
             };
-            let res = with_write_rpc_timeout(client.proxy().set_fn_lock_status(enable))
-                .await
-                .is_ok();
+            let res = crate::client::unwrap_write_rpc(
+                with_write_rpc_timeout(client.proxy().set_fn_lock_status(enable))
+                    .await
+                    .map(|()| true),
+            );
             ok(res)
         }
     }

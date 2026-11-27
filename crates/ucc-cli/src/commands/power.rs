@@ -28,9 +28,9 @@ pub async fn run_power(
             Ok(())
         }
         PowerAction::Mode { mode } => {
-            let res = with_write_rpc_timeout(client.proxy().set_manual_power_mode(mode))
-                .await
-                .unwrap_or(false);
+            let res = crate::client::unwrap_write_rpc(
+                with_write_rpc_timeout(client.proxy().set_manual_power_mode(mode)).await,
+            );
             ok(res)
         }
     }

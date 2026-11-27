@@ -285,6 +285,23 @@ void MainWindow::onKeyboardBrightnessChanged( int value )
       m_UccdClient->setKeyboardBacklight( doc.toJson( QJsonDocument::Compact ).toStdString() );
     }
   }
+  else
+  {
+    if (m_keyboardBrightnessSlider && m_keyboardBrightnessSlider->isSliderDown()) return;
+
+    QJsonArray statesArray;
+    QJsonObject state;
+    state["mode"] = 0;
+    state["brightness"] = value;
+    state["red"] = m_singleZoneKeyboardColor.red();
+    state["green"] = m_singleZoneKeyboardColor.green();
+    state["blue"] = m_singleZoneKeyboardColor.blue();
+    statesArray.append( state );
+
+    QJsonDocument doc( statesArray );
+    if ( !m_UccdClient->setKeyboardBacklight( doc.toJson( QJsonDocument::Compact ).toStdString() ) )
+      statusBar()->showMessage( "Failed to set keyboard backlight", 3000 );
+  }
 }
 
 void MainWindow::onKeyboardColorClicked()
@@ -299,6 +316,7 @@ void MainWindow::onKeyboardColorClicked()
     else
     {
       // Fallback for single zone keyboards
+      m_singleZoneKeyboardColor = color;
       int brightness = m_keyboardBrightnessSlider->value();
 
       QJsonArray statesArray;
@@ -382,6 +400,31 @@ void MainWindow::onKeyboardProfileChanged(const QString& profileId)
     statesArray = doc.array();
   }
 
+  if ( !statesArray.isEmpty() )
+  {
+    if ( brightness >= 0 )
+    {
+      for ( int i = 0; i < statesArray.size(); ++i )
+      {
+        if ( statesArray[i].isObject() )
+        {
+          QJsonObject st = statesArray[i].toObject();
+          if ( !st.contains( "brightness" ) || st["brightness"].toInt( -1 ) < 0 )
+          {
+            st["brightness"] = brightness;
+            statesArray[i] = st;
+          }
+        }
+      }
+    }
+    if ( statesArray.first().isObject() )
+    {
+      const QJsonObject first = statesArray.first().toObject();
+      if ( first.contains( "red" ) && first.contains( "green" ) && first.contains( "blue" ) )
+        m_singleZoneKeyboardColor = QColor( first["red"].toInt(), first["green"].toInt(), first["blue"].toInt() );
+    }
+  }
+
   // Apply colors to keyboard visualizer if available
   if ( !statesArray.isEmpty() && m_keyboardVisualizer )
   {
@@ -396,6 +439,8 @@ void MainWindow::onKeyboardProfileChanged(const QString& profileId)
   {
     QJsonObject wrapper;
     wrapper[ "keyboardProfileId" ] = profileId;
+    if ( brightness >= 0 )
+      wrapper[ "brightness" ] = brightness;
     wrapper[ "states" ] = statesArray;
     QJsonDocument wrapperDoc( wrapper );
     if ( not m_UccdClient->setKeyboardBacklight( wrapperDoc.toJson( QJsonDocument::Compact ).toStdString() ) )

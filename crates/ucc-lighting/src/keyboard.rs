@@ -332,7 +332,17 @@ impl KeyboardBacklightController {
         write_res?;
         release_res?;
 
-        self.current_states = states.to_vec();
+        if states.len() < self.current_states.len() {
+            let shared_brightness = states[0].brightness;
+            for (idx, state) in states.iter().enumerate() {
+                self.current_states[idx] = *state;
+            }
+            for untouched in &mut self.current_states[states.len()..] {
+                untouched.brightness = shared_brightness;
+            }
+        } else {
+            self.current_states = states.to_vec();
+        }
         Ok(())
     }
 

@@ -206,16 +206,15 @@ export class UccdClient {
     }
 
     async getFanSpeedRPM() {
-        const pct = await this._readFanData('GetFanDataCPU', 'speed');
-        return pct !== null ? pct * 60 : -1;
+        return await this._readFanData('GetFanDataCPU', 'rpm') ?? -1;
     }
 
     async getGpuFanSpeedRPM() {
-        const g1 = await this._readFanData('GetFanDataGPU1', 'speed');
-        const g2 = await this._readFanData('GetFanDataGPU2', 'speed');
-        if (g1 !== null && g2 !== null) return Math.round((g1 + g2) / 2) * 60;
-        if (g1 !== null) return g1 * 60;
-        if (g2 !== null) return g2 * 60;
+        const g1 = await this._readFanData('GetFanDataGPU1', 'rpm');
+        const g2 = await this._readFanData('GetFanDataGPU2', 'rpm');
+        if (g1 !== null && g2 !== null) return Math.round((g1 + g2) / 2);
+        if (g1 !== null) return g1;
+        if (g2 !== null) return g2;
         return -1;
     }
 

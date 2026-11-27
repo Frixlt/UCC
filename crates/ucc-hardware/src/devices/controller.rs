@@ -10,30 +10,31 @@ use ucc_core::UccProfile;
 
 pub type ProcessRunner = Arc<dyn Fn(&str, &[&str]) -> bool + Send + Sync>;
 
-fn resolve_trusted_program(program: &str) -> &str {
-    if program.contains('/') {
-        return program;
-    }
-    for dir in ["/usr/bin", "/usr/sbin", "/bin", "/sbin"] {
-        let candidate = Path::new(dir).join(program);
-        if candidate.exists() {
-            // Return static path literals when possible, else fall through
-            match (dir, program) {
-                ("/usr/bin", "nvidia-smi") => return "/usr/bin/nvidia-smi",
-                ("/usr/bin", "systemctl") => return "/usr/bin/systemctl",
-                ("/usr/bin", "iw") => return "/usr/bin/iw",
-                ("/usr/sbin", "iw") => return "/usr/sbin/iw",
-                ("/sbin", "iw") => return "/sbin/iw",
-                _ => {}
-            }
+fn resolve_trusted_program(program: &str) -> Option<&'static str> {
+    match program {
+        "nvidia-smi" | "/usr/bin/nvidia-smi" => Path::new("/usr/bin/nvidia-smi")
+            .exists()
+            .then_some("/usr/bin/nvidia-smi"),
+        "systemctl" | "/usr/bin/systemctl" => Path::new("/usr/bin/systemctl")
+            .exists()
+            .then_some("/usr/bin/systemctl"),
+        "/bin/systemctl" => Path::new("/bin/systemctl")
+            .exists()
+            .then_some("/bin/systemctl"),
+        "iw" | "/usr/bin/iw" | "/usr/sbin/iw" | "/sbin/iw" => {
+            ["/usr/bin/iw", "/usr/sbin/iw", "/sbin/iw"]
+                .into_iter()
+                .find(|p| Path::new(p).exists())
         }
+        _ => None,
     }
-    program
 }
 
 pub fn default_process_runner() -> ProcessRunner {
     Arc::new(|program: &str, args: &[&str]| {
-        let resolved = resolve_trusted_program(program);
+        let Some(resolved) = resolve_trusted_program(program) else {
+            return false;
+        };
         let mut child = match std::process::Command::new(resolved).args(args).spawn() {
             Ok(c) => c,
             Err(_) => return false,

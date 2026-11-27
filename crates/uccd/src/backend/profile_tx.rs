@@ -895,11 +895,18 @@ impl LiveUccdBackend {
                         }
                     }
                     if let Some(updates) = persist_state_updates {
-                        if updates.iter().any(|(_, pid)| !s.profiles.contains_key(pid)) {
+                        if updates
+                            .iter()
+                            .any(|(_, pid)| !pid.is_empty() && !s.profiles.contains_key(pid))
+                        {
                             return None;
                         }
                         for (k, pid) in updates {
-                            s.state_map.insert(k.clone(), pid.clone());
+                            if pid.is_empty() {
+                                s.state_map.remove(k);
+                            } else {
+                                s.state_map.insert(k.clone(), pid.clone());
+                            }
                         }
                     }
                     Some(())
@@ -1981,14 +1988,17 @@ impl LiveUccdBackend {
                             }
                         }
                         if let Some(updates) = persist_state_updates {
-                            if updates
-                                .iter()
-                                .any(|(_, prof_id)| !s.profiles.contains_key(prof_id))
-                            {
+                            if updates.iter().any(|(_, prof_id)| {
+                                !prof_id.is_empty() && !s.profiles.contains_key(prof_id)
+                            }) {
                                 return None;
                             }
                             for (state_key, prof_id) in updates {
-                                s.state_map.insert(state_key.clone(), prof_id.clone());
+                                if prof_id.is_empty() {
+                                    s.state_map.remove(state_key);
+                                } else {
+                                    s.state_map.insert(state_key.clone(), prof_id.clone());
+                                }
                             }
                         }
                         Some(())

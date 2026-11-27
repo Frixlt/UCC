@@ -27,6 +27,16 @@ pub trait HidDeviceTransport: Send + Sync {
     fn enumerate_devices(&self) -> Result<Vec<HidDeviceInfo>, LightingError>;
     fn send_feature_report(&self, path: &str, report: &[u8]) -> Result<(), LightingError>;
     fn get_feature_report(&self, path: &str, len: usize) -> Result<Vec<u8>, LightingError>;
+
+    /// Optional HID usage page metadata for interface disambiguation (`P0-12`).
+    fn device_usage_page(&self, _path: &str) -> Option<u16> {
+        None
+    }
+
+    /// Optional USB HID interface number for interface disambiguation (`P0-12`).
+    fn device_interface_number(&self, _path: &str) -> Option<i32> {
+        None
+    }
 }
 
 /// Thread-safe in-memory HID feature-report mock for protocol & calibration testing.
@@ -102,12 +112,30 @@ impl UniwillHidTransport {
         }
     }
 
+    fn is_vendor_lighting_interface(&self, dev: &HidDeviceInfo) -> bool {
+        if let Some(usage_page) = self.hid.device_usage_page(&dev.path) {
+            return usage_page >= 0xFF00;
+        }
+        if let Some(interface_number) = self.hid.device_interface_number(&dev.path) {
+            return interface_number == 1;
+        }
+        if let Some(hidraw_name) = dev.path.strip_prefix("/dev/") {
+            let iface_path = format!("/sys/class/hidraw/{hidraw_name}/device/bInterfaceNumber");
+            if let Ok(raw) = std::fs::read_to_string(iface_path) {
+                if let Ok(iface_num) = i32::from_str_radix(raw.trim(), 16) {
+                    return iface_num == 1;
+                }
+            }
+        }
+        true
+    }
+
     fn find_device(&self, product_ids: &[u16]) -> Result<Option<HidDeviceInfo>, LightingError> {
-        Ok(self
-            .hid
-            .enumerate_devices()?
-            .into_iter()
-            .find(|d| d.vendor_id == ITE_VENDOR_ID && product_ids.contains(&d.product_id)))
+        Ok(self.hid.enumerate_devices()?.into_iter().find(|d| {
+            d.vendor_id == ITE_VENDOR_ID
+                && product_ids.contains(&d.product_id)
+                && self.is_vendor_lighting_interface(d)
+        }))
     }
 }
 
@@ -138,7 +166,8 @@ impl LightingTransport for UniwillHidTransport {
         let Some(dev) = self.find_device(&[ITE_KEYBOARD_PRODUCT_ID])? else {
             return Err(LightingError::Unavailable);
         };
-        let level = brightness.min(255) as u8;
+        // ITE 048D:600B hardware brightness register accepts 0..=50 (`P0-11`).
+        let level = ((brightness.min(255) * 50 + 127) / 255).min(50) as u8;
         let packet = [0x08, 0x02, 0x01, 0x05, level, 0, 0, 0];
         self.hid.send_feature_report(&dev.path, &packet)
     }
@@ -147,13 +176,18 @@ impl LightingTransport for UniwillHidTransport {
         let Some(dev) = self.find_device(&[ITE_KEYBOARD_PRODUCT_ID])? else {
             return Err(LightingError::Unavailable);
         };
-        let mut frame = Vec::with_capacity(2 + colors.len() * 3);
-        frame.push(0x14);
-        frame.push(colors.len().min(255) as u8);
-        for c in colors {
-            frame.extend_from_slice(&[c.r, c.g, c.b]);
+        // Chunk into <=64-byte USB HID feature reports (max 16 RGB zones per 51-byte packet, `P0-10`).
+        const ZONES_PER_CHUNK: usize = 16;
+        for (chunk_idx, chunk) in colors.chunks(ZONES_PER_CHUNK).enumerate() {
+            let mut frame = Vec::with_capacity(3 + chunk.len() * 3);
+            frame.push(0x14);
+            frame.push(chunk_idx as u8);
+            frame.push(chunk.len() as u8);
+            for c in chunk {
+                frame.extend_from_slice(&[c.r, c.g, c.b]);
+            }
+            self.hid.send_feature_report(&dev.path, &frame)?;
         }
-        self.hid.send_feature_report(&dev.path, &frame)?;
         *self.cached_colors.lock().unwrap() = colors.to_vec();
         Ok(())
     }
@@ -186,7 +220,11 @@ impl LightingTransport for UniwillHidTransport {
         let Some(dev) = self.find_device(&ITE_LIGHTBAR_PRODUCT_IDS)? else {
             return Err(LightingError::Unavailable);
         };
-        let packet = [0x14, 0x01, rgb.r, rgb.g, rgb.b, 0, 0, 0];
-        self.hid.send_feature_report(&dev.path, &packet)
+        let zones: u8 = if dev.product_id == 0x7000 { 5 } else { 4 };
+        for zone in 1..=zones {
+            let packet = [0x14, zone, rgb.r, rgb.g, rgb.b, 0, 0, 0];
+            self.hid.send_feature_report(&dev.path, &packet)?;
+        }
+        Ok(())
     }
 }

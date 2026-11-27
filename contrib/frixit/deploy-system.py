@@ -41,7 +41,23 @@ class Deployment:
         self.state = None
 
     def path(self, absolute):
-        return self.root / str(absolute).lstrip('/')
+        raw = str(absolute)
+        parsed = Path(raw)
+        if not raw.startswith('/') or '..' in parsed.parts:
+            raise ValueError('Path traversal outside system root is forbidden: ' + raw)
+        root_resolved = self.root.resolve()
+        candidate = (root_resolved / raw.lstrip('/')).resolve(strict=False)
+        if not candidate.is_relative_to(root_resolved):
+            raise ValueError('Path escapes system root: ' + raw)
+        # Check non-terminal / final components inside root are not symlinks escaping root
+        cur = root_resolved
+        for part in raw.lstrip('/').split('/'):
+            if not part:
+                continue
+            cur = cur / part
+            if cur.is_symlink() and not cur.resolve(strict=False).is_relative_to(root_resolved):
+                raise ValueError('Symlink escapes system root: ' + raw)
+        return candidate
 
     def save(self):
         target = self.backup / 'state.json'
@@ -53,10 +69,13 @@ class Deployment:
     def verify_bundle(self):
         manifest = json.loads((self.bundle / 'deployment.json').read_text())
         name = manifest['package']
-        if Path(name).name != name or not name.startswith(PACKAGE + '-'):
+        if Path(name).name != name or name in ('.', '..') or '/' in name or '\\' in name or not name.startswith(PACKAGE + '-'):
             raise ValueError('Invalid package filename')
-        package = self.bundle / name
-        if package.is_symlink() or digest(package) != manifest['packageSha256']:
+        raw_package = self.bundle / name
+        if raw_package.is_symlink():
+            raise ValueError('Package checksum mismatch')
+        package = raw_package.resolve()
+        if package.parent != self.bundle or digest(package) != manifest['packageSha256']:
             raise ValueError('Package checksum mismatch')
         for item in manifest['inputs']:
             if digest(self.path(item['path'])) != item['sha256']:
@@ -73,6 +92,14 @@ class Deployment:
         self.backup = self.path('/var/lib/ucc/deployments') / (stamp + '-' + uuid.uuid4().hex[:8])
         self.backup.mkdir(mode=0o700, parents=True)
         self.backup.chmod(0o700)
+        stage_dir = self.backup / 'stage'
+        stage_dir.mkdir(mode=0o700, parents=True)
+        stage_dir.chmod(0o700)
+        staged_package = stage_dir / package.name
+        shutil.copy2(package, staged_package)
+        staged_package.chmod(0o600)
+        if digest(staged_package) != manifest['packageSha256']:
+            raise ValueError('Staged package checksum mismatch')
         self.state = {'phase': 'prepared', 'package': PACKAGE, 'manifest': manifest,
                       'packageInstalled': False, 'packageInstallStarted': False, 'servicesTouched': False, 'units': {}}
         for unit in OLD_UNITS + NEW_UNITS:
@@ -84,9 +111,11 @@ class Deployment:
             if source.is_dir():
                 shutil.copytree(source, self.backup / name.lstrip('/'), symlinks=True)
         for item in manifest['inputs']:
-            destination = self.backup / 'inputs' / item['path'].lstrip('/')
+            source = self.path(item['path'])
+            rel_input = source.resolve().relative_to(self.root.resolve())
+            destination = self.backup / 'inputs' / rel_input
             destination.parent.mkdir(parents=True, exist_ok=True)
-            shutil.copy2(self.path(item['path']), destination)
+            shutil.copy2(source, destination)
         shutil.copy2(__file__, self.backup / 'deploy-system.py')
         self.save()
         try:
@@ -95,7 +124,7 @@ class Deployment:
             self.run(['pacman', '-S', '--needed', '--noconfirm', 'qt6-charts'])
             self.state['packageInstallStarted'] = True
             self.save()
-            self.run(['pacman', '-U', '--noconfirm', package])
+            self.run(['pacman', '-U', '--noconfirm', staged_package])
             self.state['packageInstalled'] = True
             self.save()
             self.run(['/usr/lib/ucc/ucc-import-check', '/etc/ucc/settings', self.bundle / 'capabilities.json'])

@@ -51,21 +51,21 @@ pub async fn run_cooler(
             Ok(())
         }
         CoolerAction::Enable => {
-            let res = with_write_rpc_timeout(client.proxy().enable_water_cooler(true))
-                .await
-                .unwrap_or(false);
+            let res = crate::client::unwrap_write_rpc(
+                with_write_rpc_timeout(client.proxy().enable_water_cooler(true)).await,
+            );
             ok(res)
         }
         CoolerAction::Disable => {
-            let res = with_write_rpc_timeout(client.proxy().enable_water_cooler(false))
-                .await
-                .unwrap_or(false);
+            let res = crate::client::unwrap_write_rpc(
+                with_write_rpc_timeout(client.proxy().enable_water_cooler(false)).await,
+            );
             ok(res)
         }
         CoolerAction::Fan { percent } => {
-            let res = with_write_rpc_timeout(client.proxy().set_water_cooler_fan_speed(*percent))
-                .await
-                .unwrap_or(false);
+            let res = crate::client::unwrap_write_rpc(
+                with_write_rpc_timeout(client.proxy().set_water_cooler_fan_speed(*percent)).await,
+            );
             ok(res)
         }
         CoolerAction::Pump { code } => {
@@ -75,23 +75,24 @@ pub async fn run_cooler(
                 );
                 return Err(1);
             }
-            let res = with_write_rpc_timeout(client.proxy().set_water_cooler_pump_voltage(*code))
-                .await
-                .unwrap_or(false);
+            let res = crate::client::unwrap_write_rpc(
+                with_write_rpc_timeout(client.proxy().set_water_cooler_pump_voltage(*code)).await,
+            );
             ok(res)
         }
         CoolerAction::Led { r, g, b, mode } => {
-            let res = with_write_rpc_timeout(
-                client.proxy().set_water_cooler_led_color(*r, *g, *b, *mode),
-            )
-            .await
-            .unwrap_or(false);
+            let res = crate::client::unwrap_write_rpc(
+                with_write_rpc_timeout(
+                    client.proxy().set_water_cooler_led_color(*r, *g, *b, *mode),
+                )
+                .await,
+            );
             ok(res)
         }
         CoolerAction::LedOff => {
-            let res = with_write_rpc_timeout(client.proxy().turn_off_water_cooler_led())
-                .await
-                .unwrap_or(false);
+            let res = crate::client::unwrap_write_rpc(
+                with_write_rpc_timeout(client.proxy().turn_off_water_cooler_led()).await,
+            );
             ok(res)
         }
     }

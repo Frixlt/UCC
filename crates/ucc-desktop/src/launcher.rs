@@ -137,9 +137,10 @@ pub async fn activate_or_launch_gui(
                 "Preview ucc-gui instance not running and no preview binary available",
             )
         })?;
-        return spawn_gui_binary(&bin, activation_token);
+        spawn_gui_binary(&bin, activation_token)
+    } else {
+        launch_gui(activation_token)
     }
-    launch_gui(activation_token)
 }
 
 #[cfg(test)]

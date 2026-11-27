@@ -120,6 +120,32 @@ DashboardTab::DashboardTab( SystemMonitor *systemMonitor, ProfileManager *profil
   }
 }
 
+void DashboardTab::setWaterCoolerSupported( bool supported )
+{
+  m_waterCoolerSupported = supported;
+  if ( m_waterCoolerHeader )
+    m_waterCoolerHeader->setVisible( supported );
+  if ( m_waterCoolerCard )
+    m_waterCoolerCard->setVisible( supported );
+  if ( supported )
+  {
+    if ( !m_waterCoolerPollTimer )
+    {
+      m_waterCoolerPollTimer = new QTimer( this );
+      connect( m_waterCoolerPollTimer, &QTimer::timeout, this, &DashboardTab::updateWaterCoolerStatus );
+    }
+    if ( !m_waterCoolerPollTimer->isActive() )
+    {
+      m_waterCoolerPollTimer->start( 2000 );
+      updateWaterCoolerStatus();
+    }
+  }
+  else if ( m_waterCoolerPollTimer )
+  {
+    m_waterCoolerPollTimer->stop();
+  }
+}
+
 void DashboardTab::refreshDriverHealth()
 {
   if(m_driverHealthPending) return;
@@ -256,7 +282,8 @@ void DashboardTab::setupUI()
   waterLayout->addWidget(m_waterCoolerEnableCheckBox,0,Qt::AlignBottom);
   auto *waterControls=new QPushButton("Open controls");waterLayout->addWidget(waterControls,0,Qt::AlignBottom);
   connect(waterControls,&QPushButton::clicked,this,[this]{if(auto *navigation=window()->findChild<QListWidget *>("navigation")) navigation->setCurrentRow(3);});
-  water->setVisible(m_waterCoolerSupported);layout->addWidget(water);
+  m_waterCoolerCard = water;
+  m_waterCoolerCard->setVisible(m_waterCoolerSupported);layout->addWidget(m_waterCoolerCard);
   new HardwareTab(m_systemMonitor,body);
   layout->addStretch();
 }

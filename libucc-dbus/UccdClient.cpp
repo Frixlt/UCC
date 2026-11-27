@@ -37,6 +37,32 @@
 namespace ucc
 {
 
+static int methodTimeoutMs( const QString &method )
+{
+  if ( method == QLatin1String( "ApplyProfileJSON" ) ||
+       method == QLatin1String( "SaveCustomProfile" ) ||
+       method == QLatin1String( "DeleteCustomProfile" ) ||
+       method == QLatin1String( "SetBatchStateMap" ) ||
+       method == QLatin1String( "SetStateMap" ) ||
+       method == QLatin1String( "SetActiveProfile" ) ||
+       method == QLatin1String( "SetFanProfiles" ) ||
+       method == QLatin1String( "SetKeyboardBacklight" ) ||
+       method == QLatin1String( "SetKeyboardBacklightStatesJSON" ) ||
+       method == QLatin1String( "SetLightbarSettingsJSON" ) ||
+       method == QLatin1String( "SetPowerDeviceSettingsJSON" ) )
+    return 35000;
+  if ( method.startsWith( QLatin1String( "Set" ) ) ||
+       method.startsWith( QLatin1String( "Enable" ) ) ||
+       method.startsWith( QLatin1String( "Turn" ) ) ||
+       method.startsWith( QLatin1String( "Reset" ) ) ||
+       method.startsWith( QLatin1String( "Trigger" ) ) ||
+       method.startsWith( QLatin1String( "Scan" ) ) ||
+       method.startsWith( QLatin1String( "Register" ) ) ||
+       method.startsWith( QLatin1String( "Unregister" ) ) )
+    return 5000;
+  return 1500;
+}
+
 void UccdClient::requestMonitoringSnapshot(bool includeControls, std::function<void(QVariantMap)> ready)
 {
   if (!m_connected) { ready({}); return; }
@@ -195,7 +221,10 @@ std::optional< T > UccdClient::callMethod( const QString &method ) const
     return std::nullopt;
   }
 
+  const int prevTimeout = m_interface->timeout();
+  m_interface->setTimeout( methodTimeoutMs( method ) );
   QDBusReply< T > reply = m_interface->call( method );
+  m_interface->setTimeout( prevTimeout );
   if ( reply.isValid() )
   {
     return reply.value();
@@ -215,7 +244,10 @@ std::optional< T > UccdClient::callMethod( const QString &method, const Args &..
     return std::nullopt;
   }
 
+  const int prevTimeout = m_interface->timeout();
+  m_interface->setTimeout( methodTimeoutMs( method ) );
   QDBusReply< T > reply = m_interface->call( method, args... );
+  m_interface->setTimeout( prevTimeout );
   if ( reply.isValid() )
   {
     return reply.value();
@@ -234,7 +266,10 @@ bool UccdClient::callVoidMethod( const QString &method ) const
     return false;
   }
 
+  const int prevTimeout = m_interface->timeout();
+  m_interface->setTimeout( methodTimeoutMs( method ) );
   QDBusMessage reply = m_interface->call( method );
+  m_interface->setTimeout( prevTimeout );
   if ( reply.type() == QDBusMessage::ErrorMessage )
   {
     qWarning() << "DBus call failed:" << method << "-" << reply.errorMessage();
@@ -251,7 +286,10 @@ bool UccdClient::callVoidMethod( const QString &method, const Args &...args ) co
     return false;
   }
 
+  const int prevTimeout = m_interface->timeout();
+  m_interface->setTimeout( methodTimeoutMs( method ) );
   QDBusMessage reply = m_interface->call( method, args... );
+  m_interface->setTimeout( prevTimeout );
   if ( reply.type() == QDBusMessage::ErrorMessage )
   {
     qWarning() << "DBus call failed:" << method << "-" << reply.errorMessage();
@@ -1096,14 +1134,17 @@ std::optional< int > readFanDataValue( QDBusInterface *iface, const QString &met
   return std::nullopt;
 }
 
-std::optional< int > readJsonInt( QDBusInterface *iface, const QString &method, const QString &key )
+std::optional< int > readJsonInt( QDBusInterface *iface, const QString &method, const QString &key, bool allowNegative = false )
 {
   if ( !iface )
   {
     return std::nullopt;
   }
 
+  const int prevTimeout = iface->timeout();
+  iface->setTimeout( 1500 );
   QDBusMessage reply = iface->call( method );
+  iface->setTimeout( prevTimeout );
   if ( reply.type() == QDBusMessage::ErrorMessage || reply.arguments().isEmpty() )
   {
     return std::nullopt;
@@ -1117,13 +1158,13 @@ std::optional< int > readJsonInt( QDBusInterface *iface, const QString &method, 
   }
 
   QJsonObject obj = doc.object();
-  if ( !obj.contains( key ) )
+  if ( !obj.contains( key ) || !obj[ key ].isDouble() )
   {
     return std::nullopt;
   }
 
   int val = obj[ key ].toInt();
-  return ( val >= 0 ) ? std::optional< int >( val ) : std::nullopt;
+  return ( allowNegative || val >= 0 ) ? std::optional< int >( val ) : std::nullopt;
 }
 
 std::optional< double > readJsonDouble( QDBusInterface *iface, const QString &method, const QString &key )
@@ -1296,13 +1337,13 @@ std::optional< int > UccdClient::getDGpuCurrentPstate()
 
 std::optional< int > UccdClient::getDGpuGrClockOffsetMHz()
 {
-  auto v = readJsonInt( m_interface.get(), "GetDGpuInfoValuesJSON", "grClockOffsetMHz" );
+  auto v = readJsonInt( m_interface.get(), "GetDGpuInfoValuesJSON", "grClockOffsetMHz", true );
   return ( v && *v != -999 ) ? v : std::nullopt;
 }
 
 std::optional< int > UccdClient::getDGpuMemClockOffsetMHz()
 {
-  auto v = readJsonInt( m_interface.get(), "GetDGpuInfoValuesJSON", "memClockOffsetMHz" );
+  auto v = readJsonInt( m_interface.get(), "GetDGpuInfoValuesJSON", "memClockOffsetMHz", true );
   return ( v && *v != -999 ) ? v : std::nullopt;
 }
 

@@ -99,7 +99,12 @@ const MAX_PER_SENDER_READ_QUEUED: usize = 64;
 const PER_SENDER_READ_WAIT_TIMEOUT: Duration = Duration::from_millis(100);
 const MAX_PER_SENDER_INTERACTIVE_AUTH: usize = 2;
 
-fn interactive_polkit_semaphore() -> &'static Arc<Semaphore> {
+fn control_polkit_semaphore() -> &'static Arc<Semaphore> {
+    static SEM: OnceLock<Arc<Semaphore>> = OnceLock::new();
+    SEM.get_or_init(|| Arc::new(Semaphore::new(4)))
+}
+
+fn manage_hardware_polkit_semaphore() -> &'static Arc<Semaphore> {
     static SEM: OnceLock<Arc<Semaphore>> = OnceLock::new();
     SEM.get_or_init(|| Arc::new(Semaphore::new(4)))
 }
@@ -113,7 +118,8 @@ fn read_polkit_semaphore() -> &'static Arc<Semaphore> {
 struct SenderAuthCounts {
     read_sem: Arc<Semaphore>,
     read_queued: usize,
-    interactive: usize,
+    control: usize,
+    manage_hardware: usize,
 }
 
 impl Default for SenderAuthCounts {
@@ -121,7 +127,8 @@ impl Default for SenderAuthCounts {
         Self {
             read_sem: Arc::new(Semaphore::new(MAX_PER_SENDER_READ_AUTH)),
             read_queued: 0,
-            interactive: 0,
+            control: 0,
+            manage_hardware: 0,
         }
     }
 }
@@ -133,7 +140,7 @@ fn sender_inflight_auth() -> &'static Mutex<HashMap<String, SenderAuthCounts>> {
 
 struct SenderAuthGuard {
     sender: String,
-    interactive: bool,
+    action: AuthAction,
     _read_permit: Option<tokio::sync::OwnedSemaphorePermit>,
 }
 
@@ -153,7 +160,7 @@ impl Drop for SenderQueueSlot {
             .unwrap_or_else(|e| e.into_inner());
         if let Some(entry) = map.get_mut(&self.sender_key) {
             entry.read_queued = entry.read_queued.saturating_sub(1);
-            if entry.read_queued == 0 && entry.interactive == 0 {
+            if entry.read_queued == 0 && entry.control == 0 && entry.manage_hardware == 0 {
                 map.remove(&self.sender_key);
             }
         }
@@ -161,34 +168,52 @@ impl Drop for SenderQueueSlot {
 }
 
 impl SenderAuthGuard {
-    async fn acquire(sender_key: &str, interactive: bool) -> Option<Self> {
-        if interactive {
-            let mut map = sender_inflight_auth()
-                .lock()
-                .unwrap_or_else(|e| e.into_inner());
-            let entry = map.entry(sender_key.to_string()).or_default();
-            if entry.interactive >= MAX_PER_SENDER_INTERACTIVE_AUTH {
-                return None;
+    async fn acquire(uid_key: &str, action: AuthAction) -> Option<Self> {
+        match action {
+            AuthAction::Control => {
+                let mut map = sender_inflight_auth()
+                    .lock()
+                    .unwrap_or_else(|e| e.into_inner());
+                let entry = map.entry(uid_key.to_string()).or_default();
+                if entry.control >= MAX_PER_SENDER_INTERACTIVE_AUTH {
+                    return None;
+                }
+                entry.control += 1;
+                return Some(Self {
+                    sender: uid_key.to_string(),
+                    action,
+                    _read_permit: None,
+                });
             }
-            entry.interactive += 1;
-            return Some(Self {
-                sender: sender_key.to_string(),
-                interactive: true,
-                _read_permit: None,
-            });
+            AuthAction::ManageHardware => {
+                let mut map = sender_inflight_auth()
+                    .lock()
+                    .unwrap_or_else(|e| e.into_inner());
+                let entry = map.entry(uid_key.to_string()).or_default();
+                if entry.manage_hardware >= MAX_PER_SENDER_INTERACTIVE_AUTH {
+                    return None;
+                }
+                entry.manage_hardware += 1;
+                return Some(Self {
+                    sender: uid_key.to_string(),
+                    action,
+                    _read_permit: None,
+                });
+            }
+            AuthAction::Read => {}
         }
 
         let mut queue_slot = {
             let mut map = sender_inflight_auth()
                 .lock()
                 .unwrap_or_else(|e| e.into_inner());
-            let entry = map.entry(sender_key.to_string()).or_default();
+            let entry = map.entry(uid_key.to_string()).or_default();
             if entry.read_queued >= MAX_PER_SENDER_READ_QUEUED {
                 return None;
             }
             entry.read_queued += 1;
             SenderQueueSlot {
-                sender_key: sender_key.to_string(),
+                sender_key: uid_key.to_string(),
                 sem: Arc::clone(&entry.read_sem),
                 transferred: false,
             }
@@ -208,8 +233,8 @@ impl SenderAuthGuard {
         queue_slot.transferred = true;
         drop(queue_slot);
         Some(Self {
-            sender: sender_key.to_string(),
-            interactive: false,
+            sender: uid_key.to_string(),
+            action: AuthAction::Read,
             _read_permit: Some(permit),
         })
     }
@@ -221,12 +246,14 @@ impl Drop for SenderAuthGuard {
             .lock()
             .unwrap_or_else(|e| e.into_inner());
         if let Some(entry) = map.get_mut(&self.sender) {
-            if self.interactive {
-                entry.interactive = entry.interactive.saturating_sub(1);
-            } else {
-                entry.read_queued = entry.read_queued.saturating_sub(1);
+            match self.action {
+                AuthAction::Control => entry.control = entry.control.saturating_sub(1),
+                AuthAction::ManageHardware => {
+                    entry.manage_hardware = entry.manage_hardware.saturating_sub(1)
+                }
+                AuthAction::Read => entry.read_queued = entry.read_queued.saturating_sub(1),
             }
-            if entry.read_queued == 0 && entry.interactive == 0 {
+            if entry.read_queued == 0 && entry.control == 0 && entry.manage_hardware == 0 {
                 map.remove(&self.sender);
             }
         }
@@ -251,22 +278,6 @@ impl PolkitAuthorizer {
         let sender = match sender {
             Some(s) if !s.is_empty() => s,
             _ => return false,
-        };
-
-        let is_interactive = !matches!(action, AuthAction::Read);
-        let sender_key = format!("{}:{sender}", conn.server_guid());
-        let Some(_sender_guard) = SenderAuthGuard::acquire(&sender_key, is_interactive).await
-        else {
-            tracing::warn!(
-                "Rejecting Polkit check for sender '{}': concurrent {} limit exceeded",
-                sender,
-                if is_interactive {
-                    "interactive"
-                } else {
-                    "read"
-                }
-            );
-            return false;
         };
 
         let bus_name = match zbus::names::BusName::try_from(sender) {
@@ -298,6 +309,26 @@ impl PolkitAuthorizer {
             return true;
         }
 
+        // Key interactive quotas (`Control`, `ManageHardware`) by Unix UID so opening extra
+        // D-Bus connections cannot multiply interactive Polkit prompts (`M-SEC-03`), while keeping
+        // non-interactive `Read` quotas scoped per D-Bus connection so one bursty client cannot
+        // starve other processes (`t_sec_ipc03`).
+        let quota_key = match action {
+            AuthAction::Read => format!("{}:read:{sender}", conn.server_guid()),
+            AuthAction::Control | AuthAction::ManageHardware => {
+                format!("{}:uid:{uid}", conn.server_guid())
+            }
+        };
+        let Some(_sender_guard) = SenderAuthGuard::acquire(&quota_key, action).await else {
+            tracing::warn!(
+                "Rejecting Polkit check for uid {} (sender '{}'): concurrent {:?} limit exceeded",
+                uid,
+                sender,
+                action
+            );
+            return false;
+        };
+
         let authority = match PolicyKitAuthorityProxy::new(conn).await {
             Ok(a) => a,
             Err(e) => {
@@ -316,25 +347,39 @@ impl PolkitAuthorizer {
             AuthAction::Control | AuthAction::ManageHardware => (0x1u32, Duration::from_secs(30)),
         };
 
-        let (_interactive_permit, _read_permit) = if flags != 0 {
-            match tokio::time::timeout(
-                Duration::from_secs(5),
-                Arc::clone(interactive_polkit_semaphore()).acquire_owned(),
-            )
-            .await
-            {
-                Ok(Ok(permit)) => (Some(permit), None),
-                _ => return false,
+        let _permit = match action {
+            AuthAction::Control => {
+                match tokio::time::timeout(
+                    Duration::from_secs(5),
+                    Arc::clone(control_polkit_semaphore()).acquire_owned(),
+                )
+                .await
+                {
+                    Ok(Ok(permit)) => permit,
+                    _ => return false,
+                }
             }
-        } else {
-            match tokio::time::timeout(
-                Duration::from_secs(2),
-                Arc::clone(read_polkit_semaphore()).acquire_owned(),
-            )
-            .await
-            {
-                Ok(Ok(permit)) => (None, Some(permit)),
-                _ => return false,
+            AuthAction::ManageHardware => {
+                match tokio::time::timeout(
+                    Duration::from_secs(5),
+                    Arc::clone(manage_hardware_polkit_semaphore()).acquire_owned(),
+                )
+                .await
+                {
+                    Ok(Ok(permit)) => permit,
+                    _ => return false,
+                }
+            }
+            AuthAction::Read => {
+                match tokio::time::timeout(
+                    Duration::from_secs(2),
+                    Arc::clone(read_polkit_semaphore()).acquire_owned(),
+                )
+                .await
+                {
+                    Ok(Ok(permit)) => permit,
+                    _ => return false,
+                }
             }
         };
 
@@ -510,7 +555,7 @@ mod tests {
         let mut weak_sem: Option<Weak<Semaphore>> = None;
 
         for iter in 0..100 {
-            let guard = SenderAuthGuard::acquire(&sender_key, false)
+            let guard = SenderAuthGuard::acquire(&sender_key, AuthAction::Read)
                 .await
                 .expect("read auth guard acquire must succeed");
             if iter == 0 {
@@ -542,7 +587,7 @@ mod tests {
         for _ in 0..8 {
             let key = sender_key.clone();
             tasks.push(tokio::spawn(async move {
-                let guard = SenderAuthGuard::acquire(&key, false).await;
+                let guard = SenderAuthGuard::acquire(&key, AuthAction::Read).await;
                 if let Some(_g) = guard {
                     tokio::time::sleep(Duration::from_millis(20)).await;
                     true
@@ -562,13 +607,18 @@ mod tests {
             "8 concurrent read auth checks must all succeed within per-sender cap"
         );
 
-        let g1 = SenderAuthGuard::acquire(&sender_key, true).await;
-        let g2 = SenderAuthGuard::acquire(&sender_key, true).await;
-        let g3 = SenderAuthGuard::acquire(&sender_key, true).await;
+        let g1 = SenderAuthGuard::acquire(&sender_key, AuthAction::Control).await;
+        let g2 = SenderAuthGuard::acquire(&sender_key, AuthAction::Control).await;
+        let g3 = SenderAuthGuard::acquire(&sender_key, AuthAction::Control).await;
         assert!(g1.is_some() && g2.is_some());
         assert!(
             g3.is_none(),
             "interactive auth limit ({MAX_PER_SENDER_INTERACTIVE_AUTH}) must stay enforced"
+        );
+        let mh1 = SenderAuthGuard::acquire(&sender_key, AuthAction::ManageHardware).await;
+        assert!(
+            mh1.is_some(),
+            "ManageHardware quota must stay isolated from saturated Control quota"
         );
     }
 }

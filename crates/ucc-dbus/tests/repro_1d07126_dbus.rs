@@ -322,3 +322,71 @@ fn n29_polkit_timeout_sends_cancel_check_authorization() {
         "N29: auth.rs must define and invoke CancelCheckAuthorization on Polkit timeout"
     );
 }
+
+/// M-SEC-03: Polkit rate-limit quotas must be keyed by Unix UID (not per-connection D-Bus unique
+/// sender name), and `AuthAction::Control` must be isolated from `AuthAction::ManageHardware`.
+#[test]
+fn m_sec_03_polkit_quotas_keyed_by_uid_and_control_isolated_from_manage_hardware() {
+    let manifest_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+    let auth_path = manifest_dir.join("src/auth.rs");
+    let source = std::fs::read_to_string(&auth_path)
+        .unwrap_or_else(|e| panic!("failed to read {}: {e}", auth_path.display()));
+
+    assert!(
+        !source.contains("let sender_key = format!(\"{}:{sender}\", conn.server_guid());"),
+        "M-SEC-03: Polkit quotas must be keyed by Unix UID rather than D-Bus unique sender name"
+    );
+
+    let has_shared_interactive_bucket = source
+        .contains("let is_interactive = !matches!(action, AuthAction::Read);")
+        && source.contains("interactive_polkit_semaphore()");
+    assert!(
+        !has_shared_interactive_bucket,
+        "M-SEC-03: AuthAction::Control and AuthAction::ManageHardware must not share a single interactive semaphore/quota bucket"
+    );
+}
+
+/// M-SEC-11: `uccd/com.uniwill.uccd.conf` must symmetrically allow signals for all 4 combinations
+/// of `(com.uniwill.uccd, de.uniwill.uccd)` sender and interface in `<policy context="default">`.
+#[test]
+fn m_sec_11_dbus_conf_allows_de_uniwill_signals_symmetrically() {
+    let manifest_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+    let conf_path = manifest_dir.join("../../uccd/com.uniwill.uccd.conf");
+    let conf = std::fs::read_to_string(&conf_path)
+        .unwrap_or_else(|e| panic!("failed to read {}: {e}", conf_path.display()));
+
+    let default_start = conf
+        .find("<policy context=\"default\">")
+        .expect("com.uniwill.uccd.conf must define `<policy context=\"default\">`");
+    let default_section = &conf[default_start..];
+
+    // Normalize whitespace inside `<allow ... />` tags to inspect attribute combinations reliably.
+    let mut allow_tags = Vec::new();
+    let mut rest = default_section;
+    while let Some(start) = rest.find("<allow") {
+        let after = &rest[start..];
+        let end = after.find("/>").expect("unterminated <allow tag");
+        let normalized: String = after[..end + 2]
+            .split_whitespace()
+            .collect::<Vec<_>>()
+            .join(" ");
+        allow_tags.push(normalized);
+        rest = &after[end + 2..];
+    }
+
+    for sender in ["com.uniwill.uccd", "de.uniwill.uccd"] {
+        for iface in ["com.uniwill.uccd", "de.uniwill.uccd"] {
+            let expected_sender = format!("receive_sender=\"{sender}\"");
+            let expected_iface = format!("receive_interface=\"{iface}\"");
+            let found = allow_tags.iter().any(|tag| {
+                tag.contains(&expected_sender)
+                    && tag.contains("receive_type=\"signal\"")
+                    && tag.contains(&expected_iface)
+            });
+            assert!(
+                found,
+                "M-SEC-11: com.uniwill.uccd.conf default policy is missing symmetric signal allow rule for sender={sender}, interface={iface}"
+            );
+        }
+    }
+}

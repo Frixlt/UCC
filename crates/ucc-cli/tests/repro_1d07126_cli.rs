@@ -292,3 +292,41 @@ async fn r24_cli_write_rpc_timeout_allows_polkit_interaction() {
         String::from_utf8_lossy(&out.stderr)
     );
 }
+
+/// M-CLI-01: Mutating CLI commands must propagate or explicitly report D-Bus/timeout errors
+/// instead of silently masking `Result<bool, _>` with `.unwrap_or(false)`.
+#[test]
+fn m_cli_01_mutating_commands_do_not_mask_dbus_errors_with_unwrap_or_false() {
+    let commands_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("src/commands");
+    let mutating_files = [
+        "charging.rs",
+        "cooler.rs",
+        "devices.rs",
+        "fan.rs",
+        "hardware.rs",
+        "keyboard.rs",
+        "lightbar.rs",
+        "power.rs",
+        "profile.rs",
+        "statemap.rs",
+    ];
+
+    let mut offenders = Vec::new();
+    for file in mutating_files {
+        let path = commands_dir.join(file);
+        let src = std::fs::read_to_string(&path)
+            .unwrap_or_else(|e| panic!("failed to read {}: {e}", path.display()));
+        // Check for `.await` followed by `.unwrap_or(false)` across lines/whitespace.
+        let compact: String = src.split_whitespace().collect::<Vec<_>>().join(" ");
+        if compact.contains(".await .unwrap_or(false)")
+            || compact.contains(".await.unwrap_or(false)")
+        {
+            offenders.push(file);
+        }
+    }
+
+    assert!(
+        offenders.is_empty(),
+        "M-CLI-01: mutating CLI commands must not mask D-Bus RPC errors with `.await.unwrap_or(false)`; offenders: {offenders:?}"
+    );
+}

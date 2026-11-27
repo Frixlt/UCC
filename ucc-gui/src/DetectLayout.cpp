@@ -17,6 +17,10 @@
 #include <QProcess>
 #include <QDebug>
 #include <QCoreApplication>
+#include <QElapsedTimer>
+#include <QStandardPaths>
+#include <algorithm>
+#include <optional>
 
 namespace ucc
 {
@@ -26,234 +30,207 @@ QString normalizeLayout(const QString &layout)
 {
   QString lower = layout.toLower();
 
-  // Turkish
   if (lower == "tr" || lower == "turkish" || lower == "türkçe" || lower.contains("turk")) {
     return "tr";
   }
-  // French
   if (lower == "fr" || lower == "french" || lower == "français" || lower.contains("franc")) {
     return "fr";
   }
-  // Spanish
   if (lower == "es" || lower == "spanish" || lower == "español" || lower.contains("span")) {
     return "es";
   }
-  // Italian
   if (lower == "it" || lower == "italian" || lower == "italiano" || lower.contains("ital")) {
     return "it";
   }
-  // Arabic
   if (lower == "ar" || lower == "arabic" || lower == "العربية" || lower.contains("arab")) {
     return "ar";
   }
-  // German
   if (lower == "de" || lower == "deutsch" || lower == "german" || lower.contains("deut")) {
     return "de";
   }
-  // English/US (default)
   if (lower == "us" || lower == "en" || lower == "english" || lower.contains("engl")) {
     return "us";
   }
 
-  // Return original if no match
   return lower;
 }
 
 QString detectKeyboardLayout()
 {
-  QProcess process;
+  // Fast env-var check avoids spawning any subprocess when XKB_DEFAULT_LAYOUT is provided.
+  if ( QString xkbLayout = qgetenv( "XKB_DEFAULT_LAYOUT" ); !xkbLayout.isEmpty() )
+  {
+    QString normalized = normalizeLayout( xkbLayout.split( ',' ).first() );
+    if ( !normalized.isEmpty() )
+    {
+      qDebug() << "Detected layout from XKB_DEFAULT_LAYOUT:" << normalized;
+      return normalized;
+    }
+  }
 
-  // Detect desktop environment
-  QString desktop = qgetenv( "XDG_CURRENT_DESKTOP" ).toLower();
-  QString session = qgetenv( "DESKTOP_SESSION" ).toLower();
-  bool isKDE = desktop.contains( "kde" ) || session.contains( "kde" ) || !qgetenv( "KDE_SESSION_UID" ).isEmpty();
-  bool isGNOME = desktop.contains( "gnome" ) || session.contains( "gnome" );
-  bool isWayland = !qgetenv( "WAYLAND_DISPLAY" ).isEmpty();
+  QElapsedTimer budget;
+  budget.start();
+  static constexpr qint64 kTotalBudgetMs = 500;
+  static constexpr qint64 kPerProcessMs = 250;
 
-  qDebug() << "Detected DE - KDE:" << isKDE << "GNOME:" << isGNOME << "Wayland:" << isWayland;
+  auto runBounded = [&]( const QString &program, const QStringList &args ) -> std::optional< QString > {
+    const qint64 remaining = kTotalBudgetMs - budget.elapsed();
+    if ( remaining <= 0 )
+      return std::nullopt;
+    const QString exe = QStandardPaths::findExecutable( program );
+    if ( exe.isEmpty() )
+      return std::nullopt;
 
-  // Try desktop environment specific detection first
+    QProcess process;
+    process.start( exe, args );
+    const int waitMs = static_cast< int >( std::min< qint64 >( kPerProcessMs, remaining ) );
+    if ( !process.waitForStarted( waitMs ) )
+    {
+      process.kill();
+      process.waitForFinished( 50 );
+      return std::nullopt;
+    }
+    const qint64 afterStartRemaining = kTotalBudgetMs - budget.elapsed();
+    if ( afterStartRemaining <= 0 ||
+         !process.waitForFinished( static_cast< int >( std::min< qint64 >( kPerProcessMs, afterStartRemaining ) ) ) )
+    {
+      process.kill();
+      process.waitForFinished( 50 );
+      return std::nullopt;
+    }
+    return QString::fromLocal8Bit( process.readAllStandardOutput() );
+  };
+
+  const QString desktop = qgetenv( "XDG_CURRENT_DESKTOP" ).toLower();
+  const QString session = qgetenv( "DESKTOP_SESSION" ).toLower();
+  const bool isKDE = desktop.contains( "kde" ) || session.contains( "kde" ) || !qgetenv( "KDE_SESSION_UID" ).isEmpty();
+  const bool isGNOME = desktop.contains( "gnome" ) || session.contains( "gnome" );
+  const bool isWayland = !qgetenv( "WAYLAND_DISPLAY" ).isEmpty();
+
   if ( isKDE )
   {
-    qDebug() << "Trying KDE detection";
-
-    // Try DBus for current KDE keyboard layout
-    qDebug() << "Trying DBus for KDE layout";
-    // Get current index
-    process.start("dbus-send", QStringList() << "--session" << "--dest=org.kde.keyboard" << "--print-reply" << "/Layouts" << "org.kde.KeyboardLayouts.getLayout");
-    if (process.waitForFinished(3000)) {
-      QString output = process.readAllStandardOutput().trimmed();
-      qDebug() << "dbus-send getLayout output:" << output;
-      // Parse the output, it should be uint32 <number>
-      QStringList lines = output.split('\n');
+    if ( auto idxOut = runBounded(
+           QStringLiteral( "dbus-send" ),
+           { QStringLiteral( "--session" ), QStringLiteral( "--dest=org.kde.keyboard" ),
+             QStringLiteral( "--print-reply" ), QStringLiteral( "/Layouts" ),
+             QStringLiteral( "org.kde.KeyboardLayouts.getLayout" ) } ) )
+    {
       uint currentIndex = 0;
-      for (const QString &line : lines) {
-        if (line.contains("uint32")) {
-          currentIndex = line.split(' ').last().toUInt();
+      for ( const QString &line : idxOut->trimmed().split( '\n' ) )
+      {
+        if ( line.contains( "uint32" ) )
+        {
+          currentIndex = line.split( ' ' ).last().toUInt();
           break;
         }
       }
-      qDebug() << "currentIndex:" << currentIndex;
-
-      // Get layouts list
-      process.start("dbus-send", QStringList() << "--session" << "--dest=org.kde.keyboard" << "--print-reply" << "/Layouts" << "org.kde.KeyboardLayouts.getLayoutsList");
-      if (process.waitForFinished(3000)) {
-        QString listOutput = process.readAllStandardOutput().trimmed();
-        qDebug() << "dbus-send getLayoutsList output:" << listOutput;
-        // Parse the array
-        QStringList listLines = listOutput.split('\n');
+      if ( auto listOut = runBounded(
+             QStringLiteral( "dbus-send" ),
+             { QStringLiteral( "--session" ), QStringLiteral( "--dest=org.kde.keyboard" ),
+               QStringLiteral( "--print-reply" ), QStringLiteral( "/Layouts" ),
+               QStringLiteral( "org.kde.KeyboardLayouts.getLayoutsList" ) } ) )
+      {
         QStringList layouts;
         int count = 0;
-        for (const QString &line : listLines) {
-          if (line.contains("string \"")) {
-            QString value = line.split('"').at(1);
-            if (count % 3 == 0) {
-              layouts.append(value);
-            }
+        for ( const QString &line : listOut->trimmed().split( '\n' ) )
+        {
+          if ( line.contains( "string \"" ) )
+          {
+            QString value = line.split( '"' ).at( 1 );
+            if ( count % 3 == 0 )
+              layouts.append( value );
             count++;
           }
         }
-        qDebug() << "layouts:" << layouts;
-        if (currentIndex < layouts.size()) {
-          QString layout = layouts.at(currentIndex);
-          qDebug() << "Detected KDE layout:" << layout;
-          return normalizeLayout(layout);
-        }
+        if ( currentIndex < static_cast< uint >( layouts.size() ) )
+          return normalizeLayout( layouts.at( static_cast< int >( currentIndex ) ) );
       }
     }
   }
   else if ( isGNOME )
   {
-    qDebug() << "Trying GNOME detection";
-
-    // Try gsettings for GNOME
-    process.start( "gsettings", QStringList() << "get" << "org.gnome.desktop.input-sources" << "sources" );
-    if ( process.waitForFinished( 3000 ) )
+    if ( auto output = runBounded(
+           QStringLiteral( "gsettings" ),
+           { QStringLiteral( "get" ), QStringLiteral( "org.gnome.desktop.input-sources" ),
+             QStringLiteral( "sources" ) } ) )
     {
-      QString output = process.readAllStandardOutput();
-      qDebug() << "gsettings output:" << output;
-
-      // Check for supported layouts
-      QStringList supportedLayouts = {"tr", "fr", "es", "it", "ar", "de", "us", "en"};
-      for (const QString &layout : supportedLayouts) {
-        if (output.contains(layout) ||
-            (layout == "tr" && (output.contains("turkish") || output.contains("türkçe"))) ||
-            (layout == "fr" && (output.contains("french") || output.contains("français"))) ||
-            (layout == "es" && (output.contains("spanish") || output.contains("español"))) ||
-            (layout == "it" && (output.contains("italian") || output.contains("italiano"))) ||
-            (layout == "ar" && (output.contains("arabic") || output.contains("العربية"))) ||
-            (layout == "de" && (output.contains("deutsch") || output.contains("german"))) ||
-            (layout == "us" && (output.contains("english") || output.contains("en")))) {
-          qDebug() << "Detected layout from GNOME gsettings:" << layout;
+      const QStringList supportedLayouts = { "tr", "fr", "es", "it", "ar", "de", "us", "en" };
+      for ( const QString &layout : supportedLayouts )
+      {
+        if ( output->contains( layout ) ||
+             ( layout == "tr" && ( output->contains( "turkish" ) || output->contains( "türkçe" ) ) ) ||
+             ( layout == "fr" && ( output->contains( "french" ) || output->contains( "français" ) ) ) ||
+             ( layout == "es" && ( output->contains( "spanish" ) || output->contains( "español" ) ) ) ||
+             ( layout == "it" && ( output->contains( "italian" ) || output->contains( "italiano" ) ) ) ||
+             ( layout == "ar" && ( output->contains( "arabic" ) || output->contains( "العربية" ) ) ) ||
+             ( layout == "de" && ( output->contains( "deutsch" ) || output->contains( "german" ) ) ) ||
+             ( layout == "us" && ( output->contains( "english" ) || output->contains( "en" ) ) ) )
+        {
           return layout;
         }
       }
     }
   }
 
-  // Try generic/system-wide detection
-  qDebug() << "Trying generic detection";
-
-  // Try localectl (systemd - works on most Linux systems)
-  process.start( "localectl" );
-  if ( process.waitForFinished( 3000 ) )
+  if ( auto output = runBounded( QStringLiteral( "localectl" ), {} ) )
   {
-    QString output = process.readAllStandardOutput();
-    qDebug() << "localectl output:" << output;
-
-    QStringList lines = output.split( '\n' );
-    for ( const QString &line : lines )
+    for ( const QString &line : output->split( '\n' ) )
     {
       if ( line.contains( "X11 Layout:" ) || line.contains( "VC Keymap:" ) )
       {
         QString layout = line.split( ':' ).value( 1 ).trimmed();
-        qDebug() << "Detected layout from localectl:" << layout;
-        QString normalized = normalizeLayout(layout.split( ',' ).first());
-        if (!normalized.isEmpty()) {
+        QString normalized = normalizeLayout( layout.split( ',' ).first() );
+        if ( !normalized.isEmpty() )
           return normalized;
-        }
       }
     }
   }
 
-  // Try setxkbmap (works on X11, may give wrong results on Wayland)
-  process.start( "setxkbmap", QStringList() << "-query" );
-  if ( process.waitForFinished( 3000 ) )
+  if ( auto output = runBounded( QStringLiteral( "setxkbmap" ), { QStringLiteral( "-query" ) } ) )
   {
-    QString output = process.readAllStandardOutput();
-    qDebug() << "setxkbmap output:" << output;
-
-    QStringList lines = output.split( '\n' );
-    for ( const QString &line : lines )
+    for ( const QString &line : output->split( '\n' ) )
     {
       if ( line.startsWith( "layout:" ) )
       {
         QString layout = line.split( ':' ).value( 1 ).trimmed();
-        qDebug() << "Detected layout from setxkbmap:" << layout;
-        QString normalized = normalizeLayout(layout);
-        if (!normalized.isEmpty()) {
-          // On Wayland, setxkbmap might be unreliable, so don't return "us" immediately
-          if (!isWayland || normalized != "us") {
-            return normalized;
-          }
-        }
+        QString normalized = normalizeLayout( layout );
+        if ( !normalized.isEmpty() && ( !isWayland || normalized != "us" ) )
+          return normalized;
       }
     }
   }
 
-  // Try compositor-specific detection on Wayland
   if ( isWayland )
   {
-    qDebug() << "Trying Wayland compositor detection";
-
-    // Try swaymsg for Sway
-    process.start( "swaymsg", QStringList() << "-t" << "get_inputs" );
-    if ( process.waitForFinished( 3000 ) )
+    if ( auto output = runBounded(
+           QStringLiteral( "swaymsg" ),
+           { QStringLiteral( "-t" ), QStringLiteral( "get_inputs" ) } ) )
     {
-      QString output = process.readAllStandardOutput();
-      qDebug() << "swaymsg output:" << output;
-
-      // Check for supported layouts
-      QStringList supportedLayouts = {"tr", "fr", "es", "it", "ar", "de", "us", "en"};
-      for (const QString &layout : supportedLayouts) {
-        if (output.contains("\"" + layout + "\"") || output.contains("'" + layout + "'") ||
-            (layout == "tr" && (output.contains("\"turkish\"") || output.contains("'turkish'") || output.contains("\"türkçe\"") || output.contains("'türkçe'"))) ||
-            (layout == "fr" && (output.contains("\"french\"") || output.contains("'french'") || output.contains("\"français\"") || output.contains("'français'"))) ||
-            (layout == "es" && (output.contains("\"spanish\"") || output.contains("'spanish'") || output.contains("\"español\"") || output.contains("'español'"))) ||
-            (layout == "it" && (output.contains("\"italian\"") || output.contains("'italian'") || output.contains("\"italiano\"") || output.contains("'italiano'"))) ||
-            (layout == "ar" && (output.contains("\"arabic\"") || output.contains("'arabic'") || output.contains("\"العربية\"") || output.contains("'العربية'"))) ||
-            (layout == "de" && (output.contains("\"deutsch\"") || output.contains("'deutsch'") || output.contains("\"german\"") || output.contains("'german'"))) ||
-            (layout == "us" && (output.contains("\"english\"") || output.contains("'english'") || output.contains("\"en\"") || output.contains("'en'")))) {
-          qDebug() << "Detected layout from swaymsg:" << layout;
+      const QStringList supportedLayouts = { "tr", "fr", "es", "it", "ar", "de", "us", "en" };
+      for ( const QString &layout : supportedLayouts )
+      {
+        if ( output->contains( "\"" + layout + "\"" ) || output->contains( "'" + layout + "'" ) ||
+             ( layout == "tr" && ( output->contains( "\"turkish\"" ) || output->contains( "'turkish'" ) || output->contains( "\"türkçe\"" ) || output->contains( "'türkçe'" ) ) ) ||
+             ( layout == "fr" && ( output->contains( "\"french\"" ) || output->contains( "'french'" ) || output->contains( "\"français\"" ) || output->contains( "'français'" ) ) ) ||
+             ( layout == "es" && ( output->contains( "\"spanish\"" ) || output->contains( "'spanish'" ) || output->contains( "\"español\"" ) || output->contains( "'español'" ) ) ) ||
+             ( layout == "it" && ( output->contains( "\"italian\"" ) || output->contains( "'italian'" ) || output->contains( "\"italiano\"" ) || output->contains( "'italiano'" ) ) ) ||
+             ( layout == "ar" && ( output->contains( "\"arabic\"" ) || output->contains( "'arabic'" ) || output->contains( "\"العربية\"" ) || output->contains( "'العربية'" ) ) ) ||
+             ( layout == "de" && ( output->contains( "\"deutsch\"" ) || output->contains( "'deutsch'" ) || output->contains( "\"german\"" ) || output->contains( "'german'" ) ) ) ||
+             ( layout == "us" && ( output->contains( "\"english\"" ) || output->contains( "'english'" ) || output->contains( "\"en\"" ) || output->contains( "'en'" ) ) ) )
+        {
           return layout;
         }
       }
     }
   }
 
-  // Fallback: check environment variables
-
-  if ( QString xkbLayout = qgetenv( "XKB_DEFAULT_LAYOUT" ); !xkbLayout.isEmpty() )
-  {
-    qDebug() << "Detected layout from XKB_DEFAULT_LAYOUT:" << xkbLayout;
-    QString normalized = normalizeLayout(xkbLayout.split( ',' ).first());
-    if (!normalized.isEmpty()) {
-      return normalized;
-    }
-  }
-
-  // Another fallback: check LANG or LC_CTYPE
   if ( QString lang = qgetenv( "LANG" ); !lang.isEmpty() )
   {
-    if (QString normalizedLang = normalizeLayout(lang); !normalizedLang.isEmpty() && normalizedLang != "us")
-    {
-      qDebug() << "Detected layout from LANG:" << normalizedLang;
+    if ( QString normalizedLang = normalizeLayout( lang ); !normalizedLang.isEmpty() && normalizedLang != "us" )
       return normalizedLang;
-    }
   }
 
-  qDebug() << "Defaulting to us layout";
-  return "us"; // Default to US
+  return "us";
 }
 
 }

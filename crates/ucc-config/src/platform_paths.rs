@@ -46,10 +46,9 @@ where
         PathPlatform::Unix => {
             let system_config_dir = PathBuf::from("/etc/ucc");
             let user_config_dir = non_empty("XDG_CONFIG_HOME")
-                .map(PathBuf::from)
-                .or_else(|| non_empty("HOME").map(|h| Path::new(&h).join(".config")))
-                .unwrap_or_else(|| PathBuf::from("/tmp"))
-                .join("ucc");
+                .map(|p| PathBuf::from(p).join("ucc"))
+                .or_else(|| non_empty("HOME").map(|h| Path::new(&h).join(".config").join("ucc")))
+                .unwrap_or_else(|| PathBuf::from("/var/lib/ucc/user-config"));
             let runtime_dir = PathBuf::from("/run/ucc");
             PlatformPaths {
                 system_settings_file: system_config_dir.join("settings.json"),
@@ -64,7 +63,7 @@ where
                 non_empty("PROGRAMDATA").unwrap_or_else(|| r"C:\ProgramData".to_string());
             let app_data = non_empty("APPDATA")
                 .or_else(|| non_empty("USERPROFILE").map(|p| format!(r"{p}\AppData\Roaming")))
-                .unwrap_or_else(|| format!(r"{program_data}\ucc-rusted"));
+                .unwrap_or_else(|| program_data.clone());
             let system_config_dir = Path::new(&program_data).join("ucc-rusted");
             let runtime_dir = system_config_dir.join("run");
             PlatformPaths {

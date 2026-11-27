@@ -241,6 +241,17 @@ impl ProcessTerminator {
             tokio::time::sleep(Duration::from_millis(50)).await;
         }
 
+        for t in &mut open_targets {
+            if !t.done && Self::pidfd_exited(&t.fd) {
+                t.done = true;
+                if t.killed {
+                    report.killed += 1;
+                } else {
+                    report.terminated += 1;
+                }
+            }
+        }
+
         for t in &open_targets {
             if !t.done {
                 report.errors.push(format!("PID {} has not exited", t.pid));

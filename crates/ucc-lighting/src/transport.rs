@@ -323,11 +323,7 @@ impl LightingTransport for SysfsLedTransport {
     }
 
     fn write_keyboard_brightness(&self, brightness: u32) -> Result<(), LightingError> {
-        let paths = {
-            let mut cache = self.cache.lock().unwrap();
-            cache.last_kbd_brightness = Some(brightness);
-            cache.kbd_led_paths.clone()
-        };
+        let paths = self.cache.lock().unwrap().kbd_led_paths.clone();
         if paths.is_empty() {
             return Err(LightingError::Unavailable);
         }
@@ -335,6 +331,7 @@ impl LightingTransport for SysfsLedTransport {
         for p in paths {
             self.sysfs.write(&p.join("brightness"), &val)?;
         }
+        self.cache.lock().unwrap().last_kbd_brightness = Some(brightness);
         Ok(())
     }
 

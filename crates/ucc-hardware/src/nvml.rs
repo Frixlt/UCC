@@ -373,8 +373,15 @@ impl NvApiState {
             self.attempted = true;
             self.gpu_handles = raw_handles[..usize::min(count as usize, raw_handles.len())]
                 .iter()
+                .filter(|p| !p.is_null())
                 .map(|p| *p as usize)
                 .collect();
+            if self.gpu_handles.is_empty() {
+                if let Some(unload) = fn_unload {
+                    let _ = unload();
+                }
+                return;
+            }
             self.fn_unload = fn_unload;
             self.fn_get_voltage = Some(fn_voltage);
             self.fn_get_bus_id = fn_get_bus_id;
@@ -421,6 +428,9 @@ impl NvApiState {
         let mut matched: Option<*mut c_void> = None;
         for &raw in &self.gpu_handles {
             let h = raw as *mut c_void;
+            if h.is_null() {
+                continue;
+            }
             let mut bus: u32 = u32::MAX;
             let mut slot: u32 = u32::MAX;
             let ok = unsafe { fn_bus(h, &mut bus) == 0 && fn_slot(h, &mut slot) == 0 };

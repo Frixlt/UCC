@@ -160,12 +160,20 @@ private slots:
     }
 
     // Exercise live Rust mutations via GUI / client and confirm state transitions.
+#ifdef UCC_READ_ONLY_PREVIEW
+    QVERIFY(!client.setManualPowerMode("bat"));
+    const auto policyRaw = client.getPowerPolicyJSON();
+    QVERIFY(policyRaw.has_value());
+    const auto policyObj = QJsonDocument::fromJson(QByteArray::fromStdString(*policyRaw)).object();
+    QCOMPARE(policyObj.value(QStringLiteral("manual_mode")).toString(), QStringLiteral("auto"));
+#else
     QVERIFY(client.setManualPowerMode("bat"));
     const auto policyRaw = client.getPowerPolicyJSON();
     QVERIFY(policyRaw.has_value());
     const auto policyObj = QJsonDocument::fromJson(QByteArray::fromStdString(*policyRaw)).object();
     QCOMPARE(policyObj.value(QStringLiteral("manual_mode")).toString(), QStringLiteral("bat"));
     QVERIFY(client.setManualPowerMode("auto"));
+#endif
 
     // Rejected invalid mutations must return false cleanly without fake success.
     QVERIFY(!client.applyProfile("{not_json"));

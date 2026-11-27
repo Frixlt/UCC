@@ -71,7 +71,8 @@ impl LightbarAnimation {
                 if elapsed_ms % 90 >= 60 {
                     RgbColor::BLACK
                 } else {
-                    hue_to_rgb(((elapsed_ms / 90 * 137 + 41) % 360) as f64 / 360.0)
+                    let hue = (((elapsed_ms / 90) % 360) * 137 + 41) % 360;
+                    hue_to_rgb(hue as f64 / 360.0)
                 }
             }
             Self::Pulse | Self::Flash => {

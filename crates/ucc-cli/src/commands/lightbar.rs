@@ -44,21 +44,21 @@ pub async fn run_lightbar(
             Ok(())
         }
         LightbarAction::Set { json } => {
-            let res = with_write_rpc_timeout(client.proxy().set_lightbar_settings_json(json))
-                .await
-                .unwrap_or(false);
+            let res = crate::client::unwrap_write_rpc(
+                with_write_rpc_timeout(client.proxy().set_lightbar_settings_json(json)).await,
+            );
             ok(res)
         }
         LightbarAction::Test => {
-            let res = with_write_rpc_timeout(client.proxy().trigger_lightbar_animation(true))
-                .await
-                .unwrap_or(false);
+            let res = crate::client::unwrap_write_rpc(
+                with_write_rpc_timeout(client.proxy().trigger_lightbar_animation(true)).await,
+            );
             ok(res)
         }
         LightbarAction::Notify => {
-            let res = with_write_rpc_timeout(client.proxy().trigger_lightbar_animation(false))
-                .await
-                .unwrap_or(false);
+            let res = crate::client::unwrap_write_rpc(
+                with_write_rpc_timeout(client.proxy().trigger_lightbar_animation(false)).await,
+            );
             ok(res)
         }
     }

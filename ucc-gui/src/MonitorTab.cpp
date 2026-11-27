@@ -56,9 +56,12 @@ public:
 protected:
   void mousePressEvent( QGraphicsSceneMouseEvent *event ) override
   {
-    if ( m_onClick )
-      m_onClick();
     event->accept();
+    if ( m_onClick )
+    {
+      auto cb = m_onClick;
+      QTimer::singleShot( 0, [cb = std::move( cb )]() { cb(); } );
+    }
   }
 
 private:
@@ -1025,12 +1028,15 @@ void MonitorTab::addStickyMarkGroup( qint64 ts, double clickDataY,
 
   // Build a remove callback
   const qint64 capturedTs = ts;
-  auto removeCb = [this, capturedTs]() {
-    for ( auto it = m_stickyMarks.begin(); it != m_stickyMarks.end(); ++it )
+  QPointer< MonitorTab > self( this );
+  auto removeCb = [self, capturedTs]() {
+    if ( !self )
+      return;
+    for ( auto it = self->m_stickyMarks.begin(); it != self->m_stickyMarks.end(); ++it )
     {
       if ( it->timestamp == capturedTs )
       {
-        removeStickyMark( it );
+        self->removeStickyMark( it );
         return;
       }
     }
@@ -1281,12 +1287,15 @@ void MonitorTab::createUnifiedMarkGfx()
       continue;  // Already has unified graphics
 
     const qint64 capturedTs = mark.timestamp;
-    auto removeCb = [this, capturedTs]() {
-      for ( auto it = m_stickyMarks.begin(); it != m_stickyMarks.end(); ++it )
+    QPointer< MonitorTab > self( this );
+    auto removeCb = [self, capturedTs]() {
+      if ( !self )
+        return;
+      for ( auto it = self->m_stickyMarks.begin(); it != self->m_stickyMarks.end(); ++it )
       {
         if ( it->timestamp == capturedTs )
         {
-          removeStickyMark( it );
+          self->removeStickyMark( it );
           return;
         }
       }

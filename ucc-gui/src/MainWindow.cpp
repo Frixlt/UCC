@@ -49,6 +49,12 @@
 #include <QJsonDocument>
 #include <QJsonObject>
 #include <QJsonArray>
+#include <QDBusConnectionInterface>
+#include <QDBusMessage>
+#include <QDBusPendingCall>
+#include <QDBusPendingCallWatcher>
+#include <QDBusReply>
+#include <QEventLoop>
 #include <algorithm>
 #include <optional>
 
@@ -136,12 +142,8 @@ MainWindow::MainWindow( QWidget *parent )
 {
   m_UccdClient = std::make_unique< UccdClient >( this );
 
-  // Query device capabilities from daemon
-  if ( auto waterCooler = m_UccdClient->getWaterCoolerSupported() )
-    m_waterCoolerSupported = *waterCooler;
-  if ( auto hwpBoost = m_UccdClient->getHwpDynamicBoostSupported() )
-    m_hwpDynamicBoostSupported = *hwpBoost;
-  refreshCtgpCapabilities();
+  // Defer D-Bus capability queries asynchronously so MainWindow construction never blocks the UI thread (`N12`).
+  m_waterCoolerSupported = ( m_UccdClient && m_UccdClient->isConnected() );
 
   setWindowTitle( "ucc-rusted" );
   resize(1280,900);
@@ -1097,12 +1099,9 @@ void MainWindow::setupProfilesPage()
   m_hwpDynamicBoostCheckBox = new QCheckBox( "Enable" );
   m_hwpDynamicBoostLabel->setVisible( m_hwpDynamicBoostSupported );
   m_hwpDynamicBoostCheckBox->setVisible( m_hwpDynamicBoostSupported );
-  if ( m_hwpDynamicBoostSupported )
-  {
-    detailsLayout->addWidget( m_hwpDynamicBoostLabel, row, 0 );
-    detailsLayout->addWidget( m_hwpDynamicBoostCheckBox, row, 1, Qt::AlignLeft );
-    row++;
-  }
+  detailsLayout->addWidget( m_hwpDynamicBoostLabel, row, 0 );
+  detailsLayout->addWidget( m_hwpDynamicBoostCheckBox, row, 1, Qt::AlignLeft );
+  row++;
 
   // Add spacer
   detailsLayout->addItem( new QSpacerItem( 0, 10 ), row, 0, 1, 2 );
@@ -2426,20 +2425,18 @@ void MainWindow::loadProfileDetails( const QString &profileId )
   const bool isCustom = m_profileManager ? m_profileManager->isCustomProfile( profileId ) : false;
   updateProfileEditingWidgets( isCustom );
 
-  // Warn user if any referenced profiles were not found (deleted after profile creation)
+  // Warn user non-blockingly if any referenced subprofiles were missing
   if ( fanProfileNotFound || keyboardProfileNotFound )
   {
-    QString profileName = m_profileCombo->currentText();
-    QString message = QString( "The profile '%1' references the following missing subprofiles:\n\n" ).arg( profileName );
-
+    QStringList missingParts;
     if ( keyboardProfileNotFound )
-      message += QString( "Keyboard profile: %1\n" ).arg( missingKeyboardProfile );
-
+      missingParts << QString( "keyboard '%1'" ).arg( missingKeyboardProfile );
     if ( fanProfileNotFound )
-      message += QString( "Fan profile: %1\n" ).arg( missingFanProfile );
-
-    message += "\nNew profiles for the missing subprofile(s) have been assigned for this session but it is not saved.";
-    QMessageBox::warning( this, "Missing Subprofile References", message );
+      missingParts << QString( "fan '%1'" ).arg( missingFanProfile );
+    const QString summary = QString( "Profile '%1' had missing subprofiles (%2); defaults assigned for session." )
+                              .arg( m_profileCombo->currentText(), missingParts.join( QStringLiteral( ", " ) ) );
+    qWarning() << summary;
+    statusBar()->showMessage( summary, 5000 );
   }
 
 }
@@ -2497,6 +2494,125 @@ void MainWindow::updateProfileEditingWidgets( bool isCustom )
   int ctgpMax = 0;
   if ( m_ctgpSlider ) m_ctgpSlider->setEnabled( isCustom && hasValidCtgpRange( ctgpDefault, ctgpMax ) );
   // Charging profile
+}
+
+void MainWindow::applyWaterCoolerSupported( bool supported )
+{
+  m_waterCoolerSupported = supported;
+  if ( auto *navigation = findChild< QListWidget * >( QStringLiteral( "navigation" ) );
+       navigation && navigation->count() > 3 )
+  {
+    auto *item = navigation->item( 3 );
+    if ( supported )
+    {
+      item->setFlags( item->flags() | Qt::ItemIsEnabled );
+      item->setToolTip( QString() );
+    }
+    else
+    {
+      item->setFlags( item->flags() & ~Qt::ItemIsEnabled );
+      item->setToolTip( QStringLiteral( "Water cooling is not supported by this device." ) );
+    }
+  }
+  if ( m_waterCoolerStatusBarLabel )
+  {
+    if ( auto *row = m_waterCoolerStatusBarLabel->parentWidget() )
+      row->setVisible( supported );
+  }
+  if ( m_dashboardTab )
+    m_dashboardTab->setWaterCoolerSupported( supported );
+  if ( m_fanControlTab )
+    m_fanControlTab->setWaterCoolerSupported( supported );
+}
+
+void MainWindow::applyHwpDynamicBoostSupported( bool supported )
+{
+  m_hwpDynamicBoostSupported = supported;
+  if ( m_hwpDynamicBoostLabel )
+    m_hwpDynamicBoostLabel->setVisible( supported );
+  if ( m_hwpDynamicBoostCheckBox )
+    m_hwpDynamicBoostCheckBox->setVisible( supported );
+}
+
+void MainWindow::fetchStartupCapabilities()
+{
+  m_cTGPAdjustmentSupported = false;
+  m_nvidiaPowerCtrlAvailable = false;
+  m_gpuDefaultPowerLimit = 0;
+  m_gpuMaxPowerLimit = 0;
+  if ( !m_UccdClient || !m_UccdClient->isConnected() )
+  {
+    applyWaterCoolerSupported( false );
+    applyHwpDynamicBoostSupported( false );
+    updateCtgpVisibility();
+    return;
+  }
+
+  QString destination = QStringLiteral( "com.uniwill.uccd" );
+  if ( readOnlyPreview )
+  {
+    auto *busIface = QDBusConnection::systemBus().interface();
+    destination = busIface ? busIface->serviceOwner( destination ).value() : QString();
+    if ( destination.isEmpty() )
+      return;
+  }
+
+  auto asyncCapabilityCall = [this, destination]( const QString &method, auto onDone ) {
+    auto msg = QDBusMessage::createMethodCall(
+      destination,
+      QStringLiteral( "/com/uniwill/uccd" ),
+      QStringLiteral( "com.uniwill.uccd" ),
+      method );
+    msg.setAutoStartService( false );
+    auto *watcher = new QDBusPendingCallWatcher(
+      QDBusConnection::systemBus().asyncCall( msg, 1500 ),
+      this );
+    connect( watcher, &QDBusPendingCallWatcher::finished, this,
+      [this, onDone = std::move( onDone )]( QDBusPendingCallWatcher *done ) {
+        const QDBusMessage reply = done->reply();
+        done->deleteLater();
+        if ( m_closing )
+          return;
+        onDone( reply );
+      } );
+  };
+
+  asyncCapabilityCall( QStringLiteral( "GetWaterCoolerSupported" ), [this]( const QDBusMessage &reply ) {
+    if ( reply.type() != QDBusMessage::ErrorMessage && !reply.arguments().isEmpty() )
+      applyWaterCoolerSupported( reply.arguments().front().toBool() );
+  } );
+  asyncCapabilityCall( QStringLiteral( "GetHwpDynamicBoostSupported" ), [this]( const QDBusMessage &reply ) {
+    if ( reply.type() != QDBusMessage::ErrorMessage && !reply.arguments().isEmpty() )
+      applyHwpDynamicBoostSupported( reply.arguments().front().toBool() );
+  } );
+  asyncCapabilityCall( QStringLiteral( "GetCTGPAdjustmentSupported" ), [this]( const QDBusMessage &reply ) {
+    if ( reply.type() != QDBusMessage::ErrorMessage && !reply.arguments().isEmpty() )
+    {
+      m_cTGPAdjustmentSupported = reply.arguments().front().toBool();
+      updateCtgpVisibility();
+    }
+  } );
+  asyncCapabilityCall( QStringLiteral( "GetNVIDIAPowerCTRLAvailable" ), [this]( const QDBusMessage &reply ) {
+    if ( reply.type() != QDBusMessage::ErrorMessage && !reply.arguments().isEmpty() )
+    {
+      m_nvidiaPowerCtrlAvailable = reply.arguments().front().toBool();
+      updateCtgpVisibility();
+    }
+  } );
+  asyncCapabilityCall( QStringLiteral( "GetNVIDIAPowerCTRLDefaultPowerLimit" ), [this]( const QDBusMessage &reply ) {
+    if ( reply.type() != QDBusMessage::ErrorMessage && !reply.arguments().isEmpty() )
+    {
+      m_gpuDefaultPowerLimit = reply.arguments().front().toInt();
+      updateCtgpVisibility();
+    }
+  } );
+  asyncCapabilityCall( QStringLiteral( "GetNVIDIAPowerCTRLMaxPowerLimit" ), [this]( const QDBusMessage &reply ) {
+    if ( reply.type() != QDBusMessage::ErrorMessage && !reply.arguments().isEmpty() )
+    {
+      m_gpuMaxPowerLimit = reply.arguments().front().toInt();
+      updateCtgpVisibility();
+    }
+  } );
 }
 
 void MainWindow::refreshCtgpCapabilities()
@@ -2732,37 +2848,47 @@ void MainWindow::onSaveClicked()
   QString profileId = m_profileCombo->currentData().toString();
   const bool isCustom = m_profileManager->isCustomProfile( profileId );
 
+  m_saveInProgress = true;
   if ( isCustom )
   {
-    m_profileManager->saveProfile( buildProfileJSON() );
+    if ( !m_profileManager->saveProfile( buildProfileJSON() ) )
+    {
+      m_saveInProgress = false;
+      updateButtonStates();
+      return;
+    }
   }
 
-  // For both custom and built-in profiles, update stateMap based on mains/battery button states
-  // Batch all stateMap changes into a single D-Bus call (single backup + write)
+  // Update stateMap for both checked power-state buttons and unchecked buttons previously mapped to this profile.
   std::map< QString, QString > stateMapUpdates;
-  if ( m_mainsButton->isChecked() )
-    stateMapUpdates["power_ac"] = profileId;
-  if (m_typeCButton->isChecked())
-    stateMapUpdates["power_type_c"] = profileId;
-  if ( m_batteryButton->isChecked() )
-    stateMapUpdates["power_bat"] = profileId;
-  if ( m_waterCoolerButton->isChecked() )
-    stateMapUpdates["power_wc"] = profileId;
+  const auto syncStateButton = [&]( const QString &stateKey, const QPushButton *btn ) {
+    if ( !btn )
+      return;
+    if ( btn->isChecked() )
+      stateMapUpdates[stateKey] = profileId;
+    else if ( m_profileManager->resolveStateMapToProfileId( stateKey ) == profileId )
+      stateMapUpdates[stateKey] = QString();
+  };
+  syncStateButton( QStringLiteral( "power_ac" ), m_mainsButton );
+  syncStateButton( QStringLiteral( "power_type_c" ), m_typeCButton );
+  syncStateButton( QStringLiteral( "power_bat" ), m_batteryButton );
+  syncStateButton( QStringLiteral( "power_wc" ), m_waterCoolerButton );
 
-  if ( !stateMapUpdates.empty() )
-    m_profileManager->setBatchStateMap( stateMapUpdates );
-
-  if ( isCustom || !stateMapUpdates.empty() )
+  if ( !stateMapUpdates.empty() && !m_profileManager->setBatchStateMap( stateMapUpdates ) )
   {
-    // Indicate saving; actual success will be reflected when ProfileManager signals
-    m_saveInProgress = true;
-    statusBar()->showMessage( "Saving profile..." );
+    m_saveInProgress = false;
     updateButtonStates();
+    return;
   }
-  else
-  {
-    statusBar()->showMessage( "Built-in profile updated" );
-  }
+
+  m_saveInProgress = false;
+  m_profileChanged = false;
+  statusBar()->showMessage( ( isCustom || !stateMapUpdates.empty() )
+                              ? QStringLiteral( "Profile saved successfully" )
+                              : QStringLiteral( "Built-in profile updated" ) );
+  updateButtonStates();
+  if ( m_saveButton )
+    m_saveButton->setEnabled( true );
 }
 
 void MainWindow::onSaveFanProfilesClicked()
@@ -3196,9 +3322,7 @@ void MainWindow::onUccdConnectionChanged( bool connected )
     return;
 
   // Re-query capabilities that are only set at startup
-  if ( auto waterCooler = m_UccdClient->getWaterCoolerSupported() )
-    m_waterCoolerSupported = *waterCooler;
-  refreshCtgpCapabilities();
+  fetchStartupCapabilities();
 
   updateCtgpVisibility();
 

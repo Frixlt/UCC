@@ -3,6 +3,10 @@
 
 set( CMAKE_AUTOMOC ON )
 
+if( UCC_READ_ONLY_PREVIEW )
+  add_compile_definitions( UCC_READ_ONLY_PREVIEW )
+endif()
+
 # uccd headers needed by most tests
 set( UCCD_INC_DIR "${CMAKE_SOURCE_DIR}/uccd/inc" )
 
@@ -217,6 +221,32 @@ if(DBUS_RUN_SESSION_EXECUTABLE AND BUILD_GUI)
     previewMustNotSaveLocalMonitorPreferences
     previewMustBlockEveryWritePath
     aboutTabStaysPinnedToSidebarBottom)
+  add_executable(test_repro_1d07126_gui test_repro_1d07126_gui.cpp ${UCC_GUI_AUDIT_SOURCES})
+  target_include_directories(test_repro_1d07126_gui PRIVATE ../ucc-gui/inc ../include ../libucc-dbus)
+  target_link_libraries(test_repro_1d07126_gui PRIVATE ucc-desktop-tray-support ucc-dbus Qt6::Widgets Qt6::Charts Qt6::Test ucc-window-activation)
+  if(TARGET PkgConfig::UCC_XCB)
+    target_link_libraries(test_repro_1d07126_gui PRIVATE PkgConfig::UCC_XCB)
+    target_compile_definitions(test_repro_1d07126_gui PRIVATE UCC_HAS_X11_BLUR)
+  endif()
+  if(UCC_READ_ONLY_PREVIEW)
+    add_test(
+      NAME test_repro_1d07126_gui
+      COMMAND ${DBUS_RUN_SESSION_EXECUTABLE} -- bash ${CMAKE_CURRENT_SOURCE_DIR}/run_gui_audit_test.sh $<TARGET_FILE:test_repro_1d07126_gui>
+        n12_mainwindow_ctor_avoids_sync_dbus_capability_calls
+        n13_keyboard_visualizer_avoids_blocking_detect_layout_in_ctor
+        n26_preview_mode_allows_readonly_webcam_sw_available
+        n31_fan_control_tab_disables_remove_for_builtin_profile
+        n28_sysfs_node_is_available_does_not_terminate_on_eacces
+        p0_14_monitor_tab_sticky_mark_click_no_sync_self_delete_uaf
+        p0_15_hardware_tab_accepts_null_parent_without_crash
+        m_gui_05_read_json_int_preserves_negative_gpu_clock_offsets
+    )
+  else()
+    add_test(
+      NAME test_repro_1d07126_gui
+      COMMAND ${DBUS_RUN_SESSION_EXECUTABLE} -- bash ${CMAKE_CURRENT_SOURCE_DIR}/run_gui_audit_test.sh $<TARGET_FILE:test_repro_1d07126_gui>
+    )
+  endif()
   add_executable(test_gui_instance test_gui_instance.cpp
     ../ucc-gui/src/GuiInstance.cpp ../ucc-gui/inc/GuiInstance.hpp)
   add_dependencies(test_gui_instance ucc-gui)
@@ -238,16 +268,20 @@ if(DBUS_RUN_SESSION_EXECUTABLE AND BUILD_GUI)
     target_link_libraries(test_gui_rust_e2e PRIVATE PkgConfig::UCC_XCB)
     target_compile_definitions(test_gui_rust_e2e PRIVATE UCC_HAS_X11_BLUR)
   endif()
-  add_test(
-    NAME test_gui_rust_e2e
-    COMMAND ${DBUS_RUN_SESSION_EXECUTABLE} -- bash ${CMAKE_CURRENT_SOURCE_DIR}/run_rust_interop_test.sh $<TARGET_FILE:test_gui_rust_e2e> ${CMAKE_SOURCE_DIR}
-  )
+  if(NOT UCC_READ_ONLY_PREVIEW)
+    add_test(
+      NAME test_gui_rust_e2e
+      COMMAND ${DBUS_RUN_SESSION_EXECUTABLE} -- bash ${CMAKE_CURRENT_SOURCE_DIR}/run_rust_interop_test.sh $<TARGET_FILE:test_gui_rust_e2e> ${CMAKE_SOURCE_DIR}
+    )
+  endif()
   add_executable(test_system_monitor test_system_monitor.cpp
     ../ucc-gui/src/SystemMonitor.cpp ../ucc-gui/inc/SystemMonitor.hpp)
   add_dependencies(test_system_monitor ucc-gui)
   target_include_directories(test_system_monitor PRIVATE ../ucc-gui/inc ../include)
   target_link_libraries(test_system_monitor PRIVATE ucc-dbus Qt6::Core Qt6::Test)
-  add_test(NAME test_system_monitor COMMAND ${DBUS_RUN_SESSION_EXECUTABLE} -- bash ${CMAKE_CURRENT_SOURCE_DIR}/run_private_system_bus.sh $<TARGET_FILE:test_system_monitor>)
+  if(NOT UCC_READ_ONLY_PREVIEW)
+    add_test(NAME test_system_monitor COMMAND ${DBUS_RUN_SESSION_EXECUTABLE} -- bash ${CMAKE_CURRENT_SOURCE_DIR}/run_private_system_bus.sh $<TARGET_FILE:test_system_monitor>)
+  endif()
 endif()
 
 if(BUILD_GUI)
@@ -266,8 +300,26 @@ endif()
 if(TARGET ucc-dbus AND DBUS_RUN_SESSION_EXECUTABLE)
   add_executable(test_rust_uccd_interop test_rust_uccd_interop.cpp)
   target_link_libraries(test_rust_uccd_interop PRIVATE ucc-dbus Qt6::Core Qt6::DBus Qt6::Test)
+  if(NOT UCC_READ_ONLY_PREVIEW)
+    add_test(
+      NAME test_rust_uccd_interop
+      COMMAND ${DBUS_RUN_SESSION_EXECUTABLE} -- bash ${CMAKE_CURRENT_SOURCE_DIR}/run_rust_interop_test.sh $<TARGET_FILE:test_rust_uccd_interop> ${CMAKE_SOURCE_DIR}
+    )
+  endif()
+endif()
+
+find_program( PYTHON3_EXECUTABLE python3 )
+if( PYTHON3_EXECUTABLE )
   add_test(
-    NAME test_rust_uccd_interop
-    COMMAND ${DBUS_RUN_SESSION_EXECUTABLE} -- bash ${CMAKE_CURRENT_SOURCE_DIR}/run_rust_interop_test.sh $<TARGET_FILE:test_rust_uccd_interop> ${CMAKE_SOURCE_DIR}
+    NAME test_repro_1d07126_contrib
+    COMMAND ${PYTHON3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/test_repro_1d07126_contrib.py
+  )
+endif()
+
+find_program( NODE_EXECUTABLE node )
+if( NODE_EXECUTABLE )
+  add_test(
+    NAME test_repro_1d07126_gnome
+    COMMAND ${NODE_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/test_repro_1d07126_gnome.cjs
   )
 endif()

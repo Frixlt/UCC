@@ -33,6 +33,16 @@ pub async fn with_write_rpc_timeout<T>(
     }
 }
 
+pub fn unwrap_write_rpc(res: zbus::Result<bool>) -> bool {
+    match res {
+        Ok(val) => val,
+        Err(err) => {
+            eprintln!("Error: D-Bus call failed: {err}");
+            false
+        }
+    }
+}
+
 #[derive(Debug, Default, Clone)]
 pub struct LocalAssignments {
     pub profile_states: HashMap<String, Vec<String>>,

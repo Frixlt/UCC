@@ -547,6 +547,14 @@ impl UccdBackend for LiveUccdBackend {
             return false;
         };
         let key = parsed.as_str().to_string();
+        if profile_id.trim().is_empty() {
+            return self
+                .update_settings(|s| {
+                    s.state_map.remove(&key);
+                    Some(())
+                })
+                .is_some();
+        }
         for _ in 0..3 {
             let resolved = {
                 let s = self.read_rw(&self.settings);
@@ -603,13 +611,17 @@ impl UccdBackend for LiveUccdBackend {
                     let Ok(st) = k.parse::<ProfileState>() else {
                         return false;
                     };
+                    let key = st.as_str().to_string();
+                    if v.trim().is_empty() {
+                        updates.push((key, String::new()));
+                        continue;
+                    }
                     let Some(prof) = s.get_profile(v).cloned() else {
                         return false;
                     };
                     if prof.validate().is_err() {
                         return false;
                     }
-                    let key = st.as_str().to_string();
                     updates.push((key.clone(), prof.id.clone()));
                     resolved_profiles.push((key, prof));
                 }
@@ -633,14 +645,17 @@ impl UccdBackend for LiveUccdBackend {
             } else {
                 return self
                     .update_settings(|s| {
-                        if updates
-                            .iter()
-                            .any(|(_, prof_id)| !s.profiles.contains_key(prof_id))
-                        {
+                        if updates.iter().any(|(_, prof_id)| {
+                            !prof_id.is_empty() && !s.profiles.contains_key(prof_id)
+                        }) {
                             return None;
                         }
                         for (k, prof_id) in &updates {
-                            s.state_map.insert(k.clone(), prof_id.clone());
+                            if prof_id.is_empty() {
+                                s.state_map.remove(k);
+                            } else {
+                                s.state_map.insert(k.clone(), prof_id.clone());
+                            }
                         }
                         Some(())
                     })

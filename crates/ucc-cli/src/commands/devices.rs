@@ -45,15 +45,15 @@ pub async fn run_devices(
             Ok(())
         }
         DevicesAction::Scan => {
-            let res = with_write_rpc_timeout(client.proxy().scan_power_devices())
-                .await
-                .unwrap_or(false);
+            let res = crate::client::unwrap_write_rpc(
+                with_write_rpc_timeout(client.proxy().scan_power_devices()).await,
+            );
             ok(res)
         }
         DevicesAction::Set { json } => {
-            let res = with_write_rpc_timeout(client.proxy().set_power_device_settings_json(json))
-                .await
-                .unwrap_or(false);
+            let res = crate::client::unwrap_write_rpc(
+                with_write_rpc_timeout(client.proxy().set_power_device_settings_json(json)).await,
+            );
             ok(res)
         }
     }

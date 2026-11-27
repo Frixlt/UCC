@@ -219,7 +219,35 @@ impl ConfigManager {
     /// Quarantine invalid non-referenced legacy profiles rather than discarding an entire valid
     /// settings file when a single unreferenced user profile has legacy field quirks (`ISSUE-26`).
     pub fn load_from_path(path: &Path) -> Result<UccSettings, ConfigError> {
-        let content = fs::read_to_string(path)?;
+        use std::io::Read as _;
+        const MAX_CONFIG_FILE_BYTES: u64 = 8 * 1024 * 1024;
+        let meta = fs::metadata(path)?;
+        if meta.len() > MAX_CONFIG_FILE_BYTES {
+            return Err(ConfigError::Io(std::io::Error::new(
+                std::io::ErrorKind::InvalidData,
+                format!(
+                    "Configuration file {} exceeds maximum allowed size of {} bytes",
+                    path.display(),
+                    MAX_CONFIG_FILE_BYTES
+                ),
+            )));
+        }
+        let file = fs::File::open(path)?;
+        let mut buf = Vec::new();
+        file.take(MAX_CONFIG_FILE_BYTES + 1).read_to_end(&mut buf)?;
+        if buf.len() as u64 > MAX_CONFIG_FILE_BYTES {
+            return Err(ConfigError::Io(std::io::Error::new(
+                std::io::ErrorKind::InvalidData,
+                format!(
+                    "Configuration file {} exceeds maximum allowed size of {} bytes",
+                    path.display(),
+                    MAX_CONFIG_FILE_BYTES
+                ),
+            )));
+        }
+        let content = String::from_utf8(buf).map_err(|e| {
+            ConfigError::Io(std::io::Error::new(std::io::ErrorKind::InvalidData, e))
+        })?;
         let mut settings = UccSettings::from_json(&content)?;
         Self::validate_global_settings(&settings)?;
 

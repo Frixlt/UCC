@@ -4,7 +4,7 @@
 #[cfg(unix)]
 use nix::libc;
 use std::fs::{self, OpenOptions};
-use std::io::{self, Write};
+use std::io::{self, Read, Write};
 #[cfg(unix)]
 use std::os::unix::fs::OpenOptionsExt;
 #[cfg(unix)]
@@ -111,9 +111,7 @@ pub struct SysfsRoot {
 impl SysfsRoot {
     /// Creates a SysfsRoot rooted at `/` (production mode).
     pub fn production() -> Self {
-        let root = std::env::var("UCC_SYSFS_ROOT")
-            .map(PathBuf::from)
-            .unwrap_or_else(|_| PathBuf::from("/"));
+        let root = PathBuf::from("/");
         let canonical_root = fs::canonicalize(&root).unwrap_or_else(|_| root.clone());
         Self {
             root_path: root,
@@ -193,10 +191,45 @@ impl SysfsRoot {
     /// Reads raw string content from a sysfs node.
     pub fn read_string(&self, path: impl AsRef<Path>) -> Result<String, SysfsError> {
         let full_path = self.resolve(path.as_ref())?;
-        match fs::read_to_string(&full_path) {
-            Ok(s) => Ok(s.trim_end_matches(&['\r', '\n'][..]).to_string()),
-            Err(e) => Err(SysfsError::from_io(e, full_path)),
-        }
+        let res = (|| -> io::Result<String> {
+            let mut opts = OpenOptions::new();
+            opts.read(true);
+            #[cfg(unix)]
+            opts.custom_flags(libc::O_NOFOLLOW);
+            let mut file = opts.open(&full_path)?;
+
+            #[cfg(target_os = "linux")]
+            {
+                if let Ok(meta) = fs::symlink_metadata(&self.root_path) {
+                    if meta.file_type().is_symlink() {
+                        return Err(io::Error::new(
+                            io::ErrorKind::PermissionDenied,
+                            "Root path is a symlink",
+                        ));
+                    }
+                }
+                let proc_link = fs::read_link(format!("/proc/self/fd/{}", file.as_raw_fd()))?;
+                let canon_fd = fs::canonicalize(&proc_link)?;
+                if self.root_path == Path::new("/") {
+                    if !canon_fd.starts_with("/sys") && !canon_fd.starts_with("/proc") {
+                        return Err(io::Error::new(
+                            io::ErrorKind::PermissionDenied,
+                            "Symlink escape outside /sys and /proc detected via descriptor",
+                        ));
+                    }
+                } else if !canon_fd.starts_with(&self.canonical_root) {
+                    return Err(io::Error::new(
+                        io::ErrorKind::PermissionDenied,
+                        "Symlink escape detected via descriptor target",
+                    ));
+                }
+            }
+
+            let mut s = String::new();
+            file.read_to_string(&mut s)?;
+            Ok(s.trim_end_matches(&['\r', '\n'][..]).to_string())
+        })();
+        res.map_err(|e| SysfsError::from_io(e, full_path))
     }
 
     /// Writes raw string content to a sysfs node, logging to the journal.

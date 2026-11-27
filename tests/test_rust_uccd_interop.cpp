@@ -167,6 +167,21 @@ private slots:
     ucc::UccdClient client;
     QVERIFY(client.isConnected());
 
+#ifdef UCC_READ_ONLY_PREVIEW
+    QVERIFY(!client.enableWaterCooler(true));
+    QVERIFY(!client.setWaterCoolerPumpVoltage(0));
+    QVERIFY(!client.setWaterCoolerPumpVoltage(2));
+    QVERIFY(!client.saveCustomKeyboardProfile(
+        "interop-kbd", "Interop KBD", R"({"color":"#123456"})"));
+    const auto kbdRaw = client.getCustomKeyboardProfiles();
+    QVERIFY(kbdRaw.has_value());
+    const QJsonDocument kbdDoc = QJsonDocument::fromJson(QByteArray::fromStdString(*kbdRaw));
+    QVERIFY(kbdDoc.isArray());
+    for (const QJsonValue &entry : kbdDoc.array()) {
+      QVERIFY(entry.toObject().value(QStringLiteral("id")).toString() != QStringLiteral("interop-kbd"));
+    }
+    QVERIFY(!client.deleteCustomKeyboardProfile("interop-kbd"));
+#else
     QVERIFY(client.enableWaterCooler(true));
     QVERIFY(client.setWaterCoolerPumpVoltage(0));
     QCOMPARE(client.getWaterCoolerPumpLevel(), std::optional<int>(0));
@@ -194,6 +209,7 @@ private slots:
     }
     QVERIFY(foundKbd);
     QVERIFY(client.deleteCustomKeyboardProfile("interop-kbd"));
+#endif
   }
 
   void testProfileSwitchEmitsSignal()
@@ -221,10 +237,16 @@ private slots:
 
     QSignalSpy spy(&client, &ucc::UccdClient::profileChanged);
     QVERIFY(spy.isValid());
+#ifdef UCC_READ_ONLY_PREVIEW
+    QVERIFY(!client.setActiveProfile(targetId.toStdString()));
+    QTest::qWait(100);
+    QCOMPARE(spy.count(), 0);
+#else
     QVERIFY(client.setActiveProfile(targetId.toStdString()));
 
     QTRY_VERIFY_WITH_TIMEOUT(spy.count() >= 1, 2000);
     QCOMPARE(spy.last().at(0).toString(), targetId);
+#endif
   }
 
   void testMonitoringSnapshotAndBinaryHistory_TClient12()
@@ -284,10 +306,16 @@ private slots:
     const QString nextId = (ids.at(0) == currentId) ? ids.at(1) : ids.at(0);
 
     profileSpy.clear();
+#ifdef UCC_READ_ONLY_PREVIEW
+    QVERIFY(!client.setActiveProfile(nextId.toStdString()));
+    QTest::qWait(100);
+    QCOMPARE(profileSpy.count(), 0);
+#else
     QVERIFY(client.setActiveProfile(nextId.toStdString()));
     QTRY_VERIFY_WITH_TIMEOUT(profileSpy.count() >= 1, 2000);
     QTest::qWait(100);
     QCOMPARE(profileSpy.count(), 1);
+#endif
   }
 };
 

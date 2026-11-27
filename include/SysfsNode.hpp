@@ -52,7 +52,9 @@ public:
    */
   [[nodiscard]] bool isAvailable() const noexcept
   {
-    return std::filesystem::exists( m_path );
+    std::error_code ec;
+    const bool ok = std::filesystem::exists( m_path, ec );
+    return !ec && ok;
   }
 
   /**

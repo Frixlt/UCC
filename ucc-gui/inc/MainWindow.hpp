@@ -155,6 +155,9 @@ namespace ucc
     void connectFanControlTab();
     void updateProfileEditingWidgets( bool isCustom );
     void refreshCtgpCapabilities();
+    void fetchStartupCapabilities();
+    void applyWaterCoolerSupported( bool supported );
+    void applyHwpDynamicBoostSupported( bool supported );
     bool hasValidCtgpRange( int &defaultPower, int &maxPower ) const;
     void updateCtgpVisibility();
     void updateFanCrosshairs();
@@ -263,6 +266,7 @@ namespace ucc
 
     // Keyboard color widgets
     QLabel *m_keyboardColorLabel = nullptr;
+    QColor m_singleZoneKeyboardColor = Qt::white;
 
     // Change tracking
     bool m_profileChanged = false;

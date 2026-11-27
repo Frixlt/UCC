@@ -309,26 +309,36 @@ void TrayBackend::setActiveKeyboardProfile( const QString &keyboardProfileId )
   auto it = std::ranges::find_if( m_keyboardProfilesData, [&]( const QJsonValue &val ) {
     return val.toObject()[ "id" ].toString() == keyboardProfileId;
   } );
+  bool applied = false;
   if ( it != m_keyboardProfilesData.end() )
   {
-    auto profileData = it->toObject()[ "json" ].toString();
-    if ( !profileData.isEmpty() )
+    const QJsonValue jsonVal = it->toObject()[ "json" ];
+    QJsonObject obj;
+    if ( jsonVal.isObject() )
     {
-      QJsonDocument doc = QJsonDocument::fromJson( profileData.toUtf8() );
+      obj = jsonVal.toObject();
+    }
+    else if ( jsonVal.isString() )
+    {
+      const QJsonDocument doc = QJsonDocument::fromJson( jsonVal.toString().toUtf8() );
       if ( doc.isObject() )
-      {
-        QJsonObject obj = doc.object();
-        // Inject the keyboard profile ID so uccd can notify subscribers
-        obj[ "keyboardProfileId" ] = keyboardProfileId;
-        m_client->setKeyboardBacklight(
-          QJsonDocument( obj ).toJson( QJsonDocument::Compact ).toStdString() );
-      }
+        obj = doc.object();
+    }
+    if ( !obj.isEmpty() )
+    {
+      // Inject the keyboard profile ID so uccd can notify subscribers
+      obj[ "keyboardProfileId" ] = keyboardProfileId;
+      applied = m_client->setKeyboardBacklight(
+        QJsonDocument( obj ).toJson( QJsonDocument::Compact ).toStdString() );
     }
   }
-  m_keyboardProfileOverride = true;
-  m_activeProfileKeyboardId = keyboardProfileId;
-  m_activeProfileKeyboardName = resolveKeyboardProfileName( keyboardProfileId );
-  emit activeProfileChanged();
+  if ( applied )
+  {
+    m_keyboardProfileOverride = true;
+    m_activeProfileKeyboardId = keyboardProfileId;
+    m_activeProfileKeyboardName = resolveKeyboardProfileName( keyboardProfileId );
+    emit activeProfileChanged();
+  }
 }
 
 void TrayBackend::setODMPerformanceProfile( const QString &profile )

@@ -89,6 +89,13 @@ ProfileManager::ProfileManager( QObject *parent )
 
 void ProfileManager::refresh()
 {
+  if ( m_connected )
+  {
+    loadBuiltinFanProfiles();
+    loadCustomFanProfilesFromSettings();
+    loadCustomProfilesFromSettings();
+    loadCustomKeyboardProfilesFromSettings();
+  }
   updateProfiles();
 }
 
@@ -312,13 +319,13 @@ void ProfileManager::setActiveProfile( const QString &profileId )
 
 // Save / delete / create profiles
 
-void ProfileManager::saveProfile( const QString &profileJSON )
+bool ProfileManager::saveProfile( const QString &profileJSON )
 {
   QJsonDocument doc = QJsonDocument::fromJson( profileJSON.toUtf8() );
   if ( !doc.isObject() )
   {
     emit error( "Invalid profile JSON" );
-    return;
+    return false;
   }
 
   QJsonObject profileObj = doc.object();
@@ -328,18 +335,19 @@ void ProfileManager::saveProfile( const QString &profileJSON )
   if ( profileId.isEmpty() || profileName.isEmpty() )
   {
     emit error( "Profile missing id or name" );
-    return;
+    return false;
   }
 
   if ( !m_connected || !m_client->saveCustomProfile( profileJSON.toStdString() ) )
   {
     emit error( "Failed to save profile via uccd" );
-    return;
+    return false;
   }
 
   loadCustomProfilesFromSettings();
   updateAllProfiles();
   qDebug() << "Profile saved:" << profileName;
+  return true;
 }
 
 void ProfileManager::deleteProfile( const QString &profileId )
@@ -569,10 +577,18 @@ bool ProfileManager::setBatchStateMap( const std::map< QString, QString > &entri
     stdEntries[state.toStdString()] = profileId.toStdString();
 
   if ( !m_client->setBatchStateMap( stdEntries ) )
+  {
+    emit error( "Failed to update power state assignments via uccd" );
     return false;
+  }
 
   for ( const auto &[state, profileId] : entries )
-    m_stateMap[state] = profileId;
+  {
+    if ( profileId.isEmpty() )
+      m_stateMap.remove( state );
+    else
+      m_stateMap[state] = profileId;
+  }
   return true;
 }
 
@@ -583,7 +599,6 @@ void ProfileManager::loadCustomProfilesFromSettings()
   m_customProfilesData = QJsonArray();
   m_customProfiles.clear();
   m_stateMap = QJsonObject();
-  m_activeProfileId = "";
 
   if ( !m_client || !m_client->isConnected() ) return;
 
