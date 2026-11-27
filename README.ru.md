@@ -49,7 +49,7 @@
 | `ucc-cli` | Биб. + Бин. | `ucc-cli`, генерация автодополнений shell и man-страницы |
 | `ucc-desktop` | Биб. + Бин. | Настольные утилиты и `ucc-desktop-tray` |
 | `ucc-session-agent` | Биб. + Бин. | Интеграция с сессией и `ucc-session-agent` |
-| `xtask` | Автоматизация | Сборка, установка runtime, проверка версий и релизные задачи (`install-runtime`, `check-versions`, `dist`, `dist-cli`, `capture-gallery`) |
+| `xtask` | Автоматизация | Сборка, установка runtime, проверка версий и релизные задачи (`install-runtime`, `check-versions`, `parser-check`, `release`, `dist`, `dist-cli`, `build-fixtures`, `capture-gallery`) |
 
 ---
 
@@ -119,7 +119,7 @@ python3 contrib/frixit/capture-gallery.py --build build --output screenshots/cur
 
 ### Arch Linux / CachyOS (`PKGBUILD`)
 
-Корневой [`PKGBUILD`](PKGBUILD) собирает пакет `ucc-rusted` (обеспечивает `uniwill-control-center`, заменяет `frixit-control-center`, конфликтует с `uniwill-control-center` и `uniwill-control-center-mechrevo`):
+Корневой [`PKGBUILD`](PKGBUILD) собирает пакет `ucc-rusted` (обеспечивает `uniwill-control-center` и `frixit-control-center`, заменяет `frixit-control-center`, конфликтует с `uniwill-control-center`, `uniwill-control-center-mechrevo` и `frixit-control-center`):
 
 ```bash
 git clone https://github.com/Frixlt/UCC.git
@@ -129,7 +129,7 @@ UCC_SOURCE_DIR="$PWD" makepkg -si
 
 ### Debian / Ubuntu (DEB)
 
-Метаданные пакета находятся в `debian/` (требуются `rustc >= 1.89`, `cargo`, `cmake >= 3.20`, `qt6-base-dev`, `qt6-charts-dev`, `nlohmann-json3-dev`, `libsystemd-dev`, `libxrandr-dev`, `libudev-dev`):
+Метаданные пакета находятся в `debian/` (требуются `rustc >= 1.89`, `cargo`, `cmake >= 3.20`, `g++ >= 9`, `pkgconf`, `qt6-base-dev`, `qt6-charts-dev`, `qt6-tools-dev`, `nlohmann-json3-dev`, `libsystemd-dev`, `libxrandr-dev`, `libudev-dev`):
 
 ```bash
 make deb
@@ -145,7 +145,7 @@ make rpm
 
 ### Nix Flake
 
-[`flake.nix`](flake.nix) экспортирует `packages.ucc`, `overlays.default` и `nixosModules.uccd`:
+[`flake.nix`](flake.nix) экспортирует `packages.ucc` (по умолчанию), `overlays.default` и `nixosModules.uccd` (по умолчанию):
 
 ```bash
 nix build .#ucc
@@ -163,22 +163,27 @@ git clone https://github.com/Frixlt/UCC.git
 cd UCC
 
 # 1. Сборка 7 Rust-бинарников времени выполнения и xtask
-cargo build --workspace --bins --release --locked --target-dir target
+CARGO_TARGET_DIR=/tmp/ucc-cargo-target \
+  cargo build --workspace --bins --release --locked
 
-# 2. Сборка автономного Qt6 GUI (без KF6, апплет Plasma отключён)
-cmake -S . -B build -G Ninja \
+# 2. Сборка автономного Qt6 GUI (без KF6, апплет Plasma отключён, обычный режим)
+cmake -S . -B /tmp/ucc-build-normal -G Ninja \
   -DCMAKE_BUILD_TYPE=Release \
   -DCMAKE_INSTALL_PREFIX=/usr \
   -DCMAKE_INSTALL_LIBDIR=lib \
   -DBUILD_GUI=ON \
   -DBUILD_TRAY=OFF \
   -DBUILD_CLI=OFF \
-  -DUCC_PACKAGE_RUST_RUNTIME=ON
-cmake --build build --parallel 2
+  -DUCC_PACKAGE_RUST_RUNTIME=ON \
+  -DUCC_READ_ONLY_PREVIEW=OFF
+cmake --build /tmp/ucc-build-normal --parallel 2
 
-# 3. Установка GUI, Rust-бинарников, автодополнений и man-страницы
-sudo cmake --install build
-sudo ./target/release/xtask install-runtime /usr ./target/release
+# 3. Проверка ldd-инвариантов автономного ucc-gui (M12.7 / ADR-01)
+bash scripts/check_gui_ldd.sh /tmp/ucc-build-normal/bin/ucc-gui
+
+# 4. Установка GUI, Rust-бинарников, автодополнений и man-страниц
+sudo cmake --install /tmp/ucc-build-normal
+sudo /tmp/ucc-cargo-target/release/xtask install-runtime /usr /tmp/ucc-cargo-target/release
 ```
 
 ---
@@ -192,7 +197,7 @@ sudo ./target/release/xtask install-runtime /usr ./target/release
 ```bash
 sudo systemctl daemon-reload
 sudo systemctl enable --now uccd.service
-sudo systemctl enable uccd-pre-sleep.service uccd-sleep.service
+sudo systemctl enable uccd-sleep.service
 systemctl status uccd.service
 ```
 
@@ -224,6 +229,21 @@ ucc-session-agent               # Запуск сессионного агент
 ```bash
 ./run-preview.sh
 ```
+
+---
+
+## Проверка и тестирование
+
+Репозиторий включает **661 тест Rust** в **92 интеграционных наборах** (10 крейтов), а также **49–53 CTest-набора** (19 C++ unit-тестов, 14 Python-наборов, 3 теста сессионного агента, до 4 тестов GNOME Shell при наличии `gjs`/`node`, 11 GUI-тестов, 1 клиентский interop-тест и 1 автоматическая проверка `ldd` для `ucc-gui` (`scripts/check_gui_ldd.sh` / CTest `test_gui_ldd_invariants` — отсутствие `KF6`, `QML`/`Qt6Qml`/`Qt6Quick`, `Qt6Bluetooth` и `libucc-dbus.so` по `M12.7` / `ADR-01`)).
+
+```bash
+export CARGO_TARGET_DIR=/tmp/ucc-cargo-target
+cargo run -p xtask -- check-versions
+cargo clippy --workspace --all-targets -- -D warnings
+dbus-run-session -- cargo test --workspace --locked --offline --no-fail-fast
+```
+
+Полные команды CTest (`normal` `-DUCC_READ_ONLY_PREVIEW=OFF` и `preview` `-DUCC_READ_ONLY_PREVIEW=ON`), Python/GNOME-наборы и чек-лист аппаратной приёмки описаны в [`docs/TESTING.md`](docs/TESTING.md).
 
 ---
 
@@ -261,7 +281,7 @@ ucc-session-agent               # Запуск сессионного агент
 | [`docs/DBUS_API.md`](docs/DBUS_API.md) | Полный справочник `com.uniwill.uccd` / `de.uniwill.uccd` (123 метода, 7 сигналов, действия Polkit) |
 | [`docs/CLI_REFERENCE.md`](docs/CLI_REFERENCE.md) | Подкоманды `ucc-cli`, флаги, схемы JSON-вывода, коды возврата |
 | [`docs/BUILDING.md`](docs/BUILDING.md) | Зависимости сборки, параметры CMake/Cargo, упаковка (Arch/DEB/RPM/Nix), режим предпросмотра |
-| [`docs/TESTING.md`](docs/TESTING.md) | Тесты workspace, D-Bus interop-набор, фикстуры аудита GUI, границы проверок |
+| [`docs/TESTING.md`](docs/TESTING.md) | Тесты workspace (661 Rust / 49–53 CTest), `ldd`-инварианты `ucc-gui`, D-Bus interop, фикстуры аудита GUI |
 | [`docs/MIGRATION_AND_RECOVERY.md`](docs/MIGRATION_AND_RECOVERY.md) | Автономная миграция настроек, резервное копирование, откат, восстановление драйвера ядра |
 | [`docs/COMPARISON.md`](docs/COMPARISON.md) | Функциональное и архитектурное сравнение с upstream UCC Revorked (`eb98bfa`) |
 | [`docs/AI_AGENT_GUIDE.md`](docs/AI_AGENT_GUIDE.md) | Навигация по кодовой базе, тестовые стенды и ограничения для автоматизированных агентов |

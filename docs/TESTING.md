@@ -1,223 +1,282 @@
-# Тестирование и верификация `ucc-rusted`
+# Testing and Verification (`ucc-rusted`)
 
-[Сборка и упаковка](BUILDING.md) · [Миграция и восстановление](MIGRATION_AND_RECOVERY.md)
+[Building and Packaging](BUILDING.md) · [Migration and Recovery](MIGRATION_AND_RECOVERY.md)
 
-Документ описывает автоматические проверки Rust, C++/Qt6 CTest-наборы, изолированные тестовые стенды (`dbus-run-session`, `LD_PRELOAD`-фикстуры, mock BlueZ, Wayland/Hyprland) и чек-лист аппаратной приёмки.
-
-## 1. Набор проверок Rust
-
-Все команды выполняются из корня репозитория. В офлайн-среде добавляется `--offline`.
-
-### Полный прогон тестов, линтеров и форматирования
-
-```bash
-# 1. Паритет версий (6 манифестов), валидность JSON-метаданных, CycloneDX SBOM и инварианты импортёра
-cargo xtask parser-check
-cargo xtask check-versions
-
-# 2. Проверка форматирования
-cargo fmt --all -- --check
-
-# 3. Статический анализ Clippy (все цели, предупреждения = ошибки)
-cargo clippy --workspace --all-targets -- -D warnings
-
-# 4. Полный прогон unit- и интеграционных тестов на изолированной шине D-Bus
-dbus-run-session -- cargo test --workspace --locked --offline
-```
-
-В CI (`.github/workflows/build.yml`) тесты Rust выполняются на матрице MSRV `1.89.0` и `1.99.1` с флагом `--no-fail-fast`.
-
-### Покрытие по крейтам (`crates/*/tests/`)
-
-| Крейт | Ключевые тестовые наборы |
-| --- | --- |
-| `ucc-core` | `domain_validation`, `dto_mapping`, `property_invariants`, `core_validation_rules` |
-| `ucc-config` | `config_persistence`, `corruption_recovery`, `offline_import`, `settings_manager_tests`, `config_security` |
-| `ucc-hardware` | `ioctl_abi`, `ioctl_preconditions`, `cooling_engine`, `cpu_topology_and_control`, `power_devices_and_tunables`, `sysfs_failure_matrix`, `nvml_guard`, `fake_bluez_cooler`, `cooler_protocol`, `cooler_stress_tests`, `vendor_detection`, `telemetry_suite` |
-| `ucc-dbus` | `auth_tests`, `dbus_security_limits`, `contract_tests`, `dbus_skeleton`, `ipc_framing` |
-| `uccd` | `daemon_integration`, `fault_matrix`, `import_check_corpus`, `daemon_security` |
-| `ucc-cli` | `cli_tests`, `cli_daemon_integration`, `cli_security` |
-| `ucc-desktop` | `tray_menu`, `window_activation`, `tray_security` |
-| `ucc-session-agent` | `session_agent_integration` |
-| `ucc-lighting` | `lighting_tests`, `hid_transport`, `lighting_safety` |
-| `xtask` | `packaging_contracts`, `build_verification`, `maintenance_workflows` |
+This document covers the Rust workspace checks, C++/Qt6 CTest suites (normal and read-only preview), automated `ucc-gui` `ldd` linkage verification (`M12.7` / `ADR-01`), isolated test harnesses (`dbus-run-session`, `LD_PRELOAD` fixtures, mock BlueZ, Wayland/Hyprland), and the hardware acceptance checklist.
 
 ---
 
-## 2. Наборы C++ / Qt6 CTest
+## 1. Rust Workspace Verification
 
-Для выявления выходов за границы контейнеров STL все тестовые CMake-сборки компилируются с `-DCMAKE_CXX_FLAGS="-D_GLIBCXX_ASSERTIONS"`.
+Run all commands from the repository root. Use an out-of-tree `CARGO_TARGET_DIR` (for example `/tmp/ucc-cargo-target`) to keep the working tree clean, and append `--locked --offline` in offline environments.
 
-### Предварительная сборка `interop_daemon`
-
-Кросс-языковые тесты `test_rust_uccd_interop` и `test_gui_rust_e2e` запускают бинарный пример Rust-демона `interop_daemon`:
+### Full Lint, Formatting, Version Parity, and Test Gate
 
 ```bash
-cargo build -p uccd --example interop_daemon --locked --offline
+export CARGO_TARGET_DIR=/tmp/ucc-cargo-target
+
+# 1. Version parity across all 6 manifests, JSON metadata validity, CycloneDX SBOM, and importer invariants
+cargo run -p xtask -- check-versions
+cargo run -p xtask -- parser-check
+
+# 2. Formatting check
+cargo fmt --all -- --check
+
+# 3. Static analysis with Clippy (all targets, warnings denied)
+cargo clippy --workspace --all-targets -- -D warnings
+
+# 4. Full workspace unit and integration test suite on an isolated D-Bus session bus
+dbus-run-session -- cargo test --workspace --locked --offline --no-fail-fast
 ```
 
-Путь к собранному бинарнику передаётся через переменную окружения `UCC_INTEROP_DAEMON_BIN` (по умолчанию `target/debug/examples/interop_daemon`).
-
-### Основной набор (Normal suite — 48 тестов в конфигурации без Plasma / до 52 при наличии `gjs` и `node`)
-
-Конфигурация для автономного Rust runtime (`BUILD_TRAY=OFF`):
+Targeted run for the core daemon, client, and tooling crates (useful during focused iteration; add `-p ucc-hardware -p ucc-lighting` for all 10 crates):
 
 ```bash
-cmake -S . -B build-rust-runtime -G Ninja \
+CARGO_TARGET_DIR=/tmp/ucc-cargo-target \
+  dbus-run-session -- cargo test \
+  -p uccd -p ucc-core -p ucc-config -p ucc-dbus \
+  -p ucc-cli -p ucc-desktop -p ucc-session-agent -p xtask
+```
+
+In CI (`.github/workflows/build.yml`), Rust checks run on a toolchain matrix of MSRV `1.89.0` and pinned `1.99.1` with `--locked --no-fail-fast`.
+
+### Rust Crate Test Inventory (10 Crates, 92 Integration Suites, 661 Tests)
+
+Counts reflect `#[test]` / `#[tokio::test]` functions (`34` unit + `627` integration = `661` total) and Cargo integration test targets under `crates/*/tests/`:
+
+| Crate | Unit | Integration | Total | Integration Suites (`crates/<crate>/tests/`) |
+| --- | ---: | ---: | ---: | --- |
+| `ucc-core` | 0 | 50 | 50 | 8: `core_charging_and_fans`, `core_display_and_thresholds`, `core_profile_invariants`, `core_serialization`, `core_validation_rules`, `domain_validation`, `dto_mapping`, `property_invariants` |
+| `ucc-config` | 12 | 82 | 94 | 13: `config_atomic_writes`, `config_backup_and_defaults`, `config_edge_cases`, `config_file_permissions`, `config_persistence`, `config_policy_parsing`, `config_schema_migration`, `config_security`, `config_thresholds_and_restore`, `config_validation`, `corruption_recovery`, `offline_import`, `settings_manager_tests` |
+| `ucc-hardware` | 0 | 171 | 171 | 30: `cooler_protocol`, `cooler_stress_tests`, `cooling_engine`, `cpu_topology_and_control`, `fake_bluez_cooler`, `hardware_backends`, `hardware_device_discovery`, `hardware_driver_contracts`, `hardware_fan_and_cooler`, `hardware_ioctl_bounds`, `hardware_platform_profile`, `hardware_probe_matrix`, `hardware_safety`, `hardware_sysfs_guards`, `hardware_traits`, `ioctl_abi`, `ioctl_preconditions`, `nvml_device_lifecycle`, `nvml_edge_cases`, `nvml_error_handling`, `nvml_guard`, `nvml_memory_and_bdf`, `nvml_telemetry_abi`, `platform_backend`, `power_devices_and_tunables`, `sysfs_failure_matrix`, `sysfs_path_containment`, `telemetry_suite`, `vendor_detection`, `windows_wmi_backend` |
+| `ucc-dbus` | 2 | 35 | 37 | 8: `auth_tests`, `contract_tests`, `dbus_auth_and_payloads`, `dbus_introspection_parity`, `dbus_method_dispatch`, `dbus_security_limits`, `dbus_skeleton`, `ipc_framing` |
+| `uccd` | 0 | 171 | 171 | 6: `daemon_integration`, `daemon_lid_and_reconcile`, `daemon_policies`, `daemon_security`, `fault_matrix`, `import_check_corpus` |
+| `ucc-cli` | 2 | 38 | 40 | 7: `cli_daemon_integration`, `cli_error_handling`, `cli_fan_and_dbus`, `cli_fan_payload_validation`, `cli_options_and_flags`, `cli_security`, `cli_tests` |
+| `ucc-desktop` | 7 | 18 | 25 | 7: `tray_actions`, `tray_lifecycle_and_timeouts`, `tray_menu`, `tray_reconnect`, `tray_security`, `tray_state_sync`, `window_activation` |
+| `ucc-session-agent` | 6 | 12 | 18 | 3: `session_agent_integration`, `session_lid_and_display`, `session_refresh_and_timeouts` |
+| `ucc-lighting` | 0 | 25 | 25 | 6: `hid_transport`, `lighting_device_controls`, `lighting_hidraw_interface`, `lighting_protocol`, `lighting_safety`, `lighting_tests` |
+| `xtask` | 5 | 25 | 30 | 4: `build_verification`, `deployment_security`, `maintenance_workflows`, `packaging_contracts` |
+| **Total** | **34** | **627** | **661** | **92 integration test targets** |
+
+---
+
+## 2. C++ / Qt6 CTest, Python, and GNOME Suites
+
+All CMake test builds compile with `-DCMAKE_CXX_FLAGS="-D_GLIBCXX_ASSERTIONS"` to catch STL bounds violations, and use out-of-tree build directories under `/tmp/`.
+
+### Pre-Building `interop_daemon`
+
+Cross-language tests `test_rust_uccd_interop` and `test_gui_rust_e2e` launch the Rust daemon example binary `interop_daemon`:
+
+```bash
+CARGO_TARGET_DIR=/tmp/ucc-cargo-target \
+  cargo build -p uccd --example interop_daemon --locked --offline
+```
+
+Pass the compiled binary path through `UCC_INTEROP_DAEMON_BIN` (defaults to `target/debug/examples/interop_daemon` when unset).
+
+### Normal Suite (`-DUCC_READ_ONLY_PREVIEW=OFF`)
+
+Standalone Rust-runtime configuration (`-DBUILD_TRAY=OFF`):
+
+```bash
+cmake -S . -B /tmp/ucc-build-normal -G Ninja \
   -DCMAKE_BUILD_TYPE=RelWithDebInfo \
   -DCMAKE_CXX_FLAGS="-D_GLIBCXX_ASSERTIONS" \
   -DUCC_PACKAGE_RUST_RUNTIME=ON \
+  -DUCC_READ_ONLY_PREVIEW=OFF \
   -DBUILD_TRAY=OFF \
   -DBUILD_TESTS=ON
-cmake --build build-rust-runtime --parallel 2
+cmake --build /tmp/ucc-build-normal --parallel 2
 
-# Проверка отсутствия неразрешённых shared-зависимостей у ucc-gui
-! ldd build-rust-runtime/bin/ucc-gui | grep -q 'not found'
+# Automated ldd linkage invariant check for ucc-gui (M12.7 / ADR-01)
+bash scripts/check_gui_ldd.sh /tmp/ucc-build-normal/bin/ucc-gui
 
-# Прогон CTest
-UCC_INTEROP_DAEMON_BIN="$PWD/target/debug/examples/interop_daemon" \
-  ctest --test-dir build-rust-runtime --output-on-failure --parallel 2
+# Full CTest run
+UCC_INTEROP_DAEMON_BIN=/tmp/ucc-cargo-target/debug/examples/interop_daemon \
+  ctest --test-dir /tmp/ucc-build-normal --output-on-failure --parallel 2
 ```
 
-В состав основного набора (`tests/CMakeLists.txt`) входят:
-- 19 C++ unit-тестов логики (`test_state_utils`, `test_sleep_state`, `test_lightbar`, `test_driver_health`, `test_notification_monitor`, `test_power_policy`, `test_cpu_selection`, `test_power_devices`, `test_lid_wakeup`, `test_gpu_sysfs`, `test_display_backlight`, `test_keyboard_controller`, `test_fan_profile`, `test_profile_manager`, `test_settings_manager`, `test_metrics_history`, `test_aquaris_selection`, `test_session_telemetry`, `test_process_terminator`);
-- 14 Python-тестов развёртывания, миграции, упаковки и импорта (`test_deployment`, `test_prepare_deployment`, `test_desktop_transition`, `test_import_check`, `test_sleep_install`, `test_tcc_import`, `test_controlcenter_migration`, `test_control_authorization`, `test_watercooler_override`, `test_device_identification`, `test_bluetooth_retry`, `test_bluetooth_startup`, `test_display_identity`, `test_contrib_packaging`);
-- 3 теста session-агента (`test_driver_alert`, `test_refresh_advisor_modes`, `test_refresh_advisor_lifecycle`);
-- 4 теста GNOME Shell (`test_gnome_async` при наличии `gjs`, `test_gnome_launch`, `test_gnome_refresh` и `test_gnome_extension_contracts` при наличии `node`);
-- 11 GUI-тестов (`test_fan_curve_editor`, 5 шардов `test_gui_audit_*`, `test_gui_regressions`, `test_gui_instance`, `test_system_monitor`, `test_app_logging`, `test_gui_rust_e2e`) и 1 клиентский interop-тест (`test_rust_uccd_interop`).
+#### Normal Suite Breakdown (`tests/CMakeLists.txt`)
 
-Дополнительно в `PKGBUILD` запускается тест миграции:
+`tests/CMakeLists.txt` registers **49** base CTest entries without optional JS runtimes (including `test_gui_ldd_invariants`), up to **53** when both `gjs` and `node` are installed (`50` with `gjs` only, `52` with `node` only):
+
+- **19 C++ unit tests**: `test_session_telemetry`, `test_process_terminator`, `test_state_utils`, `test_sleep_state`, `test_lightbar`, `test_driver_health`, `test_notification_monitor`, `test_power_policy`, `test_cpu_selection`, `test_power_devices`, `test_lid_wakeup`, `test_gpu_sysfs`, `test_display_backlight`, `test_keyboard_controller`, `test_fan_profile`, `test_profile_manager`, `test_settings_manager`, `test_metrics_history`, `test_aquaris_selection`.
+- **14 Python CTest suites**: `test_deployment`, `test_prepare_deployment`, `test_desktop_transition`, `test_import_check`, `test_sleep_install`, `test_tcc_import`, `test_controlcenter_migration`, `test_control_authorization`, `test_watercooler_override`, `test_device_identification`, `test_bluetooth_retry`, `test_bluetooth_startup`, `test_display_identity`, `test_contrib_packaging`.
+  - Note: `tests/` contains **15** `test_*.py` files in total. The 15th file, `tests/test_ite8291_brightness.py`, is a standalone kernel-driver callback harness invoked manually against a patched `tuxedo-drivers` source tree (`python3 tests/test_ite8291_brightness.py /path/to/tuxedo-drivers`).
+  - Additionally, `PKGBUILD` executes the Mechrevo migration test:
+    ```bash
+    python3 contrib/mechrevo/tests/test_migration.py
+    ```
+- **3 session-agent D-Bus tests**: `test_driver_alert`, `test_refresh_advisor_modes`, `test_refresh_advisor_lifecycle`.
+- **4 GNOME Shell tests**:
+  - 1 GJS test (when `gjs` is installed): `test_gnome_async` (`tests/test_gnome_async.js` via `tests/run_gnome_async_test.sh`);
+  - 3 Node.js tests (when `node` is installed): `test_gnome_launch` (`tests/test_gnome_launch.cjs`), `test_gnome_refresh` (`tests/test_gnome_refresh.cjs`), `test_gnome_extension_contracts` (`tests/test_gnome_extension_contracts.cjs`).
+- **11 GUI tests**: `test_fan_curve_editor`, 5 shards of `test_gui_audit` (52 slots total: `test_gui_audit_profiles_cpu` [16], `test_gui_audit_dashboard_cooling` [7], `test_gui_audit_lighting_devices` [8], `test_gui_audit_monitor_theme` [12], `test_gui_audit_preview_gallery` [9]), `test_gui_regressions` (14 regression slots), `test_gui_instance`, `test_gui_rust_e2e`, `test_system_monitor`, `test_app_logging`.
+- **1 C++/Rust D-Bus client interop test**: `test_rust_uccd_interop`.
+- **1 GUI `ldd` linkage invariant test**: `test_gui_ldd_invariants` (invokes `scripts/check_gui_ldd.sh`).
+
+### Automated `ucc-gui` `ldd` Invariant Check (`M12.7` / `ADR-01`)
+
+Per `M12.7` and `ADR-01`, the standalone `ucc-gui` binary built with `-DUCC_PACKAGE_RUST_RUNTIME=ON -DBUILD_TRAY=OFF` must link only against `Qt6::{Core,Gui,Widgets,DBus,Charts}` and statically linked `libucc-dbus`. Automated verification runs through `scripts/check_gui_ldd.sh` and CTest target `test_gui_ldd_invariants`:
 
 ```bash
-python3 contrib/mechrevo/tests/test_migration.py
+# Direct script invocation
+bash scripts/check_gui_ldd.sh /tmp/ucc-build-normal/bin/ucc-gui
+
+# Via CTest
+ctest --test-dir /tmp/ucc-build-normal -R "^test_gui_ldd_invariants$" --output-on-failure
 ```
 
-### Набор Read-Only Preview (3 теста)
+The check fails if `ldd` reports any missing (`not found`) shared object or any link to forbidden libraries:
+
+- `KF6` (KDE Frameworks / Plasma)
+- `QML` / `Qt6Qml` / `Qt6Quick`
+- `Qt6Bluetooth`
+- `libucc-dbus.so` (must be linked statically, never as a public shared library)
+
+Equivalent manual shell check:
 
 ```bash
-cmake -S . -B build-preview -G Ninja \
+! ldd /tmp/ucc-build-normal/bin/ucc-gui | grep -qE 'not found|KF6|Qt6Qml|Qt6Quick|Qt6Bluetooth|libucc-dbus'
+```
+
+### Read-Only Preview Suite (`-DUCC_READ_ONLY_PREVIEW=ON`)
+
+```bash
+cmake -S . -B /tmp/ucc-build-preview -G Ninja \
   -DCMAKE_BUILD_TYPE=RelWithDebInfo \
   -DCMAKE_CXX_FLAGS="-D_GLIBCXX_ASSERTIONS" \
   -DUCC_READ_ONLY_PREVIEW=ON \
   -DUCC_PACKAGE_RUST_RUNTIME=ON \
   -DBUILD_TRAY=OFF \
   -DBUILD_TESTS=ON
-cmake --build build-preview --parallel 2 \
-  --target test_gui_audit test_gui_instance test_app_logging ucc-gui
+cmake --build /tmp/ucc-build-preview --parallel 2 \
+  --target test_gui_audit test_gui_regressions test_gui_instance test_app_logging ucc-gui
 
-ctest --test-dir build-preview \
+# Targeted 3-test preview gate (matches CI)
+ctest --test-dir /tmp/ucc-build-preview \
   -R "^(test_gui_audit_preview_gallery|test_gui_instance|test_app_logging)$" \
+  --output-on-failure
+
+# Optional: preview-safe 8-slot regression subset
+ctest --test-dir /tmp/ucc-build-preview \
+  -R "^test_gui_regressions$" \
   --output-on-failure
 ```
 
-Проверяет блокировку всех путей записи (`previewMustBlockEveryWritePath`, `previewMustNotSaveLocalMonitorPreferences`), изоляцию инстансов (`test_gui_instance`) и логирование в preview-режиме (`test_app_logging`).
+Under `-DUCC_READ_ONLY_PREVIEW=ON`:
+- `test_gui_audit_preview_gallery` verifies write blocking (`previewMustBlockEveryWritePath`, `previewMustNotSaveLocalMonitorPreferences`), `test_gui_instance` verifies single-instance isolation, and `test_app_logging` verifies preview logging.
+- `test_gui_regressions` runs a preview-safe 8-slot subset (`n12_mainwindow_ctor_avoids_sync_dbus_capability_calls`, `n13_keyboard_visualizer_avoids_blocking_detect_layout_in_ctor`, `n26_preview_mode_allows_readonly_webcam_sw_available`, `n31_fan_control_tab_disables_remove_for_builtin_profile`, `n28_sysfs_node_is_available_does_not_terminate_on_eacces`, `p0_14_monitor_tab_sticky_mark_click_no_sync_self_delete_uaf`, `p0_15_hardware_tab_accepts_null_parent_without_crash`, `m_gui_05_read_json_int_preserves_negative_gpu_clock_offsets`).
+- `test_gui_rust_e2e`, `test_system_monitor`, and `test_rust_uccd_interop` are excluded from CTest in preview builds.
 
-### Кросс-языковые тесты (`test_rust_uccd_interop` и `test_gui_rust_e2e`)
+### Cross-Language Interop Tests (`test_rust_uccd_interop` and `test_gui_rust_e2e`)
 
-Запускаются через `dbus-run-session -- bash tests/run_rust_interop_test.sh <test-binary> <source-dir> [args...]`:
-- `test_rust_uccd_interop`: проверяет совместимость C++ `UccdClient` (`libucc-dbus`) с живым Rust `interop_daemon` (JSON-контракты, сигналы, управление профилями и политиками, временная директория `UCC_INTEROP_CONFIG_DIR`).
-- `test_gui_rust_e2e`: запускает полный Qt6 `MainWindow` против Rust `LiveUccdBackend` (`interop_daemon`), проверяет все 10 разделов сайдбара (9 пунктов навигации + About), переключение Light/Dark-тем, запись профилей и политик крышки (`F45 Lid`), отклонение невалидных команд без ложного подтверждения успеха и блокировку записей при `UCC_READ_ONLY_PREVIEW=1`.
+Both suites execute via `dbus-run-session -- bash tests/run_rust_interop_test.sh <test-binary> <source-dir> [args...]`:
+
+- `test_rust_uccd_interop`: verifies C++ `UccdClient` (`libucc-dbus`) compatibility against a live Rust `interop_daemon` (JSON contracts, signals, profile and policy mutations, isolated `UCC_INTEROP_CONFIG_DIR`).
+- `test_gui_rust_e2e`: boots the full Qt6 `MainWindow` against the Rust `LiveUccdBackend` (`interop_daemon`), exercises all 10 sidebar sections (9 navigation tabs + About), Light/Dark theme switching, profile and lid-policy writes (`F45 Lid`), rejection of invalid commands without false success reporting, and write blocking under `UCC_READ_ONLY_PREVIEW=1`.
 
 ---
 
-## 3. Изолированные тестовые стенды
+## 3. Isolated Test Harnesses
 
-### Приватная системная шина D-Bus
+### Private System D-Bus
 
-Скрипт `tests/run_private_system_bus.sh` перенаправляет системную шину на временную сессионную шину внутри `dbus-run-session`:
-
-```bash
-dbus-run-session -- bash tests/run_private_system_bus.sh <команда>
-```
-
-Устанавливаемые переменные: `DBUS_SYSTEM_BUS_ADDRESS="$DBUS_SESSION_BUS_ADDRESS"`, `GIO_USE_VFS=local`. Обёртка `tests/run_rust_interop_test.sh` дополнительно создаёт изолированный временный `HOME` и `XDG_{CONFIG,DATA,STATE,CACHE}_HOME`, запускает `<test-binary>` дочерним процессом (без `exec`) с передачей дополнительных аргументов и кода возврата, гарантируя очистку временного каталога через `trap ... EXIT`.
-
-### C-фикстуры `LD_PRELOAD` (`stand-fixtures/`, `extra-fixtures/`)
-
-Компиляция всех 6 разделяемых библиотек выполняется командой:
+`tests/run_private_system_bus.sh` redirects the system bus address to an ephemeral session bus inside `dbus-run-session`:
 
 ```bash
-UCC_FIXTURES_DIR=/tmp/ucc-fixtures cargo xtask build-fixtures
+dbus-run-session -- bash tests/run_private_system_bus.sh <command>
 ```
 
-| Исходник | Артефакт | Назначение и переменные управления |
+Environment variables set: `DBUS_SYSTEM_BUS_ADDRESS="$DBUS_SESSION_BUS_ADDRESS"` and `GIO_USE_VFS=local`. The wrapper `tests/run_rust_interop_test.sh` additionally creates isolated temporary `HOME` and `XDG_{CONFIG,DATA,STATE,CACHE}_HOME` directories, invokes `<test-binary>` as a child process (without `exec`) propagating extra arguments and exit code, and guarantees cleanup via `trap ... EXIT`.
+
+### `LD_PRELOAD` C Fixtures (`stand-fixtures/`, `extra-fixtures/`)
+
+Compile all 6 shared fixture libraries with:
+
+```bash
+UCC_FIXTURES_DIR=/tmp/ucc-fixtures cargo run -p xtask -- build-fixtures
+```
+
+| Source | Artifact | Purpose & Control Environment Variables |
 | --- | --- | --- |
-| `stand-fixtures/open-ancestor.c`, `extra-fixtures/open-ancestor.c` | `stand/open-ancestor.so`, `extra/open-ancestor.so` | Перехват `open64` (`O_WRONLY`) на `UCC_E1_SWAP_OPEN_PATH`: переименовывает родительский каталог `UCC_E1_SWAP_ANCESTOR` и подменяет его симлинком на `UCC_E1_SWAP_DESTINATION` (проверка защиты от TOCTOU-атак на предка) |
-| `stand-fixtures/open-swap.c` | `stand/open-swap.so` | Перехват `open64` (`O_WRONLY`) на `UCC_AUDIT_SWAP_TARGET`: выполняет `unlink` + `symlink` на `UCC_AUDIT_SWAP_DESTINATION` (проверка защиты от TOCTOU-подмены целевого файла) |
-| `stand-fixtures/nvml.c` | `stand/libnvidia-ml.so.1` | Mock NVML с подсчётом ссылок (`nvmlAuditRefCount`) и обращений к спящему GPU (`nvmlAuditSleepingProbes`). Переменные: `UCC_E1_FIXTURE_SLOW_INIT`, `UCC_AUDIT_FAIL_FIRST_NVML_COUNT`, `UCC_E1_FIXTURE_REVERSED_ORDER`, `UCC_AUDIT_REVERSED_NVML_INDEX` |
-| `extra-fixtures/nvml.c` | `extra/index/libnvidia-ml.so.1` | Расширенный mock NVML без `nvmlDeviceGetHandleByPciBusId_v2` (fallback по индексу, горячая подмена через `UCC_E16_FIXTURE_HOTPLUG_FROM`/`TO`, `UCC_E16_FIXTURE_FORWARD_ORDER`) |
-| `extra-fixtures/nvml.c` (`-DAUDIT_WITH_BDF`) | `extra/bdf/libnvidia-ml.so.1` | Mock NVML с `nvmlDeviceGetHandleByPciBusId_v2` и счётчиком `nvmlAuditBdfCalls` (`UCC_E16_FIXTURE_REFUSE_BDF`, проверка отказоустойчивости BDF-маршрутизации) |
+| `stand-fixtures/open-ancestor.c`, `extra-fixtures/open-ancestor.c` | `stand/open-ancestor.so`, `extra/open-ancestor.so` | Intercepts `open64` (`O_WRONLY`) on `UCC_E1_SWAP_OPEN_PATH`: renames parent directory `UCC_E1_SWAP_ANCESTOR` and replaces it with a symlink to `UCC_E1_SWAP_DESTINATION` (ancestor TOCTOU defense test) |
+| `stand-fixtures/open-swap.c` | `stand/open-swap.so` | Intercepts `open64` (`O_WRONLY`) on `UCC_AUDIT_SWAP_TARGET`: performs `unlink` + `symlink` to `UCC_AUDIT_SWAP_DESTINATION` (target-file TOCTOU defense test) |
+| `stand-fixtures/nvml.c` | `stand/libnvidia-ml.so.1` | Mock NVML tracking refcounts (`nvmlAuditRefCount`) and sleeping-GPU probes (`nvmlAuditSleepingProbes`). Controls: `UCC_E1_FIXTURE_SLOW_INIT`, `UCC_AUDIT_FAIL_FIRST_NVML_COUNT`, `UCC_E1_FIXTURE_REVERSED_ORDER`, `UCC_AUDIT_REVERSED_NVML_INDEX` |
+| `extra-fixtures/nvml.c` | `extra/index/libnvidia-ml.so.1` | Extended mock NVML without `nvmlDeviceGetHandleByPciBusId_v2` (index fallback, hotplug swap via `UCC_E16_FIXTURE_HOTPLUG_FROM`/`TO`, `UCC_E16_FIXTURE_FORWARD_ORDER`) |
+| `extra-fixtures/nvml.c` (`-DAUDIT_WITH_BDF`) | `extra/bdf/libnvidia-ml.so.1` | Mock NVML with `nvmlDeviceGetHandleByPciBusId_v2` and `nvmlAuditBdfCalls` counter (`UCC_E16_FIXTURE_REFUSE_BDF`, BDF routing fallback test) |
 
-### Изолированный mock BlueZ для водяного охлаждения
+### Isolated Mock BlueZ Water Cooler
 
-Тест `crates/ucc-hardware/tests/fake_bluez_cooler.rs` поднимает на приватной шине D-Bus mock-объекты `org.bluez.Device1` (`name = "LCT21001-TEST"`, UUID Nordic UART Service) и `org.bluez.GattCharacteristic1` (TX/RX). Проверяет полный цикл подключения, обмена пакетами протокола LCT и повторных попыток `BluezCoolerClient` без физического Bluetooth-адаптера:
-
-```bash
-dbus-run-session -- cargo test -p ucc-hardware --test fake_bluez_cooler --locked --offline
-```
-
-### Проверка Hyprland / Wayland без прав root
-
-Пользовательские клиенты (`ucc-gui`, `ucc-desktop-tray`, `ucc-session-agent`) запускаются строго от обычного пользователя:
-
-- В headless-среде (CI, SSH) используется `QT_QPA_PLATFORM=offscreen` (задаётся автоматически для `test_fan_curve_editor` и `test_gui_instance`, а также в `run_gui_audit_test.sh`).
-- Логика Hyprland 0.55+ (`hyprctl` Lua-обновление поля `mode` с сохранением разрешения, масштаба, положения и цветового профиля) и `org.freedesktop.Notifications` проверяется без root и без реального композитора тестами:
+`crates/ucc-hardware/tests/fake_bluez_cooler.rs` registers mock `org.bluez.Device1` (`name = "LCT21001-TEST"`, Nordic UART Service UUID) and `org.bluez.GattCharacteristic1` (TX/RX) objects on a private D-Bus session bus, testing the full `BluezCoolerClient` connect, LCT protocol exchange, and retry lifecycle without a physical Bluetooth adapter:
 
 ```bash
-ctest --test-dir build-rust-runtime -R "^test_refresh_advisor_(modes|lifecycle)$" --output-on-failure
+CARGO_TARGET_DIR=/tmp/ucc-cargo-target \
+  dbus-run-session -- cargo test -p ucc-hardware --test fake_bluez_cooler --locked --offline
 ```
 
-- На живой Wayland-сессии проверяются: активация окна по клику на иконку трея, отсутствие второго экземпляра `ucc-session-agent` (lock-файл пользователя), доставка уведомлений об изменении физического источника питания (AC / Battery / USB-C) и применение частоты экрана только после явного подтверждения или переключения профиля.
+### Non-Root Hyprland / Wayland Verification
+
+User-session clients (`ucc-gui`, `ucc-desktop-tray`, `ucc-session-agent`) run strictly as an unprivileged user:
+
+- In headless environments (CI, SSH), `QT_QPA_PLATFORM=offscreen` is set automatically for `test_fan_curve_editor`, `test_gui_instance`, and inside `tests/run_gui_audit_test.sh`.
+- Hyprland 0.55+ refresh-rate logic (`hyprctl` mode updates preserving resolution, scale, position, and color profile) and `org.freedesktop.Notifications` integration are verified without root or a live compositor via:
+  ```bash
+  ctest --test-dir /tmp/ucc-build-normal -R "^test_refresh_advisor_(modes|lifecycle)$" --output-on-failure
+  ```
+- On a live Wayland session, verify: window focus activation from tray click (`XDG_ACTIVATION_TOKEN`), single-instance lock for `ucc-session-agent`, power-source transition notifications (AC / Battery / USB-C), and display refresh-rate switching only after explicit confirmation or profile change.
 
 ---
 
-## 4. Чек-лист аппаратной приёмки
+## 4. Hardware Acceptance Checklist
 
-### A. Неразрушающие проверки (Non-destructive)
+### A. Non-Destructive Checks
 
-Выполняются до любых записей в аппаратные регистры:
+Run before any writes to hardware registers:
 
-1. Наличие драйвера и узла устройства:
+1. Kernel driver node and daemon status:
    ```bash
    ls -l /dev/tuxedo_io
    systemctl status uccd.service --no-pager
    ```
-2. Аудит датчиков вентиляторов (только чтение EC):
+2. Read-only EC fan sensor audit:
    ```bash
    sudo /usr/lib/ucc/ucc-hardware --audit
    ```
-3. Проверка статуса демона и телеметрии через CLI:
+3. Daemon telemetry and policy status via CLI:
    ```bash
+   ucc-cli status
    ucc-cli power status
    ucc-cli devices status
    ucc-cli lightbar status
    ```
-4. Проверка Read-Only Preview: запуск `./run-preview.sh`, переключение вкладок, подтверждение отсутствия изменений в `/etc/ucc/settings` и аппаратных регистрах.
+4. Read-Only Preview verification: run `./run-preview.sh`, navigate across all tabs, and confirm `/etc/ucc/settings` and hardware registers remain unmodified.
 
-### B. Проверки на живом оборудовании (Live Hardware)
+### B. Live Hardware Checks
 
-1. **D3cold и сон дискретной NVIDIA GPU**:
-   - В `Power Devices` отключить **Keep NVIDIA awake (Blackwell workaround)** и применить политику.
-   - Убедиться, что режим питания PCI установлен в `auto`, persistence mode выключен, и при отсутствии активных GPU-задач и внешних мониторов на NVIDIA статус переходит в `suspended`:
+1. **Discrete NVIDIA GPU D3cold Sleep (`ADR-04`)**:
+   - In `Power & Devices`, disable **Keep NVIDIA awake (Blackwell workaround)** and apply the policy.
+   - Confirm PCI runtime power control is `auto`, persistence mode is off, and with no active GPU workloads or external displays on NVIDIA the status transitions to `suspended`:
      ```bash
      cat /sys/bus/pci/devices/<NVIDIA_BDF>/power/control
      cat /sys/bus/pci/devices/<NVIDIA_BDF>/power/runtime_status
      ```
-   - Убедиться, что фоновый мониторинг `uccd` не пробуждает спящий GPU (интервал NVML-опроса при `auto` не чаще 1 раза в 16 с, при состоянии `suspended` пробы пропускаются).
+   - Verify background `uccd` telemetry does not wake a suspended GPU (NVML polling interval under `auto` is at least 16 s, and probes are skipped while `runtime_status` is `suspended`).
 
-2. **BLE-водяное охлаждение LCT22002 / LCT21001**:
-   - Проверить видимость устройства в `bluetoothctl` и подключение через `uccd`.
-   - Проверить переключение режимов (Auto / Manual), изменение скорости вентилятора и напряжения помпы, а также отсутствие остановки охлаждения при открытии ручных контролов в GUI.
-   - Проверить восстановление после кратковременного разрыва Bluetooth-соединения.
+2. **BLE Water Cooler (`LCT22002` / `LCT21001`)**:
+   - Confirm device visibility in `bluetoothctl` and connection through `uccd`.
+   - Verify mode switching (`Auto` / `Manual`), fan duty and pump voltage updates, and that opening manual controls in `ucc-gui` does not stop active cooling.
+   - Verify automatic recovery after a transient Bluetooth disconnect.
 
-3. **Цикл Suspend / Resume**:
-   - Убедиться, что `uccd-sleep.service` включён (`systemctl is-enabled uccd-sleep.service`).
-   - Перед сном перевести систему в ручной режим (или включить водянку), выполнить `systemctl suspend`, затем пробудить ноутбук.
-   - Проверить журнал `journalctl -u uccd-sleep.service -u uccd.service -b`:
-     - `ucc-sleep prepare` применил `WakeupPolicy`, записал `/run/ucc/sleep-state.json` и остановил `uccd.service`;
-     - `ucc-sleep resume` запустил `uccd.service`, демон прочитал и применил сохранённое состояние до регистрации имени на шине, а файл `/run/ucc/sleep-state.json` удалён.
+3. **Suspend / Resume Cycle**:
+   - Confirm `uccd-sleep.service` is enabled (`systemctl is-enabled uccd-sleep.service`).
+   - Switch to a manual mode (or enable the water cooler), run `systemctl suspend`, and resume.
+   - Inspect `journalctl -u uccd-sleep.service -u uccd.service -b`:
+     - `ucc-sleep prepare` applied `WakeupPolicy`, wrote `/run/ucc/sleep-state.json`, and stopped `uccd.service`;
+     - `ucc-sleep resume` started `uccd.service`, `uccd` restored saved state before claiming the bus name, and `/run/ucc/sleep-state.json` was removed.
 
-4. **CPU, вентиляторы и подсветка**:
-   - Проверить `cpu.enabledCores` (выбор отдельных ядер P/E, сохранение заблокированного ядром `cpu0`, восстановление всех ядер при остановке).
-   - Проверить аварийный возврат вентиляторов в авто-режим: `sudo /usr/lib/ucc/ucc-hardware --fan-auto` (код возврата `0`).
-   - Проверить подсветку клавиатуры (физические LED ID) и Lightbar (изменение цвета и корректное завершение анимации).
+4. **CPU, Fans, and Lighting**:
+   - Verify `cpu.enabledCores` (individual P/E core toggles, kernel-locked `cpu0` preservation, restoration of all cores on daemon stop).
+   - Verify emergency firmware fan fallback: `sudo /usr/lib/ucc/ucc-hardware --fan-auto` (exit code `0`).
+   - Verify per-key keyboard backlight (physical LED IDs) and Lightbar (color changes and clean animation termination).

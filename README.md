@@ -49,7 +49,7 @@ The deprecated Plasma C++/QML applet (`ucc-tray`) is excluded from packaged buil
 | `ucc-cli` | Lib + Bin | `ucc-cli`, shell completion and man-page generation |
 | `ucc-desktop` | Lib + Bin | Desktop utilities + `ucc-desktop-tray` |
 | `ucc-session-agent` | Lib + Bin | Session integration + `ucc-session-agent` |
-| `xtask` | Tooling | Workspace build/staging/release automation (`install-runtime`, `check-versions`, `dist`, `dist-cli`, `capture-gallery`) |
+| `xtask` | Tooling | Workspace build/staging/release automation (`install-runtime`, `check-versions`, `parser-check`, `release`, `dist`, `dist-cli`, `build-fixtures`, `capture-gallery`) |
 
 ---
 
@@ -119,7 +119,7 @@ Repository and source releases: `https://github.com/Frixlt/UCC` (branch `main`).
 
 ### Arch Linux / CachyOS (`PKGBUILD`)
 
-The root [`PKGBUILD`](PKGBUILD) builds package `ucc-rusted` (provides `uniwill-control-center`, replaces `frixit-control-center`, conflicts with `uniwill-control-center` and `uniwill-control-center-mechrevo`):
+The root [`PKGBUILD`](PKGBUILD) builds package `ucc-rusted` (provides `uniwill-control-center` and `frixit-control-center`, replaces `frixit-control-center`, conflicts with `uniwill-control-center`, `uniwill-control-center-mechrevo`, and `frixit-control-center`):
 
 ```bash
 git clone https://github.com/Frixlt/UCC.git
@@ -129,7 +129,7 @@ UCC_SOURCE_DIR="$PWD" makepkg -si
 
 ### Debian / Ubuntu (DEB)
 
-Packaging metadata resides in `debian/` (requires `rustc >= 1.89`, `cargo`, `cmake >= 3.20`, `qt6-base-dev`, `qt6-charts-dev`, `nlohmann-json3-dev`, `libsystemd-dev`, `libxrandr-dev`, `libudev-dev`):
+Packaging metadata resides in `debian/` (requires `rustc >= 1.89`, `cargo`, `cmake >= 3.20`, `g++ >= 9`, `pkgconf`, `qt6-base-dev`, `qt6-charts-dev`, `qt6-tools-dev`, `nlohmann-json3-dev`, `libsystemd-dev`, `libxrandr-dev`, `libudev-dev`):
 
 ```bash
 make deb
@@ -145,7 +145,7 @@ make rpm
 
 ### Nix Flake
 
-[`flake.nix`](flake.nix) exports `packages.ucc`, `overlays.default`, and `nixosModules.uccd`:
+[`flake.nix`](flake.nix) exports `packages.ucc` (default), `overlays.default`, and `nixosModules.uccd` (default):
 
 ```bash
 nix build .#ucc
@@ -163,22 +163,27 @@ git clone https://github.com/Frixlt/UCC.git
 cd UCC
 
 # 1. Build all 7 Rust runtime binaries + xtask
-cargo build --workspace --bins --release --locked --target-dir target
+CARGO_TARGET_DIR=/tmp/ucc-cargo-target \
+  cargo build --workspace --bins --release --locked
 
-# 2. Build standalone Qt6 GUI (KF6-free, Plasma applet disabled)
-cmake -S . -B build -G Ninja \
+# 2. Build standalone Qt6 GUI (KF6-free, Plasma applet disabled, normal mode)
+cmake -S . -B /tmp/ucc-build-normal -G Ninja \
   -DCMAKE_BUILD_TYPE=Release \
   -DCMAKE_INSTALL_PREFIX=/usr \
   -DCMAKE_INSTALL_LIBDIR=lib \
   -DBUILD_GUI=ON \
   -DBUILD_TRAY=OFF \
   -DBUILD_CLI=OFF \
-  -DUCC_PACKAGE_RUST_RUNTIME=ON
-cmake --build build --parallel 2
+  -DUCC_PACKAGE_RUST_RUNTIME=ON \
+  -DUCC_READ_ONLY_PREVIEW=OFF
+cmake --build /tmp/ucc-build-normal --parallel 2
 
-# 3. Install GUI assets + Rust runtime binaries, completions, and man page
-sudo cmake --install build
-sudo ./target/release/xtask install-runtime /usr ./target/release
+# 3. Verify standalone ucc-gui ldd invariants (M12.7 / ADR-01)
+bash scripts/check_gui_ldd.sh /tmp/ucc-build-normal/bin/ucc-gui
+
+# 4. Install GUI assets + Rust runtime binaries, completions, and man pages
+sudo cmake --install /tmp/ucc-build-normal
+sudo /tmp/ucc-cargo-target/release/xtask install-runtime /usr /tmp/ucc-cargo-target/release
 ```
 
 ---
@@ -192,7 +197,7 @@ Enable and start the system daemon and suspend/resume hooks:
 ```bash
 sudo systemctl daemon-reload
 sudo systemctl enable --now uccd.service
-sudo systemctl enable uccd-pre-sleep.service uccd-sleep.service
+sudo systemctl enable uccd-sleep.service
 systemctl status uccd.service
 ```
 
@@ -224,6 +229,21 @@ Inspect `ucc-gui` against an isolated fixture without touching `/etc/ucc` or liv
 ```bash
 ./run-preview.sh
 ```
+
+---
+
+## Verification & Testing
+
+The repository ships **661 Rust tests** across **92 integration suites** and 10 crates, plus **49–53 CTest suites** (19 C++ unit tests, 14 Python suites, 3 session-agent tests, up to 4 GNOME Shell tests with `gjs`/`node`, 11 GUI tests, 1 C++/Rust interop test, and 1 automated `ucc-gui` `ldd` invariant check (`scripts/check_gui_ldd.sh` / CTest `test_gui_ldd_invariants`, verifying zero `KF6`, `QML`/`Qt6Qml`/`Qt6Quick`, `Qt6Bluetooth`, or `libucc-dbus.so` links per `M12.7` / `ADR-01`)).
+
+```bash
+export CARGO_TARGET_DIR=/tmp/ucc-cargo-target
+cargo run -p xtask -- check-versions
+cargo clippy --workspace --all-targets -- -D warnings
+dbus-run-session -- cargo test --workspace --locked --offline --no-fail-fast
+```
+
+Full CTest (`normal` `-DUCC_READ_ONLY_PREVIEW=OFF` and `preview` `-DUCC_READ_ONLY_PREVIEW=ON`), Python/GNOME suites, and hardware checklists are documented in [`docs/TESTING.md`](docs/TESTING.md).
 
 ---
 
@@ -261,7 +281,7 @@ Inspect `ucc-gui` against an isolated fixture without touching `/etc/ucc` or liv
 | [`docs/DBUS_API.md`](docs/DBUS_API.md) | Complete reference for `com.uniwill.uccd` / `de.uniwill.uccd` (123 methods, 7 signals, Polkit actions) |
 | [`docs/CLI_REFERENCE.md`](docs/CLI_REFERENCE.md) | `ucc-cli` subcommands, flags, JSON output schemas, exit codes |
 | [`docs/BUILDING.md`](docs/BUILDING.md) | Build dependencies, CMake/Cargo flags, packaging (Arch/DEB/RPM/Nix), preview mode |
-| [`docs/TESTING.md`](docs/TESTING.md) | Workspace tests, D-Bus interop suite, GUI audit fixtures, verification scope and limits |
+| [`docs/TESTING.md`](docs/TESTING.md) | Workspace tests (661 Rust / 49–53 CTest), `ucc-gui` `ldd` invariants, D-Bus interop, GUI audit fixtures |
 | [`docs/MIGRATION_AND_RECOVERY.md`](docs/MIGRATION_AND_RECOVERY.md) | Offline config migration, backup/rollback procedures, kernel driver recovery |
 | [`docs/COMPARISON.md`](docs/COMPARISON.md) | Feature and architectural comparison against upstream UCC Revorked (`eb98bfa`) |
 | [`docs/AI_AGENT_GUIDE.md`](docs/AI_AGENT_GUIDE.md) | Codebase navigation, test harnesses, and modification constraints for automated agents |
