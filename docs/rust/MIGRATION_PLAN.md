@@ -288,7 +288,7 @@ point_count × (i64 timestamp_ms + f64 value)
 | F43 | CLI/API users | Существующие команды, aliases, --json, monitor, codes 0/1/2, completion/man | ucc-cli/main.cpp |
 | F44 | Distribution | Arch, DEB/RPM/Nix recipes, service/autostart, driver separation, licenses/assets/source release | Корневые рецепты, CI |
 | F45 | Крышка и пробуждение | Независимые действия при закрытии крышки (`screen_off`/`suspend`/`lock`/`hibernate`/`poweroff`/`ignore`) для `AC`/`Type-C`/`Battery`, ингибитор `handle-lid-switch`, отложенный переход в сон при отключении питания, DPMS только встроенной панели в сессии, строгий `WakeupPolicy` (крышка `PNP0C0D` и клавиатура `i8042 KBD`) | PowerDeviceController, LidController, WakeupPolicy, LidDisplayHandler, PowerDevicesTab |
-| F46 | Собственный Rust `uwcc` backend (`ADR-05`, `M14`) | Доменный `PlatformBackend` (`TuxedoIoBackend` ↔ `UwccBackend`), Rust-модуль ядра `/dev/uwcc` (`ECRR`/`ECRW`/`SMRW`/`PWUP`/WMI events), EC-менеджер `0x1A` (`RamFan 1.5`, `SMRW`, TCC лимит температуры CPU, `PWUP`, зарядка и переключатели через EC), `uinput` для WMI-клавиш, прямой USB `hidraw` для `048D:600B` и `048D:7001`, взаимоисключение с `tuxedo-drivers` и откат | `ADR-05`, открытая спецификация EC/ACPI `0x1A` (без `proprietary/` и `oem/`) |
+| F46 | Собственный Rust `uwcc` backend (`ADR-05`, `M14`) | Доменный `PlatformBackend` (`TuxedoIoBackend` ↔ `UwccBackend`), Rust-модуль ядра `/dev/uwcc` (`ECRR`/`ECRW`/`SMRW`/`PWUP`/WMI events), EC-менеджер `0x1A` (`RamFan 1.5`, `SMRW`, TCC лимит температуры CPU, `PWUP`, зарядка и переключатели через EC), `uinput` для WMI-клавиш, прямой USB `hidraw` для `048D:600B` (клавиатура) и `048D:7001` / `048D:7000` (Lightbar + подсветка логотипа крышки / logo), взаимоисключение с `tuxedo-drivers` и откат | `ADR-05`, открытая спецификация EC/ACPI `0x1A` (без `proprietary/` и `oem/`) |
 
 ## 9. Детали, которые критично сохранить
 
@@ -378,7 +378,7 @@ Pump code `0` — высокий режим 11V, `2` — 7V, `3` — 8V, `4` —
 - [x] M1.2 *(заменено ADR-01)* Iced prototype: Fluent shell, таблица устройств, curve canvas, keyboard canvas, live chart на полном horizon.
 - [x] M1.3 *(заменено ADR-01)* Проверить кириллицу/IME, keyboard navigation, focus, tooltips, DPI 100/125/150/200%, Light/Dark/Auto и доступность ключевых controls.
 - [x] M1.4 *(заменено ADR-01)* Проверить native Wayland KDE/Hyprland и X11; исключить неявный выбор NVIDIA renderer, который держит dGPU активной.
-- [ ] M1.5 *(частично выполнено)* Проверить ksni menu, tokens, existing-window activation и переход на desktop окна; определить необходимый toolkit integration patch.
+- [x] M1.5 Проверить ksni menu, tokens, existing-window activation и переход на desktop окна; определить необходимый toolkit integration patch.
 - [x] M1.6 Проверить Rust ioctl ABI: request numbers/struct layouts против установленного driver ABI и C++ reference harness.
 - [x] M1.7 На fake BlueZ проверить GATT interface, уведомления, reconnect и выбор bluer/direct-zbus.
 - [x] M1.8 Проверить покрытие NVIDIA wrapper и возможную изоляцию native GPU calls отдельным процессом.
@@ -393,7 +393,7 @@ Pump code `0` — высокий режим 11V, `2` — 7V, `3` — 8V, `4` —
 - [x] M2.2 Перенести UccProfile, fan/keyboard profiles, stateMap, global charging, capability types, units и supported defaults.
 - [x] M2.3 Развести legacy wire DTO и внутреннюю модель `Option`/typed values.
 - [x] M2.4 Перенести default profiles и device-specific defaults с сохранением IDs; исключить личные power limits из public defaults.
-- [ ] M2.5 *(частично выполнено)* Реализовать read/validate/round-trip settings, autosave, Aquaris, user INI prefs и sleep snapshots.
+- [x] M2.5 Реализовать read/validate/round-trip settings, autosave, Aquaris, user INI prefs и sleep snapshots.
 - [x] M2.6 Реализовать atomic persistence, backups/recovery и сериализацию без повторных ключей.
 - [x] M2.7 Перенести CPU/fan/profile parsers и validation с fixtures повреждённых/неполных/старых файлов.
 - [x] M2.8 Прогнать property/differential tests policy matrix и сериализации; intentional differences записать отдельно.
@@ -433,7 +433,7 @@ Pump code `0` — высокий режим 11V, `2` — 7V, `3` — 8V, `4` —
 - [x] M5.2 Проверить таблицы и округление на температурных трассах; отдельно протестировать critical/failure policies.
 - [x] M5.3 Реализовать независимый fan loop и firmware-auto recovery при штатном/аварийном завершении.
 - [x] M5.4 Перенести BLE packets/UUID/model mapping и encode/decode tests без реального устройства.
-- [ ] M5.5 *(частично выполнено)* Реализовать discovery/reconnect state machine, deadlines/backoff, keepalive, поздний adapter, saved identity.
+- [x] M5.5 Реализовать discovery/reconnect state machine, deadlines/backoff, keepalive, поздний adapter, saved identity.
 - [x] M5.6 Реализовать ordered writes с gap ≥80 мс, coalescing значений и cancellation поколения соединения.
 - [x] M5.7 Сохранить manual/auto semantics, Fan/Pump/LED restore после reconnect; запрещённый pump code отвергается.
 - [ ] M5.8 Проверить настоящую водянку: initial connect, disconnect, disable/enable, power cycle, manual/auto, отсутствие скачка на неподдержанный режим.
@@ -497,9 +497,9 @@ Pump code `0` — высокий режим 11V, `2` — 7V, `3` — 8V, `4` —
 ### M10 — автономный `Qt6::Widgets` GUI поверх Rust `uccd` (`ADR-01`)
 
 - [x] M10.1 Отвязать CMake-сборку `ucc-gui` от удаляемых C++-компонентов (`uccd`, `ucc-session`, `ucc-desktop-tray`, `ucc-tray`) и лишних зависимостей (`Qml`, `Quick`, `QuickControls2`, `Qt6::Bluetooth`, `KF6WindowSystem`, `KF6StatusNotifierItem`), оставив только `Qt6::{Core,Gui,Widgets,DBus,Charts}`.
-- [ ] M10.2 *(частично выполнено)* Заменить активацию окна через `KF6WindowSystem` на нативный путь Qt6 Wayland (`XDG_ACTIVATION_TOKEN` + `QWindow::requestActivate()`) и статически встроить клиент D-Bus (без установки внешней `libucc-dbus.so`).
-- [ ] M10.3 Перевести вкладку `Battery & Processes` на данные/команды Rust-стека (или изолированный легковесный Qt-виджет без `ucc-desktop-tray`), сохранив безопасное завершение пользовательских процессов NVIDIA и настройки глобальной зарядки.
-- [ ] M10.4 Обеспечить жизненный цикл «0 МБ Qt в фоне»: закрытие окна `ucc-gui` полностью завершает процесс, а клик в Rust-трее `ucc-desktop-tray` мгновенно запускает или фокусирует `ucc-gui` с передачей Wayland activation token.
+- [x] M10.2 Заменить активацию окна через `KF6WindowSystem` на нативный путь Qt6 Wayland (`XDG_ACTIVATION_TOKEN` + `QWindow::requestActivate()`) и статически встроить клиент D-Bus (без установки внешней `libucc-dbus.so`).
+- [x] M10.3 Перевести вкладку `Battery & Processes` на данные/команды Rust-стека (или изолированный легковесный Qt-виджет без `ucc-desktop-tray`), сохранив безопасное завершение пользовательских процессов NVIDIA и настройки глобальной зарядки.
+- [x] M10.4 Обеспечить жизненный цикл «0 МБ Qt в фоне»: закрытие окна `ucc-gui` полностью завершает процесс, а клик в Rust-трее `ucc-desktop-tray` мгновенно запускает или фокусирует `ucc-gui` с передачей Wayland activation token.
 - [x] M10.5 Исключить прототип `crates/ucc-gui` (`iced`/`wgpu`) из `Cargo.toml` и `Cargo.lock`, очистив Rust-workspace от графических зависимостей.
 - [x] M10.6 Прогнать полный `test_gui_audit` (все 10 разделов, включая карточку `Lid close action & sleep wakeup` `F45`, обе темы, `UCC_READ_ONLY_PREVIEW` и отказ команд без fake success) в связке с новым Rust-демоном `uccd` на изолированной шине.
 - [ ] M10.7 Проверить на живой сессии Hyprland: масштабирование `1.25`/`2.0`, тему `qt6ct`/Kvantum, открытие из Rust-трея с фокусом и отсутствие пробуждения спящей RTX 5080 при открытии/закрытии `ucc-gui`.
@@ -523,16 +523,16 @@ Pump code `0` — высокий режим 11V, `2` — 7V, `3` — 8V, `4` —
 
 ### M12 — пакеты, CI и обновление
 
-- [ ] M12.1 *(частично выполнено)* Создать `cargo xtask dist` для release artifacts, staging tree, manifests, version/commit metadata.
+- [x] M12.1 Создать `cargo xtask dist` для release artifacts, staging tree, manifests, version/commit metadata.
 - [x] M12.2 Обновить Arch PKGBUILD, provides/conflicts, install hooks; settings не включаются в public package.
 - [ ] M12.3 *(отложено на сообщество)* Обновить DEB/RPM/Nix recipes, services/dbus/polkit/autostart/icons/man/completions; проверить Nix-store helper paths.
 - [ ] M12.4 *(частично выполнено)* Сохранить enabled/disabled/masked sleep-hook state при upgrade, settings backup и private→public переход.
-- [ ] M12.5 *(частично выполнено)* Настроить fmt/clippy/tests/contract tests/fuzz smoke/build/packaging/UI jobs под непривилегированным пользователем.
+- [x] M12.5 Настроить fmt/clippy/tests/contract tests/fuzz smoke/build/packaging/UI jobs под непривилегированным пользователем.
 - [ ] M12.6 *(частично выполнено)* Проверить normal и preview сборки; CI не получает доступ к реальному sysfs/system bus.
 - [x] M12.7 Проверить dependencies/runtime links: основным binaries не нужны Qt/libucc-dbus; ожидаемые системные/FFI библиотеки перечислены.
-- [ ] M12.8 *(частично выполнено)* Сформировать license/dependency notices, SBOM/source archive и migration/recovery guide.
+- [x] M12.8 Сформировать license/dependency notices, SBOM/source archive и migration/recovery guide.
 - [ ] M12.9 Установить staged package на чистое окружение и обновить копию существующей установки; затем выполнить downgrade/rollback.
-- [ ] M12.10 Закрепить единый code style, commit convention и алгоритм релизов: `rustfmt.toml`, `.editorconfig`, `cargo fmt --check` в CI, `CONTRIBUTING.md`, устранение хардкода `docs/releases/0.3.0.md` в `.github/workflows/release.yml`, синхронная проверка/обновление версий (`Cargo.toml`, `CMakeLists.txt`, `PKGBUILD`, `ucc.spec`, `package.nix`) и генерация `CHANGELOG`.
+- [x] M12.10 Закрепить единый code style, commit convention и алгоритм релизов: `rustfmt.toml`, `.editorconfig`, `cargo fmt --check` в CI, `CONTRIBUTING.md`, устранение хардкода `docs/releases/0.3.0.md` в `.github/workflows/release.yml`, синхронная проверка/обновление версий (`Cargo.toml`, `CMakeLists.txt`, `PKGBUILD`, `ucc.spec`, `package.nix`) и генерация `CHANGELOG`.
 
 **Выход:** пакет воспроизводимо собирается и устанавливается, а переход и откат подтверждены тестами, не только скриптом с успешным exit code.
 
@@ -547,7 +547,7 @@ Pump code `0` — высокий режим 11V, `2` — 7V, `3` — 8V, `4` —
 - [ ] M13.7 Удалить C++/Qt runtime из active build/install; старый код остаётся в Git/tag/archive для истории.
 - [ ] M13.8 Удалить временные compatibility bridges, source-extraction tests и старые package dependencies после переноса проверок.
 - [ ] M13.9 Обновить README/BUILDING/TESTING/COMPARISON/origins и выпустить проверенный release.
-- [ ] M13.10 Переименовать проект из `Frixit Control Center` в выбранное Rust-ориентированное имя во всех пользовательских поверхностях (GUI, tray, CLI, desktop-файлы, PKGBUILD, документация) с сохранением совместимости D-Bus/миграции.
+- [x] M13.10 Переименовать проект из `Frixit Control Center` в выбранное Rust-ориентированное имя во всех пользовательских поверхностях (GUI, tray, CLI, desktop-файлы, PKGBUILD, документация) с сохранением совместимости D-Bus/миграции (`ucc-rusted`, без `M13.11` до финального этапа).
 - [ ] M13.11 Подготовить строгую техническую документацию без маркетинга и нейрослопа (`наш` и т.п.): `README.md` (EN), `README.ru.md` (RU), архитектуру, справочники D-Bus API и CLI, матрицу железа и объективное сравнение в `docs/COMPARISON.md` с [`open-uniwill-cc`](https://github.com/aspidovss/open-uniwill-cc/blob/main/README.ru.md), upstream `UCC Revorked`, `TUXEDO Control Center`, `Clevo Control Center`, `LCT`, `CoreCtrl` и `asusctl` (полностью убрать упоминание «Личный Python ControlCenter»).
 
 **Выход:** достигается определение готовности из раздела 16. Наличие незавершённого hardware test или несогласованной потери embedded shell UI оставляет соответствующий пункт открытым.
@@ -574,7 +574,7 @@ Pump code `0` — высокий режим 11V, `2` — 7V, `3` — 8V, `4` —
 - [ ] M15.1 Абстрагировать IPC-слой (D-Bus на Linux / Named Pipes + ACL/SID на Windows) и сервисную обёртку (`systemd` / `windows-service`) для кроссплатформенного запуска `uccd`.
 - [ ] M15.2 Исследовать и реализовать Windows `PlatformBackend` поверх ACPI WMI (`root\WMI`, `INOU0000`): оценить покрытие TDP/ODM/RamFan/зарядки/Fn-Lock без неподписанного KMDF-драйвера и зафиксировать границы требований EV/WHQL.
 - [ ] M15.3 Реализовать Windows-бэкенды телеметрии, питания, дисплея и крышки: `nvml.dll`, Windows Power Management API (EPP/частоты/turbo), `ChangeDisplaySettingsExW`/`WmiMonitorBrightnessMethods`, `RegisterPowerSettingNotification` (`GUID_LIDSWITCH_STATE_CHANGE`).
-- [ ] M15.4 Реализовать Windows-транспорты периферии: WinRT BLE GATT для СЖО (взамен BlueZ) и прямой USB HID (`hidapi`/`HidD_SetFeature`) для клавиатуры `048D:600B` и Lightbar `048D:7001`.
+- [ ] M15.4 Реализовать Windows-транспорты периферии: WinRT BLE GATT для СЖО (взамен BlueZ) и прямой USB HID (`hidapi`/`HidD_SetFeature`) для клавиатуры `048D:600B`, Lightbar и логотипа крышки (`logo`) `048D:7001` / `048D:7000`.
 - [ ] M15.5 Адаптировать трей и GUI под Windows: нативный `Shell_NotifyIconW` / `tray-icon`, сборка автономного `Qt6::Widgets` `ucc-gui` под MSVC/MinGW.
 - [ ] M15.6 Собрать и проверить Windows-инсталлятор (MSI через WiX или Inno Setup), сценарий установки службы, обновления и удаления (`winget` manifest).
 

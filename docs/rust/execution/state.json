@@ -162,9 +162,9 @@
     ]
   },
   "last_verified": {
-    "command": "cargo clippy --workspace --all-targets --locked --offline -- -D warnings; dbus-run-session -- cargo test --workspace --locked --offline --no-fail-fast; ctest --output-on-failure",
+    "command": "cargo clippy --workspace --all-targets --locked --offline -- -D warnings; cargo run -p xtask --locked --offline -- check-versions; dbus-run-session -- cargo test --workspace --locked --offline --no-fail-fast; ctest --output-on-failure",
     "top_suites": 94,
-    "top_passed": 474,
+    "top_passed": 482,
     "top_failed": 0,
     "top_ignored": 0,
     "clippy_warnings": 0,
@@ -186,6 +186,7 @@
     "read_only_preview": "ucc-gui compiled with UCC_READ_ONLY_PREVIEW=ON in an isolated CMake build"
   },
   "completed_in_current_wave": [
+    "Wave 5 code closure (8bd11e9 M12.10, 0bad2d6 M13.10, 17d16df M1.5/M10.2-M10.4, 2d87c27 M2.5, 42bbccd M12.1/M12.5/M12.8): Added rustfmt.toml, .editorconfig, cliff.toml, CONTRIBUTING.md, .github/workflows/release.yml, and xtask check-versions/release automation; renamed project and Arch packaging identity to ucc-rusted; wired ksni::current_xdg_activation_token() handoff and 0 MB Qt background lifecycle (splitting DesktopTray.cpp out of ucc-desktop-support); added legacy extensionless settings autosave round-trip test (M2.5), dist RELEASE_MANIFEST.json + Cargo.lock CycloneDX SBOM generation, CI version check, and parser/protocol fuzz-smoke tests. Verified 482/482 Rust workspace tests across 94 suites (0 Clippy warnings), 6/6 manifest version parity, clean ldd linkage on ucc-gui, and 42/42 CTest targets. Added lid logo LED (048D:7001/048D:7000) to F46 and M15.4. M13.11 (final EN/RU documentation) deferred until end of M13 per user instruction.",
     "Wave 4 (bc7d14f M10.8/M10.9, fb3cf39 M8.10, 9906087/bc1db6a M5.9): Added distinct sidebar icons for Power & Devices / Lightbar / Battery & Processes plus the Experimental tab in ucc-gui; added RAM-only lid-close keyboard backlight & optional water cooler LED blank/restore with login1/UPower listeners and PowerDevicesTab Lid toggles; fixed all 5 Rust water cooler profile/LED/suspend-resume/power_wc auto-scan causes with 3 m5_9_* regression tests. Verified 474/474 Rust workspace tests across 94 suites (0 Clippy warnings) and 42/42 CTest targets (including test_gui_audit and test_rust_uccd_interop).",
     "Wave 1 (d81a9f3: BUILD-01, IPC-03, DESK-01, M9.7) & Wave 2 (913d1ef: M3.7, M8.8 private-bus interop): Fixed CI MSRV matrix [\"1.89.0\", \"1.99.1\"] (.github/workflows/build.yml); added global read Polkit semaphore (32, 2s timeout), per-sender read (8) & interactive (2) RAII admission guards, and 256 KiB JSON payload bounds across all 14 D-Bus mutators (crates/ucc-dbus); hardened tray bounded action channel (32), disconnect/reconnect loop with disabled controls, confirmed water-cooler readback, non-root guard, session singleton, and ActivateWithToken/preview activation (crates/ucc-desktop); added cross-language C++ UccdClient <-> live Rust LiveUccdBackend private-bus interop suite (crates/uccd/examples/interop_daemon.rs + tests/test_rust_uccd_interop.cpp). Verified 470/470 Rust workspace tests across 94 suites (0 Clippy warnings), 42/42 CTest suites (including test_rust_uccd_interop 8/8), and clean ldd linkage on ucc-gui.",
     "M8.3 and M12: retained a failed CPU restore snapshot across daemon handoff (d0e12e9); switched package recipes to the Rust runtime, preserving the standalone Qt6 GUI per ADR-01 (610f8a8).",
@@ -199,9 +200,8 @@
   "open_and_next": {
     "M8_remaining": "Daemon BlueZ supervision, logind listener and all three helper binaries are implemented. Host physical resume and full hardware cutover remain open.",
     "M5.8": "Hardware test pass with physical LCT cooler remains open",
-    "M12.10": "Establish unified code style (rustfmt.toml, .editorconfig, CONTRIBUTING.md) and release workflow (Variant A selected: SemVer + Trunk-based + Conventional Commits + cargo xtask release + git-cliff).",
-    "M13": "Live host cutover & hardware acceptance on Arch/CachyOS + Hyprland + RTX 5080 + LCT cooler remain open; M13.10 (rename to ucc-rusted) and M13.11 (strict EN/RU docs + open-uniwill-cc comparison) queued.",
-    "M15": "Post-M14 Windows port roadmap planned (Named Pipes/windows-service, ACPI WMI vs EV/WHQL KMDF boundary, WinRT BLE, USB HID, MSI/winget).",
+    "M13": "Live host cutover & hardware acceptance on Arch/CachyOS + Hyprland + RTX 5080 + LCT cooler remain open; M13.10 (rename to ucc-rusted) done; M13.11 (strict EN/RU docs + open-uniwill-cc comparison) deferred to end of M13.",
+    "M14_M15": "Post-M13 uwcc Rust kernel backend (including keyboard 048D:600B + Lightbar/logo 048D:7001/7000) and Windows port (M15) roadmap planned.",
     "M9_remaining": "Rust tray and session agent are built and staged. Live Hyprland compositor/tray/notification acceptance remains open.",
     "deferred_to_community": "Non-Arch packaging (DEB/RPM/Nix native builds & hooks), X11 session refresh backend (M9.5), and hardware not accessible on host are deferred to community contributors on those systems."
   }

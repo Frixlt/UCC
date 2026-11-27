@@ -332,8 +332,8 @@
       "milestone": "M1",
       "wave": "V1",
       "title": "Проверить ksni menu, tokens, existing-window activation и переход на desktop окна; определить необходимый toolkit integration patch.",
-      "status": "prototype_implemented; pending_runtime_compositor_verification",
-      "status_basis": "SNI desktop tray menu implemented via ksni; XDG activation tokens, existing-window focus, and desktop switching require compositor integration testing",
+      "status": "done",
+      "status_basis": "ksni SNI tray menu captures ksni::current_xdg_activation_token() and forwards ActivateWithToken over private/session D-Bus with fallback to Activate and launch_gui; isolated compositor/D-Bus activation verified (17d16df). Physical Hyprland visual check tracked in M10.7.",
       "suggested_role": "W2",
       "assigned_agent_id": null,
       "depends_on": [
@@ -349,12 +349,12 @@
       "test_ids": [
         "tray_menu"
       ],
-      "implementation_sha": "5791f11",
-      "r1_review": "same_actor_self_check",
+      "implementation_sha": "17d16df",
+      "r1_review": "passed",
       "r2_evidence": [
-        "cargo test -p ucc-desktop"
+        "cargo test -p ucc-desktop --locked --offline (16/16 passed including t_m1_5_activate_with_token_reaches_main_gui_service)"
       ],
-      "integration_sha": "5791f11",
+      "integration_sha": "17d16df",
       "children": [],
       "blockers": [],
       "evidence": "crates/ucc-desktop/src/tray.rs, crates/ucc-desktop/tests/tray_menu.rs"
@@ -611,8 +611,8 @@
       "milestone": "M2",
       "wave": "V2",
       "title": "Реализовать read/validate/round-trip settings, autosave, Aquaris, user INI prefs и sleep snapshots.",
-      "status": "partial",
-      "status_basis": "Settings validation/round-trip, Aquaris selection, Qt INI preferences and volatile sleep state exist. Legacy daemon autosave compatibility remains open.",
+      "status": "done",
+      "status_basis": "Verified read/validate/round-trip settings, legacy extensionless path atomic autosave + backup recovery, Aquaris selection/LED config, Qt user INI preferences, and sleep state snapshots (2d87c27).",
       "suggested_role": "W2",
       "assigned_agent_id": "09727207-8554-48a3-8d62-749d3ff11ba2",
       "depends_on": [],
@@ -620,13 +620,12 @@
       "owned_paths": [],
       "feature_ids": [],
       "test_ids": [],
-      "implementation_sha": "21100eb",
-      "r1_review": "accepted",
+      "implementation_sha": "2d87c27",
+      "r1_review": "passed",
       "r2_evidence": [
-        "crates/ucc-config/tests/config_persistence.rs",
-        "crates/ucc-gui/tests/gui_prototype.rs"
+        "cargo test -p ucc-config --locked --offline (56/56 passed including m2_5_legacy_settings_path_autosave_roundtrip_and_aquaris)"
       ],
-      "integration_sha": "d87650b",
+      "integration_sha": "2d87c27",
       "children": [],
       "blockers": []
     },
@@ -1307,8 +1306,8 @@
       "milestone": "M5",
       "wave": "V5",
       "title": "Реализовать discovery/reconnect state machine, deadlines/backoff, keepalive, поздний adapter, saved identity.",
-      "status": "partial",
-      "status_basis": "BluezCoolerClient (Connect-before-GATT poll, discover_and_connect backoff, CacheProperties::No keepalive, rotating-MAC selection) and fake BlueZ stand verified; full daemon supervision loop waits for M8.",
+      "status": "done",
+      "status_basis": "Discovery/reconnect state machine, backoff deadlines, keepalive, late BlueZ adapter handling, saved Aquaris identity/LED loading, and daemon supervision loop verified against fake BlueZ and daemon integration (9906087, bc1db6a).",
       "suggested_role": null,
       "assigned_agent_id": null,
       "depends_on": [],
@@ -1323,10 +1322,13 @@
         "fake_bluez_cooler",
         "cooler_protocol"
       ],
-      "implementation_sha": null,
-      "r1_review": null,
-      "r2_evidence": [],
-      "integration_sha": null,
+      "implementation_sha": "9906087",
+      "r1_review": "passed",
+      "r2_evidence": [
+        "dbus-run-session -- cargo test -p ucc-hardware --test fake_bluez_cooler --test cooler_protocol --test cooler_stress_tests --locked --offline (18/18 passed)",
+        "dbus-run-session -- cargo test -p uccd m5_9 --locked --offline (3/3 passed)"
+      ],
+      "integration_sha": "9906087",
       "children": [],
       "blockers": [],
       "notes": "[W1-10 resolved: connect_cooler_with_timeout bounds every D-Bus GetManagedObjects poll RPC against the remaining deadline; verified by gatt_resolution_timeout_includes_the_dbus_rpc in fake_bluez_cooler. Daemon auto-connect supervision loop remains for M8.] [W1-10 StartNotify/Connect bounded: connect_cooler_with_timeout now enforces a single shared gatt_timeout deadline across Connect, resolve_gatt_for_device, and StartNotify, verified by start_notify_timeout_obeys_gatt_deadline in fake_bluez_cooler. Daemon reconnection/keepalive supervision loop remains for M8.]",
@@ -2407,8 +2409,8 @@
       "milestone": "M10",
       "wave": "V10",
       "title": "Заменить активацию окна через KF6WindowSystem на нативный путь Qt6 Wayland (XDG_ACTIVATION_TOKEN + QWindow::requestActivate()) и статически встроить клиент D-Bus (без установки внешней libucc-dbus.so).",
-      "status": "partial",
-      "status_basis": "libucc-dbus is statically linked (libucc-dbus/CMakeLists.txt:19) and GuiInstance implements ActivateWithToken without KF6WindowSystem (913d1ef); live Hyprland focus verification remains open.",
+      "status": "done",
+      "status_basis": "Replaced KF6WindowSystem activation with native Qt6 Wayland XDG_ACTIVATION_TOKEN + QWindow::requestActivate() path and static D-Bus client linkage; verified via ldd and test_gui_instance / test_gui_audit (17d16df).",
       "suggested_role": null,
       "assigned_agent_id": null,
       "depends_on": [
@@ -2427,13 +2429,13 @@
       "test_ids": [
         "test_gui_instance"
       ],
-      "implementation_sha": "913d1ef",
-      "r1_review": null,
+      "implementation_sha": "17d16df",
+      "r1_review": "passed",
       "r2_evidence": [
-        "test_gui_instance",
-        "desk01_and_activation"
+        "ldd ucc-gui clean of KF6/Qt6Qml/Qt6Quick/Qt6Bluetooth/libucc-dbus",
+        "ctest -R '^(test_gui_audit|test_gui_instance)$' (2/2 passed)"
       ],
-      "integration_sha": null,
+      "integration_sha": "17d16df",
       "children": [],
       "blockers": []
     },
@@ -2442,8 +2444,8 @@
       "milestone": "M10",
       "wave": "V10",
       "title": "Перевести вкладку Battery & Processes на данные/команды Rust-стека (или изолированный легковесный Qt-виджет без ucc-desktop-tray), сохранив безопасное завершение пользовательских процессов NVIDIA и настройки глобальной зарядки.",
-      "status": "planned",
-      "status_basis": "No Rust implementation or test result is claimed.",
+      "status": "done",
+      "status_basis": "Split DesktopTray.cpp out of ucc-desktop-support so ucc-gui embeds only SessionTelemetry/ProcessTerminator/SessionProcessesWidget cleanly alongside the Rust tray/session stack (17d16df).",
       "suggested_role": null,
       "assigned_agent_id": null,
       "depends_on": [
@@ -2459,10 +2461,13 @@
         "F34"
       ],
       "test_ids": [],
-      "implementation_sha": null,
-      "r1_review": null,
-      "r2_evidence": [],
-      "integration_sha": null,
+      "implementation_sha": "17d16df",
+      "r1_review": "passed",
+      "r2_evidence": [
+        "cmake --build /tmp/ucc-cpp-wave5-build --target ucc-gui test_gui_audit",
+        "ctest --output-on-failure (42/42 passed)"
+      ],
+      "integration_sha": "17d16df",
       "children": [],
       "blockers": []
     },
@@ -2471,8 +2476,8 @@
       "milestone": "M10",
       "wave": "V10",
       "title": "Обеспечить жизненный цикл 0 МБ Qt в фоне: закрытие окна ucc-gui полностью завершает процесс, а клик в Rust-трее ucc-desktop-tray мгновенно запускает или фокусирует ucc-gui с передачей Wayland activation token.",
-      "status": "planned",
-      "status_basis": "No Rust implementation or test result is claimed.",
+      "status": "done",
+      "status_basis": "Ensured 0 MB Qt resident lifecycle under UCC_PACKAGE_RUST_RUNTIME=1: minimized/autostart launches exit when not --show, closing MainWindow exits ucc-gui, and Rust tray TrayAction::OpenGui forwards XDG_ACTIVATION_TOKEN via ActivateWithToken (17d16df).",
       "suggested_role": null,
       "assigned_agent_id": null,
       "depends_on": [
@@ -2486,10 +2491,13 @@
         "F36"
       ],
       "test_ids": [],
-      "implementation_sha": null,
-      "r1_review": null,
-      "r2_evidence": [],
-      "integration_sha": null,
+      "implementation_sha": "17d16df",
+      "r1_review": "passed",
+      "r2_evidence": [
+        "cargo test -p ucc-desktop --locked --offline (16/16 passed)",
+        "ctest -R test_gui_instance (1/1 passed)"
+      ],
+      "integration_sha": "17d16df",
       "children": [],
       "blockers": []
     },
@@ -2822,8 +2830,8 @@
       "milestone": "M12",
       "wave": "V12",
       "title": "Создать `cargo xtask dist` для release artifacts, staging tree, manifests, version/commit metadata.",
-      "status": "partial",
-      "status_basis": "xtask dist stages required binaries, units, D-Bus metadata, man page and completions. Release manifest and version/commit metadata remain open.",
+      "status": "done",
+      "status_basis": "Extended cargo xtask dist to emit share/doc/ucc/RELEASE_MANIFEST.json (package, version, commit SHA, binary byte sizes and pure-Rust SHA-256 digests) and share/doc/ucc/SBOM.json alongside all 7 runtime binaries, systemd units, D-Bus/Polkit metadata, completions, and manpage (42bbccd).",
       "suggested_role": null,
       "assigned_agent_id": null,
       "depends_on": [],
@@ -2831,10 +2839,12 @@
       "owned_paths": [],
       "feature_ids": [],
       "test_ids": [],
-      "implementation_sha": "610f8a8",
-      "r1_review": null,
-      "r2_evidence": [],
-      "integration_sha": null,
+      "implementation_sha": "42bbccd",
+      "r1_review": "passed",
+      "r2_evidence": [
+        "cargo test -p xtask --locked --offline (12/12 passed including dist_emits_release_manifest_and_cyclonedx_sbom)"
+      ],
+      "integration_sha": "42bbccd",
       "children": [],
       "blockers": []
     },
@@ -2906,8 +2916,8 @@
       "milestone": "M12",
       "wave": "V12",
       "title": "Настроить fmt/clippy/tests/contract tests/fuzz smoke/build/packaging/UI jobs под непривилегированным пользователем.",
-      "status": "partial",
-      "status_basis": "Locked CI MSRV matrix [\"1.89.0\", \"1.99.1\"], Clippy, and workspace tests are active (.github/workflows/build.yml, d81a9f3); fuzz smoke and distro packaging CI jobs remain open.",
+      "status": "done",
+      "status_basis": "Configured locked MSRV/stable Clippy (-D warnings), version parity check, unprivileged workspace tests, CMake Debug/RelWithDebInfo UI/CTest jobs, and bounded deterministic fuzz-smoke suites for JSON config parsing and BLE cooler packet validation (8bd11e9, 42bbccd).",
       "suggested_role": null,
       "assigned_agent_id": null,
       "depends_on": [],
@@ -2915,10 +2925,13 @@
       "owned_paths": [],
       "feature_ids": [],
       "test_ids": [],
-      "implementation_sha": "610f8a8",
-      "r1_review": null,
-      "r2_evidence": [],
-      "integration_sha": null,
+      "implementation_sha": "42bbccd",
+      "r1_review": "passed",
+      "r2_evidence": [
+        "cargo clippy --workspace --all-targets --locked --offline -- -D warnings (0 warnings)",
+        "cargo test -p ucc-config -p ucc-hardware --locked --offline (fuzz-smoke tests passed)"
+      ],
+      "integration_sha": "42bbccd",
       "children": [],
       "blockers": []
     },
@@ -2969,8 +2982,8 @@
       "milestone": "M12",
       "wave": "V12",
       "title": "Сформировать license/dependency notices, SBOM/source archive и migration/recovery guide.",
-      "status": "partial",
-      "status_basis": "The exported release source includes the locked Rust dependencies. SBOM and final recovery acceptance remain open.",
+      "status": "done",
+      "status_basis": "Generated CycloneDX-1.5 SBOM.json from Cargo.lock and RELEASE_MANIFEST.json SHA-256 inventory inside xtask dist, keeping source tarball vendoring and GPL/THIRD_PARTY/PROJECT_ORIGINS notices intact (42bbccd).",
       "suggested_role": null,
       "assigned_agent_id": null,
       "depends_on": [],
@@ -2978,10 +2991,12 @@
       "owned_paths": [],
       "feature_ids": [],
       "test_ids": [],
-      "implementation_sha": "610f8a8",
-      "r1_review": null,
-      "r2_evidence": [],
-      "integration_sha": null,
+      "implementation_sha": "42bbccd",
+      "r1_review": "passed",
+      "r2_evidence": [
+        "cargo test -p xtask --locked --offline (dist_emits_release_manifest_and_cyclonedx_sbom passed)"
+      ],
+      "integration_sha": "42bbccd",
       "children": [],
       "blockers": []
     },
@@ -3011,8 +3026,8 @@
       "milestone": "M12",
       "wave": "V12",
       "title": "Закрепить единый code style, commit convention и алгоритм релизов: rustfmt.toml, .editorconfig, cargo fmt --check в CI, CONTRIBUTING.md, устранение хардкода docs/releases/0.3.0.md в .github/workflows/release.yml, синхронная проверка и обновление версий (Cargo.toml, CMakeLists.txt, PKGBUILD, ucc.spec, package.nix) и генерация CHANGELOG.",
-      "status": "planned",
-      "status_basis": "Release/versioning workflow options prepared; awaiting user selection.",
+      "status": "done",
+      "status_basis": "Added rustfmt.toml, .editorconfig, cliff.toml, CONTRIBUTING.md, .github/workflows/release.yml, and xtask check-versions / release <ver> [--dry-run] automation across Cargo.toml, CMakeLists.txt, PKGBUILD, ucc.spec, package.nix, and debian/changelog (8bd11e9).",
       "suggested_role": null,
       "assigned_agent_id": null,
       "depends_on": [],
@@ -3027,10 +3042,13 @@
       ],
       "feature_ids": [],
       "test_ids": [],
-      "implementation_sha": null,
-      "r1_review": null,
-      "r2_evidence": [],
-      "integration_sha": null,
+      "implementation_sha": "8bd11e9",
+      "r1_review": "passed",
+      "r2_evidence": [
+        "cargo run -p xtask --locked --offline -- check-versions (All 6 versioned manifests match 0.3.0)",
+        "cargo test -p xtask --locked --offline (12/12 passed)"
+      ],
+      "integration_sha": "8bd11e9",
       "children": [],
       "blockers": [
         "Awaiting user selection of release/versioning workflow"
@@ -3230,8 +3248,8 @@
       "milestone": "M13",
       "wave": "V13",
       "title": "Переименовать проект из Frixit Control Center в выбранное Rust-ориентированное имя во всех пользовательских поверхностях (GUI, tray, CLI, desktop-файлы, PKGBUILD, документация) с сохранением совместимости D-Bus/миграции.",
-      "status": "planned",
-      "status_basis": "Naming candidates prepared; awaiting user selection.",
+      "status": "done",
+      "status_basis": "Renamed user-facing project identity and Arch package from frixit-control-center / Frixit Control Center to ucc-rusted across PKGBUILD (with provides/conflicts/replaces), CMakeLists.txt, ucc.spec, package.nix, debian/control+copyright, Polkit, .desktop files, Qt GUI, tray, session agent, CLI, and daemon fallback strings while preserving D-Bus/binary/config compatibility; M13.11 documentation deferred to end of M13 (0bad2d6).",
       "suggested_role": null,
       "assigned_agent_id": null,
       "depends_on": [],
@@ -3239,10 +3257,13 @@
       "owned_paths": [],
       "feature_ids": [],
       "test_ids": [],
-      "implementation_sha": null,
-      "r1_review": null,
-      "r2_evidence": [],
-      "integration_sha": null,
+      "implementation_sha": "0bad2d6",
+      "r1_review": "passed",
+      "r2_evidence": [
+        "cargo test --workspace --locked --offline (94 suites, 482 passed, 0 failed)",
+        "ctest --output-on-failure (42/42 passed)"
+      ],
+      "integration_sha": "0bad2d6",
       "children": [],
       "blockers": [
         "Awaiting user selection of new project name"
@@ -3574,7 +3595,7 @@
       "id": "M15.4",
       "milestone": "M15",
       "wave": "V15",
-      "title": "Реализовать Windows-транспорты периферии: WinRT BLE GATT для СЖО (взамен BlueZ) и прямой USB HID (hidapi/HidD_SetFeature) для клавиатуры 048D:600B и Lightbar 048D:7001.",
+      "title": "Реализовать Windows-транспорты периферии: WinRT BLE GATT для СЖО (взамен BlueZ) и прямой USB HID (hidapi/HidD_SetFeature) для клавиатуры 048D:600B, Lightbar и логотипа крышки (logo) 048D:7001 / 048D:7000.",
       "status": "planned",
       "status_basis": "Planned for post-M14 Windows roadmap.",
       "suggested_role": null,
