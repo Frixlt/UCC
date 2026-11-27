@@ -871,8 +871,6 @@ impl LiveUccdBackend {
                     rb.wrote_type = true;
                 }
             }
-        } else if explicit_start || explicit_end || explicit_type {
-            return Err(());
         }
 
         if let Some(prof_desc) = profile.charging.charging_profile.as_deref().or(cfg_prof.as_deref()) {

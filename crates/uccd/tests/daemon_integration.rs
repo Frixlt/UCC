@@ -5724,10 +5724,18 @@ fn full_27_03_apply_profile_fails_and_rolls_back_on_charging_write_error() {
     assert_eq!(sysfs.get_file(&end_path).as_deref(), Some("80"));
     *ctrl.silent_noop_suffix.lock().unwrap() = None;
 
-    // 3. Missing charging node when profile explicitly configures end_threshold -> fails.
+    // 3. Missing charging node when battery is present and profile configures end_threshold -> fails.
     let root2 = tempfile::tempdir().unwrap();
+    let bat2 = root2.path().join("sys/class/power_supply/BAT0");
     let ctrl2 = Arc::new(SysfsGateControl::default());
-    let (backend2, _, _, _) = build_backend_with_sysfs_gate(root2.path(), ctrl2, |_| {}, |p| p);
+    let (backend2, _, _, _) = build_backend_with_sysfs_gate(
+        root2.path(),
+        ctrl2,
+        |sysfs| {
+            sysfs.set_file(bat2.join("type"), "Battery");
+        },
+        |p| p,
+    );
     assert!(!backend2.apply_profile(&bad_json));
 }
 
