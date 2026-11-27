@@ -191,6 +191,9 @@ int main(int argc, char **argv) {
   if (isoHome.isValid()) {
     qputenv("HOME", isoHome.path().toUtf8());
     qputenv("XDG_CONFIG_HOME", (isoHome.path() + QStringLiteral("/.config")).toUtf8());
+    qputenv("XDG_DATA_HOME", (isoHome.path() + QStringLiteral("/.local/share")).toUtf8());
+    qputenv("XDG_STATE_HOME", (isoHome.path() + QStringLiteral("/.local/state")).toUtf8());
+    qputenv("XDG_CACHE_HOME", (isoHome.path() + QStringLiteral("/.cache")).toUtf8());
   }
   qputenv("QT_QPA_PLATFORM", "offscreen");
   qputenv("GIO_USE_VFS", "local");

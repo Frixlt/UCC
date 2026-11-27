@@ -11,6 +11,15 @@
 #include <QDBusVirtualObject>
 
 namespace {
+#ifdef UCC_READ_ONLY_PREVIEW
+constexpr const char *kGuiService = "com.uniwill.UccGuiPreview";
+constexpr const char *kGuiPath = "/com/uniwill/UccGuiPreview";
+#else
+constexpr const char *kGuiService = "com.uniwill.UccGui";
+constexpr const char *kGuiPath = "/com/uniwill/UccGui";
+#endif
+constexpr const char *kGuiInterface = "com.uniwill.UccGui";
+
 class MinimalUccdStub : public QDBusVirtualObject {
 public:
   QString introspect(const QString &) const override {
@@ -122,6 +131,9 @@ private slots:
     QProcessEnvironment env = QProcessEnvironment::systemEnvironment();
     env.insert(QStringLiteral("HOME"), homeDir.path());
     env.insert(QStringLiteral("XDG_CONFIG_HOME"), homeDir.path() + QStringLiteral("/.config"));
+    env.insert(QStringLiteral("XDG_DATA_HOME"), homeDir.path() + QStringLiteral("/.local/share"));
+    env.insert(QStringLiteral("XDG_STATE_HOME"), homeDir.path() + QStringLiteral("/.local/state"));
+    env.insert(QStringLiteral("XDG_CACHE_HOME"), homeDir.path() + QStringLiteral("/.cache"));
     env.insert(QStringLiteral("DBUS_SYSTEM_BUS_ADDRESS"), qEnvironmentVariable("DBUS_SESSION_BUS_ADDRESS"));
     env.insert(QStringLiteral("QT_QPA_PLATFORM"), QStringLiteral("offscreen"));
 
@@ -134,7 +146,7 @@ private slots:
       QVERIFY2(minimizedGui.waitForFinished(5000),
                "ucc-gui --minimized under UCC_PACKAGE_RUST_RUNTIME must exit (0 MB resident)");
       QCOMPARE(minimizedGui.exitCode(), 0);
-      QVERIFY(!sessionBus.interface()->isServiceRegistered(QStringLiteral("com.uniwill.UccGui")).value());
+      QVERIFY(!sessionBus.interface()->isServiceRegistered(QString::fromLatin1(kGuiService)).value());
     }
 #endif
 
@@ -147,9 +159,9 @@ private slots:
     QVERIFY(realGui.waitForStarted(4000));
     QTRY_VERIFY_WITH_TIMEOUT(
         [&] {
-          auto act = QDBusMessage::createMethodCall(QStringLiteral("com.uniwill.UccGui"),
-                                                    QStringLiteral("/com/uniwill/UccGui"),
-                                                    QStringLiteral("com.uniwill.UccGui"),
+          auto act = QDBusMessage::createMethodCall(QString::fromLatin1(kGuiService),
+                                                    QString::fromLatin1(kGuiPath),
+                                                    QString::fromLatin1(kGuiInterface),
                                                     QStringLiteral("Activate"));
           return sessionBus.call(act, QDBus::Block, 500).type() == QDBusMessage::ReplyMessage;
         }(),
@@ -173,7 +185,7 @@ private slots:
     QVERIFY(realGui.waitForFinished(5000));
     QCOMPARE(realGui.state(), QProcess::NotRunning);
     QTRY_VERIFY_WITH_TIMEOUT(
-        !sessionBus.interface()->isServiceRegistered(QStringLiteral("com.uniwill.UccGui")).value(),
+        !sessionBus.interface()->isServiceRegistered(QString::fromLatin1(kGuiService)).value(),
         4000);
 
     QProcess relaunched;
@@ -182,9 +194,9 @@ private slots:
     QVERIFY(relaunched.waitForStarted(4000));
     QTRY_VERIFY_WITH_TIMEOUT(
         [&] {
-          auto act = QDBusMessage::createMethodCall(QStringLiteral("com.uniwill.UccGui"),
-                                                    QStringLiteral("/com/uniwill/UccGui"),
-                                                    QStringLiteral("com.uniwill.UccGui"),
+          auto act = QDBusMessage::createMethodCall(QString::fromLatin1(kGuiService),
+                                                    QString::fromLatin1(kGuiPath),
+                                                    QString::fromLatin1(kGuiInterface),
                                                     QStringLiteral("Activate"));
           return sessionBus.call(act, QDBus::Block, 500).type() == QDBusMessage::ReplyMessage;
         }(),

@@ -4,6 +4,13 @@ set -euo pipefail
 TEST_BIN="${1:?usage: run_rust_interop_test.sh <test-binary> <source-dir>}"
 SOURCE_DIR="${2:?usage: run_rust_interop_test.sh <test-binary> <source-dir>}"
 
+test_home=$(mktemp -d)
+trap 'rm -rf "$test_home"' EXIT
+export HOME="$test_home" \
+  XDG_CONFIG_HOME="$test_home/.config" \
+  XDG_DATA_HOME="$test_home/.local/share" \
+  XDG_STATE_HOME="$test_home/.local/state" \
+  XDG_CACHE_HOME="$test_home/.cache"
 export DBUS_SYSTEM_BUS_ADDRESS="$DBUS_SESSION_BUS_ADDRESS"
 export GIO_USE_VFS=local
 

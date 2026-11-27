@@ -41,9 +41,7 @@
       "libucc-dbus.so": 226976,
       "libucc-session-support.a": 205624,
       "libucc-desktop-support.a": 392988
-    }
-  },
-  "pending_measurements": {
+    },
     "idle_wakeups_per_second": {
       "sample_window_seconds": 5,
       "uccd_legacy_pid_420936": 1.0,
@@ -54,8 +52,7 @@
       "uccd_legacy_pid_420936": 11632640,
       "ucc_desktop_tray_legacy_pid_3283": 14757888,
       "ucc_session_agent_legacy_pid_197874": 6660096
-    },
-    "ui_frame_latency_ms": "baseline_measurement_pending (requires live compositor frame capture)"
+    }
   },
   "pending_measurements": {
     "ui_frame_latency_ms": "requires live Wayland/Hyprland compositor frame capture on physical host"

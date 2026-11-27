@@ -116,6 +116,7 @@ jobs:
         run: |
           runuser -u ucc-ci -- cmake -S . -B build -G Ninja \
             -DCMAKE_BUILD_TYPE=${{ matrix.build_type }} \
+            -DCMAKE_CXX_FLAGS="-D_GLIBCXX_ASSERTIONS" \
             -DBUILD_GUI=ON \
             -DBUILD_TRAY=ON \
             -DBUILD_GNOME=ON \
@@ -137,6 +138,7 @@ jobs:
         run: |
           runuser -u ucc-ci -- cmake -S . -B build-rust-runtime -G Ninja \
             -DCMAKE_BUILD_TYPE=RelWithDebInfo \
+            -DCMAKE_CXX_FLAGS="-D_GLIBCXX_ASSERTIONS" \
             -DUCC_PACKAGE_RUST_RUNTIME=ON \
             -DBUILD_TRAY=OFF \
             -DBUILD_TESTS=ON
@@ -144,6 +146,19 @@ jobs:
           ! runuser -u ucc-ci -- ldd build-rust-runtime/bin/ucc-gui | grep -q 'not found'
           runuser -u ucc-ci -- env UCC_INTEROP_DAEMON_BIN="$GITHUB_WORKSPACE/ci-interop/interop_daemon" \
             ctest --test-dir build-rust-runtime --output-on-failure --parallel 2
+
+      - name: Verify read-only preview build (UCC_READ_ONLY_PREVIEW=ON)
+        if: matrix.build_type == 'RelWithDebInfo'
+        run: |
+          runuser -u ucc-ci -- cmake -S . -B build-preview -G Ninja \
+            -DCMAKE_BUILD_TYPE=RelWithDebInfo \
+            -DCMAKE_CXX_FLAGS="-D_GLIBCXX_ASSERTIONS" \
+            -DUCC_READ_ONLY_PREVIEW=ON \
+            -DUCC_PACKAGE_RUST_RUNTIME=ON \
+            -DBUILD_TRAY=OFF \
+            -DBUILD_TESTS=ON
+          runuser -u ucc-ci -- cmake --build build-preview --parallel 2 --target test_gui_audit test_gui_instance test_app_logging ucc-gui
+          runuser -u ucc-ci -- ctest --test-dir build-preview -R "^(test_gui_audit_preview_gallery|test_gui_instance|test_app_logging)$" --output-on-failure
 
       - name: Capture current GUI pages on an isolated bus
         run: runuser -u ucc-ci -- python3 contrib/frixit/capture-gallery.py --build build --output artifacts/ci-gallery

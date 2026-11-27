@@ -45,11 +45,10 @@ build() {
 check() {
   local source_root=${UCC_SOURCE_DIR:-$srcdir/UCC-$pkgver}
   (cd "$source_root" && dbus-run-session -- cargo test --workspace --locked --offline --target-dir "$srcdir/rust")
-  ctest --test-dir "$srcdir/build" -j1 --output-on-failure -E '^test_gui_audit$'
-  dbus-run-session -- bash "$source_root/tests/run_gui_audit_test.sh" \
-    "$srcdir/build/bin/test_gui_audit" dashboardShowsDriverFailureAndClearsAfterRecovery \
-    aboutBuildCreditsAndBundledLicense calibratedKeyboardKeepsPhysicalLedIdentities \
-    lightbarKeepsSourceValuesAndRejectsFailedCommands deviceMatrixKeepsThreeIndependentModes
+  (cd "$source_root" && cargo build -p uccd --example interop_daemon --locked --offline --target-dir "$srcdir/rust")
+  CARGO_TARGET_DIR="$srcdir/rust" \
+    UCC_INTEROP_DAEMON_BIN="$srcdir/rust/debug/examples/interop_daemon" \
+    ctest --test-dir "$srcdir/build" -j1 --output-on-failure
   python3 "$source_root/contrib/mechrevo/tests/test_migration.py"
 }
 
