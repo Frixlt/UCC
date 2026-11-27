@@ -115,6 +115,7 @@ pub(super) struct SupersededUndo<'a> {
     pub(super) prev_tdps: &'a [Option<i32>],
     pub(super) tdps_written: usize,
     pub(super) cpu_rollback: Vec<(PathBuf, String)>,
+    pub(super) charging_rb: Option<&'a display_gpu::ChargingRollback>,
 }
 
 pub(super) struct InFlightTxGuard<'a> {
@@ -238,6 +239,9 @@ pub struct LiveUccdBackend {
     pub(super) next_custom_profile_seq: AtomicU64,
     pub(super) tdp_write_seq: AtomicU64,
     pub(super) odm_write_seq: AtomicU64,
+    pub(super) charging_write_seq: AtomicU64,
+    pub(super) ctgp_write_seq: AtomicU64,
+    pub(super) kb_write_seq: AtomicU64,
     pub(super) sleep_state_pending_clear: AtomicBool,
     pub(super) cpu_reapply_attempts: AtomicU32,
     pub(super) in_flight_tdp_baselines: Mutex<Vec<(u64, usize, i32)>>,
@@ -396,6 +400,9 @@ impl LiveUccdBackend {
             next_custom_profile_seq: AtomicU64::new(0),
             tdp_write_seq: AtomicU64::new(0),
             odm_write_seq: AtomicU64::new(0),
+            charging_write_seq: AtomicU64::new(0),
+            ctgp_write_seq: AtomicU64::new(0),
+            kb_write_seq: AtomicU64::new(0),
             sleep_state_pending_clear: AtomicBool::new(false),
             cpu_reapply_attempts: AtomicU32::new(0),
             in_flight_tdp_baselines: Mutex::new(Vec::new()),

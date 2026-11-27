@@ -15,6 +15,23 @@ const BACKLIGHT_RAMP_MAX_WAIT_MS: usize = 250;
 const BACKLIGHT_RAMP_POLL_STEP: Duration = Duration::from_millis(5);
 const PRIME_SELECT_TIMEOUT: Duration = Duration::from_secs(2);
 
+#[derive(Debug, Clone, Default)]
+pub(crate) struct ChargingRollback {
+    bat_dir: Option<PathBuf>,
+    prev_start: Option<String>,
+    wrote_start: bool,
+    prev_end: Option<String>,
+    wrote_end: bool,
+    prev_type: Option<String>,
+    wrote_type: bool,
+    profile_path: Option<PathBuf>,
+    prev_profile: Option<String>,
+    wrote_profile: bool,
+    priority_path: Option<PathBuf>,
+    prev_priority: Option<String>,
+    wrote_priority: bool,
+}
+
 impl LiveUccdBackend {
     pub(super) fn read_dmi_field(&self, field: &str) -> String {
         self.sysfs
@@ -605,10 +622,154 @@ impl LiveUccdBackend {
         None
     }
 
-    /// Applies saved charging thresholds/profile/type on startup or profile commit (`ISSUE-08`, `ISSUE-24`).
-    pub(super) fn apply_charging_settings_for_profile(&self, profile: &UccProfile) {
+    fn write_charging_u8_checked(&self, path: &Path, val: u8) -> bool {
+        if self.shutdown_wait_expired.load(Ordering::SeqCst) {
+            return false;
+        }
+        self.charging_write_seq.fetch_add(1, Ordering::SeqCst);
+        let res = self.sysfs.write(path, &val.to_string());
+        self.charging_write_seq.fetch_add(1, Ordering::SeqCst);
+        if res.is_err() {
+            return false;
+        }
+        matches!(
+            self.sysfs.read(path).ok().and_then(|s| s.trim().parse::<u8>().ok()),
+            Some(actual) if actual == val
+        )
+    }
+
+    fn active_bracket_token(&self, path: &Path) -> Option<String> {
+        let raw = self.sysfs.read(path).ok()?;
+        let trimmed = raw.trim();
+        if trimmed.is_empty() {
+            return None;
+        }
+        if let Some(tok) = trimmed
+            .split_whitespace()
+            .find(|t| t.starts_with('[') && t.ends_with(']') && t.len() >= 2)
+        {
+            return Some(tok[1..tok.len() - 1].to_string());
+        }
+        Some(trimmed.to_string())
+    }
+
+    fn write_charging_token_checked(&self, path: &Path, token: &str) -> bool {
+        if self.shutdown_wait_expired.load(Ordering::SeqCst) {
+            return false;
+        }
+        let target = token.trim();
+        self.charging_write_seq.fetch_add(1, Ordering::SeqCst);
+        let res = self.sysfs.write(path, target);
+        self.charging_write_seq.fetch_add(1, Ordering::SeqCst);
+        if res.is_err() {
+            return false;
+        }
+        let Ok(raw) = self.sysfs.read(path) else {
+            return false;
+        };
+        let trimmed = raw.trim();
+        trimmed == target
+            || trimmed
+                .split_whitespace()
+                .any(|tok| tok.trim_matches(|c| c == '[' || c == ']') == target)
+    }
+
+    pub(super) fn restore_charging_rollback(
+        &self,
+        rb: &ChargingRollback,
+        start_epoch: Option<u64>,
+    ) -> bool {
+        let superseded =
+            || start_epoch.is_some_and(|e| self.profile_commit_epoch.load(Ordering::SeqCst) != e);
+        if self.shutdown_wait_expired.load(Ordering::SeqCst) || superseded() {
+            return false;
+        }
+        let mut ok = true;
+        if let Some(ref bat) = rb.bat_dir {
+            let start_path = bat.join("charge_control_start_threshold");
+            let end_path = bat.join("charge_control_end_threshold");
+            let prev_start_u8 = rb
+                .prev_start
+                .as_deref()
+                .and_then(|s| s.trim().parse::<u8>().ok());
+            let prev_end_u8 = rb
+                .prev_end
+                .as_deref()
+                .and_then(|s| s.trim().parse::<u8>().ok());
+            let cur_end = self
+                .sysfs
+                .read(&end_path)
+                .ok()
+                .and_then(|s| s.trim().parse::<u8>().ok());
+            let restore_end_first =
+                matches!((prev_start_u8, cur_end), (Some(ps), Some(ce)) if ps >= ce);
+
+            if restore_end_first {
+                if rb.wrote_end {
+                    if let Some(val) = prev_end_u8 {
+                        if !self.write_charging_u8_checked(&end_path, val) {
+                            ok = false;
+                        }
+                    }
+                }
+                if rb.wrote_start && !superseded() {
+                    if let Some(val) = prev_start_u8 {
+                        if !self.write_charging_u8_checked(&start_path, val) {
+                            ok = false;
+                        }
+                    }
+                }
+            } else {
+                if rb.wrote_start {
+                    if let Some(val) = prev_start_u8 {
+                        if !self.write_charging_u8_checked(&start_path, val) {
+                            ok = false;
+                        }
+                    }
+                }
+                if rb.wrote_end && !superseded() {
+                    if let Some(val) = prev_end_u8 {
+                        if !self.write_charging_u8_checked(&end_path, val) {
+                            ok = false;
+                        }
+                    }
+                }
+            }
+
+            if rb.wrote_type && !superseded() {
+                if let Some(ref prev_ct) = rb.prev_type {
+                    if !self.write_charging_token_checked(&bat.join("charge_type"), prev_ct) {
+                        ok = false;
+                    }
+                }
+            }
+        }
+        if rb.wrote_profile && !superseded() {
+            if let (Some(ref p), Some(ref prev)) = (&rb.profile_path, &rb.prev_profile) {
+                if !self.write_charging_token_checked(p, prev) {
+                    ok = false;
+                }
+            }
+        }
+        if rb.wrote_priority && !superseded() {
+            if let (Some(ref p), Some(ref prev)) = (&rb.priority_path, &rb.prev_priority) {
+                if !self.write_charging_token_checked(p, prev) {
+                    ok = false;
+                }
+            }
+        }
+        ok
+    }
+
+    /// Applies charging thresholds/type/profile/priority with readback verification and rollback on failure (`FULL-27-03`).
+    pub(super) fn apply_charging_settings_checked(
+        &self,
+        profile: &UccProfile,
+        start_epoch: Option<u64>,
+    ) -> Result<ChargingRollback, ()> {
+        let mut rb = ChargingRollback::default();
         if self.is_vendor_unsupported() || ucc_config::is_read_only_preview() {
-            return;
+            return Ok(rb);
         }
         let (cfg_start, cfg_end, cfg_type, cfg_prof, cfg_prio) = {
             let s = self.read_rw(&self.settings);
@@ -624,40 +785,75 @@ impl LiveUccdBackend {
                 (None, None, None, None, None)
             }
         };
+        let explicit_start = profile.charging.start_threshold.is_some();
+        let explicit_end = profile.charging.end_threshold.is_some();
+        let explicit_type = profile.charging.charge_type.is_some();
+        let explicit_prof = profile.charging.charging_profile.is_some();
+        let explicit_prio = profile.charging.charging_priority.is_some();
+
         let start = profile.charging.start_threshold.or(cfg_start);
         let end = profile.charging.end_threshold.or(cfg_end);
+
+        if let (Some(s), Some(e)) = (start, end) {
+            if s >= e && (explicit_start || explicit_end) {
+                return Err(());
+            }
+        }
 
         if let Some(bat) = self.discover_battery_dir() {
             let start_path = bat.join("charge_control_start_threshold");
             let end_path = bat.join("charge_control_end_threshold");
-            let current_end = self
-                .sysfs
-                .read(&end_path)
-                .ok()
+            let ct_path = bat.join("charge_type");
+            let has_start = self.sysfs.exists(&start_path);
+            let has_end = self.sysfs.exists(&end_path);
+            let has_ct = self.sysfs.exists(&ct_path);
+
+            if (explicit_end && !has_end) || (explicit_start && !has_start) || (explicit_type && !has_ct) {
+                return Err(());
+            }
+
+            rb.bat_dir = Some(bat.clone());
+            rb.prev_start = has_start.then(|| self.sysfs.read(&start_path).ok()).flatten();
+            rb.prev_end = has_end.then(|| self.sysfs.read(&end_path).ok()).flatten();
+            rb.prev_type = has_ct.then(|| self.sysfs.read(&ct_path).ok()).flatten();
+
+            let current_end = rb
+                .prev_end
+                .as_deref()
                 .and_then(|s| s.trim().parse::<u8>().ok());
             let write_end_first = matches!((start, current_end), (Some(s), Some(ce)) if s >= ce);
+
+            let write_end_step = |rb: &mut ChargingRollback| -> Result<(), ()> {
+                if let Some(e) = end {
+                    if has_end {
+                        if !self.write_charging_u8_checked(&end_path, e) {
+                            let _ = self.restore_charging_rollback(rb, start_epoch);
+                            return Err(());
+                        }
+                        rb.wrote_end = true;
+                    }
+                }
+                Ok(())
+            };
+            let write_start_step = |rb: &mut ChargingRollback| -> Result<(), ()> {
+                if let Some(s) = start {
+                    if has_start && end.is_none_or(|e| s < e) {
+                        if !self.write_charging_u8_checked(&start_path, s) {
+                            let _ = self.restore_charging_rollback(rb, start_epoch);
+                            return Err(());
+                        }
+                        rb.wrote_start = true;
+                    }
+                }
+                Ok(())
+            };
+
             if write_end_first {
-                if let Some(e) = end {
-                    if self.sysfs.exists(&end_path) {
-                        let _ = self.sysfs.write(&end_path, &e.to_string());
-                    }
-                }
-                if let Some(s) = start {
-                    if self.sysfs.exists(&start_path) && end.is_none_or(|e| s < e) {
-                        let _ = self.sysfs.write(&start_path, &s.to_string());
-                    }
-                }
+                write_end_step(&mut rb)?;
+                write_start_step(&mut rb)?;
             } else {
-                if let Some(s) = start {
-                    if self.sysfs.exists(&start_path) && end.is_none_or(|e| s < e) {
-                        let _ = self.sysfs.write(&start_path, &s.to_string());
-                    }
-                }
-                if let Some(e) = end {
-                    if self.sysfs.exists(&end_path) {
-                        let _ = self.sysfs.write(&end_path, &e.to_string());
-                    }
-                }
+                write_start_step(&mut rb)?;
+                write_end_step(&mut rb)?;
             }
 
             if let Some(ct) = profile
@@ -667,29 +863,65 @@ impl LiveUccdBackend {
                 .map(|c| c.as_str().to_string())
                 .or(cfg_type)
             {
-                let ct_path = bat.join("charge_type");
-                if self.sysfs.exists(&ct_path) {
-                    let _ = self.sysfs.write(&ct_path, ct.trim());
+                if has_ct {
+                    if !self.write_charging_token_checked(&ct_path, &ct) {
+                        let _ = self.restore_charging_rollback(&rb, start_epoch);
+                        return Err(());
+                    }
+                    rb.wrote_type = true;
                 }
             }
+        } else if explicit_start || explicit_end || explicit_type {
+            return Err(());
         }
 
         if let Some(prof_desc) = profile.charging.charging_profile.as_deref().or(cfg_prof.as_deref()) {
             if let Some((avail_path, cur_path)) = self.charging_profile_paths() {
                 let avail = self.read_whitespace_tokens(&avail_path);
                 if avail.iter().any(|p| p == prof_desc.trim()) {
-                    let _ = self.sysfs.write(&cur_path, prof_desc.trim());
+                    rb.profile_path = Some(cur_path.clone());
+                    rb.prev_profile = self.active_bracket_token(&cur_path);
+                    if !self.write_charging_token_checked(&cur_path, prof_desc) {
+                        let _ = self.restore_charging_rollback(&rb, start_epoch);
+                        return Err(());
+                    }
+                    rb.wrote_profile = true;
+                } else if explicit_prof {
+                    let _ = self.restore_charging_rollback(&rb, start_epoch);
+                    return Err(());
                 }
+            } else if explicit_prof {
+                let _ = self.restore_charging_rollback(&rb, start_epoch);
+                return Err(());
             }
         }
         if let Some(prio_desc) = profile.charging.charging_priority.as_deref().or(cfg_prio.as_deref()) {
             if let Some((avail_path, cur_path)) = self.charging_priority_paths() {
                 let avail = self.read_whitespace_tokens(&avail_path);
                 if avail.iter().any(|p| p == prio_desc.trim()) {
-                    let _ = self.sysfs.write(&cur_path, prio_desc.trim());
+                    rb.priority_path = Some(cur_path.clone());
+                    rb.prev_priority = self.active_bracket_token(&cur_path);
+                    if !self.write_charging_token_checked(&cur_path, prio_desc) {
+                        let _ = self.restore_charging_rollback(&rb, start_epoch);
+                        return Err(());
+                    }
+                    rb.wrote_priority = true;
+                } else if explicit_prio {
+                    let _ = self.restore_charging_rollback(&rb, start_epoch);
+                    return Err(());
                 }
+            } else if explicit_prio {
+                let _ = self.restore_charging_rollback(&rb, start_epoch);
+                return Err(());
             }
         }
+
+        Ok(rb)
+    }
+
+    /// Best-effort charging wrapper used by shutdown restore (`ISSUE-08`, `ISSUE-24`).
+    pub(super) fn apply_charging_settings_for_profile(&self, profile: &UccProfile) {
+        let _ = self.apply_charging_settings_checked(profile, None);
     }
 
     pub(super) fn parse_drm_mode_line(line: &str) -> Option<(i32, i32, Option<i32>)> {
@@ -1187,7 +1419,10 @@ impl LiveUccdBackend {
                         let Ok(target_mw) = u32::try_from(target_mw_i64) else {
                             return false;
                         };
-                        if nvml.set_power_limit_by_bdf(bdf, target_mw).is_ok() {
+                        self.ctgp_write_seq.fetch_add(1, Ordering::SeqCst);
+                        let nv_res = nvml.set_power_limit_by_bdf(bdf, target_mw);
+                        self.ctgp_write_seq.fetch_add(1, Ordering::SeqCst);
+                        if nv_res.is_ok() {
                             *self.lock_mutex(&self.nvidia_power_offset) = Some(offset);
                             return true;
                         }
@@ -1200,7 +1435,10 @@ impl LiveUccdBackend {
             if !(-1000..=1000).contains(&offset) {
                 return false;
             }
-            if self.sysfs.write(&ctgp_path, &offset.to_string()).is_ok() {
+            self.ctgp_write_seq.fetch_add(1, Ordering::SeqCst);
+            let w_res = self.sysfs.write(&ctgp_path, &offset.to_string());
+            self.ctgp_write_seq.fetch_add(1, Ordering::SeqCst);
+            if w_res.is_ok() {
                 *self.lock_mutex(&self.nvidia_power_offset) = Some(offset);
                 return true;
             }

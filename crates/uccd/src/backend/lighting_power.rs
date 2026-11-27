@@ -187,6 +187,7 @@ impl LiveUccdBackend {
         } else {
             states
         };
+        self.kb_write_seq.fetch_add(1, Ordering::SeqCst);
         let applied = {
             let mut ctrl = self.lock_mutex(&self.keyboard_ctrl);
             if !ctrl.is_available() {
@@ -194,6 +195,7 @@ impl LiveUccdBackend {
             }
             ctrl.is_available() && ctrl.apply_states(&target_states).is_ok()
         };
+        self.kb_write_seq.fetch_add(1, Ordering::SeqCst);
         if applied && !blanked_under_lid {
             self.lock_mutex(&self.lightbar_ctrl).keyboard_changed();
         }

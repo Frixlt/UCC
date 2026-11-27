@@ -5403,3 +5403,407 @@ async fn full_27_01_sleep_state_survives_resume_until_daemon_consumes_it() {
     resume_sleep(&store, &StartSucceedsImmediateOps).unwrap();
     assert_eq!(store.load().unwrap(), None);
 }
+
+type SysfsWriteGate = (
+    String,
+    String,
+    std::sync::mpsc::Sender<()>,
+    std::sync::mpsc::Receiver<()>,
+);
+
+#[derive(Default)]
+struct SysfsGateControl {
+    gate: std::sync::Mutex<Option<SysfsWriteGate>>,
+    deny_write_suffix: std::sync::Mutex<Option<String>>,
+    silent_noop_suffix: std::sync::Mutex<Option<String>>,
+}
+
+struct AuditSysfsGate {
+    inner: Arc<MockSysfs>,
+    ctrl: Arc<SysfsGateControl>,
+}
+
+impl ucc_hardware::Sysfs for AuditSysfsGate {
+    fn read(&self, path: &Path) -> Result<String, std::io::Error> {
+        self.inner.read(path)
+    }
+
+    fn write(&self, path: &Path, content: &str) -> Result<(), std::io::Error> {
+        if let Some(ref suffix) = *self.ctrl.deny_write_suffix.lock().unwrap() {
+            if path.ends_with(suffix) {
+                return Err(std::io::Error::new(
+                    std::io::ErrorKind::PermissionDenied,
+                    "simulated charging write denied",
+                ));
+            }
+        }
+        let maybe_gate = {
+            let mut guard = self.ctrl.gate.lock().unwrap();
+            let matches = guard
+                .as_ref()
+                .is_some_and(|(suf, val, _, _)| path.ends_with(suf) && content.trim() == val);
+            if matches { guard.take() } else { None }
+        };
+        if let Some((_, _, started, release)) = maybe_gate {
+            let _ = started.send(());
+            let _ = release.recv_timeout(Duration::from_secs(5));
+        }
+        if let Some(ref suffix) = *self.ctrl.silent_noop_suffix.lock().unwrap() {
+            if path.ends_with(suffix) {
+                return Ok(());
+            }
+        }
+        self.inner.write(path, content)
+    }
+
+    fn exists(&self, path: &Path) -> bool {
+        self.inner.exists(path)
+    }
+
+    fn read_dir(&self, path: &Path) -> Result<Vec<std::path::PathBuf>, std::io::Error> {
+        self.inner.read_dir(path)
+    }
+}
+
+struct AuditFallbackFailPlatform {
+    inner: Arc<MockPlatformBackend>,
+    fail_on_perf_profile: std::sync::atomic::AtomicBool,
+}
+
+impl PlatformBackend for AuditFallbackFailPlatform {
+    fn kind(&self) -> PlatformBackendKind { self.inner.kind() }
+    fn is_available(&self) -> bool { self.inner.is_available() }
+    fn capabilities(&self) -> PlatformCapabilities { self.inner.capabilities() }
+    fn read_fan_temp(&self, fan_idx: usize) -> Result<i32, PlatformError> { self.inner.read_fan_temp(fan_idx) }
+    fn read_fan_speed_percent(&self, fan_idx: usize) -> Result<u8, PlatformError> { self.inner.read_fan_speed_percent(fan_idx) }
+    fn set_fan_speed_percent(&self, fan_idx: usize, percent: u8) -> Result<(), PlatformError> { self.inner.set_fan_speed_percent(fan_idx, percent) }
+    fn set_fans_auto(&self) -> Result<(), PlatformError> { self.inner.set_fans_auto() }
+    fn read_tdp(&self, idx: usize) -> Result<i32, PlatformError> { self.inner.read_tdp(idx) }
+    fn read_tdp_limits(&self, idx: usize) -> Result<(i32, i32), PlatformError> { self.inner.read_tdp_limits(idx) }
+    fn set_tdp(&self, idx: usize, watts: i32) -> Result<(), PlatformError> { self.inner.set_tdp(idx, watts) }
+    fn read_perf_profile(&self) -> Result<i32, PlatformError> { self.inner.read_perf_profile() }
+    fn set_perf_profile(&self, value: i32) -> Result<(), PlatformError> {
+        if self.fail_on_perf_profile.load(std::sync::atomic::Ordering::SeqCst) {
+            return Err(PlatformError::Unavailable);
+        }
+        self.inner.set_perf_profile(value)
+    }
+    fn set_mode_enable(&self, value: bool) -> Result<(), PlatformError> { self.inner.set_mode_enable(value) }
+    fn set_mode(&self, value: i32) -> Result<(), PlatformError> { self.inner.set_mode(value) }
+}
+
+fn build_backend_with_sysfs_gate(
+    tmp: &Path,
+    ctrl: Arc<SysfsGateControl>,
+    prepare_sysfs: impl FnOnce(&MockSysfs),
+    prepare_platform: impl FnOnce(Arc<MockPlatformBackend>) -> Arc<dyn PlatformBackend>,
+) -> CustomBackendParts {
+    let sysfs = Arc::new(MockSysfs::new());
+    sysfs.set_file(
+        tmp.join("sys/devices/system/cpu/cpu0/cpufreq/scaling_cur_freq"),
+        "3200000",
+    );
+    sysfs.set_file(
+        tmp.join("sys/devices/system/cpu/cpu1/cpufreq/scaling_cur_freq"),
+        "3200000",
+    );
+    sysfs.set_file(tmp.join("sys/devices/system/cpu/cpu1/online"), "1");
+    sysfs.set_file(tmp.join("sys/class/hwmon/hwmon0/name"), "coretemp");
+    sysfs.set_file(tmp.join("sys/class/hwmon/hwmon0/temp1_input"), "58000");
+    sysfs.set_file(tmp.join("sys/class/power_supply/AC/type"), "Mains");
+    sysfs.set_file(tmp.join("sys/class/power_supply/AC/online"), "1");
+
+    let card = tmp.join("sys/class/drm/card0");
+    let rapl = tmp.join("sys/class/powercap/intel-rapl:0:0");
+    sysfs.set_file(card.join("gt_act_freq_mhz"), "950");
+    sysfs.set_file(card.join("gt_RP0_freq_mhz"), "2200");
+    sysfs.set_file(card.join("device/hwmon/hwmon1/temp1_input"), "49000");
+    sysfs.set_file(rapl.join("name"), "uncore");
+    sysfs.set_file(rapl.join("energy_uj"), "2000000");
+    prepare_sysfs(&sysfs);
+
+    let caps = PlatformCapabilities {
+        backend: PlatformBackendKind::Mock,
+        device: DeviceCapabilities {
+            vendor: DeviceVendor::Uniwill,
+            number_of_fans: 2,
+            fans_min_speed: 20,
+            fans_off_available: true,
+            fan_control: true,
+            water_cooler_supported: true,
+            ctgp_supported: true,
+            hwp_dynamic_boost_supported: true,
+            tdp_control: true,
+            ..Default::default()
+        },
+        tdp_channels: 3,
+        perf_profiles_available: 3,
+    };
+    let platform = Arc::new(MockPlatformBackend::new(caps));
+    platform.set_fan_temp(0, 62);
+    platform.set_fan_temp(1, 51);
+    platform.set_fan_speed(0, 40);
+    platform.set_fan_speed(1, 35);
+    platform.set_tdp_limits(0, (15, 90));
+    platform.set_tdp_limits(1, (20, 120));
+    platform.set_tdp_limits(2, (25, 140));
+
+    let lighting = Arc::new(MockLightingTransport::new());
+    lighting.set_keyboard_caps(Some(KeyboardCapabilities {
+        zones: 1,
+        max_brightness: 255,
+        max_red: 255,
+        max_green: 255,
+        max_blue: 255,
+        led_ids: vec![0],
+    }));
+    lighting.set_lightbar_caps(Some(LightbarCapabilities {
+        zones: 4,
+        max_brightness: 255,
+    }));
+
+    let gated_sysfs: Arc<dyn ucc_hardware::Sysfs> = Arc::new(AuditSysfsGate {
+        inner: Arc::clone(&sysfs),
+        ctrl,
+    });
+    let backend = Arc::new(LiveUccdBackend::new(UccdDependencies {
+        device_name: "Test Laptop".into(),
+        platform: prepare_platform(platform.clone()),
+        sysfs: gated_sysfs,
+        lighting_transport: lighting.clone(),
+        config_manager: ConfigManager::with_custom_path(tmp.join("settings.json")),
+        sys_root: tmp.to_path_buf(),
+        telemetry_config: TelemetryConfig {
+            sys_root: tmp.to_path_buf(),
+            intel_card_path: Some(card),
+            nvml: None,
+            ..Default::default()
+        },
+        power_devices: PowerDeviceController::new(
+            tmp.join("sys"),
+            tmp.join("proc"),
+            default_process_runner(),
+            tmp.join("bin"),
+        ),
+        lid_policy: LidPolicyConfig {
+            ignore_lid_on_ac: true,
+            ac_unplug_debounce: Duration::from_secs(3),
+        },
+    }));
+
+    (backend, platform, sysfs, lighting)
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 3)]
+async fn full_27_02_superseded_charging_ctgp_and_rgb_never_overwrite_winner() {
+    let root = tempfile::tempdir().unwrap();
+    let bat = root.path().join("sys/class/power_supply/BAT0");
+    let end_path = bat.join("charge_control_end_threshold");
+    let start_path = bat.join("charge_control_start_threshold");
+    let ctgp_path = root
+        .path()
+        .join("sys/devices/platform/tuxedo_nvidia_power_ctrl/ctgp_offset");
+
+    let ctrl = Arc::new(SysfsGateControl::default());
+    let (started_tx, started_rx) = std::sync::mpsc::channel();
+    let (release_tx, release_rx) = std::sync::mpsc::channel();
+    *ctrl.gate.lock().unwrap() = Some((
+        "charge_control_end_threshold".to_string(),
+        "70".to_string(),
+        started_tx,
+        release_rx,
+    ));
+
+    let (backend, _, sysfs, lighting) = build_backend_with_sysfs_gate(
+        root.path(),
+        Arc::clone(&ctrl),
+        |sysfs| {
+            sysfs.set_file(bat.join("type"), "Battery");
+            sysfs.set_file(&start_path, "30");
+            sysfs.set_file(&end_path, "80");
+            sysfs.set_file(&ctgp_path, "0");
+        },
+        |p| p,
+    );
+
+    assert!(backend.save_custom_keyboard_profile(
+        "kb-stale",
+        "KB Stale Red",
+        r#"[{"brightness":255,"red":255,"green":0,"blue":0}]"#,
+    ));
+    assert!(backend.save_custom_keyboard_profile(
+        "kb-winner",
+        "KB Winner Green",
+        r#"[{"brightness":255,"red":0,"green":255,"blue":0}]"#,
+    ));
+
+    let mut stale = default_quiet_profile();
+    stale.id = "stale-70".into();
+    stale.name = "Stale 70".into();
+    stale.charging.end_threshold = Some(70);
+    stale.nvidia_ctgp_offset = Some(5);
+    stale.keyboard.keyboard_profile_id = "kb-stale".into();
+
+    let mut winner = default_high_performance_profile();
+    winner.id = "winner-85".into();
+    winner.name = "Winner 85".into();
+    winner.charging.end_threshold = Some(85);
+    winner.nvidia_ctgp_offset = Some(15);
+    winner.keyboard.keyboard_profile_id = "kb-winner".into();
+
+    let b1 = Arc::clone(&backend);
+    let stale_json = serde_json::to_string(&stale).unwrap();
+    let stale_handle = tokio::task::spawn_blocking(move || b1.apply_profile(&stale_json));
+
+    started_rx
+        .recv_timeout(Duration::from_secs(3))
+        .expect("stale thread should reach charging threshold gate");
+
+    let winner_json = serde_json::to_string(&winner).unwrap();
+    assert!(
+        backend.apply_profile(&winner_json),
+        "winning profile should commit cleanly"
+    );
+
+    let _ = release_tx.send(());
+    let _ = stale_handle.await.unwrap();
+
+    let active: serde_json::Value = serde_json::from_str(&backend.get_active_profile_json()).unwrap();
+    assert_eq!(active["id"], "winner-85");
+    assert_eq!(sysfs.get_file(&end_path).as_deref(), Some("85"));
+    assert_eq!(sysfs.get_file(&ctgp_path).as_deref(), Some("15"));
+    let kbd_colors = ucc_lighting::LightingTransport::read_keyboard_colors(lighting.as_ref()).unwrap();
+    assert_eq!(kbd_colors.len(), 1);
+    assert_eq!(kbd_colors[0].r, 0);
+    assert_eq!(kbd_colors[0].g, 255);
+    assert_eq!(kbd_colors[0].b, 0);
+}
+
+#[test]
+fn full_27_03_apply_profile_fails_and_rolls_back_on_charging_write_error() {
+    let root = tempfile::tempdir().unwrap();
+    let bat = root.path().join("sys/class/power_supply/BAT0");
+    let start_path = bat.join("charge_control_start_threshold");
+    let end_path = bat.join("charge_control_end_threshold");
+
+    let ctrl = Arc::new(SysfsGateControl::default());
+    let (backend, _, sysfs, _) = build_backend_with_sysfs_gate(
+        root.path(),
+        Arc::clone(&ctrl),
+        |sysfs| {
+            sysfs.set_file(bat.join("type"), "Battery");
+            sysfs.set_file(&start_path, "40");
+            sysfs.set_file(&end_path, "80");
+        },
+        |p| p,
+    );
+
+    let before: serde_json::Value = serde_json::from_str(&backend.get_active_profile_json()).unwrap();
+    let mut bad_prof = default_high_performance_profile();
+    bad_prof.id = "charge-fail".into();
+    bad_prof.name = "Charge Fail".into();
+    bad_prof.charging.start_threshold = Some(50);
+    bad_prof.charging.end_threshold = Some(90);
+    let bad_json = serde_json::to_string(&bad_prof).unwrap();
+
+    // 1. PermissionDenied on charge_control_end_threshold -> fails & rolls back start threshold.
+    *ctrl.deny_write_suffix.lock().unwrap() = Some("charge_control_end_threshold".to_string());
+    assert!(!backend.apply_profile(&bad_json));
+    let after1: serde_json::Value = serde_json::from_str(&backend.get_active_profile_json()).unwrap();
+    assert_eq!(after1["id"], before["id"]);
+    assert_eq!(sysfs.get_file(&start_path).as_deref(), Some("40"));
+    assert_eq!(sysfs.get_file(&end_path).as_deref(), Some("80"));
+    *ctrl.deny_write_suffix.lock().unwrap() = None;
+
+    // 2. Write-without-effect on charge_control_end_threshold -> readback detects mismatch -> fails & rolls back.
+    *ctrl.silent_noop_suffix.lock().unwrap() = Some("charge_control_end_threshold".to_string());
+    assert!(!backend.apply_profile(&bad_json));
+    let after2: serde_json::Value = serde_json::from_str(&backend.get_active_profile_json()).unwrap();
+    assert_eq!(after2["id"], before["id"]);
+    assert_eq!(sysfs.get_file(&start_path).as_deref(), Some("40"));
+    assert_eq!(sysfs.get_file(&end_path).as_deref(), Some("80"));
+    *ctrl.silent_noop_suffix.lock().unwrap() = None;
+
+    // 3. Missing charging node when profile explicitly configures end_threshold -> fails.
+    let root2 = tempfile::tempdir().unwrap();
+    let ctrl2 = Arc::new(SysfsGateControl::default());
+    let (backend2, _, _, _) = build_backend_with_sysfs_gate(root2.path(), ctrl2, |_| {}, |p| p);
+    assert!(!backend2.apply_profile(&bad_json));
+}
+
+#[test]
+fn full_27_04_delete_active_custom_profile_preserves_disk_when_fallback_fails() {
+    let root = tempfile::tempdir().unwrap();
+    let ctrl_platform_slot: Arc<std::sync::Mutex<Option<Arc<AuditFallbackFailPlatform>>>> =
+        Arc::new(std::sync::Mutex::new(None));
+    let slot_clone = Arc::clone(&ctrl_platform_slot);
+    let (backend, platform, _, _) = build_custom_backend(
+        root.path(),
+        true,
+        |_| {},
+        move |inner| {
+            let wrapped = Arc::new(AuditFallbackFailPlatform {
+                inner,
+                fail_on_perf_profile: std::sync::atomic::AtomicBool::new(false),
+            });
+            *slot_clone.lock().unwrap() = Some(Arc::clone(&wrapped));
+            wrapped
+        },
+    );
+    let wrapper = ctrl_platform_slot.lock().unwrap().take().unwrap();
+
+    let mut custom = default_high_performance_profile();
+    custom.id = "cust-active".into();
+    custom.name = "Custom Active".into();
+    custom.odm_profile_name = Some("performance".into());
+    custom.odm_power_limits = vec![45, 70, 105];
+    assert!(backend.save_custom_profile(&serde_json::to_string(&custom).unwrap()));
+
+    let mut inactive = default_quiet_profile();
+    inactive.id = "cust-inactive".into();
+    inactive.name = "Custom Inactive".into();
+    assert!(backend.save_custom_profile(&serde_json::to_string(&inactive).unwrap()));
+
+    assert!(backend.set_state_map("power_ac", "cust-active"));
+    assert!(backend.set_active_profile("cust-active"));
+    assert_eq!(platform.read_tdp(0).unwrap(), 45);
+
+    // When fallback ODM switch fails, DeleteCustomProfile MUST fail and preserve disk & HW state.
+    wrapper
+        .fail_on_perf_profile
+        .store(true, std::sync::atomic::Ordering::SeqCst);
+    assert!(
+        !backend.delete_custom_profile("cust-active"),
+        "deleting active profile must fail when fallback hardware restore fails"
+    );
+    let custom_list: Vec<serde_json::Value> =
+        serde_json::from_str(&backend.get_custom_profiles_json()).unwrap();
+    assert!(
+        custom_list.iter().any(|p| p["id"] == "cust-active"),
+        "deleted profile must stay on disk when fallback apply fails"
+    );
+    let active_after_fail: serde_json::Value =
+        serde_json::from_str(&backend.get_active_profile_json()).unwrap();
+    assert_eq!(active_after_fail["id"], "cust-active");
+    assert_eq!(platform.read_tdp(0).unwrap(), 45);
+    let disk_raw = std::fs::read_to_string(root.path().join("settings.json")).unwrap();
+    assert!(disk_raw.contains("cust-active"));
+
+    // Deleting an unrelated inactive custom profile succeeds cleanly without touching active profile.
+    assert!(backend.delete_custom_profile("cust-inactive"));
+    let active_still: serde_json::Value =
+        serde_json::from_str(&backend.get_active_profile_json()).unwrap();
+    assert_eq!(active_still["id"], "cust-active");
+
+    // Once hardware accepts fallback, deleting active profile succeeds and removes it from disk.
+    wrapper
+        .fail_on_perf_profile
+        .store(false, std::sync::atomic::Ordering::SeqCst);
+    assert!(backend.delete_custom_profile("cust-active"));
+    let active_after_ok: serde_json::Value =
+        serde_json::from_str(&backend.get_active_profile_json()).unwrap();
+    assert_ne!(active_after_ok["id"], "cust-active");
+    let custom_list_after: Vec<serde_json::Value> =
+        serde_json::from_str(&backend.get_custom_profiles_json()).unwrap();
+    assert!(!custom_list_after.iter().any(|p| p["id"] == "cust-active"));
+}
