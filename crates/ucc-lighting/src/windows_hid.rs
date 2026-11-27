@@ -342,6 +342,7 @@ mod win_hid_ffi {
     #[cfg(target_pointer_width = "32")]
     const SP_DEVICE_INTERFACE_DETAIL_DATA_W_CB_SIZE: u32 = 6;
 
+    #[allow(dead_code)]
     #[repr(C)]
     #[derive(Default)]
     struct HidGuid {
@@ -351,6 +352,7 @@ mod win_hid_ffi {
         data4: [u8; 8],
     }
 
+    #[allow(dead_code)]
     #[repr(C)]
     struct HiddAttributes {
         size: u32,
@@ -359,6 +361,7 @@ mod win_hid_ffi {
         version_number: u16,
     }
 
+    #[allow(dead_code)]
     #[repr(C)]
     #[derive(Default)]
     struct HidpCaps {
@@ -380,6 +383,7 @@ mod win_hid_ffi {
         number_feature_data_indices: u16,
     }
 
+    #[allow(dead_code)]
     #[repr(C)]
     struct SpDeviceInterfaceData {
         cb_size: u32,
@@ -584,15 +588,15 @@ mod win_hid_ffi {
                 return None;
             }
 
-            let mut buf = vec![0u8; required_size as usize];
-            let cb_bytes = SP_DEVICE_INTERFACE_DETAIL_DATA_W_CB_SIZE.to_ne_bytes();
-            buf[..4].copy_from_slice(&cb_bytes);
+            let required_bytes = required_size as usize;
+            let mut buf = vec![0u32; required_bytes.div_ceil(4)];
+            buf[0] = SP_DEVICE_INTERFACE_DETAIL_DATA_W_CB_SIZE;
 
             let ok = unsafe {
                 SetupDiGetDeviceInterfaceDetailW(
                     dev_info,
                     iface_data,
-                    buf.as_mut_ptr() as *mut c_void,
+                    buf.as_mut_ptr().cast::<c_void>(),
                     required_size,
                     ptr::null_mut(),
                     ptr::null_mut(),
@@ -602,14 +606,22 @@ mod win_hid_ffi {
                 return None;
             }
 
-            let path_bytes = &buf[4..];
-            let mut wide = Vec::with_capacity(path_bytes.len() / 2);
-            for chunk in path_bytes.chunks_exact(2) {
-                let code_unit = u16::from_ne_bytes([chunk[0], chunk[1]]);
-                if code_unit == 0 {
-                    break;
+            let byte_len = required_bytes.saturating_sub(4);
+            let mut wide = Vec::with_capacity(byte_len / 2);
+            let mut remaining = byte_len;
+            'decode: for &word in buf.get(1..).unwrap_or(&[]) {
+                let bytes = word.to_ne_bytes();
+                for pair in bytes.chunks_exact(2) {
+                    if remaining < 2 {
+                        break 'decode;
+                    }
+                    remaining -= 2;
+                    let code_unit = u16::from_ne_bytes([pair[0], pair[1]]);
+                    if code_unit == 0 {
+                        break 'decode;
+                    }
+                    wide.push(code_unit);
                 }
-                wide.push(code_unit);
             }
             if wide.is_empty() {
                 None
