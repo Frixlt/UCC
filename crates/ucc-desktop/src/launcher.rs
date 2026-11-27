@@ -50,6 +50,7 @@ pub fn find_gui_binary() -> Option<PathBuf> {
 pub const GUI_DBUS_SERVICE: &str = "com.uniwill.UccGui";
 pub const GUI_DBUS_PREVIEW_SERVICE: &str = "com.uniwill.UccGuiPreview";
 pub const GUI_DBUS_PATH: &str = "/com/uniwill/UccGui";
+pub const GUI_DBUS_PREVIEW_PATH: &str = "/com/uniwill/UccGuiPreview";
 pub const GUI_DBUS_INTERFACE: &str = "com.uniwill.UccGui";
 
 pub fn launch_gui(activation_token: Option<&str>) -> std::io::Result<()> {
@@ -76,7 +77,12 @@ pub async fn activate_gui_dbus_on(
     service_name: &str,
     activation_token: Option<&str>,
 ) -> zbus::Result<()> {
-    let proxy = zbus::Proxy::new(conn, service_name, GUI_DBUS_PATH, GUI_DBUS_INTERFACE).await?;
+    let object_path = if service_name == GUI_DBUS_PREVIEW_SERVICE {
+        GUI_DBUS_PREVIEW_PATH
+    } else {
+        GUI_DBUS_PATH
+    };
+    let proxy = zbus::Proxy::new(conn, service_name, object_path, GUI_DBUS_INTERFACE).await?;
     if let Some(token) = activation_token.filter(|t| !t.trim().is_empty()) {
         if proxy
             .call::<_, _, ()>("ActivateWithToken", &(token,))

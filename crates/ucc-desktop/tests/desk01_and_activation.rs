@@ -6,8 +6,8 @@ use std::process::{Child, Command, Stdio};
 use std::sync::{Arc, Mutex};
 use tokio::sync::mpsc;
 use ucc_desktop::{
-    activate_gui_dbus_on, TrayAction, UccTray, GUI_DBUS_PATH, GUI_DBUS_PREVIEW_SERVICE,
-    GUI_DBUS_SERVICE,
+    activate_gui_dbus_on, TrayAction, UccTray, GUI_DBUS_PATH, GUI_DBUS_PREVIEW_PATH,
+    GUI_DBUS_PREVIEW_SERVICE, GUI_DBUS_SERVICE,
 };
 use zbus::connection::Builder;
 
@@ -155,7 +155,7 @@ async fn t_m97_activate_gui_dbus_prefers_activate_with_token_and_uses_preview_bu
         .name(GUI_DBUS_PREVIEW_SERVICE)
         .unwrap()
         .serve_at(
-            GUI_DBUS_PATH,
+            GUI_DBUS_PREVIEW_PATH,
             MockGuiTokenService {
                 calls: Arc::clone(&preview_calls),
             },

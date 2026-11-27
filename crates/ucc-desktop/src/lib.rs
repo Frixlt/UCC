@@ -5,7 +5,8 @@ pub mod tray;
 
 pub use launcher::{
     activate_gui_dbus, activate_gui_dbus_on, activate_or_launch_gui, find_gui_binary, launch_gui,
-    GUI_DBUS_INTERFACE, GUI_DBUS_PATH, GUI_DBUS_PREVIEW_SERVICE, GUI_DBUS_SERVICE,
+    GUI_DBUS_INTERFACE, GUI_DBUS_PATH, GUI_DBUS_PREVIEW_PATH, GUI_DBUS_PREVIEW_SERVICE,
+    GUI_DBUS_SERVICE,
 };
 pub use pidfd::{ProcessTerminator, TerminationReport, TerminationTarget};
 pub use telemetry::{
