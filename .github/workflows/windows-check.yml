@@ -47,7 +47,7 @@ jobs:
       # via ucc-hardware) still carries an unconditional `nix` dependency in
       # crates/ucc-hardware/Cargo.toml (owned by the parallel Linux M14 track).
       - name: Cross-check portable crates for Windows GNU
-        run: cargo check -p ucc-core -p ucc-config --target x86_64-pc-windows-gnu
+        run: cargo check -p ucc-core -p ucc-config -p ucc-dbus --target x86_64-pc-windows-gnu
 
   windows-msvc-check:
     name: Native Windows MSVC check (x86_64-pc-windows-msvc)
