@@ -305,6 +305,24 @@ fn v2_p1_03_acpi_wakeup_allowlist_preserves_lid_and_keyboard() {
     );
 }
 
+fn drain_cooler_packets(backend: &LiveUccdBackend, max_rounds: usize) -> Vec<[u8; 8]> {
+    let mut out = Vec::new();
+    for round in 0..max_rounds {
+        if round > 0 {
+            std::thread::sleep(Duration::from_millis(90));
+        }
+        let batch = backend.drain_cooler_commands();
+        if batch.is_empty() {
+            if !out.is_empty() {
+                break;
+            }
+        } else {
+            out.extend(batch);
+        }
+    }
+    out
+}
+
 #[test]
 fn user_bug_2_wc_led_unset_restores_default_white_and_enqueues_ble_packet() {
     let tmp = tempfile::tempdir().unwrap();
@@ -333,7 +351,7 @@ fn user_bug_2_wc_led_unset_restores_default_white_and_enqueues_ble_packet() {
     // Close lid -> turns off WC LED and queues TurnOffLed packet.
     assert!(backend.on_lid_state_changed(true));
     assert_eq!(backend.cooler_desired_rgb(), RgbTarget::Off);
-    let off_pkts = backend.drain_cooler_commands();
+    let off_pkts = drain_cooler_packets(&backend, 8);
     assert!(off_pkts.contains(&CoolerPacketEncoder::turn_off(CMD_RGB)));
 
     // Open lid -> must NOT leave hardware dark with Unset; restores default static white and queues RGB packet.
@@ -347,7 +365,7 @@ fn user_bug_2_wc_led_unset_restores_default_white_and_enqueues_ble_packet() {
             state: RgbState::Static,
         }
     );
-    let restore_pkts = backend.drain_cooler_commands();
+    let restore_pkts = drain_cooler_packets(&backend, 8);
     assert!(
         restore_pkts.contains(&CoolerPacketEncoder::rgb(255, 255, 255, RgbState::Static)),
         "User Bug #2: lid open must enqueue an explicit RGB packet to wake BLE loop"
