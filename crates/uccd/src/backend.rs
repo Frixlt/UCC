@@ -11,6 +11,7 @@ mod lighting_power;
 mod profile_tx;
 
 pub use cooling::{build_default_custom_fan_catalog, run_water_cooler_ble_loop};
+pub use lighting_power::{has_ite_sysfs_leds, select_lighting_transport};
 
 use crate::lid::{LidController, LidPolicyConfig};
 use crate::sleep_state::SleepStateStore;
@@ -30,13 +31,121 @@ use ucc_hardware::{
     build_laptop_model, classify_manufacturer, CoolerController, CpuTopology, DeviceVendor,
     DmiInfo, FanController, FanTickSnapshot, LaptopManufacturer, MetricsHistoryStore,
     MockHardwareIo, MockPlatformBackend, NvidiaPowerGuard, NvmlWrapper, PlatformBackend,
-    PlatformCapabilities, PowerDeviceController, RealSysfs, Sysfs, TelemetryCollector,
-    TelemetryConfig, TelemetrySnapshot, TuxedoIoBackend, TuxedoIoDevice,
+    PlatformBackendKind, PlatformBackendSelection, PlatformCapabilities, PowerDeviceController,
+    RealSysfs, Sysfs, TelemetryCollector, TelemetryConfig, TelemetrySnapshot, TuxedoIoBackend,
+    parse_backend_selection, TuxedoIoDevice, UwccBackend, UwccDevice, UWCC_DEVICE_PATH,
 };
-use ucc_lighting::{
-    KeyboardBacklightController, LightbarController, LightingTransport, SysfsLedTransport,
-};
+use ucc_lighting::{KeyboardBacklightController, LightbarController, LightingTransport};
 use zbus::zvariant::{OwnedValue, Value as ZValue};
+
+
+/// Environment variable overriding `settings.platformBackend` (`"auto"`, `"uwcc"`, `"tuxedo_io"`).
+pub const ENV_PLATFORM_BACKEND: &str = "UCC_PLATFORM_BACKEND";
+
+/// Parses a platform backend selection string (`"auto"`, `"uwcc"`, `"tuxedo_io"`).
+pub fn parse_platform_backend_choice(raw: &str) -> Option<PlatformBackendSelection> {
+    parse_backend_selection(raw).ok()
+}
+
+/// Resolves the effective platform backend selection with priority:
+/// `UCC_PLATFORM_BACKEND` env var > `settings.platform_backend` > `"auto"`.
+pub fn resolve_platform_backend_choice(
+    env_override: Option<&str>,
+    settings_choice: Option<&str>,
+) -> PlatformBackendSelection {
+    if let Some(choice) = env_override.and_then(parse_platform_backend_choice) {
+        return choice;
+    }
+    if let Some(choice) = settings_choice.and_then(parse_platform_backend_choice) {
+        return choice;
+    }
+    PlatformBackendSelection::Auto
+}
+
+fn unavailable_platform_backend(dmi: &DmiInfo, sysfs: &Arc<dyn Sysfs>) -> Arc<dyn PlatformBackend> {
+    let hw = MockHardwareIo::new();
+    hw.set_available(false);
+    let mock = MockPlatformBackend::new(PlatformCapabilities {
+        backend: PlatformBackendKind::Unsupported,
+        device: ucc_hardware::detect_device_capabilities(&hw, Some(dmi), Some(sysfs.as_ref())),
+        tdp_channels: 0,
+        perf_profiles_available: 0,
+    });
+    mock.set_available(false);
+    Arc::new(mock)
+}
+
+/// Testable core of [`select_platform_backend`] accepting injectable openers for `/dev/uwcc`
+/// and `/dev/tuxedo_io`.
+pub fn select_platform_backend_with_openers<FU, FT>(
+    env_override: Option<&str>,
+    settings_choice: Option<&str>,
+    dmi: &DmiInfo,
+    sysfs: &Arc<dyn Sysfs>,
+    open_uwcc: FU,
+    open_tuxedo: FT,
+) -> Arc<dyn PlatformBackend>
+where
+    FU: FnOnce() -> Option<Arc<dyn PlatformBackend>>,
+    FT: FnOnce() -> Option<Arc<dyn PlatformBackend>>,
+{
+    match resolve_platform_backend_choice(env_override, settings_choice) {
+        PlatformBackendSelection::Auto => {
+            if let Some(uwcc) = open_uwcc() {
+                return uwcc;
+            }
+            if let Some(tuxedo) = open_tuxedo() {
+                return tuxedo;
+            }
+            unavailable_platform_backend(dmi, sysfs)
+        }
+        PlatformBackendSelection::Uwcc => {
+            // Explicit "uwcc": never silently fall back to tuxedo_io.
+            open_uwcc().unwrap_or_else(|| unavailable_platform_backend(dmi, sysfs))
+        }
+        PlatformBackendSelection::TuxedoIo => {
+            // Explicit "tuxedo_io": guarantees clean rollback to /dev/tuxedo_io only.
+            open_tuxedo().unwrap_or_else(|| unavailable_platform_backend(dmi, sysfs))
+        }
+    }
+}
+
+/// Selects and opens the active [`PlatformBackend`] (`M14` / `ADR-05`):
+///
+/// - Priority: `env_override` (`UCC_PLATFORM_BACKEND`) > `settings_choice` (`settings.platformBackend`) > `"auto"`.
+/// - `"auto"`: tries `UwccDevice::open("/dev/uwcc")` -> `UwccBackend`, then falls back to
+///   `TuxedoIoDevice::open("/dev/tuxedo_io")` -> `TuxedoIoBackend`, then unavailable `MockPlatformBackend`.
+/// - `"uwcc"`: opens `/dev/uwcc` only (no silent fallback to `tuxedo_io`).
+/// - `"tuxedo_io"`: opens `/dev/tuxedo_io` only.
+pub fn select_platform_backend(
+    env_override: Option<&str>,
+    settings_choice: Option<&str>,
+    dmi: &DmiInfo,
+    sysfs: &Arc<dyn Sysfs>,
+) -> Arc<dyn PlatformBackend> {
+    select_platform_backend_with_openers(
+        env_override,
+        settings_choice,
+        dmi,
+        sysfs,
+        || {
+            UwccDevice::open(UWCC_DEVICE_PATH).ok().map(|dev| {
+                let backend: Arc<dyn PlatformBackend> =
+                    Arc::new(UwccBackend::new(Arc::new(dev), Some(dmi), Some(Arc::clone(sysfs))));
+                backend
+            })
+        },
+        || {
+            TuxedoIoDevice::open(TuxedoIoDevice::DEFAULT_PATH)
+                .ok()
+                .map(|dev| {
+                    let backend: Arc<dyn PlatformBackend> =
+                        Arc::new(TuxedoIoBackend::new(dev, Some(dmi), Some(sysfs.as_ref())));
+                    backend
+                })
+        },
+    )
+}
 
 /// Asynchronous D-Bus signals emitted by [`LiveUccdBackend`] and dispatched by `DaemonRuntime`.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -232,6 +341,7 @@ pub struct LiveUccdBackend {
     pub(super) temporary_fan_curves: Mutex<Option<TemporaryFanCurves>>,
     pub(super) temporary_saved_fan_profile_id: Mutex<Option<String>>,
     pub(super) latest_fans: RwLock<Option<FanTickSnapshot>>,
+    pub(super) latest_fan_rpms: RwLock<Vec<Option<u32>>>,
     pub(super) fan_control_enabled: AtomicBool,
 
     pub(super) cooler_controller: Arc<Mutex<CoolerController>>,
@@ -410,6 +520,7 @@ impl LiveUccdBackend {
             temporary_fan_curves: Mutex::new(None),
             temporary_saved_fan_profile_id: Mutex::new(None),
             latest_fans: RwLock::new(None),
+            latest_fan_rpms: RwLock::new(Vec::new()),
             fan_control_enabled: AtomicBool::new(fan_enabled),
             cooler_controller: Arc::new(Mutex::new(cooler_ctrl)),
             water_cooler_enabled: AtomicBool::new(initial_wc_enabled),
@@ -478,26 +589,20 @@ impl LiveUccdBackend {
     pub fn new_production() -> Self {
         let sysfs: Arc<dyn Sysfs> = Arc::new(RealSysfs);
         let dmi = DmiInfo::read_from_sysfs(sysfs.as_ref());
-        let platform: Arc<dyn PlatformBackend> =
-            match TuxedoIoDevice::open(TuxedoIoDevice::DEFAULT_PATH) {
-                Ok(dev) => Arc::new(TuxedoIoBackend::new(dev, Some(&dmi), Some(sysfs.as_ref()))),
-                Err(_) => {
-                    let hw = MockHardwareIo::new();
-                    hw.set_available(false);
-                    let mock = MockPlatformBackend::new(PlatformCapabilities {
-                        backend: ucc_hardware::PlatformBackendKind::Unsupported,
-                        device: ucc_hardware::detect_device_capabilities(
-                            &hw,
-                            Some(&dmi),
-                            Some(sysfs.as_ref()),
-                        ),
-                        tdp_channels: 0,
-                        perf_profiles_available: 0,
-                    });
-                    mock.set_available(false);
-                    Arc::new(mock)
-                }
-            };
+        let config_manager = ConfigManager::new();
+        let settings_choice = config_manager
+            .resolve_read_path()
+            .and_then(|p| ConfigManager::load_with_recovery(&p).ok())
+            .and_then(|(s, _)| s.platform_backend);
+        let env_override = std::env::var(ENV_PLATFORM_BACKEND).ok();
+        let platform = select_platform_backend(
+            env_override.as_deref(),
+            settings_choice.as_deref(),
+            &dmi,
+            &sysfs,
+        );
+        let lighting_transport =
+            select_lighting_transport(platform.kind(), sysfs.as_ref(), Path::new("/"));
 
         let manufacturer = classify_manufacturer(&dmi.sys_vendor, &dmi.board_vendor);
         let model =
@@ -516,8 +621,8 @@ impl LiveUccdBackend {
             device_name: model,
             platform,
             sysfs: Arc::clone(&sysfs),
-            lighting_transport: Arc::new(SysfsLedTransport::default()),
-            config_manager: ConfigManager::new(),
+            lighting_transport,
+            config_manager,
             sys_root: PathBuf::from("/"),
             telemetry_config,
             power_devices: PowerDeviceController::default(),
@@ -557,10 +662,53 @@ impl LiveUccdBackend {
         OwnedValue::try_from(ZValue::from(inner)).unwrap_or_else(|_| OwnedValue::from(data))
     }
 
+    /// Returns the canonical wire label for the active [`PlatformBackendKind`].
+    pub fn platform_backend_name(&self) -> &'static str {
+        match self.platform.kind() {
+            PlatformBackendKind::Uwcc => "uwcc",
+            PlatformBackendKind::TuxedoIo => "tuxedo_io",
+            PlatformBackendKind::WindowsWmi => "windows_wmi",
+            PlatformBackendKind::Mock => "mock",
+            PlatformBackendKind::Unsupported => "unsupported",
+        }
+    }
+
+    /// Returns the most recently sampled real tachometer RPM for `fan_idx`, if supported.
+    pub fn latest_fan_rpm(&self, fan_idx: usize) -> Option<u32> {
+        self.read_rw(&self.latest_fan_rpms)
+            .get(fan_idx)
+            .copied()
+            .flatten()
+    }
+
+    /// Reads real tachometer RPMs for all configured fans (entries are `None` when unsupported).
+    pub(super) fn sample_fan_rpms(&self, num_fans: usize) -> Vec<Option<u32>> {
+        (0..num_fans)
+            .map(|i| self.platform.read_fan_rpm(i).ok())
+            .collect()
+    }
+
     pub(super) fn fan_map(ts_ms: i64, temp: i32, speed: i32) -> HashMap<String, OwnedValue> {
         let mut m = HashMap::new();
         m.insert("temp".to_string(), Self::nested_sample_value(ts_ms, temp));
         m.insert("speed".to_string(), Self::nested_sample_value(ts_ms, speed));
+        m
+    }
+
+    pub(super) fn fan_map_with_rpm(
+        ts_ms: i64,
+        temp: i32,
+        speed: i32,
+        real_rpm: Option<u32>,
+    ) -> HashMap<String, OwnedValue> {
+        let mut m = Self::fan_map(ts_ms, temp, speed);
+        if let Some(rpm) = real_rpm {
+            let rpm_i32 = i32::try_from(rpm).unwrap_or(i32::MAX);
+            m.insert(
+                "realRpm".to_string(),
+                Self::nested_sample_value(ts_ms, rpm_i32),
+            );
+        }
         m
     }
 
@@ -793,10 +941,13 @@ impl LiveUccdBackend {
             let num_fans = self.capabilities.device.number_of_fans;
             let mut temps = Vec::with_capacity(num_fans);
             let mut speeds = Vec::with_capacity(num_fans);
+            let mut rpms = Vec::with_capacity(num_fans);
             for i in 0..num_fans {
                 temps.push(self.platform.read_fan_temp(i).ok());
                 speeds.push(self.platform.read_fan_speed_percent(i).ok());
+                rpms.push(self.platform.read_fan_rpm(i).ok());
             }
+            *self.write_rw(&self.latest_fan_rpms) = rpms;
             *self.write_rw(&self.latest_fans) = Some(FanTickSnapshot {
                 timestamp_ms: unix_ms(),
                 temps_c: temps,
@@ -994,6 +1145,7 @@ impl LiveUccdBackend {
         self.cooler_suspending.store(true, Ordering::SeqCst);
         self.lock_mutex(&self.cooler_controller)
             .on_prepare_for_sleep(true);
+        self.sync_water_cooler_pwup(false);
     }
 
     /// Restores lightbar idle state on resume from sleep without repeating welcome animation (`ISSUE-04`).
@@ -1030,6 +1182,7 @@ impl LiveUccdBackend {
         }
         self.lock_mutex(&self.cooler_controller).on_disconnected();
         self.water_cooler_connected.store(false, Ordering::SeqCst);
+        self.sync_water_cooler_pwup(false);
         if !self.shutdown_wait_expired.load(Ordering::SeqCst) {
             let _ = self.lock_mutex(&self.lightbar_ctrl).shutdown();
         }

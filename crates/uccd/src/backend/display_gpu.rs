@@ -344,7 +344,7 @@ impl LiveUccdBackend {
                 .unwrap_or_default()
         };
         let laptop_model = self.get_device_name_impl();
-        json!({
+        let mut payload = json!({
             "cpuModel": cpu_model,
             "iGpuModel": igpu_model,
             "dGpuModel": dgpu_model,
@@ -356,6 +356,7 @@ impl LiveUccdBackend {
             "sysVendor": sys_vendor,
             "deviceName": laptop_model,
             "vendor": self.capabilities.device.vendor.as_str(),
+            "platformBackend": self.platform_backend_name(),
             "waterCoolerSupported": self.capabilities.device.water_cooler_supported,
             "ctgpSupported": self.capabilities.device.ctgp_supported,
             "hwpDynamicBoostSupported": self.capabilities.device.hwp_dynamic_boost_supported,
@@ -363,8 +364,22 @@ impl LiveUccdBackend {
             "fansOffAvailable": self.capabilities.device.fans_off_available,
             "tdpChannels": self.capabilities.tdp_channels,
             "perfProfilesAvailable": self.capabilities.perf_profiles_available,
-        })
-        .to_string()
+        });
+        if let Some(obj) = payload.as_object_mut() {
+            if let Ok(tcc_offset) = self.platform.read_tcc_offset() {
+                obj.insert("tccOffset".to_string(), json!(i32::from(tcc_offset)));
+            }
+            let cached_rpms = self.read_rw(&self.latest_fan_rpms).clone();
+            let rpms = if cached_rpms.is_empty() {
+                self.sample_fan_rpms(self.capabilities.device.number_of_fans)
+            } else {
+                cached_rpms
+            };
+            if rpms.iter().any(Option::is_some) {
+                obj.insert("realRpm".to_string(), json!(rpms));
+            }
+        }
+        payload.to_string()
     }
 
     pub(super) fn is_backlight_internal_connector(name: &str) -> bool {
@@ -1558,64 +1573,87 @@ impl LiveUccdBackend {
 
     pub(super) fn get_driver_health_json_impl(&self) -> String {
         let mut issues = Vec::<String>::new();
-        let module_exists = self
-            .sysfs
-            .exists(&self.sys_root.join("sys/module/tuxedo_io"));
-        let dev_exists = self.sys_root.join("dev/tuxedo_io").exists()
-            || self.sysfs.exists(&self.sys_root.join("dev/tuxedo_io"));
-        if self.sys_root == Path::new("/") {
-            if !module_exists {
+        let is_uwcc = self.platform.kind() == ucc_hardware::PlatformBackendKind::Uwcc;
+        if is_uwcc {
+            let uwcc_module_exists = self.sysfs.exists(&self.sys_root.join("sys/module/uwcc"));
+            let uwcc_dev_exists = self.sys_root.join("dev/uwcc").exists()
+                || self.sysfs.exists(&self.sys_root.join("dev/uwcc"));
+            if self.sys_root == Path::new("/") && !uwcc_module_exists && !uwcc_dev_exists {
                 issues.push(
-                    "Не загружен аппаратный драйвер TUXEDO: датчики, вентиляторы и часть управления недоступны. Проверьте сборку DKMS для текущего ядра."
+                    "Не загружен аппаратный драйвер UWCC (/dev/uwcc): датчики и управление вентиляторами недоступны."
                         .to_string(),
                 );
-            } else if !dev_exists {
+            } else if uwcc_module_exists && !uwcc_dev_exists {
+                issues.push(
+                    "Драйвер UWCC загружен, но аппаратный интерфейс /dev/uwcc отсутствует."
+                        .to_string(),
+                );
+            } else if !self.platform.is_available() {
+                issues.push(
+                    "Служба запущена без рабочего аппаратного интерфейса /dev/uwcc. Перезапустите uccd.service."
+                        .to_string(),
+                );
+            }
+        } else {
+            let module_exists = self
+                .sysfs
+                .exists(&self.sys_root.join("sys/module/tuxedo_io"));
+            let dev_exists = self.sys_root.join("dev/tuxedo_io").exists()
+                || self.sysfs.exists(&self.sys_root.join("dev/tuxedo_io"));
+            if self.sys_root == Path::new("/") {
+                if !module_exists {
+                    issues.push(
+                        "Не загружен аппаратный драйвер TUXEDO: датчики, вентиляторы и часть управления недоступны. Проверьте сборку DKMS для текущего ядра."
+                            .to_string(),
+                    );
+                } else if !dev_exists {
+                    issues.push(
+                        "Драйвер TUXEDO загружен, но аппаратный интерфейс /dev/tuxedo_io отсутствует."
+                            .to_string(),
+                    );
+                } else if !self.platform.is_available() {
+                    issues.push(
+                        "Служба запущена без рабочего аппаратного интерфейса. После загрузки драйвера перезапустите uccd.service."
+                            .to_string(),
+                    );
+                }
+            } else if module_exists && !dev_exists {
                 issues.push(
                     "Драйвер TUXEDO загружен, но аппаратный интерфейс /dev/tuxedo_io отсутствует."
                         .to_string(),
                 );
             } else if !self.platform.is_available() {
                 issues.push(
-                    "Служба запущена без рабочего аппаратного интерфейса. После загрузки драйвера перезапустите uccd.service."
+                    "Не загружен аппаратный драйвер TUXEDO: датчики, вентиляторы и часть управления недоступны. Проверьте сборку DKMS для текущего ядра."
                         .to_string(),
                 );
             }
-        } else if module_exists && !dev_exists {
-            issues.push(
-                "Драйвер TUXEDO загружен, но аппаратный интерфейс /dev/tuxedo_io отсутствует."
-                    .to_string(),
-            );
-        } else if !self.platform.is_available() {
-            issues.push(
-                "Не загружен аппаратный драйвер TUXEDO: датчики, вентиляторы и часть управления недоступны. Проверьте сборку DKMS для текущего ядра."
-                    .to_string(),
-            );
-        }
 
-        let board_name = self.read_dmi_field("board_name");
-        if matches!(
-            board_name.as_str(),
-            "YAOSHI Series-X6AR55xY" | "X6AR55xY" | "X6AR5xxY"
-        ) {
-            let leds_dir = self.sys_root.join("sys/class/leds");
-            let has_kbd = self.sysfs.read_dir(&leds_dir).is_ok_and(|entries| {
-                entries.iter().any(|p| {
-                    p.file_name()
-                        .and_then(|n| n.to_str())
-                        .is_some_and(|n| n.starts_with("rgb:kbd_backlight"))
-                })
-            });
-            if !has_kbd {
-                issues.push("Не обнаружен драйвер RGB-клавиатуры ITE 8291.".to_string());
-            }
-            if !self
-                .sysfs
-                .exists(&leds_dir.join("rgb:lightbar/multi_intensity"))
-                && !self
+            let board_name = self.read_dmi_field("board_name");
+            if matches!(
+                board_name.as_str(),
+                "YAOSHI Series-X6AR55xY" | "X6AR55xY" | "X6AR5xxY"
+            ) {
+                let leds_dir = self.sys_root.join("sys/class/leds");
+                let has_kbd = self.sysfs.read_dir(&leds_dir).is_ok_and(|entries| {
+                    entries.iter().any(|p| {
+                        p.file_name()
+                            .and_then(|n| n.to_str())
+                            .is_some_and(|n| n.starts_with("rgb:kbd_backlight"))
+                    })
+                });
+                if !has_kbd {
+                    issues.push("Не обнаружен драйвер RGB-клавиатуры ITE 8291.".to_string());
+                }
+                if !self
                     .sysfs
-                    .exists(&leds_dir.join("lightbar/multi_intensity"))
-            {
-                issues.push("Не обнаружен аппаратный интерфейс Lightbar.".to_string());
+                    .exists(&leds_dir.join("rgb:lightbar/multi_intensity"))
+                    && !self
+                        .sysfs
+                        .exists(&leds_dir.join("lightbar/multi_intensity"))
+                {
+                    issues.push("Не обнаружен аппаратный интерфейс Lightbar.".to_string());
+                }
             }
         }
 
@@ -1637,6 +1675,7 @@ impl LiveUccdBackend {
             "issues": issues,
             "message": message,
             "startupState": self.startup_state_label(),
+            "platformBackend": self.platform_backend_name(),
         })
         .to_string()
     }

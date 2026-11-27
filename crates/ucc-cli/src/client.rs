@@ -366,6 +366,13 @@ impl CliClient {
                     }
                 }
             }
+            if !fan_map_entry_is_stale(&raw_fan, "realRpm") {
+                if let Some(rpm) = raw_fan.get("realRpm").and_then(extract_variant_i32) {
+                    if rpm >= 0 {
+                        m.fan_rpm = Some(rpm);
+                    }
+                }
+            }
         }
 
         // Frequency
@@ -417,27 +424,24 @@ impl CliClient {
             }
         }
 
-        // Fan speeds from GPU1 and GPU2
-        let gpu1_spd = with_rpc_timeout(self.proxy.get_fan_data_gpu1())
-            .await
-            .ok()
-            .and_then(|map| {
-                if fan_map_entry_is_stale(&map, "speed") {
+        // Fan speeds (and optional real tachometer RPM) from GPU1 and GPU2
+        let gpu1_map = with_rpc_timeout(self.proxy.get_fan_data_gpu1()).await.ok();
+        let gpu2_map = with_rpc_timeout(self.proxy.get_fan_data_gpu2()).await.ok();
+
+        let extract_fresh = |map: &Option<HashMap<String, zbus::zvariant::OwnedValue>>, key: &str| {
+            map.as_ref().and_then(|m| {
+                if fan_map_entry_is_stale(m, key) {
                     None
                 } else {
-                    map.get("speed").and_then(extract_variant_i32)
+                    m.get(key).and_then(extract_variant_i32)
                 }
-            });
-        let gpu2_spd = with_rpc_timeout(self.proxy.get_fan_data_gpu2())
-            .await
-            .ok()
-            .and_then(|map| {
-                if fan_map_entry_is_stale(&map, "speed") {
-                    None
-                } else {
-                    map.get("speed").and_then(extract_variant_i32)
-                }
-            });
+            })
+        };
+
+        let gpu1_spd = extract_fresh(&gpu1_map, "speed");
+        let gpu2_spd = extract_fresh(&gpu2_map, "speed");
+        let gpu1_rpm = extract_fresh(&gpu1_map, "realRpm");
+        let gpu2_rpm = extract_fresh(&gpu2_map, "realRpm");
 
         match (gpu1_spd, gpu2_spd) {
             (Some(s1), Some(s2)) if s1 >= 0 && s2 >= 0 => {
@@ -452,6 +456,19 @@ impl CliClient {
             (_, Some(s2)) if s2 >= 0 => {
                 m.fan_percent = Some(s2);
                 m.fan_rpm = Some(s2 * 60);
+            }
+            _ => {}
+        }
+
+        match (gpu1_rpm, gpu2_rpm) {
+            (Some(r1), Some(r2)) if r1 >= 0 && r2 >= 0 => {
+                m.fan_rpm = Some((r1 + r2) / 2);
+            }
+            (Some(r1), _) if r1 >= 0 => {
+                m.fan_rpm = Some(r1);
+            }
+            (_, Some(r2)) if r2 >= 0 => {
+                m.fan_rpm = Some(r2);
             }
             _ => {}
         }

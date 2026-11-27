@@ -675,10 +675,13 @@ impl LiveUccdBackend {
             let num_fans = self.capabilities.device.number_of_fans;
             let mut temps = Vec::with_capacity(num_fans);
             let mut speeds = Vec::with_capacity(num_fans);
+            let mut rpms = Vec::with_capacity(num_fans);
             for i in 0..num_fans {
                 temps.push(self.platform.read_fan_temp(i).ok());
                 speeds.push(self.platform.read_fan_speed_percent(i).ok());
+                rpms.push(self.platform.read_fan_rpm(i).ok());
             }
+            *self.write_rw(&self.latest_fan_rpms) = rpms;
             let tick = FanTickSnapshot {
                 timestamp_ms: ts,
                 temps_c: temps,
@@ -699,6 +702,11 @@ impl LiveUccdBackend {
         if self.shutting_down.load(Ordering::SeqCst) {
             return tick;
         }
+        let num_fans = tick
+            .speeds_percent
+            .len()
+            .max(self.capabilities.device.number_of_fans);
+        *self.write_rw(&self.latest_fan_rpms) = self.sample_fan_rpms(num_fans);
         *self.write_rw(&self.latest_fans) = Some(tick.clone());
 
         if self.water_cooler_enabled.load(Ordering::SeqCst) {
@@ -1299,6 +1307,22 @@ impl LiveUccdBackend {
         true
     }
 
+    /// Toggles platform water-cooler `PWUP` when supported by the active backend (`M14` / `ADR-05`).
+    pub(super) fn sync_water_cooler_pwup(&self, enabled: bool) {
+        if ucc_config::is_read_only_preview() || self.is_vendor_unsupported() {
+            return;
+        }
+        match self.platform.set_pwup(enabled, u32::from(enabled)) {
+            Ok(()) => {
+                debug!(enabled, "Updated platform PWUP state for water cooler");
+            }
+            Err(ucc_hardware::PlatformError::Unsupported(_)) => {}
+            Err(err) => {
+                warn!(enabled, "Failed to update platform PWUP state: {err}");
+            }
+        }
+    }
+
     pub fn set_cooler_connected_state(&self, connected: bool) {
         self.water_cooler_connected
             .store(connected, Ordering::SeqCst);
@@ -1309,6 +1333,8 @@ impl LiveUccdBackend {
         } else {
             cooler.on_disconnected();
         }
+        drop(cooler);
+        self.sync_water_cooler_pwup(connected);
     }
 
     pub fn cooler_desired_rgb(&self) -> ucc_hardware::RgbTarget {
@@ -1376,6 +1402,7 @@ pub async fn run_water_cooler_ble_loop(
                 .lock_mutex(&backend.cooler_controller)
                 .on_disconnected();
             if backend.water_cooler_connected.swap(false, Ordering::SeqCst) {
+                backend.sync_water_cooler_pwup(false);
                 backend.emit_signal(DbusSignalEvent::WaterCoolerStatusChanged {
                     status: "disconnected".to_string(),
                 });
@@ -1413,6 +1440,7 @@ pub async fn run_water_cooler_ble_loop(
                 if since.elapsed() >= WC_CONNECT_DEBOUNCE
                     && !backend.water_cooler_connected.swap(true, Ordering::SeqCst)
                 {
+                    backend.sync_water_cooler_pwup(true);
                     backend.emit_signal(DbusSignalEvent::WaterCoolerStatusChanged {
                         status: "connected".to_string(),
                     });
@@ -1444,6 +1472,7 @@ pub async fn run_water_cooler_ble_loop(
             if since.elapsed() >= WC_DISCONNECT_DEBOUNCE
                 && backend.water_cooler_connected.swap(false, Ordering::SeqCst)
             {
+                backend.sync_water_cooler_pwup(false);
                 backend.emit_signal(DbusSignalEvent::WaterCoolerStatusChanged {
                     status: "disconnected".to_string(),
                 });

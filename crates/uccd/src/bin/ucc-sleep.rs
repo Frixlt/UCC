@@ -1,16 +1,18 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 
-//! Root sleep/resume helper saving and restoring volatile runtime state across suspend (`ISSUE-04`).
+//! Root sleep/resume helper saving and restoring volatile runtime state across suspend (`ISSUE-04`, `M14`).
 
 use nix::libc;
 use std::path::Path;
 use std::process::Command;
+use std::sync::Arc;
 use std::time::{Duration, Instant};
 use ucc_config::{is_read_only_preview, ConfigManager};
 use ucc_dbus::{DBUS_INTERFACE, DBUS_PATH};
-use ucc_hardware::RealSysfs;
+use ucc_hardware::{DmiInfo, RealSysfs, Sysfs};
 use uccd::{
-    prepare_sleep, resume_sleep, SleepOperations, SleepState, SleepStateStore, WakeupPolicy,
+    prepare_sleep, resume_sleep, select_platform_backend, SleepOperations, SleepState,
+    SleepStateStore, WakeupPolicy, ENV_PLATFORM_BACKEND,
 };
 
 const DBUS_SERVICE_NAME: &str = "com.uniwill.uccd";
@@ -64,6 +66,25 @@ fn run_systemctl(verb: &str) -> Result<String, String> {
             Err(e) => return Err(format!("systemctl wait failed: {e}")),
         }
     }
+}
+
+/// Ensures firmware automatic fan control (`RamFan 1.5` auto on `uwcc` or EC auto on `tuxedo_io`)
+/// and disables `PWUP` safely across suspend/resume transitions.
+fn restore_platform_safe_sleep_state(settings_choice: Option<&str>) {
+    let sysfs: Arc<dyn Sysfs> = Arc::new(RealSysfs);
+    let dmi = DmiInfo::read_from_sysfs(sysfs.as_ref());
+    let env_override = std::env::var(ENV_PLATFORM_BACKEND).ok();
+    let backend = select_platform_backend(
+        env_override.as_deref(),
+        settings_choice,
+        &dmi,
+        &sysfs,
+    );
+    if !backend.is_available() {
+        return;
+    }
+    let _ = backend.set_pwup(false, 0);
+    let _ = backend.set_fans_auto();
 }
 
 struct SystemdSleepOps;
@@ -149,25 +170,39 @@ fn run() -> Result<(), String> {
     let store = SleepStateStore::default();
     let ops = SystemdSleepOps;
 
-    if args[1] == "prepare" {
-        let mut wake_only = true;
-        if let Some(read_path) = ConfigManager::new().resolve_read_path() {
-            if let Ok((settings, _)) = ConfigManager::load_with_recovery(&read_path) {
-                if let Some(pd) = settings.power_devices {
-                    if let Some(w) = pd
-                        .get("lid")
-                        .and_then(|l| l.get("wakeOnlyLidAndKeyboard"))
-                        .and_then(|v| v.as_bool())
-                    {
-                        wake_only = w;
-                    }
+    let mut wake_only = true;
+    let mut platform_choice: Option<String> = None;
+    if let Some(read_path) = ConfigManager::new().resolve_read_path() {
+        if let Ok((settings, _)) = ConfigManager::load_with_recovery(&read_path) {
+            platform_choice = settings.platform_backend;
+            if let Some(pd) = settings.power_devices {
+                if let Some(w) = pd
+                    .get("lid")
+                    .and_then(|l| l.get("wakeOnlyLidAndKeyboard"))
+                    .and_then(|v| v.as_bool())
+                {
+                    wake_only = w;
                 }
             }
         }
+    }
+
+    if args[1] == "prepare" {
         let _ = WakeupPolicy::default().apply(wake_only, &RealSysfs);
-        prepare_sleep(&store, &ops)
+        let res = prepare_sleep(&store, &ops);
+        restore_platform_safe_sleep_state(platform_choice.as_deref());
+        res
     } else {
-        resume_sleep(&store, &ops)
+        let was_active = store
+            .load()
+            .ok()
+            .flatten()
+            .is_some_and(|s| s.was_active);
+        let res = resume_sleep(&store, &ops);
+        if !was_active {
+            restore_platform_safe_sleep_state(platform_choice.as_deref());
+        }
+        res
     }
 }
 

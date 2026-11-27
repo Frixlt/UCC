@@ -16,7 +16,49 @@ use std::sync::Arc;
 use ucc_config::UccSettings;
 use ucc_core::{KeyboardBacklightState, PolicyDecision, ProfileState, UccProfile};
 use ucc_dbus::UccdBackend;
-use ucc_hardware::{CoolerState, PowerDeviceController, RgbTarget, Sysfs};
+use ucc_hardware::{CoolerState, PlatformBackendKind, PowerDeviceController, RgbTarget, Sysfs};
+use ucc_lighting::{
+    HidrawDeviceTransport, LightingTransport, SysfsLedTransport, UniwillHidTransport,
+};
+
+/// Checks whether `tuxedo-drivers` / `ite_8291` sysfs LED class nodes are present under `sys_root`.
+pub fn has_ite_sysfs_leds(sysfs: &dyn Sysfs, sys_root: &Path) -> bool {
+    let leds_dir = sys_root.join("sys/class/leds");
+    let has_kbd = sysfs.read_dir(&leds_dir).is_ok_and(|entries| {
+        entries.iter().any(|entry| {
+            entry
+                .file_name()
+                .and_then(|n| n.to_str())
+                .is_some_and(|n| {
+                    n.starts_with("rgb:kbd_backlight")
+                        || n.starts_with("tuxedo::kbd_backlight")
+                        || n.starts_with("ite_8291")
+                })
+        })
+    });
+    let has_lb = sysfs.exists(&leds_dir.join("rgb:lightbar/multi_intensity"))
+        || sysfs.exists(&leds_dir.join("lightbar/multi_intensity"));
+    has_kbd || has_lb
+}
+
+/// Selects the lighting transport for keyboard backlight and front lightbar (`M14` / `ADR-05`).
+///
+/// Prefers direct USB `hidraw` ([`UniwillHidTransport`] + [`HidrawDeviceTransport`]) when
+/// [`PlatformBackendKind::Uwcc`] is active or when `ite_8291` sysfs LED nodes are absent,
+/// while preserving [`SysfsLedTransport`] when running on `tuxedo-drivers`.
+pub fn select_lighting_transport(
+    backend_kind: PlatformBackendKind,
+    sysfs: &dyn Sysfs,
+    sys_root: &Path,
+) -> Arc<dyn LightingTransport> {
+    if backend_kind == PlatformBackendKind::Uwcc || !has_ite_sysfs_leds(sysfs, sys_root) {
+        Arc::new(UniwillHidTransport::new(Arc::new(
+            HidrawDeviceTransport::new(),
+        )))
+    } else {
+        Arc::new(SysfsLedTransport::default())
+    }
+}
 
 impl LiveUccdBackend {
     pub(super) fn lock_mutex<'a, T>(
