@@ -182,7 +182,7 @@ impl LogicalCpu {
         }
         let min = self.read_cpuinfo_min_freq()?;
         let max = self.read_cpuinfo_max_freq()?;
-        Some((min + max) / 2)
+        Some(min.midpoint(max))
     }
 }
 
