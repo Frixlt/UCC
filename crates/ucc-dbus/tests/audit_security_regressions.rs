@@ -357,3 +357,223 @@ fn t_sec_08_dbus_policy_conf_allows_legacy_alias_and_restricts_method_call() {
 fn _ensure_interface_type_constructible() -> UccdInterface<DefaultUccdBackend> {
     UccdInterface::new(DefaultUccdBackend)
 }
+
+struct ReadEnabledBackend;
+
+impl UccdBackend for ReadEnabledBackend {
+    fn get_display_brightness(&self) -> i32 {
+        77
+    }
+}
+
+struct MockScopedPolkitAuthority {
+    gated_sender: String,
+    gate: Arc<tokio::sync::Notify>,
+    in_flight_for_gated: Arc<AtomicUsize>,
+    max_in_flight_for_gated: Arc<AtomicUsize>,
+    innocent_calls: Arc<AtomicUsize>,
+}
+
+#[zbus::interface(name = "org.freedesktop.PolicyKit1.Authority")]
+impl MockScopedPolkitAuthority {
+    async fn check_authorization(
+        &self,
+        subject: (String, HashMap<String, OwnedValue>),
+        _action_id: String,
+        _details: HashMap<String, String>,
+        _flags: u32,
+        _cancellation_id: String,
+    ) -> (bool, bool, HashMap<String, String>) {
+        let is_gated = subject
+            .1
+            .get("name")
+            .is_some_and(|v| format!("{v:?}").contains(&self.gated_sender));
+        if is_gated {
+            let cur = self.in_flight_for_gated.fetch_add(1, Ordering::SeqCst) + 1;
+            self.max_in_flight_for_gated.fetch_max(cur, Ordering::SeqCst);
+            let _ = tokio::time::timeout(Duration::from_secs(2), self.gate.notified()).await;
+            self.in_flight_for_gated.fetch_sub(1, Ordering::SeqCst);
+        } else {
+            self.innocent_calls.fetch_add(1, Ordering::SeqCst);
+        }
+        (true, false, HashMap::new())
+    }
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn t_sec_ipc03_per_sender_read_load_bounded_without_starving_other_clients() {
+    let daemon = PrivateDbusDaemon::spawn();
+    let abusive_conn = Builder::address(daemon.address.as_str())
+        .unwrap()
+        .build()
+        .await
+        .unwrap();
+    let abusive_sender = abusive_conn
+        .unique_name()
+        .expect("abusive client unique name")
+        .to_string();
+    let innocent_conn = Builder::address(daemon.address.as_str())
+        .unwrap()
+        .build()
+        .await
+        .unwrap();
+
+    let gate = Arc::new(tokio::sync::Notify::new());
+    let in_flight_for_gated = Arc::new(AtomicUsize::new(0));
+    let max_in_flight_for_gated = Arc::new(AtomicUsize::new(0));
+    let innocent_calls = Arc::new(AtomicUsize::new(0));
+
+    let _authority_conn = Builder::address(daemon.address.as_str())
+        .unwrap()
+        .name("org.freedesktop.PolicyKit1")
+        .unwrap()
+        .serve_at(
+            "/org/freedesktop/PolicyKit1/Authority",
+            MockScopedPolkitAuthority {
+                gated_sender: abusive_sender,
+                gate: Arc::clone(&gate),
+                in_flight_for_gated: Arc::clone(&in_flight_for_gated),
+                max_in_flight_for_gated: Arc::clone(&max_in_flight_for_gated),
+                innocent_calls: Arc::clone(&innocent_calls),
+            },
+        )
+        .unwrap()
+        .build()
+        .await
+        .unwrap();
+
+    let server_conn = Builder::address(daemon.address.as_str())
+        .unwrap()
+        .name("com.uniwill.uccd")
+        .unwrap()
+        .build()
+        .await
+        .unwrap();
+    register_uccd_service(
+        &server_conn,
+        Arc::new(ReadEnabledBackend),
+        Arc::new(PolkitAuthorizer::new()),
+    )
+    .await
+    .unwrap();
+
+    let abusive_proxy = UccdProxy::builder(&abusive_conn)
+        .destination("com.uniwill.uccd")
+        .unwrap()
+        .path(DBUS_PATH)
+        .unwrap()
+        .build()
+        .await
+        .unwrap();
+    let innocent_proxy = UccdProxy::builder(&innocent_conn)
+        .destination("com.uniwill.uccd")
+        .unwrap()
+        .path(DBUS_PATH)
+        .unwrap()
+        .build()
+        .await
+        .unwrap();
+
+    let mut handles = Vec::new();
+    for _ in 0..16 {
+        let p = abusive_proxy.clone();
+        handles.push(tokio::spawn(async move {
+            p.get_display_brightness().await.unwrap_or(-1) == 77
+        }));
+    }
+
+    tokio::time::sleep(Duration::from_millis(150)).await;
+
+    let innocent_val = tokio::time::timeout(
+        Duration::from_millis(750),
+        innocent_proxy.get_display_brightness(),
+    )
+    .await
+    .expect("innocent client read must not starve while abusive client saturates reads")
+    .expect("innocent client RPC succeeds");
+    assert_eq!(innocent_val, 77, "innocent client read must succeed");
+    assert_eq!(innocent_calls.load(Ordering::SeqCst), 1);
+
+    let peak = max_in_flight_for_gated.load(Ordering::SeqCst);
+    assert!(
+        peak <= 8,
+        "per-sender Polkit read admission allowed {peak} concurrent calls (expected <= 8)"
+    );
+
+    gate.notify_waiters();
+    let mut allowed = 0usize;
+    let mut rejected = 0usize;
+    for h in handles {
+        if h.await.unwrap() {
+            allowed += 1;
+        } else {
+            rejected += 1;
+        }
+    }
+    assert!(allowed <= 8, "allowed abusive calls={allowed}, expected <= 8");
+    assert!(
+        rejected >= 8,
+        "expected excess abusive calls rejected (>= 8), got rejected={rejected}"
+    );
+
+    // SenderAuthGuard must release slots on drop so subsequent calls succeed.
+    assert_eq!(
+        abusive_proxy.get_display_brightness().await.unwrap(),
+        77,
+        "per-sender slot must recover after inflight reads complete"
+    );
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn t_sec_ipc03_oversized_json_payloads_rejected_before_auth_and_backend() {
+    let auth = Arc::new(TrackingAuthorizer::new(true));
+    let bus_name = format!("org.test.uccd.ipc03_json_{}", std::process::id());
+    let server = Builder::session()
+        .unwrap()
+        .name(bus_name.as_str())
+        .unwrap()
+        .build()
+        .await
+        .unwrap();
+    register_uccd_service(&server, Arc::new(DefaultUccdBackend), auth.clone())
+        .await
+        .unwrap();
+
+    let client_conn = zbus::Connection::session().await.unwrap();
+    let proxy = UccdProxy::builder(&client_conn)
+        .destination(bus_name.clone())
+        .unwrap()
+        .path(DBUS_PATH)
+        .unwrap()
+        .build()
+        .await
+        .unwrap();
+
+    let oversized = format!("{{\"pad\":\"{}\"}}", "a".repeat(300 * 1024));
+    assert!(
+        !proxy.apply_profile(&oversized).await.unwrap(),
+        "oversized ApplyProfile must return false"
+    );
+    assert!(
+        !proxy.save_custom_profile(&oversized).await.unwrap(),
+        "oversized SaveCustomProfile must return false"
+    );
+    assert!(
+        !proxy.set_power_device_settings_json(&oversized).await.unwrap(),
+        "oversized SetPowerDeviceSettingsJSON must return false"
+    );
+    assert!(
+        !proxy.set_fan_profile("custom", &oversized).await.unwrap(),
+        "oversized SetFanProfile must return false"
+    );
+    assert!(
+        !proxy.set_batch_state_map(&oversized).await.unwrap(),
+        "oversized SetBatchStateMap must return false"
+    );
+
+    assert!(
+        auth.recorded_actions().is_empty(),
+        "oversized JSON payloads must be rejected before invoking authorizer/backend, got: {:?}",
+        auth.recorded_actions()
+    );
+}

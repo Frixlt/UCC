@@ -47,6 +47,11 @@ pub fn find_gui_binary() -> Option<PathBuf> {
     None
 }
 
+pub const GUI_DBUS_SERVICE: &str = "com.uniwill.UccGui";
+pub const GUI_DBUS_PREVIEW_SERVICE: &str = "com.uniwill.UccGuiPreview";
+pub const GUI_DBUS_PATH: &str = "/com/uniwill/UccGui";
+pub const GUI_DBUS_INTERFACE: &str = "com.uniwill.UccGui";
+
 pub fn launch_gui(activation_token: Option<&str>) -> std::io::Result<()> {
     let bin = find_gui_binary().ok_or_else(|| {
         std::io::Error::new(
@@ -56,13 +61,55 @@ pub fn launch_gui(activation_token: Option<&str>) -> std::io::Result<()> {
     })?;
 
     let mut cmd = Command::new(bin);
-    cmd.stdin(Stdio::null())
+    cmd.arg("--show")
+        .stdin(Stdio::null())
         .stdout(Stdio::null())
         .stderr(Stdio::null());
     if let Some(token) = activation_token.filter(|t| !t.trim().is_empty()) {
         cmd.env("XDG_ACTIVATION_TOKEN", token);
     }
     cmd.spawn().map(|_| ())
+}
+
+pub async fn activate_gui_dbus_on(
+    conn: &zbus::Connection,
+    service_name: &str,
+    activation_token: Option<&str>,
+) -> zbus::Result<()> {
+    let proxy = zbus::Proxy::new(conn, service_name, GUI_DBUS_PATH, GUI_DBUS_INTERFACE).await?;
+    if let Some(token) = activation_token.filter(|t| !t.trim().is_empty()) {
+        if proxy
+            .call::<_, _, ()>("ActivateWithToken", &(token,))
+            .await
+            .is_ok()
+        {
+            return Ok(());
+        }
+    }
+    proxy.call::<_, _, ()>("Activate", &()).await
+}
+
+pub async fn activate_gui_dbus(
+    activation_token: Option<&str>,
+    preview: bool,
+) -> zbus::Result<()> {
+    let conn = zbus::Connection::session().await?;
+    let service = if preview {
+        GUI_DBUS_PREVIEW_SERVICE
+    } else {
+        GUI_DBUS_SERVICE
+    };
+    activate_gui_dbus_on(&conn, service, activation_token).await
+}
+
+pub async fn activate_or_launch_gui(
+    activation_token: Option<&str>,
+    preview: bool,
+) -> std::io::Result<()> {
+    if activate_gui_dbus(activation_token, preview).await.is_ok() {
+        return Ok(());
+    }
+    launch_gui(activation_token)
 }
 
 #[cfg(test)]

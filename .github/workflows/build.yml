@@ -12,18 +12,23 @@ concurrency:
 
 jobs:
   rust:
-    name: rust clippy & tests
+    name: rust clippy & tests (${{ matrix.rust }})
     runs-on: ubuntu-24.04
+    strategy:
+      fail-fast: false
+      matrix:
+        rust: ["1.89.0", "1.99.1"]
     steps:
       - uses: actions/checkout@v4
       - name: Install D-Bus runtime
         run: sudo apt-get update && sudo apt-get install -y --no-install-recommends dbus
       - name: Install Rust toolchain
-        uses: dtolnay/rust-toolchain@stable
+        uses: dtolnay/rust-toolchain@master
         with:
-          toolchain: 1.99.1
+          toolchain: ${{ matrix.rust }}
           components: clippy
       - name: Clippy
+        if: matrix.rust == '1.99.1'
         run: cargo clippy --workspace --all-targets --locked -- -D warnings
       - name: Workspace tests
         run: dbus-run-session -- sh -c 'cargo test --workspace --locked --no-fail-fast'

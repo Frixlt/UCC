@@ -81,9 +81,76 @@ pub trait Authorizer: Send + Sync + 'static {
 #[derive(Debug, Default, Clone, Copy)]
 pub struct PolkitAuthorizer;
 
+const MAX_CONCURRENT_READ_POLKIT: usize = 32;
+const MAX_PER_SENDER_READ_AUTH: usize = 8;
+const MAX_PER_SENDER_INTERACTIVE_AUTH: usize = 2;
+
 fn interactive_polkit_semaphore() -> &'static Arc<Semaphore> {
     static SEM: OnceLock<Arc<Semaphore>> = OnceLock::new();
     SEM.get_or_init(|| Arc::new(Semaphore::new(4)))
+}
+
+fn read_polkit_semaphore() -> &'static Arc<Semaphore> {
+    static SEM: OnceLock<Arc<Semaphore>> = OnceLock::new();
+    SEM.get_or_init(|| Arc::new(Semaphore::new(MAX_CONCURRENT_READ_POLKIT)))
+}
+
+#[derive(Debug, Default)]
+struct SenderAuthCounts {
+    read: usize,
+    interactive: usize,
+}
+
+fn sender_inflight_auth() -> &'static Mutex<HashMap<String, SenderAuthCounts>> {
+    static MAP: OnceLock<Mutex<HashMap<String, SenderAuthCounts>>> = OnceLock::new();
+    MAP.get_or_init(|| Mutex::new(HashMap::new()))
+}
+
+struct SenderAuthGuard {
+    sender: String,
+    interactive: bool,
+}
+
+impl SenderAuthGuard {
+    fn try_acquire(sender: &str, interactive: bool) -> Option<Self> {
+        let mut map = sender_inflight_auth()
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
+        let entry = map.entry(sender.to_string()).or_default();
+        if interactive {
+            if entry.interactive >= MAX_PER_SENDER_INTERACTIVE_AUTH {
+                return None;
+            }
+            entry.interactive += 1;
+        } else {
+            if entry.read >= MAX_PER_SENDER_READ_AUTH {
+                return None;
+            }
+            entry.read += 1;
+        }
+        Some(Self {
+            sender: sender.to_string(),
+            interactive,
+        })
+    }
+}
+
+impl Drop for SenderAuthGuard {
+    fn drop(&mut self) {
+        let mut map = sender_inflight_auth()
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
+        if let Some(entry) = map.get_mut(&self.sender) {
+            if self.interactive {
+                entry.interactive = entry.interactive.saturating_sub(1);
+            } else {
+                entry.read = entry.read.saturating_sub(1);
+            }
+            if entry.read == 0 && entry.interactive == 0 {
+                map.remove(&self.sender);
+            }
+        }
+    }
 }
 
 fn should_try_legacy_action(err: &zbus::Error) -> bool {
@@ -104,6 +171,16 @@ impl PolkitAuthorizer {
         let sender = match sender {
             Some(s) if !s.is_empty() => s,
             _ => return false,
+        };
+
+        let is_interactive = !matches!(action, AuthAction::Read);
+        let Some(_sender_guard) = SenderAuthGuard::try_acquire(sender, is_interactive) else {
+            tracing::warn!(
+                "Rejecting Polkit check for sender '{}': concurrent {} limit exceeded",
+                sender,
+                if is_interactive { "interactive" } else { "read" }
+            );
+            return false;
         };
 
         let bus_name = match zbus::names::BusName::try_from(sender) {
@@ -154,18 +231,26 @@ impl PolkitAuthorizer {
         };
         let cancellation_id = "";
 
-        let _interactive_permit = if flags != 0 {
+        let (_interactive_permit, _read_permit) = if flags != 0 {
             match tokio::time::timeout(
                 Duration::from_secs(5),
                 Arc::clone(interactive_polkit_semaphore()).acquire_owned(),
             )
             .await
             {
-                Ok(Ok(permit)) => Some(permit),
+                Ok(Ok(permit)) => (Some(permit), None),
                 _ => return false,
             }
         } else {
-            None
+            match tokio::time::timeout(
+                Duration::from_secs(2),
+                Arc::clone(read_polkit_semaphore()).acquire_owned(),
+            )
+            .await
+            {
+                Ok(Ok(permit)) => (None, Some(permit)),
+                _ => return false,
+            }
         };
 
         // Check primary action

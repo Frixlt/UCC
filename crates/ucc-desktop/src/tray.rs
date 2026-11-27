@@ -19,12 +19,34 @@ pub enum TrayAction {
 }
 
 #[derive(Clone)]
+enum ActionSender {
+    Unbounded(mpsc::UnboundedSender<TrayAction>),
+    Bounded(mpsc::Sender<TrayAction>),
+}
+
+impl ActionSender {
+    fn send_action(&self, action: TrayAction) {
+        match self {
+            Self::Unbounded(tx) => {
+                let _ = tx.send(action);
+            }
+            Self::Bounded(tx) => {
+                if let Err(err) = tx.try_send(action) {
+                    tracing::warn!("Dropping tray action {:?}: {err}", action);
+                }
+            }
+        }
+    }
+}
+
+#[derive(Clone)]
 pub struct UccTray {
     profiles: Vec<String>,
     active_profile: Arc<AtomicUsize>,
     fan_auto: Arc<AtomicBool>,
     water_cooler_connected: Arc<AtomicBool>,
-    action_tx: mpsc::UnboundedSender<TrayAction>,
+    daemon_connected: Arc<AtomicBool>,
+    action_tx: ActionSender,
 }
 
 impl UccTray {
@@ -34,6 +56,30 @@ impl UccTray {
         profiles: Vec<String>,
         active_profile_idx: usize,
         action_tx: mpsc::UnboundedSender<TrayAction>,
+    ) -> Self {
+        Self::with_sender(
+            profiles,
+            active_profile_idx,
+            ActionSender::Unbounded(action_tx),
+        )
+    }
+
+    pub fn new_bounded(
+        profiles: Vec<String>,
+        active_profile_idx: usize,
+        action_tx: mpsc::Sender<TrayAction>,
+    ) -> Self {
+        Self::with_sender(
+            profiles,
+            active_profile_idx,
+            ActionSender::Bounded(action_tx),
+        )
+    }
+
+    fn with_sender(
+        profiles: Vec<String>,
+        active_profile_idx: usize,
+        action_tx: ActionSender,
     ) -> Self {
         let valid_idx = if !profiles.is_empty() && active_profile_idx < profiles.len() {
             active_profile_idx
@@ -45,8 +91,17 @@ impl UccTray {
             active_profile: Arc::new(AtomicUsize::new(valid_idx)),
             fan_auto: Arc::new(AtomicBool::new(true)),
             water_cooler_connected: Arc::new(AtomicBool::new(false)),
+            daemon_connected: Arc::new(AtomicBool::new(true)),
             action_tx,
         }
+    }
+
+    pub fn set_daemon_connected(&self, connected: bool) {
+        self.daemon_connected.store(connected, Ordering::SeqCst);
+    }
+
+    pub fn is_daemon_connected(&self) -> bool {
+        self.daemon_connected.load(Ordering::SeqCst)
     }
 
     pub fn set_active_profile(&self, index: usize) {
@@ -93,7 +148,7 @@ impl Tray for UccTray {
     }
 
     fn activate(&mut self, _x: i32, _y: i32) {
-        let _ = self.action_tx.send(TrayAction::OpenGui);
+        self.action_tx.send_action(TrayAction::OpenGui);
     }
 
     fn menu(&self) -> Vec<MenuItem<Self>> {
@@ -108,27 +163,38 @@ impl Tray for UccTray {
 
         let wc_connected = self.water_cooler_connected.load(Ordering::SeqCst);
         let fan_auto = self.fan_auto.load(Ordering::SeqCst);
+        let daemon_connected = self.daemon_connected.load(Ordering::SeqCst);
 
-        vec![
-            MenuItem::Standard(StandardItem {
-                label: "Open Control Center".into(),
-                activate: Box::new(move |_| {
-                    let _ = open_tx.send(TrayAction::OpenGui);
-                }),
-                ..Default::default()
+        let mut items = vec![MenuItem::Standard(StandardItem {
+            label: "Open Control Center".into(),
+            activate: Box::new(move |_| {
+                open_tx.send_action(TrayAction::OpenGui);
             }),
+            ..Default::default()
+        })];
+
+        if !daemon_connected {
+            items.push(MenuItem::Standard(StandardItem {
+                label: "Service unavailable (reconnecting...)".into(),
+                enabled: false,
+                ..Default::default()
+            }));
+        }
+
+        items.extend([
             MenuItem::Separator,
             MenuItem::RadioGroup(RadioGroup {
                 selected: current_profile,
                 select: Box::new(move |this: &mut Self, idx: usize| {
-                    if idx < this.profiles.len() {
-                        let _ = profile_tx.send(TrayAction::SelectProfile(idx));
+                    if this.daemon_connected.load(Ordering::SeqCst) && idx < this.profiles.len() {
+                        profile_tx.send_action(TrayAction::SelectProfile(idx));
                     }
                 }),
                 options: profiles
                     .into_iter()
                     .map(|name| RadioItem {
                         label: name,
+                        enabled: daemon_connected,
                         ..Default::default()
                     })
                     .collect(),
@@ -140,8 +206,11 @@ impl Tray for UccTray {
                 } else {
                     "Fan: Max (click for Auto)".into()
                 },
-                activate: Box::new(move |_| {
-                    let _ = fan_tx.send(TrayAction::ToggleFanAuto);
+                enabled: daemon_connected,
+                activate: Box::new(move |this: &mut Self| {
+                    if this.daemon_connected.load(Ordering::SeqCst) {
+                        fan_tx.send_action(TrayAction::ToggleFanAuto);
+                    }
                 }),
                 ..Default::default()
             }),
@@ -151,8 +220,11 @@ impl Tray for UccTray {
                 } else {
                     "Water Cooler: Disconnected (click to scan)".into()
                 },
-                activate: Box::new(move |_| {
-                    let _ = wc_tx.send(TrayAction::ToggleWaterCooler);
+                enabled: daemon_connected,
+                activate: Box::new(move |this: &mut Self| {
+                    if this.daemon_connected.load(Ordering::SeqCst) {
+                        wc_tx.send_action(TrayAction::ToggleWaterCooler);
+                    }
                 }),
                 ..Default::default()
             }),
@@ -160,11 +232,13 @@ impl Tray for UccTray {
             MenuItem::Standard(StandardItem {
                 label: "Quit".into(),
                 activate: Box::new(move |_| {
-                    let _ = quit_tx.send(TrayAction::Quit);
+                    quit_tx.send_action(TrayAction::Quit);
                 }),
                 ..Default::default()
             }),
-        ]
+        ]);
+
+        items
     }
 }
 
@@ -176,6 +250,24 @@ pub async fn spawn_tray(
 ) -> Result<ksni::Handle<UccTray>, ksni::Error> {
     let tray = UccTray::new(profiles, active_profile_idx, action_tx);
     tray.spawn().await
+}
+
+/// Spawns the StatusNotifierItem tray using a bounded action channel.
+pub async fn spawn_tray_bounded(
+    profiles: Vec<String>,
+    active_profile_idx: usize,
+    action_tx: mpsc::Sender<TrayAction>,
+) -> Result<ksni::Handle<UccTray>, ksni::Error> {
+    let tray = UccTray::new_bounded(profiles, active_profile_idx, action_tx);
+    tray.spawn().await
+}
+
+pub async fn update_daemon_connected(handle: &ksni::Handle<UccTray>, connected: bool) {
+    let _ = handle
+        .update(move |tray| {
+            tray.set_daemon_connected(connected);
+        })
+        .await;
 }
 
 pub async fn update_active_profile(handle: &ksni::Handle<UccTray>, index: usize) {

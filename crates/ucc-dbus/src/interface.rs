@@ -9,10 +9,22 @@ use zbus::object_server::SignalEmitter;
 use zbus::zvariant::OwnedValue;
 
 const MAX_CONCURRENT_OFFLOAD_THREADS: usize = 16;
+pub const MAX_DBUS_JSON_PAYLOAD_BYTES: usize = 256 * 1024;
 
 fn offload_semaphore() -> &'static Arc<Semaphore> {
     static SEM: OnceLock<Arc<Semaphore>> = OnceLock::new();
     SEM.get_or_init(|| Arc::new(Semaphore::new(MAX_CONCURRENT_OFFLOAD_THREADS)))
+}
+
+fn payload_within_limit(method: &str, payload: &str) -> bool {
+    if payload.len() <= MAX_DBUS_JSON_PAYLOAD_BYTES {
+        return true;
+    }
+    tracing::warn!(
+        "Rejecting oversized D-Bus JSON payload on {method}: {} bytes (limit {MAX_DBUS_JSON_PAYLOAD_BYTES})",
+        payload.len()
+    );
+    false
 }
 
 fn profile_requires_manage_hardware(profile_json: &str) -> bool {
@@ -620,6 +632,9 @@ macro_rules! impl_uccd_methods {
 
             #[zbus(name = "SetPowerDeviceSettingsJSON")]
             pub async fn set_power_device_settings_json(&self, #[zbus(header)] header: zbus::message::Header<'_>, #[zbus(connection)] conn: &zbus::Connection, json: &str) -> bool {
+                if !payload_within_limit("SetPowerDeviceSettingsJSON", json) {
+                    return false;
+                }
                 let sender = header.sender().map(|s| s.as_str());
                 if !self.authorizer.check_auth(conn, sender, AuthAction::Control).await {
                     return false;
@@ -666,6 +681,9 @@ macro_rules! impl_uccd_methods {
 
             #[zbus(name = "SetLightbarSettingsJSON")]
             pub async fn set_lightbar_settings_json(&self, #[zbus(header)] header: zbus::message::Header<'_>, #[zbus(connection)] conn: &zbus::Connection, json: &str) -> bool {
+                if !payload_within_limit("SetLightbarSettingsJSON", json) {
+                    return false;
+                }
                 let sender = header.sender().map(|s| s.as_str());
                 if !self.authorizer.check_auth(conn, sender, AuthAction::Control).await {
                     return false;
@@ -756,6 +774,9 @@ macro_rules! impl_uccd_methods {
 
             #[zbus(name = "ApplyProfile")]
             pub async fn apply_profile(&self, #[zbus(header)] header: zbus::message::Header<'_>, #[zbus(connection)] conn: &zbus::Connection, profile_json: &str) -> bool {
+                if !payload_within_limit("ApplyProfile", profile_json) {
+                    return false;
+                }
                 let sender = header.sender().map(|s| s.as_str());
                 let action = if profile_requires_manage_hardware(profile_json) {
                     AuthAction::ManageHardware
@@ -789,6 +810,9 @@ macro_rules! impl_uccd_methods {
 
             #[zbus(name = "SetFanProfileCPU")]
             pub async fn set_fan_profile_cpu(&self, #[zbus(header)] header: zbus::message::Header<'_>, #[zbus(connection)] conn: &zbus::Connection, points_json: &str) -> bool {
+                if !payload_within_limit("SetFanProfileCPU", points_json) {
+                    return false;
+                }
                 let sender = header.sender().map(|s| s.as_str());
                 if !self.authorizer.check_auth(conn, sender, AuthAction::Control).await {
                     return false;
@@ -799,6 +823,9 @@ macro_rules! impl_uccd_methods {
 
             #[zbus(name = "SetFanProfileDGPU")]
             pub async fn set_fan_profile_dgpu(&self, #[zbus(header)] header: zbus::message::Header<'_>, #[zbus(connection)] conn: &zbus::Connection, points_json: &str) -> bool {
+                if !payload_within_limit("SetFanProfileDGPU", points_json) {
+                    return false;
+                }
                 let sender = header.sender().map(|s| s.as_str());
                 if !self.authorizer.check_auth(conn, sender, AuthAction::Control).await {
                     return false;
@@ -809,6 +836,9 @@ macro_rules! impl_uccd_methods {
 
             #[zbus(name = "ApplyFanProfiles")]
             pub async fn apply_fan_profiles(&self, #[zbus(header)] header: zbus::message::Header<'_>, #[zbus(connection)] conn: &zbus::Connection, fan_profiles_json: &str) -> bool {
+                if !payload_within_limit("ApplyFanProfiles", fan_profiles_json) {
+                    return false;
+                }
                 let sender = header.sender().map(|s| s.as_str());
                 if !self.authorizer.check_auth(conn, sender, AuthAction::Control).await {
                     return false;
@@ -855,6 +885,9 @@ macro_rules! impl_uccd_methods {
 
             #[zbus(name = "AddCustomProfile")]
             pub async fn add_custom_profile(&self, #[zbus(header)] header: zbus::message::Header<'_>, #[zbus(connection)] conn: &zbus::Connection, profile_json: &str) -> bool {
+                if !payload_within_limit("AddCustomProfile", profile_json) {
+                    return false;
+                }
                 let sender = header.sender().map(|s| s.as_str());
                 let action = if profile_requires_manage_hardware(profile_json) {
                     AuthAction::ManageHardware
@@ -870,6 +903,9 @@ macro_rules! impl_uccd_methods {
 
             #[zbus(name = "SaveCustomProfile")]
             pub async fn save_custom_profile(&self, #[zbus(header)] header: zbus::message::Header<'_>, #[zbus(connection)] conn: &zbus::Connection, profile_json: &str) -> bool {
+                if !payload_within_limit("SaveCustomProfile", profile_json) {
+                    return false;
+                }
                 let sender = header.sender().map(|s| s.as_str());
                 let action = if profile_requires_manage_hardware(profile_json) {
                     AuthAction::ManageHardware
@@ -895,6 +931,9 @@ macro_rules! impl_uccd_methods {
 
             #[zbus(name = "UpdateCustomProfile")]
             pub async fn update_custom_profile(&self, #[zbus(header)] header: zbus::message::Header<'_>, #[zbus(connection)] conn: &zbus::Connection, profile_json: &str) -> bool {
+                if !payload_within_limit("UpdateCustomProfile", profile_json) {
+                    return false;
+                }
                 let sender = header.sender().map(|s| s.as_str());
                 let action = if profile_requires_manage_hardware(profile_json) {
                     AuthAction::ManageHardware
@@ -928,6 +967,9 @@ macro_rules! impl_uccd_methods {
 
             #[zbus(name = "SetFanProfile")]
             pub async fn set_fan_profile(&self, #[zbus(header)] header: zbus::message::Header<'_>, #[zbus(connection)] conn: &zbus::Connection, name: &str, json: &str) -> bool {
+                if !payload_within_limit("SetFanProfile", json) {
+                    return false;
+                }
                 let sender = header.sender().map(|s| s.as_str());
                 if !self.authorizer.check_auth(conn, sender, AuthAction::Control).await {
                     return false;
@@ -959,6 +1001,9 @@ macro_rules! impl_uccd_methods {
 
             #[zbus(name = "SetBatchStateMap")]
             pub async fn set_batch_state_map(&self, #[zbus(header)] header: zbus::message::Header<'_>, #[zbus(connection)] conn: &zbus::Connection, state_map_json: &str) -> bool {
+                if !payload_within_limit("SetBatchStateMap", state_map_json) {
+                    return false;
+                }
                 let sender = header.sender().map(|s| s.as_str());
                 if !self.authorizer.check_auth(conn, sender, AuthAction::Control).await {
                     return false;
@@ -1005,6 +1050,9 @@ macro_rules! impl_uccd_methods {
 
             #[zbus(name = "SetKeyboardBacklightStatesJSON")]
             pub async fn set_keyboard_backlight_states_json(&self, #[zbus(header)] header: zbus::message::Header<'_>, #[zbus(connection)] conn: &zbus::Connection, keyboard_backlight_states_json: &str) -> bool {
+                if !payload_within_limit("SetKeyboardBacklightStatesJSON", keyboard_backlight_states_json) {
+                    return false;
+                }
                 let sender = header.sender().map(|s| s.as_str());
                 if !self.authorizer.check_auth(conn, sender, AuthAction::Control).await {
                     return false;
@@ -1024,6 +1072,9 @@ macro_rules! impl_uccd_methods {
 
             #[zbus(name = "SaveCustomKeyboardProfile")]
             pub async fn save_custom_keyboard_profile(&self, #[zbus(header)] header: zbus::message::Header<'_>, #[zbus(connection)] conn: &zbus::Connection, id: &str, name: &str, json: &str) -> bool {
+                if !payload_within_limit("SaveCustomKeyboardProfile", json) {
+                    return false;
+                }
                 let sender = header.sender().map(|s| s.as_str());
                 if !self.authorizer.check_auth(conn, sender, AuthAction::Control).await {
                     return false;
@@ -1055,6 +1106,9 @@ macro_rules! impl_uccd_methods {
 
             #[zbus(name = "SaveCustomFanProfile")]
             pub async fn save_custom_fan_profile(&self, #[zbus(header)] header: zbus::message::Header<'_>, #[zbus(connection)] conn: &zbus::Connection, id: &str, name: &str, json: &str) -> bool {
+                if !payload_within_limit("SaveCustomFanProfile", json) {
+                    return false;
+                }
                 let sender = header.sender().map(|s| s.as_str());
                 if !self.authorizer.check_auth(conn, sender, AuthAction::Control).await {
                     return false;
