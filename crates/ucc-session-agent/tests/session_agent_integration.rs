@@ -786,3 +786,126 @@ async fn recheck_04_stale_refresh_offer_invalidated_after_profile_power_sleep_an
 
     let _ = agent.kill().await;
 }
+
+#[tokio::test]
+async fn deep_04_hung_hyprctl_does_not_delay_driver_health_notification_and_is_reaped() {
+    use std::os::unix::fs::PermissionsExt;
+
+    let (bus_dir, bus_addr, mut _dbus_child) = spawn_isolated_dbus().await;
+    let runtime_dir = bus_dir.path().join("runtime");
+    let drm_dir = bus_dir.path().join("drm");
+    let bin_dir = bus_dir.path().join("bin");
+    let pid_file = bus_dir.path().join("hyprctl.pid");
+    std::fs::create_dir_all(&runtime_dir).unwrap();
+    std::fs::create_dir_all(&drm_dir).unwrap();
+    std::fs::create_dir_all(&bin_dir).unwrap();
+
+    let hypr_script = bin_dir.join("hyprctl");
+    std::fs::write(
+        &hypr_script,
+        format!(
+            "#!/usr/bin/env bash\nprintf '%s\\n' \"$$\" >> \"{}\"\nexec sleep 30\n",
+            pid_file.display()
+        ),
+    )
+    .unwrap();
+    std::fs::set_permissions(&hypr_script, std::fs::Permissions::from_mode(0o755)).unwrap();
+
+    let notif_state = Arc::new(FakeNotificationsState::default());
+    let notif_conn = zbus::connection::Builder::address(bus_addr.as_str())
+        .unwrap()
+        .name("org.freedesktop.Notifications")
+        .unwrap()
+        .serve_at(
+            "/org/freedesktop/Notifications",
+            FakeNotifications(Arc::clone(&notif_state)),
+        )
+        .unwrap()
+        .build()
+        .await
+        .unwrap();
+    let _ = notif_conn;
+
+    let uccd_state = Arc::new(FakeUccdState::new("bat", 60, false));
+    uccd_state.healthy.store(false, Ordering::SeqCst);
+    let svc_name = "org.test.uccd.session.deep04";
+    let _uccd_conn = zbus::connection::Builder::address(bus_addr.as_str())
+        .unwrap()
+        .name(svc_name)
+        .unwrap()
+        .serve_at("/com/uniwill/uccd", FakeUccd(Arc::clone(&uccd_state)))
+        .unwrap()
+        .build()
+        .await
+        .unwrap();
+
+    let orig_path = std::env::var("PATH").unwrap_or_default();
+    let test_path = format!("{}:{orig_path}", bin_dir.display());
+    let exe = env!("CARGO_BIN_EXE_ucc-session-agent");
+    let mut agent = Command::new(exe)
+        .env("DBUS_SESSION_BUS_ADDRESS", &bus_addr)
+        .env("UCCD_DBUS_SERVICE", svc_name)
+        .env("UCC_LID_BUS_SESSION", "1")
+        .env("UCC_DRM_ROOT", &drm_dir)
+        .env("UCC_HEALTH_POLL_MS", "50")
+        .env("UCC_COMPOSITOR_CMD_TIMEOUT_MS", "900")
+        .env("XDG_RUNTIME_DIR", &runtime_dir)
+        .env("HYPRLAND_INSTANCE_SIGNATURE", "test-instance")
+        .env("PATH", test_path)
+        .stdin(Stdio::null())
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .kill_on_drop(true)
+        .spawn()
+        .unwrap();
+
+    // Wait until hung hyprctl has definitely started, then check DriverHealth alert arrives
+    // promptly while hyprctl is still blocked (`DEEP-04`).
+    assert!(
+        poll_until(Duration::from_secs(2), || {
+            std::fs::read_to_string(&pid_file)
+                .ok()
+                .and_then(|s| s.lines().next().and_then(|l| l.trim().parse::<i32>().ok()))
+                .is_some()
+        })
+        .await,
+        "hung hyprctl script never recorded its PID"
+    );
+    let pid: i32 = std::fs::read_to_string(&pid_file)
+        .unwrap()
+        .lines()
+        .next()
+        .unwrap()
+        .trim()
+        .parse()
+        .unwrap();
+    let after_spawn = std::time::Instant::now();
+
+    assert!(
+        poll_until(Duration::from_millis(450), || {
+            notif_state
+                .notifies
+                .lock()
+                .unwrap()
+                .iter()
+                .any(|n| n.summary.contains("UCC Driver Alert") || n.body.contains("tuxedo_io"))
+        })
+        .await,
+        "DriverHealth alert delayed past 450ms by hung compositor helper"
+    );
+    assert!(after_spawn.elapsed() < Duration::from_millis(450));
+    assert!(
+        std::path::Path::new(&format!("/proc/{pid}")).exists(),
+        "DriverHealth arrived only after hyprctl exited rather than concurrently"
+    );
+
+    assert!(
+        poll_until(Duration::from_secs(3), || {
+            !std::path::Path::new(&format!("/proc/{pid}")).exists()
+        })
+        .await,
+        "timed-out hyprctl pid={pid} was not killed/reaped"
+    );
+
+    let _ = agent.kill().await;
+}

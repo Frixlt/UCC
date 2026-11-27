@@ -91,6 +91,11 @@ fn lightbar_notify_enabled(settings: &Value, policy: &Value) -> bool {
     managed && !silent && enabled
 }
 
+enum CompositorEvent {
+    RefreshConfig(Option<Value>),
+    LidConfig { closed: bool, cfg: Option<Value> },
+}
+
 struct SessionState {
     backend: RefreshBackend,
     drm_root: PathBuf,
@@ -98,6 +103,9 @@ struct SessionState {
     requested_hz: i32,
     pending_refresh: Option<(u32, RefreshPlan)>,
     last_notified_refresh: Option<(String, String)>,
+    refresh_task: Option<tokio::task::JoinHandle<()>>,
+    refresh_queued: bool,
+    lid_task: Option<tokio::task::JoinHandle<()>>,
 }
 
 impl SessionState {
@@ -114,8 +122,44 @@ impl SessionState {
         }
     }
 
-    async fn maybe_suggest_refresh(&mut self, notif: Option<&NotificationsProxy<'_>>) {
-        let Some(cfg) = query_compositor_config(self.backend).await else {
+    fn schedule_refresh_check(
+        &mut self,
+        comp_tx: &tokio::sync::mpsc::UnboundedSender<CompositorEvent>,
+    ) {
+        if self.refresh_task.is_some() {
+            self.refresh_queued = true;
+            return;
+        }
+        let backend = self.backend;
+        let tx = comp_tx.clone();
+        self.refresh_task = Some(tokio::spawn(async move {
+            let cfg = query_compositor_config(backend).await;
+            let _ = tx.send(CompositorEvent::RefreshConfig(cfg));
+        }));
+    }
+
+    fn schedule_lid_check(
+        &mut self,
+        closed: bool,
+        comp_tx: &tokio::sync::mpsc::UnboundedSender<CompositorEvent>,
+    ) {
+        if let Some(prev) = self.lid_task.take() {
+            prev.abort();
+        }
+        let backend = self.backend;
+        let tx = comp_tx.clone();
+        self.lid_task = Some(tokio::spawn(async move {
+            let cfg = query_compositor_config(backend).await;
+            let _ = tx.send(CompositorEvent::LidConfig { closed, cfg });
+        }));
+    }
+
+    async fn apply_compositor_config_for_refresh(
+        &mut self,
+        cfg: Option<Value>,
+        notif: Option<&NotificationsProxy<'_>>,
+    ) {
+        let Some(cfg) = cfg else {
             self.invalidate_pending_refresh(notif, true).await;
             return;
         };
@@ -146,12 +190,12 @@ impl SessionState {
         }
     }
 
-    async fn handle_refresh_action(
+    fn spawn_refresh_action(
         &mut self,
         id: u32,
         action_key: &str,
-        proxy: &UccdProxy<'_>,
-        notif: Option<&NotificationsProxy<'_>>,
+        proxy: UccdProxy<'static>,
+        notif: Option<NotificationsProxy<'static>>,
     ) {
         let matches_pending = self
             .pending_refresh
@@ -164,52 +208,56 @@ impl SessionState {
             return;
         };
         self.last_notified_refresh = None;
-        close_notify(notif, id).await;
+        let backend = self.backend;
+        let drm_root = self.drm_root.clone();
+        tokio::spawn(async move {
+            close_notify(notif.as_ref(), id).await;
 
-        let Ok(prof_raw) = proxy.get_active_profile_json().await else {
-            warn!("Aborting refresh apply: active profile re-query failed");
-            return;
-        };
-        let Ok(policy_raw) = proxy.get_power_policy_json().await else {
-            warn!("Aborting refresh apply: power policy re-query failed");
-            return;
-        };
-        self.requested_hz = parse_requested_hz(&prof_raw);
-        self.policy_source = parse_policy_source(&policy_raw);
+            let Ok(prof_raw) = proxy.get_active_profile_json().await else {
+                warn!("Aborting refresh apply: active profile re-query failed");
+                return;
+            };
+            let Ok(policy_raw) = proxy.get_power_policy_json().await else {
+                warn!("Aborting refresh apply: power policy re-query failed");
+                return;
+            };
+            let requested_hz = parse_requested_hz(&prof_raw);
+            let policy_source = parse_policy_source(&policy_raw);
 
-        let Some(cfg) = query_compositor_config(self.backend).await else {
-            warn!("Aborting refresh apply: compositor query failed");
-            return;
-        };
-        let Some(fresh_plan) =
-            RefreshAdvisor::plan(&cfg, &self.policy_source, &self.drm_root, self.requested_hz)
-        else {
-            warn!("Skipping stale refresh apply: offer is no longer applicable");
-            return;
-        };
-        if fresh_plan.output != saved_plan.output
-            || fresh_plan.target_mode != saved_plan.target_mode
-        {
-            warn!(
-                "Skipping stale refresh apply: plan changed from {}@{} to {}@{}",
-                saved_plan.output,
-                saved_plan.target_mode,
-                fresh_plan.output,
-                fresh_plan.target_mode
-            );
-            return;
-        }
-        if let Some(cmd) = self.backend.command_name() {
-            let cmd_args = RefreshAdvisor::apply_command_args(self.backend, &fresh_plan);
-            run_commands(vec![(cmd, cmd_args)]).await;
-            match query_compositor_config(self.backend).await {
-                Some(post_cfg) if RefreshAdvisor::applied(&post_cfg, &fresh_plan) => {}
-                _ => warn!(
-                    "Refresh command for {}@{} did not verify on compositor readback",
-                    fresh_plan.output, fresh_plan.target_mode
-                ),
+            let Some(cfg) = query_compositor_config(backend).await else {
+                warn!("Aborting refresh apply: compositor query failed");
+                return;
+            };
+            let Some(fresh_plan) =
+                RefreshAdvisor::plan(&cfg, &policy_source, &drm_root, requested_hz)
+            else {
+                warn!("Skipping stale refresh apply: offer is no longer applicable");
+                return;
+            };
+            if fresh_plan.output != saved_plan.output
+                || fresh_plan.target_mode != saved_plan.target_mode
+            {
+                warn!(
+                    "Skipping stale refresh apply: plan changed from {}@{} to {}@{}",
+                    saved_plan.output,
+                    saved_plan.target_mode,
+                    fresh_plan.output,
+                    fresh_plan.target_mode
+                );
+                return;
             }
-        }
+            if let Some(cmd) = backend.command_name() {
+                let cmd_args = RefreshAdvisor::apply_command_args(backend, &fresh_plan);
+                run_commands(vec![(cmd, cmd_args)]).await;
+                match query_compositor_config(backend).await {
+                    Some(post_cfg) if RefreshAdvisor::applied(&post_cfg, &fresh_plan) => {}
+                    _ => warn!(
+                        "Refresh command for {}@{} did not verify on compositor readback",
+                        fresh_plan.output, fresh_plan.target_mode
+                    ),
+                }
+            }
+        });
     }
 }
 
@@ -300,6 +348,7 @@ async fn main() {
     let mut lid_handler = LidDisplayHandler::new(backend);
     let mut parser = NotificationMonitorParser::new(own_bus_name);
 
+    let (comp_tx, mut comp_rx) = tokio::sync::mpsc::unbounded_channel();
     let mut state = SessionState {
         backend,
         drm_root: drm_root_from_env(),
@@ -307,6 +356,9 @@ async fn main() {
         requested_hz: 0,
         pending_refresh: None,
         last_notified_refresh: None,
+        refresh_task: None,
+        refresh_queued: false,
+        lid_task: None,
     };
 
     // Best-effort initial state hydration (minimal mocks may not implement every method).
@@ -335,7 +387,7 @@ async fn main() {
             }
         }
     }
-    state.maybe_suggest_refresh(notif_proxy.as_ref()).await;
+    state.schedule_refresh_check(&comp_tx);
 
     let health_poll_ms = std::env::var("UCC_HEALTH_POLL_MS")
         .ok()
@@ -370,7 +422,34 @@ async fn main() {
         tokio::select! {
             _ = tokio::signal::ctrl_c() => {
                 info!("Shutting down ucc-session-agent");
+                if let Some(t) = state.refresh_task.take() {
+                    t.abort();
+                }
+                if let Some(t) = state.lid_task.take() {
+                    t.abort();
+                }
                 break;
+            }
+            Some(ev) = comp_rx.recv() => {
+                match ev {
+                    CompositorEvent::RefreshConfig(cfg) => {
+                        state.refresh_task = None;
+                        state
+                            .apply_compositor_config_for_refresh(cfg, notif_proxy.as_ref())
+                            .await;
+                        if std::mem::take(&mut state.refresh_queued) {
+                            state.schedule_refresh_check(&comp_tx);
+                        }
+                    }
+                    CompositorEvent::LidConfig { closed, cfg } => {
+                        state.lid_task = None;
+                        let monitors = internal_monitors_from_config(cfg.as_ref());
+                        let cmds = lid_handler.on_lid_state_changed(closed, &monitors);
+                        if !cmds.is_empty() {
+                            tokio::spawn(run_commands(cmds));
+                        }
+                    }
+                }
             }
             _ = health_tick.tick() => {
                 if let Ok(raw) = proxy.get_driver_health_json().await {
@@ -428,7 +507,7 @@ async fn main() {
                         state.invalidate_pending_refresh(notif_proxy.as_ref(), true).await;
                         state.policy_source = new_source;
                     }
-                    state.maybe_suggest_refresh(notif_proxy.as_ref()).await;
+                    state.schedule_refresh_check(&comp_tx);
                 }
             }
             _ = state_tick.tick() => {
@@ -441,7 +520,7 @@ async fn main() {
                     if new_source != state.policy_source {
                         state.invalidate_pending_refresh(notif_proxy.as_ref(), true).await;
                         state.policy_source = new_source;
-                        state.maybe_suggest_refresh(notif_proxy.as_ref()).await;
+                        state.schedule_refresh_check(&comp_tx);
                     }
                 }
             }
@@ -469,7 +548,7 @@ async fn main() {
                 state.invalidate_pending_refresh(notif_proxy.as_ref(), true).await;
                 if let Ok(prof_raw) = proxy.get_active_profile_json().await {
                     state.requested_hz = parse_requested_hz(&prof_raw);
-                    state.maybe_suggest_refresh(notif_proxy.as_ref()).await;
+                    state.schedule_refresh_check(&comp_tx);
                 }
             }
             _ = next_optional(&mut dev_status_stream) => {
@@ -479,14 +558,12 @@ async fn main() {
             }
             sig = next_optional(&mut action_stream) => {
                 if let Ok(args) = sig.args() {
-                    state
-                        .handle_refresh_action(
-                            args.id,
-                            &args.action_key,
-                            &proxy,
-                            notif_proxy.as_ref(),
-                        )
-                        .await;
+                    state.spawn_refresh_action(
+                        args.id,
+                        &args.action_key,
+                        proxy.clone(),
+                        notif_proxy.clone(),
+                    );
                 }
             }
             sig = next_optional(&mut closed_stream) => {
@@ -500,26 +577,20 @@ async fn main() {
                 if let Ok(args) = sig.args() {
                     state.invalidate_pending_refresh(notif_proxy.as_ref(), true).await;
                     if !args.start {
-                        state.maybe_suggest_refresh(notif_proxy.as_ref()).await;
+                        state.schedule_refresh_check(&comp_tx);
                     }
                 }
             }
             prop = next_optional(&mut lid_closed_stream) => {
                 if let Ok(closed) = prop.get().await {
                     login1_active = true;
-                    let cfg = query_compositor_config(state.backend).await;
-                    let monitors = internal_monitors_from_config(cfg.as_ref());
-                    let cmds = lid_handler.on_lid_state_changed(closed, &monitors);
-                    run_commands(cmds).await;
+                    state.schedule_lid_check(closed, &comp_tx);
                 }
             }
             prop = next_optional(&mut upower_lid_stream) => {
                 if !login1_active {
                     if let Ok(closed) = prop.get().await {
-                        let cfg = query_compositor_config(state.backend).await;
-                        let monitors = internal_monitors_from_config(cfg.as_ref());
-                        let cmds = lid_handler.on_lid_state_changed(closed, &monitors);
-                        run_commands(cmds).await;
+                        state.schedule_lid_check(closed, &comp_tx);
                     }
                 }
             }
