@@ -109,11 +109,20 @@ QIcon icon(const QString &name) {
     for(int i=0;i<4;++i){p.save();p.translate(12,12);p.rotate(i*90);p.drawEllipse(QRectF(1,-9,6,7));p.restore();}
   } else if(name=="Power & Devices") {
     p.drawPolyline(QPolygonF{{13,3},{6,13},{11,13},{10,21},{18,11},{13,11},{13,3}});
-  } else if(name=="Lightbar") {
+  } else if(name=="Lighting" || name=="Lightbar") {
     p.drawRoundedRect(QRectF(3,10,18,4),2,2);
     for(int x : {7,12,17}) {
       p.drawLine(x,x==12 ? 5 : 6,x,8);
       p.drawLine(x,16,x,x==12 ? 19 : 18);
+    }
+  } else if(name=="Hardware") {
+    p.drawRoundedRect(QRectF(5,5,14,14),2,2);
+    p.drawRect(QRectF(9,9,6,6));
+    for(int k : {8,12,16}) {
+      p.drawLine(k,2,k,5);
+      p.drawLine(k,19,k,22);
+      p.drawLine(2,k,5,k);
+      p.drawLine(19,k,22,k);
     }
   } else if(name=="Battery & Processes") {
     p.drawRoundedRect(QRectF(3,6,16,12),2,2);
@@ -254,6 +263,30 @@ QCheckBox::indicator { width: 16px; height: 16px; }
 QTabWidget::pane { border: none; background: transparent; }
 QTabBar::tab { background: transparent; padding: 12px 18px; border-bottom: 2px solid transparent; }
 QTabBar::tab:selected { border-bottom: 2px solid @accent; color: @accent; }
+QTabWidget#lightingTabs::pane { border-top: 1px solid @border; background: transparent; padding-top: 12px; }
+QTabWidget#lightingTabs > QTabBar { background: transparent; }
+QTabWidget#lightingTabs > QTabBar::tab {
+  background: @inset;
+  color: @secondary;
+  border: 1px solid transparent;
+  border-bottom: none;
+  border-top-left-radius: 8px;
+  border-top-right-radius: 8px;
+  padding: 8px 18px;
+  margin-right: 4px;
+  min-width: 88px;
+}
+QTabWidget#lightingTabs > QTabBar::tab:hover {
+  background: @hover;
+  color: @text;
+}
+QTabWidget#lightingTabs > QTabBar::tab:selected {
+  background: @surface;
+  color: @accent;
+  border-color: @border;
+  border-top: 2px solid @accent;
+  font-weight: 600;
+}
 QScrollArea, QScrollArea > QWidget > QWidget { background: transparent; border: none; }
 QScrollBar:vertical { background: transparent; width: 8px; margin: 0; }
 QScrollBar::handle:vertical { background: @scrollbar; border-radius: 4px; min-height: 30px; }

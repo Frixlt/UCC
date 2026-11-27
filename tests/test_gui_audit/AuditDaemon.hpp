@@ -57,6 +57,7 @@ class AuditDaemon : public QDBusVirtualObject {
   bool deviceSupported=false;
   QString chargeType="Custom";
   QString customProfile,lastSavedProfile,chargingMode="stationary";
+  QString customFanProfiles,builtinFanProfiles;
 public:
   QString introspect(const QString &) const override {
     return "<interface name=\"com.uniwill.uccd\"><method name=\"GetWaterCoolerConnected\"><arg type=\"b\" direction=\"out\"/></method></interface>";
@@ -68,6 +69,10 @@ public:
       bus.send(msg.createReply(QString::fromUtf8(QJsonDocument(rows).toJson())));return true;
     }
     if(method=="TestCustomProfile") {customProfile=msg.arguments().value(0).toString();bus.send(msg.createReply(true));return true;}
+    if(method=="TestCustomFanProfiles") {customFanProfiles=msg.arguments().value(0).toString();bus.send(msg.createReply(true));return true;}
+    if(method=="GetCustomFanProfilesJSON" && !customFanProfiles.isEmpty()) {bus.send(msg.createReply(customFanProfiles));return true;}
+    if(method=="GetFanProfileNames" && !builtinFanProfiles.isEmpty()) {bus.send(msg.createReply(builtinFanProfiles));return true;}
+    if(method=="TestBuiltinFanProfiles") {builtinFanProfiles=msg.arguments().value(0).toString();bus.send(msg.createReply(true));return true;}
     if(method=="TestLastSavedProfile") {bus.send(msg.createReply(lastSavedProfile));return true;}
     if(method=="GetCustomProfilesJSON" && !customProfile.isEmpty()) {bus.send(msg.createReply("["+customProfile+"]"));return true;}
     if(method=="GetChargingProfilesAvailable") {bus.send(msg.createReply(QString("[\"stationary\",\"high_capacity\"]")));return true;}
@@ -102,7 +107,7 @@ public:
     else if (chargeWindowTest && method=="GetChargeStartThreshold") {result=chargeStart;}
     else if (chargeWindowTest && method=="GetChargeEndThreshold") {result=chargeEnd;}
     else if (method=="TestStats") result=QString::fromUtf8(QJsonDocument(QJsonObject{{"writes",writes},{"reads",reads}}).toJson());
-    else if (method=="TestReset") { customProfile.clear();lastSavedProfile.clear();chargingMode="stationary";writes={};reads={};runtimeProfile.clear();driverHealth.clear();lastAppliedProfile.clear();lastDeviceSettings.clear();lastLightbar.clear();failReads=false;failControl=false;visualFixture=false;coolerAuto=false;coolerEnabled=false;chargeWindowTest=false;ctgpTest=false;ctgpSupported=false;ctgpAvailable=false;ctgpDefault=0;ctgpMax=0;chargeStart=40;chargeEnd=80;applyDelayMs=0;deviceSupported=false;chargeType="Custom";result=true; }
+    else if (method=="TestReset") { customProfile.clear();customFanProfiles.clear();builtinFanProfiles.clear();lastSavedProfile.clear();chargingMode="stationary";writes={};reads={};runtimeProfile.clear();driverHealth.clear();lastAppliedProfile.clear();lastDeviceSettings.clear();lastLightbar.clear();failReads=false;failControl=false;visualFixture=false;coolerAuto=false;coolerEnabled=false;chargeWindowTest=false;ctgpTest=false;ctgpSupported=false;ctgpAvailable=false;ctgpDefault=0;ctgpMax=0;chargeStart=40;chargeEnd=80;applyDelayMs=0;deviceSupported=false;chargeType="Custom";result=true; }
     else if (method=="TestDelayApply") { applyDelayMs=msg.arguments().value(0).toInt();result=true; }
     else if (method=="TestDeviceSupported") { deviceSupported=msg.arguments().value(0).toBool();result=true; }
     else if (method=="TestFailReads") { failReads=msg.arguments().value(0).toBool();result=true; }

@@ -110,6 +110,8 @@ private slots:
     QVERIFY(nav);
     QVERIFY(pages);
     QCOMPARE(nav->count(), 11);
+    QCOMPARE(nav->item(5)->text(), QStringLiteral("Lighting"));
+    QCOMPARE(nav->item(6)->text(), QStringLiteral("Hardware"));
     QCOMPARE(nav->item(10)->text(), QStringLiteral("About"));
 
     const int expectedPageIndices[] = {0, 1, 2, 2, 3, 4, 5, 6, 7, 8, 9};
@@ -121,9 +123,19 @@ private slots:
       QCOMPARE(pages->currentIndex(), expectedPageIndices[row]);
     }
 
-    // Verify F45 Lid card & F-Experimental widgets exist inside live MainWindow.
+    // Verify Lighting browser tabs (non-closable), Hardware page, per-profile lid toggles,
+    // per-core monitor checkbox, and Experimental widgets exist inside live MainWindow.
+    auto *lightingTabs = window.findChild<QTabWidget *>(QStringLiteral("lightingTabs"));
+    QVERIFY(lightingTabs);
+    QVERIFY(!lightingTabs->tabsClosable());
+    QCOMPARE(lightingTabs->count(), 3);
+    QCOMPARE(lightingTabs->tabText(0), QStringLiteral("Keyboard"));
+    QCOMPARE(lightingTabs->tabText(1), QStringLiteral("Lightbar"));
+    QCOMPARE(lightingTabs->tabText(2), QStringLiteral("Logo"));
+    QVERIFY(window.findChild<QWidget *>(QStringLiteral("hardwarePage")));
     QVERIFY(window.findChild<QCheckBox *>(QStringLiteral("turnOffKeyboardBacklightOnLidClose")));
     QVERIFY(window.findChild<QCheckBox *>(QStringLiteral("turnOffWaterCoolerLedOnLidClose")));
+    QVERIFY(window.findChild<QCheckBox *>(QStringLiteral("monitorCpuCoreLoad")));
     QVERIFY(window.findChild<QWidget *>(QStringLiteral("experimentalPage")));
     QVERIFY(window.findChild<QLabel *>(QStringLiteral("experimentalBanner")));
 

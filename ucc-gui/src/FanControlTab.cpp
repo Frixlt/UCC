@@ -364,19 +364,69 @@ void FanControlTab::connectSignals()
 
 // Public helpers
 
+namespace {
+bool customFanHasWaterCoolerCurves( const QJsonObject &entry )
+{
+  QJsonObject obj = entry;
+  const QJsonValue jsonVal = entry.value( "json" );
+  if ( jsonVal.isObject() )
+    obj = jsonVal.toObject();
+  else if ( jsonVal.isString() ) {
+    const auto doc = QJsonDocument::fromJson( jsonVal.toString().toUtf8() );
+    if ( doc.isObject() )
+      obj = doc.object();
+  }
+  return !obj.value( "tableWaterCoolerFan" ).toArray().isEmpty()
+      || !obj.value( "waterCoolerFan" ).toArray().isEmpty()
+      || !obj.value( "tablePump" ).toArray().isEmpty()
+      || !obj.value( "pump" ).toArray().isEmpty();
+}
+} // namespace
+
+void FanControlTab::setWaterCoolerMode( bool wcMode )
+{
+  if ( m_waterCoolerMode == wcMode )
+    return;
+  m_waterCoolerMode = wcMode;
+  if ( !m_fanProfileCombo )
+    return;
+  const QString prevId = m_fanProfileCombo->currentData().toString();
+  {
+    const QSignalBlocker blocked( m_fanProfileCombo );
+    reloadFanProfiles();
+  }
+  const QString newId = m_fanProfileCombo->currentData().toString();
+  if ( !newId.isEmpty() && newId != prevId )
+    emit fanProfileChanged( newId );
+  updateButtonStates( m_uccdClient && m_uccdClient->isConnected() );
+}
+
 void FanControlTab::reloadFanProfiles()
 {
   QString prevId = m_fanProfileCombo ? m_fanProfileCombo->currentData().toString() : QString();
   if ( m_fanProfileCombo ) m_fanProfileCombo->clear();
   m_builtinFanProfiles.clear();
 
-  for ( const auto &v : m_profileManager->builtinFanProfilesData() )
+  const auto builtins = m_profileManager->builtinFanProfilesData();
+  QString defaultWcBuiltinId;
+  for ( const auto &v : builtins )
+  {
+    QJsonObject o = v.toObject();
+    QString id = o["id"].toString();
+    m_builtinFanProfiles.append( id );
+    if ( id == QStringLiteral("fan-balanced") )
+      defaultWcBuiltinId = id;
+  }
+  if ( defaultWcBuiltinId.isEmpty() && !m_builtinFanProfiles.isEmpty() )
+    defaultWcBuiltinId = m_builtinFanProfiles.first();
+
+  for ( const auto &v : builtins )
   {
     QJsonObject o = v.toObject();
     QString id = o["id"].toString();
     QString name = o["name"].toString();
-    m_fanProfileCombo->addItem( name, id );
-    m_builtinFanProfiles.append( id );
+    if ( !m_waterCoolerMode || id == defaultWcBuiltinId )
+      m_fanProfileCombo->addItem( name, id );
   }
 
   for ( const auto &v : m_profileManager->customFanProfilesData() )
@@ -384,17 +434,28 @@ void FanControlTab::reloadFanProfiles()
     QJsonObject o = v.toObject();
     QString id = o["id"].toString();
     QString name = o["name"].toString();
-    if ( !m_builtinFanProfiles.contains( id ) )
-      m_fanProfileCombo->addItem( name, id );
+    if ( m_builtinFanProfiles.contains( id ) )
+      continue;
+    if ( m_waterCoolerMode && !customFanHasWaterCoolerCurves( o ) )
+      continue;
+    m_fanProfileCombo->addItem( name, id );
   }
 
-  // Restore selection by ID
-
+  // Restore selection by ID when still visible in the active mode
   if ( !prevId.isEmpty() )
   {
     for ( int i = 0; i < m_fanProfileCombo->count(); ++i )
     {
       if ( m_fanProfileCombo->itemData( i ).toString() == prevId )
+      { m_fanProfileCombo->setCurrentIndex( i ); return; }
+    }
+  }
+  if ( m_waterCoolerMode )
+  {
+    // Prefer the first custom water-cooler profile if available, otherwise the single built-in default
+    for ( int i = 0; i < m_fanProfileCombo->count(); ++i )
+    {
+      if ( !m_builtinFanProfiles.contains( m_fanProfileCombo->itemData( i ).toString() ) )
       { m_fanProfileCombo->setCurrentIndex( i ); return; }
     }
   }

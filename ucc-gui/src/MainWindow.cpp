@@ -271,7 +271,7 @@ void MainWindow::setupUI()
   sideLayout->addWidget(device);sideLayout->addSpacing(20);
   auto *navigation=new QListWidget(sidebar);navigation->setObjectName("navigation");
   navigation->setIconSize(QSize(24,24));
-  const QStringList labels={"Overview","Profiles","Cooler Settings","Watercool Settings","Monitor","Keyboard & Hardware","Power & Devices","Lightbar","Battery & Processes","Experimental","About"};
+  const QStringList labels={"Overview","Profiles","Cooler Settings","Watercool Settings","Monitor","Lighting","Hardware","Power & Devices","Battery & Processes","Experimental","About"};
   for(const auto &label:labels) new QListWidgetItem(FluentTheme::icon(label),label,navigation);
   sideLayout->addWidget(navigation,1);
   auto *footer=new QWidget(sidebar);footer->setObjectName("sidebarFooter");
@@ -357,14 +357,17 @@ void MainWindow::setupUI()
   auto showNavigationHeading=[heading,subtitle,labels](int row) {
     if(row<0 || row>=labels.size()) return;
     heading->setText(labels[row]);
-    const QStringList descriptions={"Your system at a glance","Power, cooling and lighting in one profile","Shape CPU and GPU cooling for your profile","Water cooling, pump and lighting controls","Live system telemetry","Backlight and device controls","CPU, modules and device policies for every power source","Front lighting and notification animations","Battery power and your NVIDIA processes","Preview and experimental settings under development","Build information, project origins and open-source acknowledgements"};
+    const QStringList descriptions={"Your system at a glance","Power, cooling and lighting in one profile","Shape CPU and GPU cooling for your profile","Water cooling, pump and lighting controls","Live system telemetry","Keyboard backlight, lightbar and chassis logo lighting","Display brightness, webcam and hardware toggles","CPU, modules and device policies for every power source","Battery power and your NVIDIA processes","Preview and experimental settings under development","Build information, project origins and open-source acknowledgements"};
     subtitle->setText(descriptions.value(row));
   };
   connect(navigation,&QListWidget::currentRowChanged,this,[this,showNavigationHeading](int row){
     if(row<0 || row>10) return;
     const int pages[]={0,1,2,2,3,4,5,6,7,8,9};
     if(row==3 && !m_waterCoolerSupported) return;
-    if(m_fanControlTab && (row==2 || row==3)) m_fanControlTab->findChild<QTabWidget *>("coolingPages")->setCurrentIndex(row-2);
+    if(m_fanControlTab && (row==2 || row==3)) {
+      m_fanControlTab->setWaterCoolerMode(row==3);
+      m_fanControlTab->findChild<QTabWidget *>("coolingPages")->setCurrentIndex(row-2);
+    }
     const bool samePage=m_tabs->currentIndex()==pages[row];
     m_tabs->setCurrentIndex(pages[row]);showNavigationHeading(row);
     if(samePage) m_entrance->play();
@@ -408,14 +411,11 @@ void MainWindow::setupUI()
   m_monitorTab = new MonitorTab( m_UccdClient.get(), this );
   m_tabs->addTab( m_monitorTab, "Monitor" );
 
-  setupKeyboardBacklightPage();
+  setupLightingPage();
   setupHardwarePage();
   auto *powerDevices=new PowerDevicesTab(m_UccdClient.get(),this);
   connect(powerDevices,&PowerDevicesTab::message,statusBar(),[this](const QString &text){statusBar()->showMessage(text);});
   m_tabs->addTab(powerDevices,"Power & Devices");
-  auto *lightbar=new LightbarTab(m_UccdClient.get(),this);
-  connect(lightbar,&LightbarTab::message,statusBar(),[this](const QString &text){statusBar()->showMessage(text);});
-  m_tabs->addTab(lightbar,"Lightbar");
   auto *desktopPage=new QWidget;auto *desktopLayout=new QVBoxLayout(desktopPage);desktopLayout->setContentsMargins(0,0,0,0);
   auto *minimized=new QCheckBox("Start Control Center minimized");minimized->setObjectName("startMinimized");minimized->setChecked(startMinimizedPreference());minimized->setEnabled(!readOnlyPreview);desktopLayout->addWidget(minimized);
   connect(minimized,&QCheckBox::toggled,this,[](bool value){if(!readOnlyPreview) QSettings("UniwillControlCenter","desktop").setValue("startMinimized",value);});
@@ -443,10 +443,72 @@ void MainWindow::setupUI()
   navigation->setCurrentRow(0);
 }
 
+void MainWindow::setupLightingPage()
+{
+  auto *lightingPage = new QWidget( this );
+  auto *lightingLayout = new QVBoxLayout( lightingPage );
+  lightingLayout->setContentsMargins( 0, 0, 0, 0 );
+  lightingLayout->setSpacing( 0 );
+
+  m_lightingTabs = new QTabWidget( lightingPage );
+  m_lightingTabs->setObjectName( "lightingTabs" );
+  m_lightingTabs->setDocumentMode( true );
+  m_lightingTabs->setTabsClosable( false );
+  m_lightingTabs->setMovable( false );
+
+  setupKeyboardBacklightPage( m_lightingTabs );
+
+  auto *lightbar = new LightbarTab( m_UccdClient.get(), m_lightingTabs );
+  connect( lightbar, &LightbarTab::message, statusBar(),
+           [this]( const QString &text ) { statusBar()->showMessage( text ); } );
+  m_lightingTabs->addTab( lightbar, "Lightbar" );
+
+  auto *logoPage = new QWidget( m_lightingTabs );
+  logoPage->setObjectName( "logoLightingPage" );
+  auto *logoLayout = new QVBoxLayout( logoPage );
+  logoLayout->setContentsMargins( 0, 0, 0, 0 );
+  logoLayout->setSpacing( 12 );
+  auto *logoCard = FluentTheme::createCard();
+  auto *logoCardLayout = new QVBoxLayout( logoCard );
+  logoCardLayout->setContentsMargins( 24, 20, 24, 20 );
+  logoCardLayout->setSpacing( 8 );
+  auto *logoTitle = new QLabel( "Lid Logo Lighting" );
+  logoTitle->setObjectName( "cardTitle" );
+  auto *logoBadge = new QLabel( "Planned · M14" );
+  logoBadge->setObjectName( "subheading" );
+  auto *logoDesc = new QLabel(
+    "Chassis lid logo LED control (ITE 048D:7001 / 7000) will appear here once hardware support is implemented." );
+  logoDesc->setObjectName( "muted" );
+  logoDesc->setWordWrap( true );
+  logoCardLayout->addWidget( logoTitle );
+  logoCardLayout->addWidget( logoBadge );
+  logoCardLayout->addWidget( logoDesc );
+  logoLayout->addWidget( logoCard );
+  logoLayout->addStretch( 1 );
+  m_lightingTabs->addTab( logoPage, "Logo" );
+
+  connect( m_lightingTabs, &QTabWidget::currentChanged, this, [this]( int subIndex ) {
+    if ( m_tabs && m_tabs->currentIndex() == 4 && subIndex == 0 )
+      refreshKeyboardLightingState();
+  } );
+
+  lightingLayout->addWidget( m_lightingTabs );
+  m_tabs->addTab( lightingPage, "Lighting" );
+}
+
 void MainWindow::setupHardwarePage()
 {
-  //m_hardwareTab = new HardwareTab( m_systemMonitor.get(), this );
-  //m_tabs->addTab( m_hardwareTab, "Hardware" );
+  auto *scroll = new QScrollArea( this );
+  scroll->setObjectName( "hardwarePage" );
+  scroll->setWidgetResizable( true );
+  auto *hwContainer = new QWidget();
+  auto *hwLayout = new QVBoxLayout( hwContainer );
+  hwLayout->setContentsMargins( 0, 0, 0, 0 );
+  hwLayout->setSpacing( 16 );
+  m_hardwareTab = new HardwareTab( m_systemMonitor.get(), hwContainer );
+  hwLayout->addStretch( 1 );
+  scroll->setWidget( hwContainer );
+  m_tabs->addTab( scroll, "Hardware" );
 }
 
 void MainWindow::setupFanControlTab()
@@ -666,6 +728,18 @@ void MainWindow::setupProfilesPage()
   m_profileRefreshRate->setToolTip("Applies automatically when this profile becomes active. Keeps the current resolution and uses only modes supported by the internal display.");
   detailsLayout->addWidget(new QLabel("Display refresh rate"), row, 0);
   detailsLayout->addWidget(m_profileRefreshRate, row, 1);
+  row++;
+
+  m_profileLidOffKbd = new QCheckBox("Turn off keyboard backlight when lid closes");
+  m_profileLidOffKbd->setObjectName("turnOffKeyboardBacklightOnLidClose");
+  m_profileLidOffKbd->setToolTip("Temporarily sets keyboard zones to brightness 0 while the lid is closed and restores them when reopened.");
+  detailsLayout->addWidget(m_profileLidOffKbd, row, 0, 1, 2);
+  row++;
+
+  m_profileLidOffWcLed = new QCheckBox("Turn off water cooler LED when lid closes (if connected)");
+  m_profileLidOffWcLed->setObjectName("turnOffWaterCoolerLedOnLidClose");
+  m_profileLidOffWcLed->setToolTip("Turns off the external water cooler RGB LED while the lid is closed and restores it when reopened.");
+  detailsLayout->addWidget(m_profileLidOffWcLed, row, 0, 1, 2);
   row++;
 
   // Add spacer
@@ -1128,6 +1202,10 @@ void MainWindow::connectSignals()
   connect( m_setBrightnessCheckBox, &QCheckBox::toggled,
            this, &MainWindow::markChanged );
   connect(m_profileRefreshRate, &QComboBox::currentIndexChanged, this, &MainWindow::markChanged);
+  if ( m_profileLidOffKbd )
+    connect( m_profileLidOffKbd, &QCheckBox::toggled, this, &MainWindow::markChanged );
+  if ( m_profileLidOffWcLed )
+    connect( m_profileLidOffWcLed, &QCheckBox::toggled, this, &MainWindow::markChanged );
 
   connect( m_brightnessSlider, &QSlider::valueChanged,
            this, [this]() { markChanged(); } );
@@ -1135,12 +1213,15 @@ void MainWindow::connectSignals()
   connect( m_profileFanProfileCombo, QOverload< int >::of( &QComboBox::currentIndexChanged ),
            this, [this](int index) {
              markChanged();
-             // Update fan profile tab to match profile tab selection
+             const QString fpId = m_profileFanProfileCombo->itemData(index).toString();
+             // Update fan profile tab to match profile tab selection when visible in current filter
              m_fanControlTab->fanProfileCombo()->blockSignals(true);
-             m_fanControlTab->fanProfileCombo()->setCurrentIndex(index);
+             const int tabIdx = m_fanControlTab->fanProfileCombo()->findData(fpId);
+             if (tabIdx >= 0)
+               m_fanControlTab->fanProfileCombo()->setCurrentIndex(tabIdx);
              m_fanControlTab->fanProfileCombo()->blockSignals(false);
              // Load the fan curves for the new profile
-             onFanProfileChanged(m_profileFanProfileCombo->currentData().toString());
+             onFanProfileChanged(fpId);
            } );
 
   connect( m_autoWaterControlCheckBox, &QCheckBox::toggled,
@@ -1380,8 +1461,15 @@ void MainWindow::onTabChanged( int index )
       m_fanControlTab->pumpEditor()->clearCrosshair();
   }
 
-  // Load current keyboard backlight states when keyboard tab (index 4) is activated
-  if ( index == 4 )
+  // Load current keyboard backlight states when Lighting -> Keyboard tab is active
+  if ( index == 4 && ( !m_lightingTabs || m_lightingTabs->currentIndex() == 0 ) )
+  {
+    refreshKeyboardLightingState();
+  }
+}
+
+void MainWindow::refreshKeyboardLightingState()
+{
   {
     if ( m_keyboardVisualizer )
     {
@@ -1800,6 +1888,8 @@ void MainWindow::loadProfileDetails( const QString &profileId )
   m_odmPowerLimit3Slider->blockSignals( true );
   m_profileKeyboardProfileCombo->blockSignals( true );
   m_keyboardProfileCombo->blockSignals( true );
+  if ( m_profileLidOffKbd ) m_profileLidOffKbd->blockSignals( true );
+  if ( m_profileLidOffWcLed ) m_profileLidOffWcLed->blockSignals( true );
   m_mainsButton->blockSignals( true );
   m_typeCButton->blockSignals(true);
   m_batteryButton->blockSignals( true );
@@ -1865,7 +1955,9 @@ void MainWindow::loadProfileDetails( const QString &profileId )
       if ( idx >= 0 )
       {
         m_profileFanProfileCombo->setCurrentIndex( idx );
-        m_fanControlTab->fanProfileCombo()->setCurrentIndex( idx );
+        const int tabIdx = m_fanControlTab->fanProfileCombo()->findData( fanProfileRef );
+        if ( tabIdx >= 0 )
+          m_fanControlTab->fanProfileCombo()->setCurrentIndex( tabIdx );
         loadedFanProfile = m_profileFanProfileCombo->itemData( idx ).toString();
       }
       else
@@ -2086,6 +2178,28 @@ void MainWindow::loadProfileDetails( const QString &profileId )
   // "keyboard" object in profiles is ignored to avoid overriding
   // the hardware brightness with stale saved values.
 
+  // Load per-profile lid lighting toggles with fallback to global powerDevices.lid defaults
+  bool defaultLidOffKbd = true;
+  bool defaultLidOffWcLed = false;
+  if ( auto pdJson = m_UccdClient->getPowerDeviceSettingsJSON() )
+  {
+    const auto pdDoc = QJsonDocument::fromJson( QByteArray::fromStdString( *pdJson ) );
+    const auto pdLid = pdDoc.object().value( "lid" ).toObject();
+    if ( pdLid.contains( "turnOffKeyboardBacklightOnLidClose" ) )
+      defaultLidOffKbd = pdLid.value( "turnOffKeyboardBacklightOnLidClose" ).toBool( true );
+    if ( pdLid.contains( "turnOffWaterCoolerLedOnLidClose" ) )
+      defaultLidOffWcLed = pdLid.value( "turnOffWaterCoolerLedOnLidClose" ).toBool( false );
+  }
+  const auto lidObj = obj.value( "lid" ).toObject();
+  if ( m_profileLidOffKbd )
+    m_profileLidOffKbd->setChecked( lidObj.contains( "turnOffKeyboardBacklightOnLidClose" )
+                                     ? lidObj.value( "turnOffKeyboardBacklightOnLidClose" ).toBool( defaultLidOffKbd )
+                                     : defaultLidOffKbd );
+  if ( m_profileLidOffWcLed )
+    m_profileLidOffWcLed->setChecked( lidObj.contains( "turnOffWaterCoolerLedOnLidClose" )
+                                       ? lidObj.value( "turnOffWaterCoolerLedOnLidClose" ).toBool( defaultLidOffWcLed )
+                                       : defaultLidOffWcLed );
+
   // Load power state activation settings
   if ( QString settingsJson = m_profileManager->getSettingsJSON(); !settingsJson.isEmpty() )
   {
@@ -2133,6 +2247,8 @@ void MainWindow::loadProfileDetails( const QString &profileId )
   m_odmPowerLimit3Slider->blockSignals( false );
   m_profileKeyboardProfileCombo->blockSignals( false );
   m_keyboardProfileCombo->blockSignals( false );
+  if ( m_profileLidOffKbd ) m_profileLidOffKbd->blockSignals( false );
+  if ( m_profileLidOffWcLed ) m_profileLidOffWcLed->blockSignals( false );
   m_mainsButton->blockSignals( false );
   m_typeCButton->blockSignals(false);
   m_batteryButton->blockSignals( false );
@@ -2223,8 +2339,10 @@ void MainWindow::updateProfileEditingWidgets( bool isCustom )
   if ( m_maxFrequencySlider ) m_maxFrequencySlider->setEnabled( isCustom );
   if ( m_hwpDynamicBoostCheckBox ) m_hwpDynamicBoostCheckBox->setEnabled( isCustom );
 
-  // Keyboard profile
+  // Keyboard profile and per-profile lid lighting
   if ( m_profileKeyboardProfileCombo ) m_profileKeyboardProfileCombo->setEnabled( isCustom );
+  if ( m_profileLidOffKbd ) m_profileLidOffKbd->setEnabled( isCustom && !readOnlyPreview );
+  if ( m_profileLidOffWcLed ) m_profileLidOffWcLed->setEnabled( isCustom && !readOnlyPreview );
 
   // ODM Power controls
   if ( m_odmPowerLimit1Slider ) m_odmPowerLimit1Slider->setEnabled( isCustom );
@@ -2402,6 +2520,16 @@ QString MainWindow::buildProfileJSON() const
     keyboardObj["brightness"] = m_keyboardBrightnessSlider->value();
   profileObj["keyboard"]               = keyboardObj;
   profileObj["selectedKeyboardProfile"] = keyboardProfileId;
+
+  if ( m_profileLidOffKbd || m_profileLidOffWcLed )
+  {
+    QJsonObject lidObj;
+    if ( m_profileLidOffKbd )
+      lidObj["turnOffKeyboardBacklightOnLidClose"] = m_profileLidOffKbd->isChecked();
+    if ( m_profileLidOffWcLed )
+      lidObj["turnOffWaterCoolerLedOnLidClose"] = m_profileLidOffWcLed->isChecked();
+    profileObj["lid"] = lidObj;
+  }
 
   return QString::fromUtf8( QJsonDocument( profileObj ).toJson() );
 }
@@ -2860,17 +2988,38 @@ void MainWindow::onCpuFanPointsChanged(const QVector<FanCurveEditorWidget::Point
 
 void MainWindow::reloadFanProfiles()
 {
-  // Delegate to FanControlTab which owns the combo and builtin list
+  // Delegate to FanControlTab which owns the fan-control combo and builtin list
   m_fanControlTab->reloadFanProfiles();
 
-  // Mirror into profile page combo if present
+  // Populate the Profiles page combo with ALL built-in + custom fan profiles regardless of Watercool filter
   if ( m_profileFanProfileCombo )
   {
+    const QString prevId = m_profileFanProfileCombo->currentData().toString();
     m_profileFanProfileCombo->blockSignals(true);
     m_profileFanProfileCombo->clear();
-    for ( int i = 0; i < m_fanControlTab->fanProfileCombo()->count(); ++i )
-      m_profileFanProfileCombo->addItem( m_fanControlTab->fanProfileCombo()->itemText(i),
-                                         m_fanControlTab->fanProfileCombo()->itemData(i) );
+    QStringList seenIds;
+    for ( const auto &v : m_profileManager->builtinFanProfilesData() )
+    {
+      if ( !v.isObject() ) continue;
+      QJsonObject o = v.toObject();
+      QString id = o["id"].toString();
+      m_profileFanProfileCombo->addItem( o["name"].toString(), id );
+      seenIds.append( id );
+    }
+    for ( const auto &v : m_profileManager->customFanProfilesData() )
+    {
+      if ( !v.isObject() ) continue;
+      QJsonObject o = v.toObject();
+      QString id = o["id"].toString();
+      if ( !seenIds.contains( id ) )
+        m_profileFanProfileCombo->addItem( o["name"].toString(), id );
+    }
+    if ( !prevId.isEmpty() )
+    {
+      const int idx = m_profileFanProfileCombo->findData( prevId );
+      if ( idx >= 0 )
+        m_profileFanProfileCombo->setCurrentIndex( idx );
+    }
     m_profileFanProfileCombo->blockSignals(false);
   }
 

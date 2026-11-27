@@ -799,9 +799,7 @@ impl LiveUccdBackend {
         };
         let state = rgb_state_from_mode(mode_val);
         if self.is_lid_closed()
-            && self
-                .current_lid_source_policy()
-                .turn_off_water_cooler_led_on_lid_close
+            && self.effective_lid_lighting_policy().1
             && self.is_water_cooler_connected_now()
         {
             *self.lock_mutex(&self.lid_saved_wc_rgb) = Some(ucc_hardware::RgbTarget::Color {

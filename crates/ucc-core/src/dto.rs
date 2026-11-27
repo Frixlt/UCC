@@ -366,6 +366,7 @@ impl LegacyProfileDto {
             webcam,
             fan,
             keyboard,
+            lid: None,
             odm_profile_name: self.odm_profile.and_then(|o| o.name),
             odm_power_limits,
             nvidia_ctgp_offset: self.nvidia_ctgp_offset,

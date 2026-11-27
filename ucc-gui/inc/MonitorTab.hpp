@@ -33,6 +33,8 @@
 #include <QGraphicsRectItem>
 #include <QGraphicsLineItem>
 #include <QLabel>
+#include <QFrame>
+#include <QGridLayout>
 #include <QStackedWidget>
 #include <QSettings>
 #include <QStatusBar>
@@ -98,8 +100,14 @@ private:
   void setupPowerChart();
   void setupFrequencyChart();
   void setupVoltageChart();
+  void setupCoreLoadCard();
   void setupControls();
   void setupUnifiedChart();
+  void sampleAndUpdateCoreLoad( qint64 timestampMs );
+  void trimCoreLoadSeries();
+  void ensureCoreSeries( int coreCount );
+  QColor coreSeriesColor( int coreIndex, int coreCount ) const;
+  void updateCoreHighlight();
 
   /** Apply a new time window (clears series, re-fetches, updates label). */
   void setTimeWindow( int seconds );
@@ -167,24 +175,46 @@ private:
   QChart *m_powerChart    = nullptr;
   QChart *m_freqChart     = nullptr;
   QChart *m_voltChart     = nullptr;
+  QChart *m_coreLoadChart = nullptr;
 
-  QChartView *m_tempChartView  = nullptr;
-  QChartView *m_dutyChartView  = nullptr;
-  QChartView *m_powerChartView = nullptr;
-  QChartView *m_freqChartView  = nullptr;
-  QChartView *m_voltChartView  = nullptr;
+  QChartView *m_tempChartView     = nullptr;
+  QChartView *m_dutyChartView     = nullptr;
+  QChartView *m_powerChartView    = nullptr;
+  QChartView *m_freqChartView     = nullptr;
+  QChartView *m_voltChartView     = nullptr;
+  QChartView *m_coreLoadChartView = nullptr;
 
-  QDateTimeAxis *m_tempXAxis  = nullptr;
-  QDateTimeAxis *m_dutyXAxis  = nullptr;
-  QDateTimeAxis *m_powerXAxis = nullptr;
-  QDateTimeAxis *m_freqXAxis  = nullptr;
-  QDateTimeAxis *m_voltXAxis  = nullptr;
+  QDateTimeAxis *m_tempXAxis     = nullptr;
+  QDateTimeAxis *m_dutyXAxis     = nullptr;
+  QDateTimeAxis *m_powerXAxis    = nullptr;
+  QDateTimeAxis *m_freqXAxis     = nullptr;
+  QDateTimeAxis *m_voltXAxis     = nullptr;
+  QDateTimeAxis *m_coreLoadXAxis = nullptr;
 
-  QValueAxis *m_tempYAxis  = nullptr;
-  QValueAxis *m_dutyYAxis  = nullptr;
-  QValueAxis *m_powerYAxis = nullptr;
-  QValueAxis *m_freqYAxis  = nullptr;
-  QValueAxis *m_voltYAxis  = nullptr;
+  QValueAxis *m_tempYAxis     = nullptr;
+  QValueAxis *m_dutyYAxis     = nullptr;
+  QValueAxis *m_powerYAxis    = nullptr;
+  QValueAxis *m_freqYAxis     = nullptr;
+  QValueAxis *m_voltYAxis     = nullptr;
+  QValueAxis *m_coreLoadYAxis = nullptr;
+
+  // Per-core CPU load card
+  struct CoreCpuSample
+  {
+    quint64 busy  = 0;
+    quint64 total = 0;
+    bool    valid = false;
+  };
+  QCheckBox                    *m_coreLoadCheckBox = nullptr;
+  QFrame                       *m_coreLoadCard     = nullptr;
+  QFrame                       *m_coreLoadSwatch   = nullptr;
+  QLabel                       *m_coreLoadSummary  = nullptr;
+  QGridLayout                  *m_coreBadgesLayout = nullptr;
+  std::vector< CoreCpuSample >  m_prevCoreSamples;
+  std::vector< QLineSeries * >  m_coreSeries;
+  std::vector< QList< QPointF > > m_coreBuffers;
+  std::vector< QPushButton * >  m_coreBadges;
+  int                           m_highlightedCore  = -1;
 
   // Unified "all-in-one" chart
   QChart          *m_unifiedChart     = nullptr;

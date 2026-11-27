@@ -129,8 +129,10 @@ namespace ucc
     void setupUI();
     void setupDashboardPage();
     void setupProfilesPage();
+    void setupLightingPage();
     void setupHardwarePage();
-    void setupKeyboardBacklightPage();
+    void setupKeyboardBacklightPage( QTabWidget *targetTabs = nullptr );
+    void refreshKeyboardLightingState();
     void connectKeyboardBacklightPageWidgets();
     void loadFanPoints();
     void saveFanPoints();
@@ -166,6 +168,7 @@ namespace ucc
 
     // Tab widget
     QTabWidget *m_tabs = nullptr;
+    QTabWidget *m_lightingTabs = nullptr;
     FluentEntrance *m_entrance = nullptr;
 
     // Dashboard tab
@@ -193,12 +196,14 @@ namespace ucc
     constexpr bool profileTopWidgetsAvailable() const
     { return m_applyButton && m_saveButton && m_copyProfileButton && m_removeProfileButton && m_profileCombo; }
 
-    // Display controls
+    // Display and lid lighting controls
     QCheckBox *m_setBrightnessCheckBox = nullptr;
     QComboBox *m_profileRefreshRate = nullptr;
     QSlider *m_brightnessSlider = nullptr;
     QLabel *m_brightnessValueLabel = nullptr;
     QComboBox *m_profileKeyboardProfileCombo = nullptr;
+    QCheckBox *m_profileLidOffKbd = nullptr;
+    QCheckBox *m_profileLidOffWcLed = nullptr;
 
     // Charging profile (per-profile firmware-level mode)
 

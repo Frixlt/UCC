@@ -87,6 +87,10 @@ public:
   /** Reload combo items from daemon + custom store. */
   void reloadFanProfiles();
 
+  /** Switch between air Cooler Settings (false) and Watercool Settings (true) filtering. */
+  void setWaterCoolerMode( bool wcMode );
+  bool isWaterCoolerMode() const { return m_waterCoolerMode; }
+
   /** Update button enable states. */
   void updateButtonStates( bool uccdConnected );
 
@@ -163,6 +167,7 @@ private:
   bool m_autoControl = true;
   bool m_waterCoolerReadPending = false;
   bool m_waterCoolerSupported = false;
+  bool m_waterCoolerMode = false;
 };
 
 } // namespace ucc

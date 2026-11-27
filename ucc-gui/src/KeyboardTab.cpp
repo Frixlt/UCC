@@ -71,7 +71,7 @@ void MainWindow::connectKeyboardBacklightPageWidgets()
            this, &MainWindow::onRemoveKeyboardProfileClicked );
 }
 
-void MainWindow::setupKeyboardBacklightPage()
+void MainWindow::setupKeyboardBacklightPage( QTabWidget *targetTabs )
 {
   auto *page=new QWidget();auto *pageLayout=new QVBoxLayout(page);pageLayout->setContentsMargins(0,0,0,0);
   auto *scroll=new QScrollArea(page);scroll->setWidgetResizable(true);pageLayout->addWidget(scroll);
@@ -187,9 +187,11 @@ void MainWindow::setupKeyboardBacklightPage()
     lightingLayout->addWidget(noSupportLabel);
   }
 
-  m_tabs->addTab(page,"Keyboard and Hardware");
-  m_hardwareTab=new HardwareTab(m_systemMonitor.get(),keyboardWidget);
   mainLayout->addStretch();
+  if ( targetTabs )
+    targetTabs->addTab( page, "Keyboard" );
+  else
+    m_tabs->addTab( page, "Keyboard and Hardware" );
 }
 
 void MainWindow::reloadKeyboardProfiles()

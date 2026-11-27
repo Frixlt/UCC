@@ -88,7 +88,7 @@ void GuiAudit::renderReleaseGallery() {
     ucc::MainWindow window;window.resize(1440,1000);window.show();
     auto *navigation=window.findChild<QListWidget*>("navigation");QVERIFY(navigation);
     auto *processes=window.findChild<ucc::SessionProcessesWidget*>();QVERIFY(processes);
-    const QStringList names={"overview","profiles","cooler-settings","watercool-settings","monitor","keyboard-hardware","power-devices","lightbar","battery-processes","experimental","about"};
+    const QStringList names={"overview","profiles","cooler-settings","watercool-settings","monitor","lighting","hardware","power-devices","battery-processes","experimental","about"};
     QCOMPARE(navigation->count(),names.size());
     for(int page=0;page<names.size();++page) {
       navigation->setCurrentRow(page);QTest::qWait(page==0 || page==4 ? 2400 : 450);
@@ -123,7 +123,7 @@ void GuiAudit::renderReferencePages() {
     QVERIFY2(hasConnectedStatus,"Overview must reflect the current cooler connection, not its initial placeholder");
     const QString output=qEnvironmentVariable("UCC_SCREENSHOT_DIR");
     if(!output.isEmpty()) QVERIFY(QDir().mkpath(output));
-    const QList<QPair<int,QString>> refPages={{0,"overview"},{1,"profiles"},{2,"cooler-settings"},{3,"watercool-settings"},{4,"monitor"},{5,"keyboard-hardware"},{10,"about"}};
+    const QList<QPair<int,QString>> refPages={{0,"overview"},{1,"profiles"},{2,"cooler-settings"},{3,"watercool-settings"},{4,"monitor"},{5,"lighting"},{6,"hardware"},{10,"about"}};
     for(const auto &[row,name]:refPages){navigation->setCurrentRow(row);QTest::qWait(row==3 ? 2400 : 400);if(row==2 || row==3){auto *cooling=window.findChild<QTabWidget *>("coolingPages");QVERIFY(cooling);QCOMPARE(cooling->currentIndex(),row-2);QVERIFY(!cooling->tabBar()->isVisible());}if(!output.isEmpty()) QVERIFY(window.grab().save(output+"/"+name+".png"));}
     if(!output.isEmpty()) {
       navigation->setCurrentRow(10);QTest::qWait(350);

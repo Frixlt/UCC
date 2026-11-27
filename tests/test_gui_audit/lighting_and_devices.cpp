@@ -1,4 +1,5 @@
 #include "GuiAudit.hpp"
+#include "PowerDevicesTab.hpp"
 
 void GuiAudit::standaloneTrayShowsModesAndHonorsCommandFailures() {
     control("TestVisualFixture");QTemporaryDir root;ucc::SessionPaths paths{root.path()+"/sys",root.path()+"/pci",root.path()+"/proc",root.path()+"/nvidia"};ucc::DesktopTray tray(client.get(),paths);
@@ -58,9 +59,16 @@ void GuiAudit::sessionAgentRelaysOnlyNotificationEvents() {
   }
 void GuiAudit::lightbarKeepsSourceValuesAndRejectsFailedCommands() {
     control("TestVisualFixture");ucc::MainWindow window;window.resize(1280,900);window.show();
-    auto *navigation=window.findChild<QListWidget*>("navigation");QVERIFY(navigation);navigation->setCurrentRow(7);QTest::qWait(350);
-    QCOMPARE(window.findChild<QLabel*>("pageTitle")->text(),QString("Lightbar"));
-    QCOMPARE(window.findChild<QTabWidget*>("pages")->currentIndex(),6);
+    auto *navigation=window.findChild<QListWidget*>("navigation");QVERIFY(navigation);navigation->setCurrentRow(5);QTest::qWait(350);
+    QCOMPARE(window.findChild<QLabel*>("pageTitle")->text(),QString("Lighting"));
+    QCOMPARE(window.findChild<QTabWidget*>("pages")->currentIndex(),4);
+    auto *lightingTabs=window.findChild<QTabWidget*>("lightingTabs");QVERIFY(lightingTabs);
+    QVERIFY(!lightingTabs->tabsClosable());
+    QCOMPARE(lightingTabs->count(),3);
+    QCOMPARE(lightingTabs->tabText(0),QString("Keyboard"));
+    QCOMPARE(lightingTabs->tabText(1),QString("Lightbar"));
+    QCOMPARE(lightingTabs->tabText(2),QString("Logo"));
+    lightingTabs->setCurrentIndex(1);QTest::qWait(100);
     auto *ac=window.findChild<QSpinBox*>("lightbarBrightness_ac"),*usb=window.findChild<QSpinBox*>("lightbarBrightness_type_c");QVERIFY(ac);QVERIFY(usb);QCOMPARE(ac->value(),0);QCOMPARE(usb->value(),148);
     QVERIFY(!window.findChild<QCheckBox*>("lightbarEnabled_bat")->isChecked());
     auto *save=window.findChild<QPushButton*>("saveLightbar"),*test=window.findChild<QPushButton*>("testLightbar");QVERIFY(save);QVERIFY(test);
@@ -111,9 +119,12 @@ void GuiAudit::sparseKeyboardZonesKeepSavedPhysicalIndices() {
   }
 void GuiAudit::deviceMatrixKeepsThreeIndependentModes() {
     control("TestVisualFixture");ucc::MainWindow window;window.resize(1280,900);window.show();
-    auto *navigation=window.findChild<QListWidget *>("navigation");navigation->setCurrentRow(6);
+    auto *navigation=window.findChild<QListWidget *>("navigation");navigation->setCurrentRow(7);
     QCOMPARE(window.findChild<QLabel *>("pageTitle")->text(),QString("Power & Devices"));
     QVERIFY(window.findChild<QLabel *>("subtitle")->text().contains("modules"));
+    auto *pdTab=window.findChild<ucc::PowerDevicesTab*>();QVERIFY(pdTab);
+    QVERIFY(!pdTab->findChild<QCheckBox*>("turnOffKeyboardBacklightOnLidClose"));
+    QVERIFY(!pdTab->findChild<QCheckBox*>("turnOffWaterCoolerLedOnLidClose"));
     auto *table=window.findChild<QTableWidget *>("powerDeviceTable");QVERIFY(table);QCOMPARE(table->rowCount(),4);
     auto *cpu=window.findChild<QTableWidget *>("cpuPowerPolicyTable");QVERIFY(cpu);QCOMPARE(cpu->rowCount(),3);
     auto *battery=qobject_cast<QComboBox *>(table->cellWidget(0,3));QVERIFY(battery);
@@ -123,24 +134,18 @@ void GuiAudit::deviceMatrixKeepsThreeIndependentModes() {
     auto *lidTypeC=window.findChild<QComboBox *>("lidActionTypeC");QVERIFY(lidTypeC);
     auto *lidBat=window.findChild<QComboBox *>("lidActionBat");QVERIFY(lidBat);
     auto *wakeOnly=window.findChild<QCheckBox *>("wakeOnlyLidAndKeyboard");QVERIFY(wakeOnly);
-    auto *lidOffKbd=window.findChild<QCheckBox *>("turnOffKeyboardBacklightOnLidClose");QVERIFY(lidOffKbd);
-    auto *lidOffWcLed=window.findChild<QCheckBox *>("turnOffWaterCoolerLedOnLidClose");QVERIFY(lidOffWcLed);
     QCOMPARE(lidAc->currentData().toString(),QString("screen_off"));
     QCOMPARE(lidTypeC->currentData().toString(),QString("screen_off"));
     QCOMPARE(lidBat->currentData().toString(),QString("suspend"));
     QVERIFY(wakeOnly->isChecked());
-    QVERIFY(lidOffKbd->isChecked());
-    QVERIFY(!lidOffWcLed->isChecked());
     auto *save=window.findChild<QPushButton *>("savePowerDevices");QVERIFY(save);
 #ifdef UCC_READ_ONLY_PREVIEW
     QVERIFY(!save->isEnabled());
     QVERIFY(!lidAc->isEnabled());
     QVERIFY(!wakeOnly->isEnabled());
-    QVERIFY(!lidOffKbd->isEnabled());
-    QVERIFY(!lidOffWcLed->isEnabled());
     QVERIFY(stats()["writes"].toArray().isEmpty());
 #else
-    lidOffWcLed->setChecked(true);
+    wakeOnly->setChecked(false);
     QVERIFY(save->isEnabled());save->click();
     const auto payload=QJsonDocument::fromJson(control("TestLastPowerDevices").toString().toUtf8()).object();
     const auto entry=payload["devices"].toArray()[0].toObject();
@@ -149,9 +154,9 @@ void GuiAudit::deviceMatrixKeepsThreeIndependentModes() {
     QCOMPARE(entry["bat_val"].toString(),QString("on"));
     QCOMPARE(payload["lid"]["ac"].toString(),QString("screen_off"));
     QCOMPARE(payload["lid"]["bat"].toString(),QString("suspend"));
-    QVERIFY(payload["lid"]["wakeOnlyLidAndKeyboard"].toBool());
+    QVERIFY(!payload["lid"]["wakeOnlyLidAndKeyboard"].toBool());
     QVERIFY(payload["lid"]["turnOffKeyboardBacklightOnLidClose"].toBool());
-    QVERIFY(payload["lid"]["turnOffWaterCoolerLedOnLidClose"].toBool());
+    QVERIFY(!payload["lid"]["turnOffWaterCoolerLedOnLidClose"].toBool());
 #endif
     QTest::qWait(80);
     const QString output=qEnvironmentVariable("UCC_SCREENSHOT_DIR");

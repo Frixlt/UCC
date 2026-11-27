@@ -89,6 +89,16 @@ void GuiAudit::monitorScrollsBetweenFetchesAndFreezesOnPause() {
     const auto unifiedPaused=unifiedAxis->max();QTest::qWait(100);
     QCOMPARE(unifiedAxis->max(),unifiedPaused);
     QTest::keyClick(&tab,Qt::Key_Space);
+    unified->setChecked(false);
+    auto *coreCard=tab.findChild<QFrame*>("cpuCoreLoadCard");
+    auto *coreChk=tab.findChild<QCheckBox*>("monitorCpuCoreLoad");
+    auto *coreView=tab.findChild<QChartView*>("cpuCoreLoadChartView");
+    QVERIFY(coreCard && coreChk && coreView);
+    QVERIFY(coreChk->isChecked());
+    QVERIFY(coreView->chart()->series().size()>1);
+    coreChk->setChecked(false);
+    QVERIFY(!coreCard->isVisibleTo(&tab));
+    coreChk->setChecked(true);
     tab.setMonitoringActive(false);
     const auto stopped=axis->max();QTest::qWait(150);QCOMPARE(axis->max(),stopped);
     QVERIFY(stats().value("writes").toArray().isEmpty());
@@ -110,7 +120,7 @@ void GuiAudit::sidebarNavigationPreservesPages() {
     }
     QVERIFY(window.findChild<QWidget *>("experimentalPage"));
     QVERIFY(window.findChild<QLabel *>("experimentalBanner"));
-    const QStringList iconNames={"Keyboard & Hardware","Power & Devices","Lightbar","Battery & Processes","Experimental"};
+    const QStringList iconNames={"Lighting","Hardware","Power & Devices","Battery & Processes","Experimental"};
     QList<QImage> renderedIcons;
     for(const auto &name:iconNames) renderedIcons.append(ucc::FluentTheme::icon(name).pixmap(24,24).toImage());
     for(int i=0;i<renderedIcons.size();++i)

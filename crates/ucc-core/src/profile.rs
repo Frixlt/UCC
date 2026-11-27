@@ -219,6 +219,18 @@ pub struct ProfileKeyboard {
     pub extra: std::collections::BTreeMap<String, serde_json::Value>,
 }
 
+/// Per-profile lid-close lighting behavior overrides.
+///
+/// Missing fields fall back to global `powerDevices.lid` settings.
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct ProfileLidLighting {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub turn_off_keyboard_backlight_on_lid_close: Option<bool>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub turn_off_water_cooler_led_on_lid_close: Option<bool>,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(untagged)]
 enum OdmPowerLimitsSerde {
@@ -296,6 +308,7 @@ pub struct UccProfile {
     pub webcam: ProfileWebcam,
     pub fan: ProfileFanControl,
     pub keyboard: ProfileKeyboard,
+    pub lid: Option<ProfileLidLighting>,
     pub odm_profile_name: Option<String>,
     pub odm_power_limits: Vec<u32>,
     pub nvidia_ctgp_offset: Option<i32>,
@@ -321,6 +334,8 @@ struct UccProfileWire {
     fan: ProfileFanControl,
     #[serde(default)]
     keyboard: ProfileKeyboard,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    lid: Option<ProfileLidLighting>,
     #[serde(
         default,
         rename = "odmProfile",
@@ -400,6 +415,7 @@ impl<'de> Deserialize<'de> for UccProfile {
             webcam: wire.webcam,
             fan: wire.fan,
             keyboard: wire.keyboard,
+            lid: wire.lid,
             odm_profile_name: wire.odm_profile_name,
             odm_power_limits: wire.odm_power_limits,
             nvidia_ctgp_offset: wire.nvidia_ctgp_offset,
@@ -424,6 +440,7 @@ impl Serialize for UccProfile {
             webcam: self.webcam.clone(),
             fan: self.fan.clone(),
             keyboard: self.keyboard.clone(),
+            lid: self.lid.clone(),
             odm_profile_name: self.odm_profile_name.clone(),
             odm_power_limits: self.odm_power_limits.clone(),
             nvidia_ctgp_offset: self.nvidia_ctgp_offset,
@@ -451,6 +468,7 @@ impl UccProfile {
             webcam: ProfileWebcam::default(),
             fan: ProfileFanControl::default(),
             keyboard: ProfileKeyboard::default(),
+            lid: None,
             odm_profile_name: None,
             odm_power_limits: Vec::new(),
             nvidia_ctgp_offset: None,

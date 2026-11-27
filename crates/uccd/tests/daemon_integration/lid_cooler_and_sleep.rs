@@ -505,3 +505,101 @@ fn enable_water_cooler_false_stays_disabled_across_wc_to_ac_reconcile() {
     assert!(backend.enable_water_cooler(true));
     assert!(backend.is_water_cooler_enabled());
 }
+
+#[tokio::test]
+async fn per_profile_lid_lighting_overrides_global_power_devices_policy() {
+    use ucc_core::ProfileLidLighting;
+    use ucc_dbus::UccdBackend;
+    use ucc_hardware::{CoolerPacketEncoder, RgbTarget};
+
+    let root = tempfile::tempdir().unwrap();
+    let (backend, _, _, _) = build_test_backend(root.path());
+    let runtime = start_runtime(
+        Arc::clone(&backend),
+        "org.test.uccd.per_profile_lid_lighting",
+        false,
+    )
+    .await;
+
+    let initial_kb = json!([{
+        "brightness": 200,
+        "red": 30,
+        "green": 160,
+        "blue": 255,
+        "mode": 0
+    }])
+    .to_string();
+    assert!(backend.set_keyboard_backlight_states_json(&initial_kb));
+
+    // Global fallback keeps keyboard off = true, wc led off = false.
+    let pd_global = json!({
+        "enabled": false,
+        "keepNvidiaAwake": false,
+        "lid": {
+            "ac": "screen_off",
+            "type_c": "screen_off",
+            "bat": "suspend",
+            "wakeOnlyLidAndKeyboard": true,
+            "turnOffKeyboardBacklightOnLidClose": true,
+            "turnOffWaterCoolerLedOnLidClose": false
+        }
+    })
+    .to_string();
+    assert!(backend.set_power_device_settings_json(&pd_global));
+    backend.set_cooler_connected_state(true);
+    assert!(backend.set_water_cooler_led_color(120, 40, 210, 0));
+    let _ = drain_cooler_packets(&backend, 4).await;
+
+    // Profile with explicit override: keep keyboard lit, turn off WC LED on lid close.
+    let mut keep_kbd = default_high_performance_profile();
+    keep_kbd.id = "custom-lid-override".to_string();
+    keep_kbd.name = "Custom Lid Override".to_string();
+    keep_kbd.odm_profile_name = None;
+    keep_kbd.odm_power_limits.clear();
+    keep_kbd.lid = Some(ProfileLidLighting {
+        turn_off_keyboard_backlight_on_lid_close: Some(false),
+        turn_off_water_cooler_led_on_lid_close: Some(true),
+    });
+    assert!(backend.apply_profile(&serde_json::to_string(&keep_kbd).unwrap()));
+
+    backend.on_lid_state_changed(true);
+    assert!(backend.is_lid_closed());
+    let kb_after_close: Vec<serde_json::Value> =
+        serde_json::from_str(&backend.get_keyboard_backlight_states_json()).unwrap();
+    assert_eq!(
+        kb_after_close[0]["brightness"].as_u64(),
+        Some(200),
+        "profile override turnOffKeyboardBacklightOnLidClose=false must keep keyboard lit"
+    );
+    assert_eq!(
+        backend.cooler_desired_rgb(),
+        RgbTarget::Off,
+        "profile override turnOffWaterCoolerLedOnLidClose=true must blank WC LED"
+    );
+    let pkts = drain_cooler_packets(&backend, 4).await;
+    assert!(pkts.contains(&CoolerPacketEncoder::turn_off(ucc_hardware::CMD_RGB)));
+
+    // Opening lid restores WC LED.
+    backend.on_lid_state_changed(false);
+    assert_ne!(backend.cooler_desired_rgb(), RgbTarget::Off);
+
+    // Switching to profile with explicit true/false restores per-profile keyboard blanking.
+    let mut blank_kbd = keep_kbd.clone();
+    blank_kbd.id = "custom-lid-blank".to_string();
+    blank_kbd.lid = Some(ProfileLidLighting {
+        turn_off_keyboard_backlight_on_lid_close: Some(true),
+        turn_off_water_cooler_led_on_lid_close: Some(false),
+    });
+    assert!(backend.apply_profile(&serde_json::to_string(&blank_kbd).unwrap()));
+    backend.on_lid_state_changed(true);
+    let kb_blanked: Vec<serde_json::Value> =
+        serde_json::from_str(&backend.get_keyboard_backlight_states_json()).unwrap();
+    assert_eq!(kb_blanked[0]["brightness"].as_u64(), Some(0));
+    assert_ne!(backend.cooler_desired_rgb(), RgbTarget::Off);
+    backend.on_lid_state_changed(false);
+    let kb_restored: Vec<serde_json::Value> =
+        serde_json::from_str(&backend.get_keyboard_backlight_states_json()).unwrap();
+    assert_eq!(kb_restored[0]["brightness"].as_u64(), Some(200));
+
+    runtime.shutdown(Duration::from_secs(2)).await;
+}

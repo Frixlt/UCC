@@ -237,9 +237,8 @@ impl LiveUccdBackend {
         let Some((states, _)) = Self::parse_keyboard_states_value(&val) else {
             return Ok(false);
         };
-        let lid_policy = self.current_lid_source_policy();
-        let blanked_under_lid =
-            self.is_lid_closed() && lid_policy.turn_off_keyboard_backlight_on_lid_close;
+        let (blank_kbd_on_lid_close, _) = self.effective_lid_lighting_policy_for(profile);
+        let blanked_under_lid = self.is_lid_closed() && blank_kbd_on_lid_close;
         let prev_lid_saved = self.lock_mutex(&self.lid_saved_keyboard_states).clone();
         let target_states = if blanked_under_lid {
             Self::blanked_keyboard_states(&states)
@@ -265,6 +264,7 @@ impl LiveUccdBackend {
         if blanked_under_lid {
             *self.lock_mutex(&self.lid_saved_keyboard_states) = Some(states);
         } else {
+            *self.lock_mutex(&self.lid_saved_keyboard_states) = None;
             self.lock_mutex(&self.lightbar_ctrl).keyboard_changed();
         }
         Ok(true)
@@ -274,6 +274,24 @@ impl LiveUccdBackend {
         let pd_val = serde_json::from_str::<Value>(&self.get_power_device_settings_json())
             .unwrap_or(Value::Null);
         parse_lid_policy_from_json(&pd_val)
+    }
+
+    /// Returns `(turn_off_keyboard_backlight_on_lid_close, turn_off_water_cooler_led_on_lid_close)`
+    /// checking per-profile `lid` overrides first and falling back to global `powerDevices.lid`.
+    pub(super) fn effective_lid_lighting_policy_for(&self, profile: &UccProfile) -> (bool, bool) {
+        let fallback = self.current_lid_source_policy();
+        let lid = profile.lid.as_ref();
+        (
+            lid.and_then(|l| l.turn_off_keyboard_backlight_on_lid_close)
+                .unwrap_or(fallback.turn_off_keyboard_backlight_on_lid_close),
+            lid.and_then(|l| l.turn_off_water_cooler_led_on_lid_close)
+                .unwrap_or(fallback.turn_off_water_cooler_led_on_lid_close),
+        )
+    }
+
+    pub(super) fn effective_lid_lighting_policy(&self) -> (bool, bool) {
+        let active = self.read_rw(&self.active_profile).clone();
+        self.effective_lid_lighting_policy_for(&active)
     }
 
     pub(super) fn is_water_cooler_connected_now(&self) -> bool {
@@ -320,8 +338,9 @@ impl LiveUccdBackend {
             return;
         }
 
-        let policy = self.current_lid_source_policy();
-        if policy.turn_off_keyboard_backlight_on_lid_close {
+        let (blank_kbd_on_lid_close, blank_wc_led_on_lid_close) =
+            self.effective_lid_lighting_policy();
+        if blank_kbd_on_lid_close {
             let mut ctrl = self.lock_mutex(&self.keyboard_ctrl);
             if !ctrl.is_available() {
                 let _ = ctrl.init();
@@ -351,7 +370,7 @@ impl LiveUccdBackend {
             }
         }
 
-        if policy.turn_off_water_cooler_led_on_lid_close && self.is_water_cooler_connected_now() {
+        if blank_wc_led_on_lid_close && self.is_water_cooler_connected_now() {
             let mut cooler = self.lock_mutex(&self.cooler_controller);
             let current_rgb = cooler.desired_rgb_target();
             if matches!(current_rgb, RgbTarget::Color { .. }) {
@@ -441,10 +460,7 @@ impl LiveUccdBackend {
             return false;
         }
         let prev_kb = self.snapshot_keyboard_rollback();
-        let blanked_under_lid = self.is_lid_closed()
-            && self
-                .current_lid_source_policy()
-                .turn_off_keyboard_backlight_on_lid_close;
+        let blanked_under_lid = self.is_lid_closed() && self.effective_lid_lighting_policy().0;
         let my_seq = self.kb_write_seq.fetch_add(1, Ordering::SeqCst) + 1;
         {
             let mut ctrl = self.lock_mutex(&self.keyboard_ctrl);

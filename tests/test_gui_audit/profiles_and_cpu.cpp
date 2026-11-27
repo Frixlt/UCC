@@ -21,20 +21,29 @@ void GuiAudit::profileRefreshRateSavesAndChargingLivesOutsideProfiles() {
     names->setCurrentIndex(names->findData("custom-rate"));
     auto* rate=window.findChild<QComboBox*>("profileRefreshRate");QVERIFY(rate);
     QCOMPARE(rate->currentData().toInt(),60);
+    auto* lidOffKbd=window.findChild<QCheckBox*>("turnOffKeyboardBacklightOnLidClose");QVERIFY(lidOffKbd);
+    auto* lidOffWcLed=window.findChild<QCheckBox*>("turnOffWaterCoolerLedOnLidClose");QVERIFY(lidOffWcLed);
+    QVERIFY(lidOffKbd->isChecked());QVERIFY(!lidOffWcLed->isChecked());
     auto* charging=window.findChild<QComboBox*>("globalChargingProfile");QVERIFY(charging);
     QTRY_COMPARE(charging->count(),2);QVERIFY(!charging->isVisible());
     QCOMPARE(charging->currentData().toString(),QString("stationary"));
 #ifndef UCC_READ_ONLY_PREVIEW
+    QVERIFY(lidOffKbd->isEnabled());QVERIFY(lidOffWcLed->isEnabled());
+    lidOffKbd->setChecked(false);lidOffWcLed->setChecked(true);
     rate->setCurrentIndex(rate->findData(240));
     window.findChild<QPushButton*>("saveProfile")->click();
     QTRY_VERIFY(!control("TestLastSavedProfile").toString().isEmpty());
     auto saved=QJsonDocument::fromJson(control("TestLastSavedProfile").toString().toUtf8()).object();
     QCOMPARE(saved["display"].toObject()["refreshRate"].toInt(),240);
     QVERIFY(saved["display"].toObject()["useRefRate"].toBool());
+    QVERIFY(!saved["lid"].toObject()["turnOffKeyboardBacklightOnLidClose"].toBool());
+    QVERIFY(saved["lid"].toObject()["turnOffWaterCoolerLedOnLidClose"].toBool());
     QVERIFY(!saved.contains("chargingProfile"));QVERIFY(!saved.contains("chargeType"));
     rate->setCurrentIndex(0);window.findChild<QPushButton*>("saveProfile")->click();
     saved=QJsonDocument::fromJson(control("TestLastSavedProfile").toString().toUtf8()).object();
     QVERIFY(!saved["display"].toObject()["useRefRate"].toBool());
+#else
+    QVERIFY(!lidOffKbd->isEnabled());QVERIFY(!lidOffWcLed->isEnabled());
 #endif
     const auto output=qEnvironmentVariable("UCC_SCREENSHOT_DIR");
     if(!output.isEmpty()) {QTest::qWait(450);for(auto* scroll:window.findChildren<QScrollArea*>()) if(scroll->widget() && scroll->widget()->isAncestorOf(rate)) scroll->ensureWidgetVisible(rate);QTest::qWait(100);QDir().mkpath(output);QVERIFY(window.grab().save(output+"/profile-refresh.png"));}
@@ -184,12 +193,34 @@ void GuiAudit::profilePayloadPreservesManualWaterCoolerValues() {
     QVERIFY(!payload["autoControlWC"].toBool(true));
   }
 void GuiAudit::fanControlPumpComboFindsDiscreteIntCodes() {
-    ucc::FanControlTab tab(client.get(),profiles.get(),true);
+    control("TestBuiltinFanProfiles",{QString(R"([
+      {"id":"fan-silent","name":"Silent [Built-in]"},
+      {"id":"fan-balanced","name":"Balanced [Built-in]"},
+      {"id":"fan-freezy","name":"Freezy [Built-in]"}
+    ])")});
+    control("TestCustomFanProfiles",{QString(R"([
+      {"id":"air-only","name":"Air Only","json":{"tableCPU":[{"temp":40,"speed":30}],"tableGPU":[{"temp":40,"speed":30}]}},
+      {"id":"wc-custom","name":"WC Custom","json":{"tableCPU":[{"temp":40,"speed":40}],"tableWaterCoolerFan":[{"temp":40,"speed":50}],"tablePump":[{"temp":40,"speed":2}]}}
+    ])")});
+    ucc::ProfileManager localProfiles(client.get());
+    ucc::FanControlTab tab(client.get(),&localProfiles,true);
     auto *combo=pump(tab);
     QVERIFY(combo);
     QCOMPARE(combo->itemData(0).typeId(), static_cast<int>(QMetaType::Int));
     QVERIFY2(combo->findData(0)>=0,"Pump combo must store int 0 (Off) so findData(int) matches D-Bus codes");
     QVERIFY2(combo->findData(2)>=0,"Pump combo must store int 2 (8V) / discrete codes");
+
+    // In normal Cooler Settings mode, air-only & all built-ins are shown; in Watercool mode ONLY 1 default + WC custom profiles.
+    auto *fp=tab.fanProfileCombo();QVERIFY(fp);
+    QVERIFY(fp->findData("air-only")>=0);
+    QVERIFY(fp->findData("wc-custom")>=0);
+    tab.setWaterCoolerMode(true);
+    QCOMPARE(fp->count(),2);
+    QVERIFY(fp->findData("fan-balanced")>=0);
+    QVERIFY(fp->findData("wc-custom")>=0);
+    QVERIFY(fp->findData("air-only")<0);
+    tab.setWaterCoolerMode(false);
+    QVERIFY(fp->findData("air-only")>=0);
   }
 void GuiAudit::batterySettingsRaisesWindowSetsEndBeforeStart() {
 #ifdef UCC_READ_ONLY_PREVIEW
