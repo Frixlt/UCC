@@ -1465,7 +1465,11 @@ pub fn convert_mechrevo_tcc(
                         .ok_or_else(|| ConfigError::Validation("Missing speed".to_string()))?,
                     "Invalid speed",
                 )?;
-                let clamped = (speed + off_fan).min(max_fan).max(min_fan).clamp(0, 100);
+                let clamped = speed
+                    .saturating_add(off_fan)
+                    .min(max_fan)
+                    .max(min_fan)
+                    .clamp(0, 100);
                 baked.push(json!({ "temp": temp, "speed": clamped }));
             }
             let baked_val = Value::Array(baked);
