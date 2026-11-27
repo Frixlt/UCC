@@ -3306,16 +3306,16 @@ void MainWindow::onApplyFanProfilesClicked()
   for ( const auto &p : cpuPoints )
   {
     QJsonObject o;
-    o["temp"] = p.temp;
-    o["speed"] = p.duty;
+    o["temp"] = qRound(p.temp);
+    o["speed"] = qRound(p.duty);
     cpuArr.append( o );
   }
 
   for ( const auto &p : gpuPoints )
   {
     QJsonObject o;
-    o["temp"] = p.temp;
-    o["speed"] = p.duty;
+    o["temp"] = qRound(p.temp);
+    o["speed"] = qRound(p.duty);
     gpuArr.append( o );
   }
 
@@ -3327,8 +3327,8 @@ void MainWindow::onApplyFanProfilesClicked()
     for ( const auto &p : wcFanPoints )
     {
       QJsonObject o;
-      o["temp"] = p.temp;
-      o["speed"] = p.duty;
+      o["temp"] = qRound(p.temp);
+      o["speed"] = qRound(p.duty);
       wcFanArr.append( o );
     }
   }
@@ -3341,7 +3341,7 @@ void MainWindow::onApplyFanProfilesClicked()
     for ( const auto &p : pumpPoints )
     {
       QJsonObject o;
-      o["temp"] = p.temp;
+      o["temp"] = qRound(p.temp);
       o["speed"] = p.level;
       pumpArr.append( o );
     }

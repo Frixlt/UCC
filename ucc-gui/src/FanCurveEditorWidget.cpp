@@ -4,6 +4,7 @@
 #include <QMouseEvent>
 #include <QMenu>
 #include <algorithm>
+#include <cmath>
 #include <ranges>
 
 FanCurveEditorWidget::FanCurveEditorWidget(QWidget *parent)
@@ -399,7 +400,7 @@ void FanCurveEditorWidget::dragTo(const QPointF& position) {
     for (int idx : m_selectedIndices) {
         if (idx < 0 || idx >= m_points.size()) continue;
         double newDuty = m_dragStartDuties[idx] + deltaDuty;
-        newDuty = std::clamp(newDuty, 0.0, 100.0);
+        newDuty = std::round(std::clamp(newDuty, 0.0, 100.0));
         m_points[idx].duty = newDuty;
     }
 

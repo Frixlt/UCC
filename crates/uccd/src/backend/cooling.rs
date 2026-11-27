@@ -23,6 +23,25 @@ pub(super) const AQUARIS_CONFIG_PATH: &str = "/etc/ucc/aquaris.json";
 const WC_CONNECT_DEBOUNCE: Duration = Duration::from_secs(3);
 const WC_DISCONNECT_DEBOUNCE: Duration = Duration::from_secs(10);
 
+fn round_point_array_coords(points: &mut [Value]) -> bool {
+    for pt in points.iter_mut() {
+        let Some(pt_obj) = pt.as_object_mut() else {
+            return false;
+        };
+        for coord in ["temp", "speed"] {
+            if let Some(val) = pt_obj.get(coord) {
+                if val.as_i64().is_none() {
+                    let Some(f) = val.as_f64().filter(|f| f.is_finite()) else {
+                        return false;
+                    };
+                    pt_obj.insert(coord.to_string(), Value::from(f.round() as i64));
+                }
+            }
+        }
+    }
+    true
+}
+
 pub(super) fn normalize_and_parse_custom_fan_profile(
     id: &str,
     outer_name: &str,
@@ -64,18 +83,8 @@ pub(super) fn normalize_and_parse_custom_fan_profile(
             }
         }
         if let Some(Value::Array(points)) = obj.get_mut(target) {
-            for pt in points.iter_mut() {
-                if let Value::Object(pt_obj) = pt {
-                    for coord in ["temp", "speed"] {
-                        if let Some(val) = pt_obj.get(coord) {
-                            if val.as_i64().is_none() {
-                                if let Some(f) = val.as_f64().filter(|f| f.is_finite()) {
-                                    pt_obj.insert(coord.to_string(), Value::from(f.round() as i64));
-                                }
-                            }
-                        }
-                    }
-                }
+            if !round_point_array_coords(points) {
+                return None;
             }
         }
     }
@@ -639,7 +648,12 @@ impl LiveUccdBackend {
     }
 
     pub(super) fn parse_fan_points_json(points_json: &str) -> Option<Vec<FanPoint>> {
-        serde_json::from_str::<Vec<FanPoint>>(points_json).ok()
+        let mut val: Value = serde_json::from_str(points_json).ok()?;
+        let arr = val.as_array_mut()?;
+        if !round_point_array_coords(arr) {
+            return None;
+        }
+        serde_json::from_value::<Vec<FanPoint>>(val).ok()
     }
 
     /// Runs one synchronous fan control tick and records fan snapshots + auto WC target updates.
@@ -1035,7 +1049,28 @@ impl LiveUccdBackend {
         let Some(_op_guard) = self.enter_hardware_op() else {
             return false;
         };
-        let Ok(dto) = serde_json::from_str::<ApplyFanProfilesDto>(fan_profiles_json) else {
+        let Ok(mut raw_val) = serde_json::from_str::<Value>(fan_profiles_json) else {
+            return false;
+        };
+        if let Some(obj) = raw_val.as_object_mut() {
+            for key in [
+                "cpu",
+                "tableCPU",
+                "gpu",
+                "tableGPU",
+                "waterCoolerFan",
+                "tableWaterCoolerFan",
+                "pump",
+                "tablePump",
+            ] {
+                if let Some(Value::Array(pts)) = obj.get_mut(key) {
+                    if !round_point_array_coords(pts) {
+                        return false;
+                    }
+                }
+            }
+        }
+        let Ok(dto) = serde_json::from_value::<ApplyFanProfilesDto>(raw_val) else {
             return false;
         };
 
@@ -1130,12 +1165,15 @@ impl LiveUccdBackend {
         *self.lock_mutex(&self.temporary_fan_curves) = None;
         self.lock_mutex(&self.fan_controller)
             .clear_temporary_curves();
-        if let Some(orig_fp_id) = self.lock_mutex(&self.temporary_saved_fan_profile_id).take() {
+        let orig_fp_id = self.lock_mutex(&self.temporary_saved_fan_profile_id).take();
+        if let Some(orig_fp_id) = orig_fp_id {
             let updated = {
                 let mut active = self.write_rw(&self.active_profile);
                 active.fan.fan_profile = orig_fp_id;
                 active.clone()
             };
+            let resolved = self.fan_profile_from_ucc_profile(&updated);
+            self.lock_mutex(&self.fan_controller).set_profile(resolved);
             self.emit_profile_changed(&updated);
         }
         let _ = self.tick_fans_once();
@@ -1193,6 +1231,30 @@ impl LiveUccdBackend {
         self.write_rw(&self.custom_fan_profiles)
             .insert(id.to_string(), fp.clone());
 
+        let has_temporary_override = self
+            .lock_mutex(&self.temporary_saved_fan_profile_id)
+            .is_some();
+        if has_temporary_override {
+            let matches_active = {
+                let active = self.read_rw(&self.active_profile);
+                let key = active.fan.fan_profile.trim();
+                key.eq_ignore_ascii_case(id) || key.eq_ignore_ascii_case(&fp.name)
+            };
+            if matches_active {
+                let curves = TemporaryFanCurves {
+                    cpu: fp.table_cpu.clone(),
+                    gpu: fp.table_gpu.clone(),
+                    water_cooler_fan: fp.table_water_cooler_fan.clone(),
+                    pump: fp.table_pump.clone(),
+                };
+                *self.lock_mutex(&self.temporary_fan_curves) = Some(curves.clone());
+                self.lock_mutex(&self.fan_controller)
+                    .apply_temporary_curves(curves);
+                let _ = self.tick_fans_once();
+            }
+            return true;
+        }
+
         let updated_active = {
             let mut active = self.write_rw(&self.active_profile);
             let key = active.fan.fan_profile.trim();
@@ -1205,7 +1267,6 @@ impl LiveUccdBackend {
         };
         if let Some(updated) = updated_active {
             *self.lock_mutex(&self.temporary_fan_curves) = None;
-            self.lock_mutex(&self.temporary_saved_fan_profile_id).take();
             self.lock_mutex(&self.fan_controller)
                 .clear_temporary_curves();
             let resolved = self.fan_profile_from_ucc_profile(&updated);

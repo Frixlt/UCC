@@ -115,6 +115,15 @@ fn payload_within_limit(method: &str, payload: &str) -> bool {
     false
 }
 
+fn has_active_charging_value(v: &serde_json::Value) -> bool {
+    match v {
+        serde_json::Value::Null => false,
+        serde_json::Value::String(s) => !s.trim().is_empty(),
+        serde_json::Value::Number(n) => n.as_i64() != Some(-1),
+        _ => true,
+    }
+}
+
 fn profile_requires_manage_hardware(profile_json: &str) -> bool {
     let Ok(val) = serde_json::from_str::<serde_json::Value>(profile_json) else {
         return false;
@@ -132,7 +141,30 @@ fn profile_requires_manage_hardware(profile_json: &str) -> bool {
         .and_then(|f| f.get("useControl"))
         .and_then(|v| v.as_bool())
         == Some(false);
-    has_custom_tdp || disables_fan_control
+    let has_top_charging = [
+        "chargingProfile",
+        "chargingPriority",
+        "chargeStartThreshold",
+        "chargeEndThreshold",
+        "chargeType",
+    ]
+    .iter()
+    .any(|k| val.get(*k).is_some_and(has_active_charging_value));
+    let has_nested_charging = val
+        .get("charging")
+        .and_then(|c| c.as_object())
+        .is_some_and(|obj| {
+            [
+                "chargingProfile",
+                "chargingPriority",
+                "startThreshold",
+                "endThreshold",
+                "chargeType",
+            ]
+            .iter()
+            .any(|k| obj.get(*k).is_some_and(has_active_charging_value))
+        });
+    has_custom_tdp || disables_fan_control || has_top_charging || has_nested_charging
 }
 
 async fn sender_is_alive(conn: &zbus::Connection, sender: &str) -> bool {

@@ -1,7 +1,8 @@
 --- a/update-tuxedo-worker.sh
 +++ b/update-tuxedo-worker.sh
 @@ -14,6 +14,8 @@
- SCRIPT_DIR="/home/frixit/.customconfigs/hooks/tuxedo"
+-SCRIPT_DIR="/home/frixit/.customconfigs/hooks/tuxedo"
++SCRIPT_DIR="/usr/local/lib/tuxedo-hook"
  PATCH_EXACT_1="$SCRIPT_DIR/0001-exact-mechrevo-profile.patch"
  PATCH_EXACT_2="$SCRIPT_DIR/0002-linux-7-rgb-max-intensity.patch"
 +PATCH_EXACT_3="$SCRIPT_DIR/0003-linux-7.3-acpi-lightbar.patch"
@@ -70,13 +71,15 @@
  done
 @@ -309,6 +338,11 @@
  
- # Сохраняем версию
- echo "$UPSTREAM_HASH" > "$SCRIPT_DIR/.installed_version"
-+
+-# Сохраняем версию
+-echo "$UPSTREAM_HASH" > "$SCRIPT_DIR/.installed_version"
 +if [ -n "$FAILED_KERNELS" ]; then
 +    echo "[FAIL] Drivers missing for installed kernels:$FAILED_KERNELS"
 +    exit 1
 +fi
++
++# Сохраняем версию только после успешной сборки всех ядер
++echo "$UPSTREAM_HASH" > "$SCRIPT_DIR/.installed_version"
  
  if [ "$BUILT_ANY" -eq 1 ]; then
      echo ""
@@ -92,9 +95,11 @@
 +# исходники собирает штатный 70-dkms-install.hook.
  # ============================================================
 
- SCRIPT_DIR="/home/frixit/.customconfigs/hooks/tuxedo"
+-SCRIPT_DIR="/home/frixit/.customconfigs/hooks/tuxedo"
++SCRIPT_DIR="/usr/local/lib/tuxedo-hook"
  WORKER="$SCRIPT_DIR/update-tuxedo-worker.sh"
- LOG_FILE="/tmp/tuxedo-hook-last.log"
+-LOG_FILE="/tmp/tuxedo-hook-last.log"
++LOG_FILE="/var/log/tuxedo-hook-last.log"
 +DKMS_CONF="/usr/src/tuxedo-mechrevo-custom/dkms.conf"
 +
 +if [ -f "$DKMS_CONF" ]; then

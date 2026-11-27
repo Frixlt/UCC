@@ -186,9 +186,7 @@ impl FanControlLogic {
             if self.fans_off_available && speed < half_min {
                 return 0;
             }
-            if self.fans_off_available || speed >= half_min {
-                return min_speed;
-            }
+            return min_speed;
         }
         speed
     }
@@ -235,6 +233,7 @@ impl FanControlLogic {
 
         let curve_speed = self.apply_hw_fan_limitations(raw_curve_speed.clamp(0, 100));
         let mut speed = self.smooth_speed(curve_speed);
+        speed = self.apply_hw_fan_limitations(speed.clamp(0, 100));
         speed = Self::manage_critical_temperature(filtered_temp, speed);
         Some(speed.clamp(0, 100) as u8)
     }

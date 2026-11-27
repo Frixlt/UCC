@@ -320,22 +320,30 @@ impl LiveUccdBackend {
 
     /// Blanks keyboard backlight and optional water cooler LED in RAM on lid close (`M8.10`),
     /// restoring previous live states when reopened without mutating `settings.json`.
-    pub fn on_lid_state_changed(&self, closed: bool) {
+    /// Returns `true` when the lid state actually transitioned.
+    pub fn on_lid_state_changed(&self, closed: bool) -> bool {
         if self.shutting_down.load(Ordering::SeqCst)
             || ucc_config::is_read_only_preview()
             || self.is_vendor_unsupported()
         {
             self.lid_closed.store(closed, Ordering::SeqCst);
-            return;
+            return false;
         }
         let prev = self.lid_closed.swap(closed, Ordering::SeqCst);
         if prev == closed {
-            return;
+            return false;
         }
         tracing::info!(closed, "Lid state changed");
+        let src = self.detect_physical_power_source();
+        let ac_online = matches!(src, ProfileState::Ac | ProfileState::TypeC);
         if !closed {
+            self.lock_mutex(&self.lid_controller).evaluate_lid_event(
+                std::time::Instant::now(),
+                ac_online,
+                false,
+            );
             self.restore_lid_lighting();
-            return;
+            return true;
         }
 
         let (blank_kbd_on_lid_close, blank_wc_led_on_lid_close) =
@@ -383,6 +391,18 @@ impl LiveUccdBackend {
                 let _ = cooler.turn_off_led();
             }
         }
+        true
+    }
+
+    /// Evaluates the configured lid-close power action for the current power source (`N01`).
+    pub fn evaluate_lid_close_action(&self) -> crate::lid::LidSourceAction {
+        let now = std::time::Instant::now();
+        let src = self.detect_physical_power_source();
+        let ac_online = matches!(src, ProfileState::Ac | ProfileState::TypeC);
+        let policy = self.current_lid_source_policy();
+        let mut ctrl = self.lock_mutex(&self.lid_controller);
+        let _ = ctrl.evaluate_lid_event(now, ac_online, true);
+        ctrl.action_for_source(&policy, src.mode_name(), now, ac_online, true)
     }
 
     /// Restores keyboard backlight and water cooler LED previously blanked by lid close (`M8.10`).

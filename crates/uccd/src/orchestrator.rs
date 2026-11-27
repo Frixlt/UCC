@@ -905,6 +905,53 @@ fn extract_lid_closed_change(
     bool::try_from(val).ok()
 }
 
+async fn handle_lid_change(
+    login_proxy: &zbus::Proxy<'_>,
+    backend: &Arc<LiveUccdBackend>,
+    closed: bool,
+) {
+    let b = Arc::clone(backend);
+    let action = tokio::task::spawn_blocking(move || {
+        let _g = b.enter_worker_hw_op()?;
+        let transitioned = b.on_lid_state_changed(closed);
+        if transitioned && closed {
+            Some(b.evaluate_lid_close_action())
+        } else {
+            None
+        }
+    })
+    .await
+    .ok()
+    .flatten();
+
+    let Some(action) = action else {
+        return;
+    };
+    match action {
+        crate::lid::LidSourceAction::Suspend => {
+            if let Err(err) = login_proxy.call::<_, _, ()>("Suspend", &(false,)).await {
+                warn!("logind Suspend on lid close failed: {err}");
+            }
+        }
+        crate::lid::LidSourceAction::Hibernate => {
+            if let Err(err) = login_proxy.call::<_, _, ()>("Hibernate", &(false,)).await {
+                warn!("logind Hibernate on lid close failed: {err}");
+            }
+        }
+        crate::lid::LidSourceAction::PowerOff => {
+            if let Err(err) = login_proxy.call::<_, _, ()>("PowerOff", &(false,)).await {
+                warn!("logind PowerOff on lid close failed: {err}");
+            }
+        }
+        crate::lid::LidSourceAction::Lock => {
+            if let Err(err) = login_proxy.call::<_, _, ()>("LockSessions", &()).await {
+                warn!("logind LockSessions on lid close failed: {err}");
+            }
+        }
+        crate::lid::LidSourceAction::Ignore | crate::lid::LidSourceAction::ScreenOff => {}
+    }
+}
+
 /// Best-effort systemd-logind & UPower monitor handling `PrepareForSleep` resume notifications,
 /// `handle-lid-switch` inhibitor coordination (`ISSUE-03`), and lid keyboard/cooler lighting (`M8.10`).
 async fn run_logind_monitor_loop(
@@ -1016,12 +1063,7 @@ async fn run_logind_monitor_loop(
                     continue;
                 };
                 if let Some(closed) = extract_lid_closed_change(&msg, "org.freedesktop.login1.Manager", "LidClosed") {
-                    let b = Arc::clone(&backend);
-                    let _ = tokio::task::spawn_blocking(move || {
-                        if let Some(_g) = b.enter_worker_hw_op() {
-                            b.on_lid_state_changed(closed);
-                        }
-                    }).await;
+                    handle_lid_change(&login_proxy, &backend, closed).await;
                 }
             }
             maybe_msg = next_signal_opt(upower_props_stream.as_mut()) => {
@@ -1030,12 +1072,7 @@ async fn run_logind_monitor_loop(
                     continue;
                 };
                 if let Some(closed) = extract_lid_closed_change(&msg, "org.freedesktop.UPower", "LidIsClosed") {
-                    let b = Arc::clone(&backend);
-                    let _ = tokio::task::spawn_blocking(move || {
-                        if let Some(_g) = b.enter_worker_hw_op() {
-                            b.on_lid_state_changed(closed);
-                        }
-                    }).await;
+                    handle_lid_change(&login_proxy, &backend, closed).await;
                 }
             }
         }
