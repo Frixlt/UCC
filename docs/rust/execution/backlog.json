@@ -1413,9 +1413,9 @@
       "id": "M5.9",
       "milestone": "M5",
       "wave": "V5",
-      "title": "Исправить надёжное восстановление профиля/состояния СЖО в Rust uccd и ucc-hardware (manual_fan_speed/manual_pump_voltage из профиля, мгновенный пересчёт кривой и replay после WC_CONNECT_DEBOUNCE, offload reconcile_power_state через spawn_blocking + enter_worker_hw_op, загрузка LED из aquaris.json, PrepareForSleep teardown/resume, авто-включение сканирования при настроенном state_map[power_wc]).",
+      "title": "Исправить надёжное восстановление профиля/состояния СЖО в текущем C++ UCC (если требуется хотфикс до перехода) и во всех 5 причинах в Rust uccd/ucc-hardware (manual_fan_speed/manual_pump_voltage из профиля, мгновенный пересчёт кривой и replay после WC_CONNECT_DEBOUNCE, spawn_blocking для reconcile_power_state, загрузка LED из aquaris.json, PrepareForSleep teardown/resume, авто-включение сканирования при настроенном state_map[power_wc]).",
       "status": "planned",
-      "status_basis": "Root causes diagnosed across crates/uccd/src/backend/{profile_tx.rs,cooling.rs} and crates/ucc-hardware/src/cooler.rs; fix and regression tests pending.",
+      "status_basis": "Root causes diagnosed across C++ (LCTWaterCoolerWorker.cpp, UccDBusService.cpp) and Rust crates/uccd/src/backend/{profile_tx.rs,cooling.rs} + crates/ucc-hardware/src/cooler.rs; fix and regression tests pending.",
       "suggested_role": null,
       "assigned_agent_id": null,
       "depends_on": [
@@ -2120,9 +2120,9 @@
       "id": "M8.10",
       "milestone": "M8",
       "wave": "V8",
-      "title": "Гасить подсветку клавиатуры при закрытии крышки и восстанавливать при открытии или выходе из сна в uccd (подписка на login1 LidClosed / UPower LidIsClosed в run_logind_monitor_loop, сохранение состояния только в RAM без изменения settings.json, unit/integration тесты).",
+      "title": "Гасить подсветку клавиатуры и (опционально) подсветку подключённой СЖО при закрытии крышки и восстанавливать из RAM при открытии или выходе из сна (настройки на карточке Lid в PowerDevicesTab: turnOffKeyboardBacklightOnLidClose и turnOffWaterCoolerLedOnLidClose, без изменения активного профиля/settings.json, плюс подписка на login1 LidClosed / UPower LidIsClosed в run_logind_monitor_loop и регрессионные тесты).",
       "status": "planned",
-      "status_basis": "run_logind_monitor_loop currently handles PrepareForSleep only without LidClosed/LidIsClosed keyboard backlight blank/restore; implementation pending.",
+      "status_basis": "run_logind_monitor_loop currently handles PrepareForSleep only and PowerDevicesTab lid settings lack keyboard/water-cooler LED toggles; implementation pending.",
       "suggested_role": null,
       "assigned_agent_id": null,
       "depends_on": [
@@ -2131,7 +2131,9 @@
       "dependency_refinement_required": false,
       "owned_paths": [
         "crates/uccd/src/orchestrator.rs",
-        "crates/uccd/src/backend/lighting_power.rs"
+        "crates/uccd/src/backend/lighting_power.rs",
+        "crates/uccd/src/backend/cooling.rs",
+        "ucc-gui/src/PowerDevicesTab.cpp"
       ],
       "feature_ids": [],
       "test_ids": [],
@@ -2588,6 +2590,34 @@
       "blockers": []
     },
     {
+      "id": "M10.9",
+      "milestone": "M10",
+      "wave": "V10",
+      "title": "Добавить вкладку Experimental в ucc-gui с отдельной иконкой в сайдбаре, предупреждением о тестовом статусе и расширяемой структурой для будущих экспериментальных настроек.",
+      "status": "planned",
+      "status_basis": "Experimental tab scaffold and sidebar icon planned alongside GUI polish (M10.8).",
+      "suggested_role": null,
+      "assigned_agent_id": null,
+      "depends_on": [
+        "M10.8"
+      ],
+      "dependency_refinement_required": false,
+      "owned_paths": [
+        "ucc-gui/src/MainWindow.cpp",
+        "ucc-gui/src/FluentTheme.cpp"
+      ],
+      "feature_ids": [],
+      "test_ids": [
+        "test_gui_audit"
+      ],
+      "implementation_sha": null,
+      "r1_review": null,
+      "r2_evidence": [],
+      "integration_sha": null,
+      "children": [],
+      "blockers": []
+    },
+    {
       "id": "M11.1",
       "milestone": "M11",
       "wave": "V11",
@@ -2945,6 +2975,36 @@
       "blockers": []
     },
     {
+      "id": "M12.10",
+      "milestone": "M12",
+      "wave": "V12",
+      "title": "Закрепить единый code style, commit convention и алгоритм релизов: rustfmt.toml, .editorconfig, cargo fmt --check в CI, CONTRIBUTING.md, устранение хардкода docs/releases/0.3.0.md в .github/workflows/release.yml, синхронная проверка и обновление версий (Cargo.toml, CMakeLists.txt, PKGBUILD, ucc.spec, package.nix) и генерация CHANGELOG.",
+      "status": "planned",
+      "status_basis": "Release/versioning workflow options prepared; awaiting user selection.",
+      "suggested_role": null,
+      "assigned_agent_id": null,
+      "depends_on": [],
+      "dependency_refinement_required": false,
+      "owned_paths": [
+        ".github/workflows/release.yml",
+        ".github/workflows/build.yml",
+        "rustfmt.toml",
+        ".editorconfig",
+        "CONTRIBUTING.md",
+        "crates/xtask/src/main.rs"
+      ],
+      "feature_ids": [],
+      "test_ids": [],
+      "implementation_sha": null,
+      "r1_review": null,
+      "r2_evidence": [],
+      "integration_sha": null,
+      "children": [],
+      "blockers": [
+        "Awaiting user selection of release/versioning workflow"
+      ]
+    },
+    {
       "id": "M13.1",
       "milestone": "M13",
       "wave": "V13",
@@ -3160,9 +3220,9 @@
       "id": "M13.11",
       "milestone": "M13",
       "wave": "V13",
-      "title": "Подготовить строгую техническую документацию без маркетинга и нейрослопа: README.md (EN), README.ru.md (RU), архитектуру, справочники D-Bus API и CLI, матрицу железа и объективное сравнение с TUXEDO Control Center, Clevo Control Center, LCT, CoreCtrl и asusctl.",
+      "title": "Подготовить строгую техническую документацию без маркетинга и нейрослопа ('наш' и т.п.): README.md (EN), README.ru.md (RU), архитектуру, справочники D-Bus API и CLI, матрицу железа и замену колонки 'Личный Python ControlCenter' в docs/COMPARISON.md на open-uniwill-cc (https://github.com/aspidovss/open-uniwill-cc/blob/main/README.ru.md) наряду с upstream UCC Revorked, LCT/CoreCtrl/asusctl.",
       "status": "planned",
-      "status_basis": "Documentation overhaul planned after project rename decision.",
+      "status_basis": "Documentation overhaul and open-uniwill-cc comparison planned after project rename decision (M13.10).",
       "suggested_role": null,
       "assigned_agent_id": null,
       "depends_on": [
@@ -3401,6 +3461,147 @@
         "F45",
         "F46"
       ],
+      "test_ids": [],
+      "implementation_sha": null,
+      "r1_review": null,
+      "r2_evidence": [],
+      "integration_sha": null,
+      "children": [],
+      "blockers": []
+    },
+    {
+      "id": "M15.1",
+      "milestone": "M15",
+      "wave": "V15",
+      "title": "Абстрагировать IPC-слой (D-Bus на Linux / Named Pipes + ACL/SID на Windows) и сервисную обёртку (systemd / windows-service) для кроссплатформенного запуска uccd.",
+      "status": "planned",
+      "status_basis": "Cross-platform IPC & service wrapper planned for post-M14 Windows roadmap.",
+      "suggested_role": null,
+      "assigned_agent_id": null,
+      "depends_on": [
+        "M14.9"
+      ],
+      "dependency_refinement_required": false,
+      "owned_paths": [],
+      "feature_ids": [],
+      "test_ids": [],
+      "implementation_sha": null,
+      "r1_review": null,
+      "r2_evidence": [],
+      "integration_sha": null,
+      "children": [],
+      "blockers": []
+    },
+    {
+      "id": "M15.2",
+      "milestone": "M15",
+      "wave": "V15",
+      "title": "Исследовать и реализовать Windows PlatformBackend поверх ACPI WMI (root\\WMI, INOU0000): оценить покрытие TDP/ODM/RamFan/зарядки/Fn-Lock без неподписанного KMDF-драйвера и зафиксировать границы требований EV/WHQL.",
+      "status": "planned",
+      "status_basis": "ACPI WMI vs KMDF/EV/WHQL feasibility boundary documented for post-M14 Windows roadmap.",
+      "suggested_role": null,
+      "assigned_agent_id": null,
+      "depends_on": [
+        "M15.1"
+      ],
+      "dependency_refinement_required": false,
+      "owned_paths": [],
+      "feature_ids": [],
+      "test_ids": [],
+      "implementation_sha": null,
+      "r1_review": null,
+      "r2_evidence": [],
+      "integration_sha": null,
+      "children": [],
+      "blockers": []
+    },
+    {
+      "id": "M15.3",
+      "milestone": "M15",
+      "wave": "V15",
+      "title": "Реализовать Windows-бэкенды телеметрии, питания, дисплея и крышки: nvml.dll, Windows Power Management API (EPP/частоты/turbo), ChangeDisplaySettingsExW/WmiMonitorBrightnessMethods, RegisterPowerSettingNotification (GUID_LIDSWITCH_STATE_CHANGE).",
+      "status": "planned",
+      "status_basis": "Planned for post-M14 Windows roadmap.",
+      "suggested_role": null,
+      "assigned_agent_id": null,
+      "depends_on": [
+        "M15.1"
+      ],
+      "dependency_refinement_required": false,
+      "owned_paths": [],
+      "feature_ids": [],
+      "test_ids": [],
+      "implementation_sha": null,
+      "r1_review": null,
+      "r2_evidence": [],
+      "integration_sha": null,
+      "children": [],
+      "blockers": []
+    },
+    {
+      "id": "M15.4",
+      "milestone": "M15",
+      "wave": "V15",
+      "title": "Реализовать Windows-транспорты периферии: WinRT BLE GATT для СЖО (взамен BlueZ) и прямой USB HID (hidapi/HidD_SetFeature) для клавиатуры 048D:600B и Lightbar 048D:7001.",
+      "status": "planned",
+      "status_basis": "Planned for post-M14 Windows roadmap.",
+      "suggested_role": null,
+      "assigned_agent_id": null,
+      "depends_on": [
+        "M15.1"
+      ],
+      "dependency_refinement_required": false,
+      "owned_paths": [],
+      "feature_ids": [],
+      "test_ids": [],
+      "implementation_sha": null,
+      "r1_review": null,
+      "r2_evidence": [],
+      "integration_sha": null,
+      "children": [],
+      "blockers": []
+    },
+    {
+      "id": "M15.5",
+      "milestone": "M15",
+      "wave": "V15",
+      "title": "Адаптировать трей и GUI под Windows: нативный Shell_NotifyIconW / tray-icon, сборка автономного Qt6::Widgets ucc-gui под MSVC/MinGW.",
+      "status": "planned",
+      "status_basis": "Planned for post-M14 Windows roadmap.",
+      "suggested_role": null,
+      "assigned_agent_id": null,
+      "depends_on": [
+        "M15.1"
+      ],
+      "dependency_refinement_required": false,
+      "owned_paths": [],
+      "feature_ids": [],
+      "test_ids": [],
+      "implementation_sha": null,
+      "r1_review": null,
+      "r2_evidence": [],
+      "integration_sha": null,
+      "children": [],
+      "blockers": []
+    },
+    {
+      "id": "M15.6",
+      "milestone": "M15",
+      "wave": "V15",
+      "title": "Собрать и проверить Windows-инсталлятор (MSI через WiX или Inno Setup), сценарий установки службы, обновления и удаления (winget manifest).",
+      "status": "planned",
+      "status_basis": "Planned for post-M14 Windows roadmap.",
+      "suggested_role": null,
+      "assigned_agent_id": null,
+      "depends_on": [
+        "M15.2",
+        "M15.3",
+        "M15.4",
+        "M15.5"
+      ],
+      "dependency_refinement_required": false,
+      "owned_paths": [],
+      "feature_ids": [],
       "test_ids": [],
       "implementation_sha": null,
       "r1_review": null,

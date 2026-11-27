@@ -198,10 +198,12 @@
   "open_and_next": {
     "M8_remaining": "Daemon BlueZ supervision, logind listener and all three helper binaries are implemented. Host physical resume and full hardware cutover remain open.",
     "M5.8": "Hardware test pass with physical LCT cooler remains open",
-    "M5.9": "Fix Rust water-cooler profile restore (manual speeds/pump load from profile, post-debounce replay, spawn_blocking reconcile, aquaris.json LED seed, PrepareForSleep hook, power_wc auto-scan).",
-    "M8.10": "Blank keyboard backlight on lid close and restore on lid open/resume in RAM inside uccd logind monitor loop.",
-    "M10.8": "Replace fallback keyboard glyph in FluentTheme::icon() with distinct icons for Power & Devices, Lightbar, and Battery & Processes.",
-    "M13": "Live host cutover & hardware acceptance on Arch/CachyOS + Hyprland + RTX 5080 + LCT cooler remain open; M13.10 (project rename) and M13.11 (strict EN/RU documentation) queued.",
+    "M5.9": "Fix water-cooler profile restore (C++ hotfix decision pending; all 5 Rust root causes in uccd/cooling.rs/profile_tx.rs/cooler.rs).",
+    "M8.10": "Blank keyboard backlight and optional water-cooler LED on lid close and restore on lid open/resume in RAM (plus PowerDevicesTab Lid toggles).",
+    "M10.8_M10.9": "Replace fallback keyboard glyph in FluentTheme::icon() for Power & Devices / Lightbar / Battery & Processes (M10.8) and add Experimental tab (M10.9).",
+    "M12.10": "Establish unified code style (rustfmt.toml, .editorconfig, CONTRIBUTING.md) and dynamic release/versioning workflow (awaiting user selection).",
+    "M13": "Live host cutover & hardware acceptance on Arch/CachyOS + Hyprland + RTX 5080 + LCT cooler remain open; M13.10 (project rename) and M13.11 (strict EN/RU docs + open-uniwill-cc comparison) queued.",
+    "M15": "Post-M14 Windows port roadmap planned (Named Pipes/windows-service, ACPI WMI vs EV/WHQL KMDF boundary, WinRT BLE, USB HID, MSI/winget).",
     "M9_remaining": "Rust tray and session agent are built and staged. Live Hyprland compositor/tray/notification acceptance remains open.",
     "deferred_to_community": "Non-Arch packaging (DEB/RPM/Nix native builds & hooks), X11 session refresh backend (M9.5), and hardware not accessible on host are deferred to community contributors on those systems."
   }

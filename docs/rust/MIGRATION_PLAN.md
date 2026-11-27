@@ -437,7 +437,7 @@ Pump code `0` — высокий режим 11V, `2` — 7V, `3` — 8V, `4` —
 - [ ] M5.6 Реализовать ordered writes с gap ≥80 мс, coalescing значений и cancellation поколения соединения.
 - [ ] M5.7 Сохранить manual/auto semantics, Fan/Pump/LED restore после reconnect; запрещённый pump code отвергается.
 - [ ] M5.8 Проверить настоящую водянку: initial connect, disconnect, disable/enable, power cycle, manual/auto, отсутствие скачка на неподдержанный режим.
-- [ ] M5.9 Исправить надёжное восстановление профиля/состояния СЖО в Rust `uccd` и `ucc-hardware` (`manual_fan_speed`/`manual_pump_voltage` из профиля, мгновенный пересчёт кривой и replay после `WC_CONNECT_DEBOUNCE`, `spawn_blocking` для `reconcile_power_state`, загрузка LED из `aquaris.json`, `PrepareForSleep` teardown/resume, авто-включение сканирования при настроенном `state_map["power_wc"]`).
+- [ ] M5.9 Исправить надёжное восстановление профиля/состояния СЖО в текущем C++ UCC (если требуется хотфикс) и во всех 5 причинах в Rust `uccd` и `ucc-hardware` (`manual_fan_speed`/`manual_pump_voltage` из профиля, мгновенный пересчёт кривой и replay после `WC_CONNECT_DEBOUNCE`, `spawn_blocking` для `reconcile_power_state`, загрузка LED из `aquaris.json`, `PrepareForSleep` teardown/resume, авто-включение сканирования при настроенном `state_map["power_wc"]`).
 
 **Выход:** охлаждение работает автономно от GUI; BLE failures не задерживают fan loop, Polkit или shutdown.
 
@@ -476,7 +476,7 @@ Pump code `0` — высокий режим 11V, `2` — 7V, `3` — 8V, `4` —
 - [ ] M8.7 Проверить restart, corrupt config, unavailable device, D-Bus restart, slow auth, queue overload, sleep cancellation.
 - [ ] M8.8 Старый C++ GUI/CLI тестируется с новым Rust daemon на изолированной шине и затем в управляемом аппаратном переходе.
 - [ ] M8.9 Перенести `LidController` (ингибитор `handle-lid-switch`, debounce при отключении питания) и `WakeupPolicy` в `uccd` и `ucc-sleep prepare`.
-- [ ] M8.10 Гасить подсветку клавиатуры при закрытии крышки и восстанавливать при открытии или выходе из сна в `uccd` (подписка на `login1` `LidClosed` / `UPower` `LidIsClosed` в `run_logind_monitor_loop`, сохранение состояния только в RAM без изменения `settings.json`, unit/integration тесты).
+- [ ] M8.10 Гасить подсветку клавиатуры и (опционально) подсветку подключённой СЖО при закрытии крышки и восстанавливать из RAM при открытии или выходе из сна (настройки на карточке `Lid` в `PowerDevicesTab`: `turnOffKeyboardBacklightOnLidClose` и `turnOffWaterCoolerLedOnLidClose`, без изменения активного профиля/`settings.json`, плюс подписка на `login1` `LidClosed` / `UPower` `LidIsClosed` в `run_logind_monitor_loop` и тесты).
 
 **Выход:** все backend-функции F01–F29/F40 работают без C++ daemon и без запущенного GUI.
 
@@ -504,6 +504,7 @@ Pump code `0` — высокий режим 11V, `2` — 7V, `3` — 8V, `4` —
 - [ ] M10.6 Прогнать полный `test_gui_audit` (все 10 разделов, включая карточку `Lid close action & sleep wakeup` `F45`, обе темы, `UCC_READ_ONLY_PREVIEW` и отказ команд без fake success) в связке с новым Rust-демоном `uccd` на изолированной шине.
 - [ ] M10.7 Проверить на живой сессии Hyprland: масштабирование `1.25`/`2.0`, тему `qt6ct`/Kvantum, открытие из Rust-трея с фокусом и отсутствие пробуждения спящей RTX 5080 при открытии/закрытии `ucc-gui`.
 - [ ] M10.8 Дополировка GUI: добавить уникальные векторные иконки в `FluentTheme::icon()` для вкладок `Power & Devices`, `Lightbar` и `Battery & Processes` вместо fallback-иконки клавиатуры.
+- [ ] M10.9 Добавить вкладку `Experimental` в `ucc-gui` с отдельной иконкой в сайдбаре, предупреждением о тестовом статусе и расширяемой структурой для будущих экспериментальных настроек.
 
 **Выход:** все 10 разделов `ucc-gui` работают с Rust `uccd` без зависимостей `KF6`/`QML`/`libucc-dbus.so`, а в фоне нет ни одного Qt-процесса.
 
@@ -531,6 +532,7 @@ Pump code `0` — высокий режим 11V, `2` — 7V, `3` — 8V, `4` —
 - [ ] M12.7 Проверить dependencies/runtime links: основным binaries не нужны Qt/libucc-dbus; ожидаемые системные/FFI библиотеки перечислены.
 - [ ] M12.8 Сформировать license/dependency notices, SBOM/source archive и migration/recovery guide.
 - [ ] M12.9 Установить staged package на чистое окружение и обновить копию существующей установки; затем выполнить downgrade/rollback.
+- [ ] M12.10 Закрепить единый code style, commit convention и алгоритм релизов: `rustfmt.toml`, `.editorconfig`, `cargo fmt --check` в CI, `CONTRIBUTING.md`, устранение хардкода `docs/releases/0.3.0.md` в `.github/workflows/release.yml`, синхронная проверка/обновление версий (`Cargo.toml`, `CMakeLists.txt`, `PKGBUILD`, `ucc.spec`, `package.nix`) и генерация `CHANGELOG`.
 
 **Выход:** пакет воспроизводимо собирается и устанавливается, а переход и откат подтверждены тестами, не только скриптом с успешным exit code.
 
@@ -546,7 +548,7 @@ Pump code `0` — высокий режим 11V, `2` — 7V, `3` — 8V, `4` —
 - [ ] M13.8 Удалить временные compatibility bridges, source-extraction tests и старые package dependencies после переноса проверок.
 - [ ] M13.9 Обновить README/BUILDING/TESTING/COMPARISON/origins и выпустить проверенный release.
 - [ ] M13.10 Переименовать проект из `Frixit Control Center` в выбранное Rust-ориентированное имя во всех пользовательских поверхностях (GUI, tray, CLI, desktop-файлы, PKGBUILD, документация) с сохранением совместимости D-Bus/миграции.
-- [ ] M13.11 Подготовить строгую техническую документацию без маркетинга и нейрослопа: `README.md` (EN), `README.ru.md` (RU), архитектуру, справочники D-Bus API и CLI, матрицу железа и объективное сравнение с `TUXEDO Control Center`, `Clevo Control Center`, `LCT`, `CoreCtrl` и `asusctl`.
+- [ ] M13.11 Подготовить строгую техническую документацию без маркетинга и нейрослопа (`наш` и т.п.): `README.md` (EN), `README.ru.md` (RU), архитектуру, справочники D-Bus API и CLI, матрицу железа и замену колонки `Личный Python ControlCenter` в `docs/COMPARISON.md` на [`open-uniwill-cc`](https://github.com/aspidovss/open-uniwill-cc/blob/main/README.ru.md) наряду с upstream `UCC Revorked`, `LCT`/`CoreCtrl`/`asusctl`.
 
 **Выход:** достигается определение готовности из раздела 16. Наличие незавершённого hardware test или несогласованной потери embedded shell UI оставляет соответствующий пункт открытым.
 
@@ -566,6 +568,17 @@ Pump code `0` — высокий режим 11V, `2` — 7V, `3` — 8V, `4` —
 - [ ] M14.9 Провести полную аппаратную приёмку `UwccBackend` + `uwcc-rs` на `MECHREVO YAOSHI X6AR55xY (0x1A)` (охлаждение, нативный `/sys/class/hwmon` в `sensors`/`btop` с RPM вентиляторов и EC-температурами без пробуждения RTX из `D3cold`, `SMRW`/TCC, СЖО LCT22002, клавиатура `600B`, Lightbar `7001`/`7000` и логотип крышки, USB-выключатель веб-камеры RGB+IR, зарядка, Fn-клавиши, крышка/wakeup, sleep/resume, откат).
 
 **Выход:** система работает без `tuxedo-drivers-dkms` на собственном Rust `uwcc` стеке, сохраняя весь D-Bus/Hyprland/Noctalia функционал и возможность отката.
+
+### M15 — порт на Windows (после M14)
+
+- [ ] M15.1 Абстрагировать IPC-слой (D-Bus на Linux / Named Pipes + ACL/SID на Windows) и сервисную обёртку (`systemd` / `windows-service`) для кроссплатформенного запуска `uccd`.
+- [ ] M15.2 Исследовать и реализовать Windows `PlatformBackend` поверх ACPI WMI (`root\WMI`, `INOU0000`): оценить покрытие TDP/ODM/RamFan/зарядки/Fn-Lock без неподписанного KMDF-драйвера и зафиксировать границы требований EV/WHQL.
+- [ ] M15.3 Реализовать Windows-бэкенды телеметрии, питания, дисплея и крышки: `nvml.dll`, Windows Power Management API (EPP/частоты/turbo), `ChangeDisplaySettingsExW`/`WmiMonitorBrightnessMethods`, `RegisterPowerSettingNotification` (`GUID_LIDSWITCH_STATE_CHANGE`).
+- [ ] M15.4 Реализовать Windows-транспорты периферии: WinRT BLE GATT для СЖО (взамен BlueZ) и прямой USB HID (`hidapi`/`HidD_SetFeature`) для клавиатуры `048D:600B` и Lightbar `048D:7001`.
+- [ ] M15.5 Адаптировать трей и GUI под Windows: нативный `Shell_NotifyIconW` / `tray-icon`, сборка автономного `Qt6::Widgets` `ucc-gui` под MSVC/MinGW.
+- [ ] M15.6 Собрать и проверить Windows-инсталлятор (MSI через WiX или Inno Setup), сценарий установки службы, обновления и удаления (`winget` manifest).
+
+**Выход:** `uccd`, CLI и `Qt6::Widgets` GUI работают на Windows 11 через WMI/WinRT/HID без Linux-зависимостей; функции, требующие прямого EC I/O сверх ACPI WMI, явно ограничены наличием EV/WHQL-подписанного KMDF-драйвера.
 
 ## 12. Проверки и перенос тестов
 
