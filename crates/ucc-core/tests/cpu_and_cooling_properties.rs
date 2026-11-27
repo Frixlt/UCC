@@ -746,18 +746,15 @@ fn prop_cooling_controller_hw_limits_filtering_and_critical_override() {
     assert_eq!(empty_ctrl.report_temperature(75), 0);
 
     // Regression: falling filtered temperature near i32::MAX must not overflow hysteresis.
-    let mut extreme_ctrl = FanControlLogic::new(FanCurve {
-        points: vec![FanPoint::new(20, 20), FanPoint::new(90, 100)],
-    });
+    let mut extreme_profile = FanProfile::new("extreme", "Extreme");
+    extreme_profile.table_cpu = vec![FanPoint::new(20, 20), FanPoint::new(90, 100)];
+    let mut extreme_ctrl = FanControlLogic::new(extreme_profile, FanLogicType::Cpu);
     assert_eq!(extreme_ctrl.report_temperature_checked(i32::MAX), Some(100));
-    assert_eq!(
-        extreme_ctrl.report_temperature_checked(i32::MAX - 1),
-        Some(100)
-    );
     assert_eq!(
         extreme_ctrl.report_temperature_checked(i32::MAX - 4),
         Some(100)
     );
+    assert_eq!(extreme_ctrl.filtered_temperature(), i32::MAX - 1);
 
     // TemporaryFanCurves overrides only the targeted fan index and non-empty tables.
     let mut base = FanProfile::new("base", "Base");
