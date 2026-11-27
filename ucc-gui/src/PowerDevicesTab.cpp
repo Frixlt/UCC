@@ -145,14 +145,14 @@ PowerDevicesTab::PowerDevicesTab(UccdClient *client,QWidget *parent) : QWidget(p
   auto *toolbar=new QHBoxLayout;
   toolbar->setSpacing(8);
   m_search=new QLineEdit;m_search->setPlaceholderText("Filter devices by name or path");toolbar->addWidget(m_search,1);
-  m_showAdvancedPcie=new QCheckBox("Show advanced PCIe devices");
-  m_showAdvancedPcie->setObjectName("showAdvancedPcieDevices");
-  m_showAdvancedPcie->setChecked(false);
-  toolbar->addWidget(m_showAdvancedPcie);
   auto *reloadButton=new QPushButton("Reload");toolbar->addWidget(reloadButton);
   m_scan=new QPushButton("Re-scan hardware");m_scan->setObjectName("scanPowerDevices");toolbar->addWidget(m_scan);
   m_save=new QPushButton("Save and apply");m_save->setObjectName("savePowerDevices");m_save->setProperty("primary",true);toolbar->addWidget(m_save);
   layout->addLayout(toolbar);
+  m_showAdvancedPcie=new QCheckBox("Show advanced PCIe devices");
+  m_showAdvancedPcie->setObjectName("showAdvancedPcieDevices");
+  m_showAdvancedPcie->setChecked(false);
+  layout->addWidget(m_showAdvancedPcie);
 
   m_devices=new QTableWidget(0,5);m_devices->setObjectName("powerDeviceTable");
   m_devices->setHorizontalHeaderLabels({"Device","AC","Type-C","Battery","Last application"});tableStyle(m_devices);
