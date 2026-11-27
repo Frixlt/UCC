@@ -3,6 +3,13 @@
 //! Session background agent relaying notifications to lightbar, monitoring driver health,
 //! alerting on power transitions, and handling lid/refresh events.
 
+mod notifications;
+
+use notifications::{
+    close_notify, drm_root_from_env, format_refresh_prompt, internal_monitors_from_config,
+    next_optional, parse_policy_source, parse_requested_hz, query_compositor_config,
+    run_commands, send_notify, LoginManagerProxy, NotificationsProxy, UPowerProxy,
+};
 use serde_json::Value;
 use std::fs::OpenOptions;
 use std::os::fd::AsRawFd;
@@ -14,8 +21,8 @@ use tokio::process::Command;
 use tracing::{info, warn};
 use ucc_dbus::{UccdProxy, DBUS_INTERFACE, DBUS_PATH, DBUS_SERVICE};
 use ucc_session_agent::{
-    DriverAlertAction, DriverAlertState, NotificationMonitorParser, PowerSourceAlertState,
-    RefreshBackend,
+    DriverAlertAction, DriverAlertState, LidDisplayHandler, NotificationMonitorParser,
+    PowerSourceAlertState, RefreshAdvisor, RefreshBackend, RefreshPlan,
 };
 use zbus::Connection;
 
@@ -81,6 +88,47 @@ fn lightbar_notify_enabled(settings: &Value, policy: &Value) -> bool {
     managed && !silent && enabled
 }
 
+struct SessionState {
+    backend: RefreshBackend,
+    drm_root: PathBuf,
+    policy_source: String,
+    requested_hz: i32,
+    pending_refresh: Option<(u32, RefreshPlan)>,
+    last_notified_refresh: Option<(String, String)>,
+}
+
+impl SessionState {
+    async fn maybe_suggest_refresh(&mut self, notif: Option<&NotificationsProxy<'_>>) {
+        let Some(cfg) = query_compositor_config(self.backend).await else {
+            return;
+        };
+        let Some(plan) =
+            RefreshAdvisor::plan(&cfg, &self.policy_source, &self.drm_root, self.requested_hz)
+        else {
+            self.last_notified_refresh = None;
+            return;
+        };
+        let key = (plan.output.clone(), plan.target_mode.clone());
+        if self.last_notified_refresh.as_ref() == Some(&key) {
+            return;
+        }
+        let body = format_refresh_prompt(&plan);
+        if let Some(id) = send_notify(
+            notif,
+            "video-display",
+            "Display Refresh Rate",
+            &body,
+            &["apply", "Switch", "dismiss", "Dismiss"],
+            10000,
+        )
+        .await
+        {
+            self.last_notified_refresh = Some(key);
+            self.pending_refresh = Some((id, plan));
+        }
+    }
+}
+
 #[tokio::main]
 async fn main() {
     let args: Vec<String> = std::env::args().collect();
@@ -112,12 +160,107 @@ async fn main() {
         }
     };
 
-    let _backend = RefreshBackend::detect_from_env();
+    let session_conn = Connection::session().await.ok();
+    let own_bus_name = session_conn
+        .as_ref()
+        .and_then(|c| c.unique_name().map(|n| n.as_str().to_string()));
+    let notif_proxy = if let Some(ref sc) = session_conn {
+        NotificationsProxy::new(sc).await.ok()
+    } else {
+        None
+    };
+
+    let mut action_stream = match notif_proxy.as_ref() {
+        Some(np) => np.receive_action_invoked().await.ok(),
+        None => None,
+    };
+    let mut closed_stream = match notif_proxy.as_ref() {
+        Some(np) => np.receive_notification_closed().await.ok(),
+        None => None,
+    };
+
+    let lid_conn = if std::env::var_os("UCC_LID_BUS_SESSION").is_some() {
+        session_conn.clone()
+    } else {
+        Connection::system().await.ok()
+    };
+    let login_proxy = match lid_conn.as_ref() {
+        Some(lc) => LoginManagerProxy::new(lc).await.ok(),
+        None => None,
+    };
+    let upower_proxy = match lid_conn.as_ref() {
+        Some(lc) => UPowerProxy::new(lc).await.ok(),
+        None => None,
+    };
+
+    let mut lid_closed_stream = match login_proxy.as_ref() {
+        Some(lp) => lp.receive_lid_closed_changed().await.into(),
+        None => None,
+    };
+    let mut sleep_stream = match login_proxy.as_ref() {
+        Some(lp) => lp.receive_prepare_for_sleep().await.ok(),
+        None => None,
+    };
+    let mut upower_lid_stream = match upower_proxy.as_ref() {
+        Some(up) => up.receive_lid_is_closed_changed().await.into(),
+        None => None,
+    };
+
+    let mut profile_stream = proxy.receive_profile_changed().await.ok();
+    let mut policy_stream = proxy.receive_power_policy_changed().await.ok();
+    let mut dev_status_stream = proxy.receive_power_device_status_changed().await.ok();
+
+    let backend = RefreshBackend::detect_from_env();
     let mut driver_alert = DriverAlertState::default();
     let mut power_alert = PowerSourceAlertState::default();
-    let mut parser = NotificationMonitorParser::new(None);
-    let mut health_tick = tokio::time::interval(Duration::from_secs(10));
+    let mut lid_handler = LidDisplayHandler::new(backend);
+    let mut parser = NotificationMonitorParser::new(own_bus_name);
+
+    let mut state = SessionState {
+        backend,
+        drm_root: drm_root_from_env(),
+        policy_source: "ac".to_string(),
+        requested_hz: 0,
+        pending_refresh: None,
+        last_notified_refresh: None,
+    };
+
+    // Best-effort initial state hydration (minimal mocks may not implement every method).
+    if let Ok(policy_raw) = proxy.get_power_policy_json().await {
+        power_alert.on_policy_json(&policy_raw);
+        lid_handler.policy_changed(&policy_raw);
+        state.policy_source = parse_policy_source(&policy_raw);
+    }
+    if let Ok(dev_settings_raw) = proxy.get_power_device_settings_json().await {
+        lid_handler.device_settings_changed(&dev_settings_raw);
+    }
+    if let Ok(prof_raw) = proxy.get_active_profile_json().await {
+        state.requested_hz = parse_requested_hz(&prof_raw);
+    }
+    let mut login1_active = false;
+    if let Some(ref lp) = login_proxy {
+        if let Ok(closed) = lp.lid_closed().await {
+            login1_active = true;
+            let _ = lid_handler.on_lid_state_changed(closed, &[]);
+        }
+    }
+    if !login1_active {
+        if let Some(ref up) = upower_proxy {
+            if let Ok(closed) = up.lid_is_closed().await {
+                let _ = lid_handler.on_lid_state_changed(closed, &[]);
+            }
+        }
+    }
+    state.maybe_suggest_refresh(notif_proxy.as_ref()).await;
+
+    let health_poll_ms = std::env::var("UCC_HEALTH_POLL_MS")
+        .ok()
+        .and_then(|s| s.parse::<u64>().ok())
+        .filter(|&ms| ms >= 50)
+        .unwrap_or(10_000);
+    let mut health_tick = tokio::time::interval(Duration::from_millis(health_poll_ms));
     let mut state_tick = tokio::time::interval(Duration::from_secs(5));
+    let mut power_notice_deadline: Option<tokio::time::Instant> = None;
 
     let spawn_monitor = || {
         let mut child = Command::new("dbus-monitor")
@@ -148,22 +291,141 @@ async fn main() {
             _ = health_tick.tick() => {
                 if let Ok(raw) = proxy.get_driver_health_json().await {
                     if let Ok(val) = serde_json::from_str::<Value>(&raw) {
-                        let (_gen, action) = driver_alert.evaluate(&val);
+                        let (gen, action) = driver_alert.evaluate(&val);
                         match action {
-                            DriverAlertAction::Notify(msg) | DriverAlertAction::Replace { problem: msg, .. } => {
+                            DriverAlertAction::Notify(msg) => {
                                 warn!("UCC driver health alert: {msg}");
+                                let id = send_notify(
+                                    notif_proxy.as_ref(),
+                                    "dialog-warning",
+                                    "UCC Driver Alert",
+                                    &msg,
+                                    &[],
+                                    0,
+                                )
+                                .await;
+                                if let Some(stale) = driver_alert.on_notify_finished(gen, id) {
+                                    close_notify(notif_proxy.as_ref(), stale).await;
+                                }
                             }
-                            DriverAlertAction::Close(_) | DriverAlertAction::None => {}
+                            DriverAlertAction::Replace { close_id, problem } => {
+                                warn!("UCC driver health alert: {problem}");
+                                close_notify(notif_proxy.as_ref(), close_id).await;
+                                let id = send_notify(
+                                    notif_proxy.as_ref(),
+                                    "dialog-warning",
+                                    "UCC Driver Alert",
+                                    &problem,
+                                    &[],
+                                    0,
+                                )
+                                .await;
+                                if let Some(stale) = driver_alert.on_notify_finished(gen, id) {
+                                    close_notify(notif_proxy.as_ref(), stale).await;
+                                }
+                            }
+                            DriverAlertAction::Close(id) => {
+                                close_notify(notif_proxy.as_ref(), id).await;
+                            }
+                            DriverAlertAction::None => {}
                         }
                     }
+                }
+            }
+            sig = next_optional(&mut policy_stream) => {
+                if let Ok(args) = sig.args() {
+                    let policy_raw = args.json;
+                    if power_alert.on_policy_json(&policy_raw) {
+                        power_notice_deadline = Some(tokio::time::Instant::now() + Duration::from_millis(800));
+                    }
+                    lid_handler.policy_changed(&policy_raw);
+                    state.policy_source = parse_policy_source(&policy_raw);
+                    state.maybe_suggest_refresh(notif_proxy.as_ref()).await;
                 }
             }
             _ = state_tick.tick() => {
                 if let Ok(policy_raw) = proxy.get_power_policy_json().await {
                     if power_alert.on_policy_json(&policy_raw) {
-                        if let Some(notice) = power_alert.take_pending_notice(ucc_config::is_read_only_preview()) {
-                            info!("Power source transitioned: {}", notice.title);
+                        power_notice_deadline = Some(tokio::time::Instant::now() + Duration::from_millis(800));
+                    }
+                    lid_handler.policy_changed(&policy_raw);
+                    state.policy_source = parse_policy_source(&policy_raw);
+                }
+            }
+            _ = async {
+                match power_notice_deadline {
+                    Some(deadline) => tokio::time::sleep_until(deadline).await,
+                    None => std::future::pending().await,
+                }
+            } => {
+                power_notice_deadline = None;
+                if let Some(notice) = power_alert.take_pending_notice(ucc_config::is_read_only_preview()) {
+                    info!("Power source transitioned: {}", notice.title);
+                    let _ = send_notify(
+                        notif_proxy.as_ref(),
+                        notice.icon,
+                        notice.title,
+                        notice.body,
+                        &[],
+                        5000,
+                    )
+                    .await;
+                }
+            }
+            _ = next_optional(&mut profile_stream) => {
+                if let Ok(prof_raw) = proxy.get_active_profile_json().await {
+                    state.requested_hz = parse_requested_hz(&prof_raw);
+                }
+                state.maybe_suggest_refresh(notif_proxy.as_ref()).await;
+            }
+            _ = next_optional(&mut dev_status_stream) => {
+                if let Ok(settings_raw) = proxy.get_power_device_settings_json().await {
+                    lid_handler.device_settings_changed(&settings_raw);
+                }
+            }
+            sig = next_optional(&mut action_stream) => {
+                if let Ok(args) = sig.args() {
+                    if let Some((pending_id, ref plan)) = state.pending_refresh {
+                        if args.id == pending_id && args.action_key == "apply" {
+                            if let Some(cmd) = state.backend.command_name() {
+                                let cmd_args = RefreshAdvisor::apply_command_args(state.backend, plan);
+                                run_commands(vec![(cmd, cmd_args)]).await;
+                            }
+                            state.pending_refresh = None;
                         }
+                    }
+                }
+            }
+            sig = next_optional(&mut closed_stream) => {
+                if let Ok(args) = sig.args() {
+                    if state.pending_refresh.as_ref().is_some_and(|(id, _)| *id == args.id) {
+                        state.pending_refresh = None;
+                    }
+                }
+            }
+            sig = next_optional(&mut sleep_stream) => {
+                if let Ok(args) = sig.args() {
+                    if !args.start {
+                        state.maybe_suggest_refresh(notif_proxy.as_ref()).await;
+                    }
+                }
+            }
+            prop = next_optional(&mut lid_closed_stream) => {
+                if let Ok(closed) = prop.get().await {
+                    login1_active = true;
+                    let cfg = query_compositor_config(state.backend).await;
+                    let monitors = internal_monitors_from_config(cfg.as_ref());
+                    let cmds = lid_handler.on_lid_state_changed(closed, &monitors);
+                    run_commands(cmds).await;
+                }
+            }
+            prop = next_optional(&mut upower_lid_stream) => {
+                if !login1_active {
+                    if let Ok(closed) = prop.get().await {
+                        let cfg = query_compositor_config(state.backend).await;
+                        let monitors = internal_monitors_from_config(cfg.as_ref());
+                        let cmds = lid_handler.on_lid_state_changed(closed, &monitors);
+                        run_commands(cmds).await;
                     }
                 }
             }
@@ -196,15 +458,11 @@ async fn main() {
                             let settings = proxy
                                 .get_lightbar_settings_json()
                                 .await
-                                .ok()
-                                .and_then(|s| serde_json::from_str::<Value>(&s).ok())
-                                .unwrap_or(Value::Null);
+                                .await_value_or_null();
                             let policy = proxy
                                 .get_power_policy_json()
                                 .await
-                                .ok()
-                                .and_then(|s| serde_json::from_str::<Value>(&s).ok())
-                                .unwrap_or(Value::Null);
+                                .await_value_or_null();
                             if lightbar_notify_enabled(&settings, &policy) {
                                 let _ = proxy.trigger_lightbar_animation(false).await;
                             }
@@ -213,5 +471,17 @@ async fn main() {
                 }
             }
         }
+    }
+}
+
+trait JsonResultExt {
+    fn await_value_or_null(self) -> Value;
+}
+
+impl JsonResultExt for zbus::Result<String> {
+    fn await_value_or_null(self) -> Value {
+        self.ok()
+            .and_then(|s| serde_json::from_str::<Value>(&s).ok())
+            .unwrap_or(Value::Null)
     }
 }
