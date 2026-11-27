@@ -640,9 +640,11 @@ async fn ta_05_ta_06_lid_wc_led_unset_and_disconnected_reconnect_restore() {
         "TA-05: lid close must queue WC LED Off even when RGB state was Unset"
     );
     let off_pkts = drain_cooler_packets(&backend, 4).await;
-    assert!(off_pkts.contains(&ucc_hardware::CoolerPacketEncoder::turn_off(
-        ucc_hardware::CMD_RGB
-    )));
+    assert!(
+        off_pkts.contains(&ucc_hardware::CoolerPacketEncoder::turn_off(
+            ucc_hardware::CMD_RGB
+        ))
+    );
     // Opening lid restores Unset without inventing a bogus RGB color
     backend.on_lid_state_changed(false);
     assert_eq!(backend.cooler_desired_rgb(), ucc_hardware::RgbTarget::Unset);
@@ -669,12 +671,14 @@ async fn ta_05_ta_06_lid_wc_led_unset_and_disconnected_reconnect_restore() {
         "TA-06: opening lid during BLE disconnect must still restore saved WC RGB on reconnect"
     );
     let restored_pkts = drain_cooler_packets(&backend, 4).await;
-    assert!(restored_pkts.contains(&ucc_hardware::CoolerPacketEncoder::rgb(
-        10,
-        20,
-        30,
-        ucc_hardware::RgbState::Static
-    )));
+    assert!(
+        restored_pkts.contains(&ucc_hardware::CoolerPacketEncoder::rgb(
+            10,
+            20,
+            30,
+            ucc_hardware::RgbState::Static
+        ))
+    );
 
     // Also test WC connecting while lid is already closed -> turns off LED and restores on open
     backend.set_cooler_connected_state(false);

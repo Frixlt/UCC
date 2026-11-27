@@ -828,7 +828,8 @@ async fn ta_07_wc_connect_without_power_wc_mapping_preserves_ac_profile() {
     ac_prof.odm_profile_name = None;
     ac_prof.odm_power_limits = vec![45, 65, 85];
     cfg.profiles.insert(ac_prof.id.clone(), ac_prof.clone());
-    cfg.state_map.insert("power_ac".to_string(), ac_prof.id.clone());
+    cfg.state_map
+        .insert("power_ac".to_string(), ac_prof.id.clone());
     cfg.state_map.remove("power_wc");
     ConfigManager::with_custom_path(root.path().join("settings.json"))
         .save(&cfg)
@@ -864,13 +865,11 @@ fn ta_22_startup_activation_does_not_duplicate_charging_writes_or_fan_ticks() {
 
     let sysfs = Arc::new(MockSysfs::new());
     sysfs.set_file(
-        root.path().join("sys/devices/system/cpu/cpu0/cpufreq/scaling_cur_freq"),
+        root.path()
+            .join("sys/devices/system/cpu/cpu0/cpufreq/scaling_cur_freq"),
         "3200000",
     );
-    sysfs.set_file(
-        root.path().join("sys/class/power_supply/AC/type"),
-        "Mains",
-    );
+    sysfs.set_file(root.path().join("sys/class/power_supply/AC/type"), "Mains");
     sysfs.set_file(root.path().join("sys/class/power_supply/AC/online"), "1");
     sysfs.set_file(bat.join("type"), "Battery");
     sysfs.set_file(bat.join("charge_control_start_threshold"), "0");

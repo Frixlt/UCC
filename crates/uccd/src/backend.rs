@@ -587,7 +587,8 @@ impl LiveUccdBackend {
 
     /// Returns the daemon's current startup readiness state (`starting`, `degraded`, or `ready`).
     pub fn startup_state_label(&self) -> &'static str {
-        if self.startup_degraded.load(Ordering::SeqCst) || self.prime_degraded.load(Ordering::SeqCst)
+        if self.startup_degraded.load(Ordering::SeqCst)
+            || self.prime_degraded.load(Ordering::SeqCst)
         {
             "degraded"
         } else if self.hardware_activation_pending.load(Ordering::SeqCst) {

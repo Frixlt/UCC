@@ -250,9 +250,13 @@ fn ta_01_single_sensor_failure_triggers_failsafe_auto_without_zeroing_fan() {
     assert_eq!(snap_gpu_lost.speeds_percent, vec![None, None]);
     let journal = backend.journal();
     assert_eq!(journal, vec![PlatformWrite::SetFansAuto]);
-    assert!(!journal
-        .iter()
-        .any(|w| matches!(w, PlatformWrite::SetFanSpeed { fan_idx: 1, percent: 0 })));
+    assert!(!journal.iter().any(|w| matches!(
+        w,
+        PlatformWrite::SetFanSpeed {
+            fan_idx: 1,
+            percent: 0
+        }
+    )));
 
     // Invalid out-of-range GPU temperature also keeps failsafe auto active without 0% write
     backend.clear_journal();
@@ -268,19 +272,20 @@ fn ta_01_single_sensor_failure_triggers_failsafe_auto_without_zeroing_fan() {
     let snap_recovered = controller.tick(&backend, true, 4000);
     assert!(!snap_recovered.fallback_auto);
     assert_eq!(snap_recovered.speeds_percent, vec![Some(0), Some(100)]);
-    assert!(backend
-        .journal()
-        .contains(&PlatformWrite::SetFanSpeed {
-            fan_idx: 1,
-            percent: 100
-        }));
+    assert!(backend.journal().contains(&PlatformWrite::SetFanSpeed {
+        fan_idx: 1,
+        percent: 100
+    }));
 }
 
 #[test]
 fn ta_02_cooler_rejected_manual_command_preserves_auto_mode() {
     let mut ctrl = CoolerController::new();
     assert_eq!(ctrl.mode(), CoolerMode::Auto);
-    assert_eq!(ctrl.set_manual_fan_speed(101), Err(CoolerError::InvalidFanSpeed(101)));
+    assert_eq!(
+        ctrl.set_manual_fan_speed(101),
+        Err(CoolerError::InvalidFanSpeed(101))
+    );
     assert_eq!(ctrl.mode(), CoolerMode::Auto);
     assert_eq!(ctrl.pending_len(), 0);
     assert_eq!(

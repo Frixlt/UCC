@@ -536,7 +536,10 @@ async fn ta_03_sigterm_during_startup_activation_runs_hardware_cleanup_and_relea
         .expect("start_on_connection_cancellable did not abort in time")
         .expect("join failed")
         .expect("startup abort returned D-Bus error");
-    assert!(res.is_none(), "expected Ok(None) after startup cancellation");
+    assert!(
+        res.is_none(),
+        "expected Ok(None) after startup cancellation"
+    );
 
     let bus = zbus::fdo::DBusProxy::new(&conn).await.unwrap();
     assert!(

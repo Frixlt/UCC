@@ -52,9 +52,9 @@ fn test_tray_menu_structure_and_actions() {
     assert!(ksni::Tray::tool_tip(&tray)
         .description
         .contains("Water Cooler: Off"));
-    assert!(ksni::Tray::menu(&tray).iter().any(
-        |item| matches!(item, MenuItem::Standard(s) if s.label == "Water Cooler: Off")
-    ));
+    assert!(ksni::Tray::menu(&tray)
+        .iter()
+        .any(|item| matches!(item, MenuItem::Standard(s) if s.label == "Water Cooler: Off")));
 
     tray.set_water_cooler_enabled(true);
     assert!(ksni::Tray::tool_tip(&tray)

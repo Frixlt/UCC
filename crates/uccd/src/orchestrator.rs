@@ -444,16 +444,11 @@ impl DaemonRuntime {
             backend.set_activation_pending(false);
             let handoff_guard = register_in_flight_shutdown(&name);
             if release_name {
-                let _ = tokio::time::timeout(
-                    Duration::from_secs(2),
-                    unregister_uccd_paths(&conn),
-                )
-                .await;
-                let _ = tokio::time::timeout(
-                    Duration::from_secs(2),
-                    conn.release_name(name.as_str()),
-                )
-                .await;
+                let _ = tokio::time::timeout(Duration::from_secs(2), unregister_uccd_paths(&conn))
+                    .await;
+                let _ =
+                    tokio::time::timeout(Duration::from_secs(2), conn.release_name(name.as_str()))
+                        .await;
             }
             let (done_tx, done_rx) = tokio::sync::oneshot::channel();
             let backend_timeout = Arc::clone(&backend);
