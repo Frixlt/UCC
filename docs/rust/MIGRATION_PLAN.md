@@ -510,14 +510,14 @@ Pump code `0` — высокий режим 11V, `2` — 7V, `3` — 8V, `4` —
 
 ### M11 — миграция инструментов и shell-интеграций
 
-- [ ] M11.1 Перенести offline import текущего UCC и исторических TCC/Python Data в Rust.
-- [ ] M11.2 Сохранить report/pending/desktop-preferences, unresolved refs, curve rounding/offsets и приоритет пользовательских данных.
-- [ ] M11.3 Перенести используемые prepare-deployment/deploy/desktop-transition/rollback сценарии в maintenance subcommands.
-- [ ] M11.4 Перенести capture-gallery и parser-check workflows; старые Python tools оставить только в архиве после parity.
-- [ ] M11.5 Выполнить выбранное в M1 решение GNOME/Plasma; покрыть каждый quick control, notification и activation path.
-- [ ] M11.6 Если остаются GJS/QML adapters, удалить их C++ backend, оставить transport/presentation и явно назвать исключение из Rust-only; такой результат не выдаётся за «весь исполняемый код на Rust».
-- [ ] M11.7 Если выбран strict Rust, проверить Rust popup в каждой DE и только затем согласованно исключить embedded extensions из нового пакета.
-- [ ] M11.8 Research probes/C N-API не включать в runtime; исторические материалы и attribution сохранить.
+- [x] M11.1 Перенести offline import текущего UCC и исторических TCC/Python Data в Rust (`crates/ucc-config/src/import.rs`, `cargo xtask import-offline`).
+- [x] M11.2 Сохранить report/pending/desktop-preferences, unresolved refs, curve rounding/offsets и приоритет пользовательских данных.
+- [x] M11.3 Перенести используемые prepare-deployment/deploy/desktop-transition/rollback сценарии в maintenance subcommands (`cargo xtask maintenance ...`).
+- [x] M11.4 Перенести capture-gallery и parser-check workflows; старые Python tools оставить только в архиве после parity.
+- [ ] M11.5 (частично выполнено) Выполнить выбранное в M1 решение GNOME/Plasma; покрыть каждый quick control, notification и activation path (код, pure-GJS boundary и `ucc-desktop-tray` проверены; живая приёмка GNOME/Hyprland остаётся на M13).
+- [x] M11.6 Если остаются GJS/QML adapters, удалить их C++ backend, оставить transport/presentation и явно назвать исключение из Rust-only; такой результат не выдаётся за «весь исполняемый код на Rust».
+- [x] *(заменено ADR-03)* M11.7 Если выбран strict Rust, проверить Rust popup в каждой DE и только затем согласованно исключить embedded extensions из нового пакета.
+- [x] M11.8 Research probes/C N-API не включать в runtime; исторические материалы и attribution сохранить.
 
 **Выход:** для сборки/установки/миграции основного продукта не нужен собственный Python код; судьба каждого shell component зафиксирована, скрытых потерь функций нет.
 
@@ -548,7 +548,7 @@ Pump code `0` — высокий режим 11V, `2` — 7V, `3` — 8V, `4` —
 - [ ] M13.8 Удалить временные compatibility bridges, source-extraction tests и старые package dependencies после переноса проверок.
 - [ ] M13.9 Обновить README/BUILDING/TESTING/COMPARISON/origins и выпустить проверенный release.
 - [x] M13.10 Переименовать проект из `Frixit Control Center` в выбранное Rust-ориентированное имя во всех пользовательских runtime-поверхностях (GUI, tray, CLI, desktop-файлы, PKGBUILD, packaging-метаданные) с сохранением совместимости D-Bus/миграции (`ucc-rusted`; документация `README.md`, `README.ru.md`, `docs/BUILDING.md` вынесена в `M13.11`).
-- [ ] M13.11 Подготовить строгую техническую документацию без маркетинга и нейрослопа (`наш` и т.п.): `README.md` (EN), `README.ru.md` (RU), архитектуру, справочники D-Bus API и CLI, матрицу железа и объективное сравнение в `docs/COMPARISON.md` с [`open-uniwill-cc`](https://github.com/aspidovss/open-uniwill-cc/blob/main/README.ru.md), upstream `UCC Revorked`, `TUXEDO Control Center`, `Clevo Control Center`, `LCT`, `CoreCtrl` и `asusctl` (полностью убрать упоминание «Личный Python ControlCenter»).
+- [ ] M13.11 Подготовить строгую техническую документацию без маркетинга и нейрослопа (`наш` и т.п.) и документацию для AI-агентов для быстрой ориентации в проекте (`AGENTS.md`, `docs/AI_AGENT_GUIDE.md`), `README.md` (EN), `README.ru.md` (RU), архитектуру, справочники D-Bus API и CLI, матрицу железа и объективное сравнение в `docs/COMPARISON.md` с [`open-uniwill-cc`](https://github.com/aspidovss/open-uniwill-cc/blob/main/README.ru.md), upstream `UCC Revorked`, `TUXEDO Control Center`, `Clevo Control Center`, `LCT`, `CoreCtrl` и `asusctl` (полностью убрать упоминание «Личный Python ControlCenter»).
 
 **Выход:** достигается определение готовности из раздела 16. Наличие незавершённого hardware test или несогласованной потери embedded shell UI оставляет соответствующий пункт открытым.
 

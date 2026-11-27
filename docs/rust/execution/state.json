@@ -162,12 +162,13 @@
     ]
   },
   "last_verified": {
-    "command": "cargo fmt --all -- --check && cargo clippy --workspace --all-targets --locked --offline -- -D warnings && cargo run -p xtask --locked --offline -- check-versions && dbus-run-session -- cargo test --workspace --locked --offline; CMAKE_CXX_FLAGS=-D_GLIBCXX_ASSERTIONS ctest --parallel 4 --output-on-failure; makepkg -fd --noconfirm (48/48 CTest + extracted ucc-gui --show)",
-    "top_suites": 98,
-    "top_passed": 499,
+    "command": "cargo fmt --all -- --check && cargo clippy --workspace --all-targets --locked --offline -- -D warnings && cargo run -p xtask --locked --offline -- parser-check && dbus-run-session -- cargo test --workspace --locked --offline",
+    "top_suites": 102,
+    "top_passed": 520,
     "top_failed": 0,
     "top_ignored": 0,
     "clippy_warnings": 0,
+    "m11_tooling_verification": "82446dc/c815f97/1c2b851: pure-Rust offline TCC/UCC/Data importer (13/13), xtask maintenance workflows (6/6), parser-check (6 manifests at 0.0.1, 11 repo JSONs, 150 SBOM components), and ADR-03/nvidia_findings packaging boundary regressions passed",
     "full_acceptance_probes_passed": 5,
     "full_acceptance_probes_consecutive_runs": 3,
     "outcomes_recheck_probes_passed": 5,
@@ -206,7 +207,7 @@
   "open_and_next": {
     "M8_remaining": "Daemon BlueZ supervision, logind listener and all three helper binaries are implemented. Host physical resume and full hardware cutover remain open.",
     "M5.8": "Hardware test pass with physical LCT cooler remains open",
-    "M13": "Live host cutover & hardware acceptance on Arch/CachyOS + Hyprland + RTX 5080 + LCT cooler remain open; M13.10 (rename to ucc-rusted) done; M13.11 (strict EN/RU docs + open-uniwill-cc comparison) deferred to end of M13.",
+    "M13": "Live host cutover & hardware acceptance on Arch/CachyOS + Hyprland + RTX 5080 + LCT cooler and live M11.5 GNOME/Hyprland session acceptance remain open; M13.10 (rename to ucc-rusted) done; M13.11 (strict EN/RU docs, AI-agent orientation docs AGENTS.md + docs/AI_AGENT_GUIDE.md, and open-uniwill-cc comparison) deferred to end of M13.",
     "M14_M15": "Post-M13 uwcc Rust kernel backend (keyboard 048D:600B + Lightbar/logo 048D:7001/7000) and Windows port foundation (ADR-06, M15.1-M15.4) implemented with unit tests while Linux retains full feature set; Windows target build/hardware validation remains open.",
     "M9_remaining": "Rust tray and session agent are built and staged. Live Hyprland compositor/tray/notification acceptance remains open.",
     "deferred_to_community": "Non-Arch packaging (DEB/RPM/Nix native builds & hooks), X11 session refresh backend (M9.5), and hardware not accessible on host are deferred to community contributors on those systems."

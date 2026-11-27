@@ -2671,19 +2671,29 @@
       "milestone": "M11",
       "wave": "V11",
       "title": "Перенести offline import текущего UCC и исторических TCC/Python Data в Rust.",
-      "status": "planned",
-      "status_basis": "No Rust implementation or test result is claimed.",
+      "status": "done",
+      "status_basis": "Implemented pure-Rust offline TCC/UCC/Data importer in crates/ucc-config/src/import.rs and wired `cargo xtask import-offline`; verified with 13 parity tests in crates/ucc-config/tests/offline_import.rs and CLI integration test in xtask (82446dc, c815f97).",
       "suggested_role": null,
       "assigned_agent_id": null,
       "depends_on": [],
-      "dependency_refinement_required": true,
-      "owned_paths": [],
+      "dependency_refinement_required": false,
+      "owned_paths": [
+        "crates/ucc-config/src/import.rs",
+        "crates/ucc-config/src/lib.rs",
+        "crates/ucc-config/tests/offline_import.rs"
+      ],
       "feature_ids": [],
-      "test_ids": [],
-      "implementation_sha": null,
+      "test_ids": [
+        "offline_user_colors_win_without_shifting_missing_leds",
+        "tcc_active_named_curve_wins_over_unused_custom_curve_and_bakes_modifiers",
+        "mechrevo_preserves_effective_controls_without_activating_gpu_writes"
+      ],
+      "implementation_sha": "82446dc",
       "r1_review": null,
-      "r2_evidence": [],
-      "integration_sha": null,
+      "r2_evidence": [
+        "cargo test -p ucc-config --locked --offline (13/13 offline_import passed)"
+      ],
+      "integration_sha": "82446dc",
       "children": [],
       "blockers": []
     },
@@ -2692,19 +2702,28 @@
       "milestone": "M11",
       "wave": "V11",
       "title": "Сохранить report/pending/desktop-preferences, unresolved refs, curve rounding/offsets и приоритет пользовательских данных.",
-      "status": "planned",
-      "status_basis": "No Rust implementation or test result is claimed.",
+      "status": "done",
+      "status_basis": "Preserved half-up curve interpolation/offsets, unresolvedProfiles reporting, explicit user priority, desktop-preferences mapping (system -> auto, startMinimized), and 0o700/0o600 bundle creation in crates/ucc-config/src/import.rs (82446dc).",
       "suggested_role": null,
       "assigned_agent_id": null,
       "depends_on": [],
-      "dependency_refinement_required": true,
-      "owned_paths": [],
+      "dependency_refinement_required": false,
+      "owned_paths": [
+        "crates/ucc-config/src/import.rs",
+        "crates/ucc-config/tests/offline_import.rs"
+      ],
       "feature_ids": [],
-      "test_ids": [],
-      "implementation_sha": null,
+      "test_ids": [
+        "offline_absent_tcc_profiles_are_reported_without_guessing_limits",
+        "offline_desktop_preferences_preserve_minimized_and_map_system_theme",
+        "offline_bundle_writer_enforces_private_permissions_and_refuses_overwrite"
+      ],
+      "implementation_sha": "82446dc",
       "r1_review": null,
-      "r2_evidence": [],
-      "integration_sha": null,
+      "r2_evidence": [
+        "cargo test -p ucc-config --locked --offline (13/13 offline_import passed)"
+      ],
+      "integration_sha": "82446dc",
       "children": [],
       "blockers": []
     },
@@ -2713,19 +2732,30 @@
       "milestone": "M11",
       "wave": "V11",
       "title": "Перенести используемые prepare-deployment/deploy/desktop-transition/rollback сценарии в maintenance subcommands.",
-      "status": "planned",
-      "status_basis": "No Rust implementation or test result is claimed.",
+      "status": "done",
+      "status_basis": "Ported prepare-deployment, deploy (install + automatic/manual rollback + checksum/unit snapshots), and desktop-transition (quiesce/activate/restore with ADR-01 on-demand GUI) to crates/xtask/src/maintenance.rs with rootless mock CommandRunner tests (c815f97).",
       "suggested_role": null,
       "assigned_agent_id": null,
       "depends_on": [],
-      "dependency_refinement_required": true,
-      "owned_paths": [],
+      "dependency_refinement_required": false,
+      "owned_paths": [
+        "crates/xtask/src/lib.rs",
+        "crates/xtask/src/maintenance.rs",
+        "crates/xtask/src/main.rs",
+        "crates/xtask/tests/maintenance_workflows.rs"
+      ],
       "feature_ids": [],
-      "test_ids": [],
-      "implementation_sha": null,
+      "test_ids": [
+        "prepare_deployment_stages_package_and_validates_junit",
+        "deployment_install_rollback_and_checksum_verification",
+        "desktop_transition_quiesce_activate_and_restore_follows_adr01"
+      ],
+      "implementation_sha": "c815f97",
       "r1_review": null,
-      "r2_evidence": [],
-      "integration_sha": null,
+      "r2_evidence": [
+        "cargo test -p xtask --locked --offline (6/6 maintenance_workflows passed)"
+      ],
+      "integration_sha": "c815f97",
       "children": [],
       "blockers": []
     },
@@ -2734,19 +2764,29 @@
       "milestone": "M11",
       "wave": "V11",
       "title": "Перенести capture-gallery и parser-check workflows; старые Python tools оставить только в архиве после parity.",
-      "status": "planned",
-      "status_basis": "No Rust implementation or test result is claimed.",
+      "status": "done",
+      "status_basis": "Implemented pure-Rust capture-gallery (11 pages light/dark validation + manifest.json) and parser-check (6 manifest version checks, recursive duplicate-key JSON validator across 11 repo JSONs, CycloneDX 1.5 SBOM validator across 150 components, and offline importer self-check) in xtask while retaining contrib/ Python scripts until M13 cutover (c815f97).",
       "suggested_role": null,
       "assigned_agent_id": null,
       "depends_on": [],
-      "dependency_refinement_required": true,
-      "owned_paths": [],
+      "dependency_refinement_required": false,
+      "owned_paths": [
+        "crates/xtask/src/maintenance.rs",
+        "crates/xtask/src/main.rs",
+        "crates/xtask/tests/maintenance_workflows.rs"
+      ],
       "feature_ids": [],
-      "test_ids": [],
-      "implementation_sha": null,
+      "test_ids": [
+        "capture_gallery_verifies_all_pages_and_writes_manifest",
+        "parser_check_rejects_duplicate_json_keys_and_passes_on_repo"
+      ],
+      "implementation_sha": "c815f97",
       "r1_review": null,
-      "r2_evidence": [],
-      "integration_sha": null,
+      "r2_evidence": [
+        "cargo run -p xtask --locked --offline -- parser-check (exit 0)",
+        "cargo test -p xtask --locked --offline (passed)"
+      ],
+      "integration_sha": "c815f97",
       "children": [],
       "blockers": []
     },
@@ -2755,40 +2795,59 @@
       "milestone": "M11",
       "wave": "V11",
       "title": "Выполнить выбранное в M1 решение GNOME/Plasma; покрыть каждый quick control, notification и activation path.",
-      "status": "planned",
-      "status_basis": "No Rust implementation or test result is claimed.",
+      "status": "partial",
+      "status_basis": "Pure-GJS GNOME extension (ucc-gnome/) and standalone Rust SNI tray (ucc-desktop-tray) with C++/QML Plasma tray retired (-DBUILD_TRAY=OFF) are implemented and covered by packaging/contract tests (t_client_09_gnome_extension_contract, t_m11_6_shell_adapter_boundary_no_cpp_backend_and_no_plasma_tray, 1c2b851); live GNOME/Hyprland session acceptance remains open in M13.",
       "suggested_role": null,
       "assigned_agent_id": null,
       "depends_on": [],
-      "dependency_refinement_required": true,
-      "owned_paths": [],
+      "dependency_refinement_required": false,
+      "owned_paths": [
+        "ucc-gnome/extension.js",
+        "ucc-gnome/uccdClient.js",
+        "crates/ucc-desktop",
+        "crates/xtask/tests/audit_packaging_regressions.rs"
+      ],
       "feature_ids": [],
-      "test_ids": [],
-      "implementation_sha": null,
+      "test_ids": [
+        "t_client_09_gnome_extension_contract",
+        "t_m11_6_shell_adapter_boundary_no_cpp_backend_and_no_plasma_tray"
+      ],
+      "implementation_sha": "1c2b851",
       "r1_review": null,
-      "r2_evidence": [],
-      "integration_sha": null,
+      "r2_evidence": [
+        "cargo test -p xtask --locked --offline (20/20 passed)"
+      ],
+      "integration_sha": "1c2b851",
       "children": [],
-      "blockers": []
+      "blockers": [
+        "Live GNOME/Hyprland desktop session end-to-end verification in M13"
+      ]
     },
     {
       "id": "M11.6",
       "milestone": "M11",
       "wave": "V11",
       "title": "Если остаются GJS/QML adapters, удалить их C++ backend, оставить transport/presentation и явно назвать исключение из Rust-only; такой результат не выдаётся за «весь исполняемый код на Rust».",
-      "status": "planned",
-      "status_basis": "No Rust implementation or test result is claimed.",
+      "status": "done",
+      "status_basis": "ADR-03 documents the standalone Rust ucc-desktop-tray replacement, retirement of the C++/QML Plasma tray (-DBUILD_TRAY=OFF across PKGBUILD, ucc.spec, package.nix, debian/rules), and thin pure-GJS ucc-gnome/ exception with zero native C/C++/CMake backend; enforced by t_m11_6_shell_adapter_boundary_no_cpp_backend_and_no_plasma_tray (1c2b851).",
       "suggested_role": null,
       "assigned_agent_id": null,
       "depends_on": [],
-      "dependency_refinement_required": true,
-      "owned_paths": [],
+      "dependency_refinement_required": false,
+      "owned_paths": [
+        "docs/rust/execution/decisions/ADR-03-shell-embedding-policy.md",
+        "crates/xtask/tests/audit_packaging_regressions.rs"
+      ],
       "feature_ids": [],
-      "test_ids": [],
-      "implementation_sha": null,
+      "test_ids": [
+        "t_m11_6_shell_adapter_boundary_no_cpp_backend_and_no_plasma_tray"
+      ],
+      "implementation_sha": "1c2b851",
       "r1_review": null,
-      "r2_evidence": [],
-      "integration_sha": null,
+      "r2_evidence": [
+        "cargo test -p xtask --locked --offline (t_m11_6 passed)"
+      ],
+      "integration_sha": "1c2b851",
       "children": [],
       "blockers": []
     },
@@ -2797,19 +2856,23 @@
       "milestone": "M11",
       "wave": "V11",
       "title": "Если выбран strict Rust, проверить Rust popup в каждой DE и только затем согласованно исключить embedded extensions из нового пакета.",
-      "status": "planned",
-      "status_basis": "No Rust implementation or test result is claimed.",
+      "status": "superseded_by_adr_03",
+      "status_basis": "Superseded by ADR-03 (thin pure-GJS GNOME quick-settings adapter retained alongside standalone Rust SNI tray ucc-desktop-tray; C++/QML Plasma tray retired via -DBUILD_TRAY=OFF).",
       "suggested_role": null,
       "assigned_agent_id": null,
       "depends_on": [],
-      "dependency_refinement_required": true,
-      "owned_paths": [],
+      "dependency_refinement_required": false,
+      "owned_paths": [
+        "docs/rust/execution/decisions/ADR-03-shell-embedding-policy.md"
+      ],
       "feature_ids": [],
-      "test_ids": [],
-      "implementation_sha": null,
+      "test_ids": [
+        "t_m11_6_shell_adapter_boundary_no_cpp_backend_and_no_plasma_tray"
+      ],
+      "implementation_sha": "1c2b851",
       "r1_review": null,
       "r2_evidence": [],
-      "integration_sha": null,
+      "integration_sha": "1c2b851",
       "children": [],
       "blockers": []
     },
@@ -2818,19 +2881,25 @@
       "milestone": "M11",
       "wave": "V11",
       "title": "Research probes/C N-API не включать в runtime; исторические материалы и attribution сохранить.",
-      "status": "planned",
-      "status_basis": "No Rust implementation or test result is claimed.",
+      "status": "done",
+      "status_basis": "Verified CMakeLists.txt, PKGBUILD, ucc.spec, package.nix, debian/ucc.install, and xtask exclude nvidia_findings from runtime packaging while preserving COPYING, LICENSE, PROJECT_ORIGINS.md, THIRD_PARTY.md, nvidia_findings/README.md, and nvidia_undocumented_api_findings.md via t_m11_8_research_probes_excluded_from_runtime_and_attribution_preserved (1c2b851).",
       "suggested_role": null,
       "assigned_agent_id": null,
       "depends_on": [],
-      "dependency_refinement_required": true,
-      "owned_paths": [],
+      "dependency_refinement_required": false,
+      "owned_paths": [
+        "crates/xtask/tests/audit_packaging_regressions.rs"
+      ],
       "feature_ids": [],
-      "test_ids": [],
-      "implementation_sha": null,
+      "test_ids": [
+        "t_m11_8_research_probes_excluded_from_runtime_and_attribution_preserved"
+      ],
+      "implementation_sha": "1c2b851",
       "r1_review": null,
-      "r2_evidence": [],
-      "integration_sha": null,
+      "r2_evidence": [
+        "cargo test -p xtask --locked --offline (t_m11_8 passed)"
+      ],
+      "integration_sha": "1c2b851",
       "children": [],
       "blockers": []
     },
@@ -3288,9 +3357,9 @@
       "id": "M13.11",
       "milestone": "M13",
       "wave": "V13",
-      "title": "Подготовить строгую техническую документацию без маркетинга и нейрослопа ('наш' и т.п.): README.md (EN), README.ru.md (RU), архитектуру, справочники D-Bus API и CLI, матрицу железа и объективное сравнение в docs/COMPARISON.md с open-uniwill-cc (https://github.com/aspidovss/open-uniwill-cc/blob/main/README.ru.md), upstream UCC Revorked, TUXEDO Control Center, Clevo Control Center, LCT, CoreCtrl и asusctl (полностью убрать упоминание 'Личный Python ControlCenter').",
+      "title": "Подготовить строгую техническую документацию без маркетинга и нейрослопа ('наш' и т.п.) и документацию для AI-агентов (AGENTS.md, docs/AI_AGENT_GUIDE.md), README.md (EN), README.ru.md (RU), архитектуру, справочники D-Bus API и CLI, матрицу железа и объективное сравнение в docs/COMPARISON.md с open-uniwill-cc (https://github.com/aspidovss/open-uniwill-cc/blob/main/README.ru.md), upstream UCC Revorked, TUXEDO Control Center, Clevo Control Center, LCT, CoreCtrl и asusctl (полностью убрать упоминание 'Личный Python ControlCenter').",
       "status": "planned",
-      "status_basis": "Documentation overhaul and open-uniwill-cc comparison planned after project rename decision (M13.10).",
+      "status_basis": "User documentation (README.md, README.ru.md, architecture, D-Bus/CLI references, hardware matrix, docs/COMPARISON.md vs open-uniwill-cc) and AI-agent orientation docs (AGENTS.md, docs/AI_AGENT_GUIDE.md) planned before v0.0.1 release at the end of M13.",
       "suggested_role": null,
       "assigned_agent_id": null,
       "depends_on": [
