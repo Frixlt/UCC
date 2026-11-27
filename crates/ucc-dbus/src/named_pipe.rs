@@ -571,6 +571,10 @@ mod win32 {
             dw_flags_and_attributes: u32,
             h_template_file: *mut c_void,
         ) -> *mut c_void;
+        fn GetNamedPipeClientProcessId(
+            h_named_pipe: *mut c_void,
+            client_process_id: *mut u32,
+        ) -> i32;
         fn LocalFree(h_mem: *mut c_void) -> *mut c_void;
         fn GetLastError() -> u32;
     }
@@ -677,9 +681,9 @@ mod win32 {
     }
 
     fn is_impersonated_member_of(well_known_sid: u32) -> bool {
-        let mut sid_buf = [0u8; 68];
-        let mut sid_len = sid_buf.len() as u32;
-        // SAFETY: `sid_buf` is 68 bytes (SECURITY_MAX_SID_SIZE).
+        let mut sid_buf = [0u32; 17];
+        let mut sid_len = std::mem::size_of_val(&sid_buf) as u32;
+        // SAFETY: `sid_buf` is 4-byte aligned and 68 bytes (SECURITY_MAX_SID_SIZE).
         let created = unsafe {
             CreateWellKnownSid(
                 well_known_sid,
@@ -703,10 +707,29 @@ mod win32 {
         checked != 0 && is_member != 0
     }
 
+    fn next_fallback_conn_id() -> u64 {
+        use std::sync::atomic::AtomicU64;
+        static NEXT_CONN_ID: AtomicU64 = AtomicU64::new(1);
+        NEXT_CONN_ID.fetch_add(1, Ordering::Relaxed)
+    }
+
+    fn pipe_client_principal(handle: *mut c_void, role: &str) -> String {
+        let mut pid: u32 = 0;
+        // SAFETY: `handle` is an active connected named pipe handle and `pid` is valid.
+        if unsafe { GetNamedPipeClientProcessId(handle, &mut pid) } != 0 && pid != 0 {
+            format!("{role}:pid:{pid}")
+        } else {
+            format!("{role}:conn:{}", next_fallback_conn_id())
+        }
+    }
+
     fn inspect_pipe_client_identity(handle: *mut c_void) -> CallerIdentity {
         // SAFETY: `handle` is an active connected named pipe handle.
         if unsafe { ImpersonateNamedPipeClient(handle) } == 0 {
-            return CallerIdentity::interactive("windows-pipe-client");
+            return CallerIdentity::interactive(pipe_client_principal(
+                handle,
+                "windows-pipe-client",
+            ));
         }
         let is_system = is_impersonated_member_of(WIN_LOCAL_SYSTEM_SID);
         let is_admin = !is_system && is_impersonated_member_of(WIN_BUILTIN_ADMINISTRATORS_SID);
@@ -716,11 +739,11 @@ mod win32 {
             std::process::abort();
         }
         if is_system {
-            CallerIdentity::privileged("SY")
+            CallerIdentity::privileged(pipe_client_principal(handle, "SY"))
         } else if is_admin {
-            CallerIdentity::privileged("BA")
+            CallerIdentity::privileged(pipe_client_principal(handle, "BA"))
         } else {
-            CallerIdentity::interactive("IU")
+            CallerIdentity::interactive(pipe_client_principal(handle, "IU"))
         }
     }
 

@@ -477,3 +477,50 @@ fn canonical_dbus_method_casing_and_display_refresh_rate_dispatch() {
     assert!(led_resp.ok);
     assert_eq!(led_resp.result, Some(json!(true)));
 }
+
+#[test]
+fn profile_negative_manual_pump_voltage_sentinel_is_not_escalated_and_v12_is_rejected() {
+    let backend = DefaultUccdBackend::new();
+    let interactive = CallerIdentity::interactive("IU:pid:4242");
+    let privileged = CallerIdentity::privileged("BA:pid:100");
+
+    // -1 sentinel means unset manual pump voltage (not ManageHardware)
+    let unset_profile = json!({
+        "name": "Balanced",
+        "fan": { "useControl": true, "manualPumpVoltage": -1 }
+    })
+    .to_string();
+    let req_unset = IpcRequest {
+        id: 201,
+        method: "ApplyProfile".into(),
+        params: json!({ "profile_json": unset_profile }),
+    };
+    assert_eq!(required_access_level(&req_unset), IpcAccessLevel::Control);
+    let resp_unset = dispatch_json_rpc_with_identity(&backend, &req_unset, &interactive);
+    assert!(resp_unset.ok, "expected unset -1 sentinel to succeed for IU");
+
+    // Code 1 (V12) must be rejected in ApplyProfile and SaveCustomProfile even for privileged callers
+    let v12_profile = json!({
+        "name": "UnsafeV12",
+        "fan": { "useControl": true, "manualPumpVoltage": 1 }
+    })
+    .to_string();
+    for method in ["ApplyProfile", "SaveCustomProfile"] {
+        let req_v12 = IpcRequest {
+            id: 202,
+            method: method.into(),
+            params: json!({ "profile_json": v12_profile }),
+        };
+        assert_eq!(required_access_level(&req_v12), IpcAccessLevel::ManageHardware);
+        let resp_v12 = dispatch_json_rpc_with_identity(&backend, &req_v12, &privileged);
+        assert!(!resp_v12.ok, "{method} must reject manualPumpVoltage == 1 (V12)");
+    }
+
+    // Canonical snake_case parameter fallbacks work
+    let req_fan = IpcRequest {
+        id: 203,
+        method: "SetWaterCoolerFanSpeed".into(),
+        params: json!({ "duty_cycle_percent": 65 }),
+    };
+    assert!(dispatch_json_rpc_with_identity(&backend, &req_fan, &interactive).ok);
+}
