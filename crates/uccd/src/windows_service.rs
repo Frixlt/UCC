@@ -442,12 +442,14 @@ mod win32_scm {
     type ServiceMainFn = extern "system" fn(u32, *mut *mut u16);
     type HandlerExFn = extern "system" fn(u32, u32, *mut c_void, *mut c_void) -> u32;
 
+    #[allow(dead_code)]
     #[repr(C)]
     struct ServiceTableEntryW {
         lp_service_name: *const u16,
         lp_service_proc: Option<ServiceMainFn>,
     }
 
+    #[allow(dead_code)]
     #[repr(C)]
     struct Win32ServiceStatus {
         dw_service_type: u32,
@@ -548,7 +550,7 @@ mod win32_scm {
             let guard = active_service_slot()
                 .lock()
                 .unwrap_or_else(|e| e.into_inner());
-            guard.as_ref().and_then(|s| s.lifecycle.as_ref().cloned())
+            guard.as_ref().and_then(|s| s.lifecycle.clone())
         };
         let Some(lifecycle) = lifecycle else {
             return ERROR_CALL_NOT_IMPLEMENTED;
@@ -650,6 +652,11 @@ mod win32_scm {
         // SAFETY: `table` is null-terminated as required by `StartServiceCtrlDispatcherW`
         // and `wide_name` remains alive until the dispatcher returns.
         let ok = unsafe { StartServiceCtrlDispatcherW(table.as_ptr()) };
+        let last_err = if ok == 0 {
+            unsafe { GetLastError() }
+        } else {
+            0
+        };
 
         {
             let mut guard = active_service_slot()
@@ -659,9 +666,8 @@ mod win32_scm {
         }
 
         if ok == 0 {
-            let code = unsafe { GetLastError() };
             return Err(ServiceError::ScmError {
-                code,
+                code: last_err,
                 message: "StartServiceCtrlDispatcherW failed".to_string(),
             });
         }
