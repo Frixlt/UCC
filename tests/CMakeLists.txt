@@ -166,3 +166,12 @@ endif()
 if(TARGET test_gui_audit)
   target_link_libraries(test_gui_audit PRIVATE ucc-window-activation)
 endif()
+
+if(TARGET ucc-dbus AND DBUS_RUN_SESSION_EXECUTABLE)
+  add_executable(test_rust_uccd_interop test_rust_uccd_interop.cpp)
+  target_link_libraries(test_rust_uccd_interop PRIVATE ucc-dbus Qt6::Core Qt6::DBus Qt6::Test)
+  add_test(
+    NAME test_rust_uccd_interop
+    COMMAND ${DBUS_RUN_SESSION_EXECUTABLE} -- bash ${CMAKE_CURRENT_SOURCE_DIR}/run_rust_interop_test.sh $<TARGET_FILE:test_rust_uccd_interop> ${CMAKE_SOURCE_DIR}
+  )
+endif()
