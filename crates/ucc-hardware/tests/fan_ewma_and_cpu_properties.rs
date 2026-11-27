@@ -1032,6 +1032,8 @@ fn prop_cpu_frequency_ordering_clamping_and_snapping() {
 
     // Regression: high u32 cpuinfo_min_freq + cpuinfo_max_freq must not overflow midpoint.
     let overflow_dir = tempfile::tempdir().unwrap();
+    fs::write(overflow_dir.path().join("present"), "0").unwrap();
+    fs::write(overflow_dir.path().join("possible"), "0").unwrap();
     let cpufreq = overflow_dir.path().join("cpu0/cpufreq");
     fs::create_dir_all(&cpufreq).unwrap();
     fs::write(
