@@ -74,6 +74,7 @@ dist:
 	@echo "Preparing source tree in $(TMPDIR)/ucc-$(VERSION)..."
 	@git archive --format=tar --prefix=ucc-$(VERSION)/ --output=$(TMPDIR)/source.tar HEAD
 	@tar xf $(TMPDIR)/source.tar -C $(TMPDIR)
+	@printf '%s\n' "$(GITHASH)" > $(TMPDIR)/ucc-$(VERSION)/.release-commit
 	@bash contrib/package-rust-vendor.sh $(TMPDIR)/ucc-$(VERSION)
 	@tar czf dist/$(ARCHIVE) -C $(TMPDIR) ucc-$(VERSION)
 	@rm -rf $(TMPDIR)

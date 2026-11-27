@@ -394,7 +394,13 @@ pub fn generate_sbom_json(
 }
 
 fn current_git_short_sha(root: &Path) -> String {
-    std::process::Command::new("git")
+    if let Ok(env_commit) = std::env::var("UCC_BUILD_COMMIT") {
+        let trimmed = env_commit.trim();
+        if !trimmed.is_empty() {
+            return trimmed.to_string();
+        }
+    }
+    if let Some(git_sha) = std::process::Command::new("git")
         .current_dir(root)
         .args(["rev-parse", "--short", "HEAD"])
         .output()
@@ -402,7 +408,16 @@ fn current_git_short_sha(root: &Path) -> String {
         .filter(|o| o.status.success())
         .map(|o| String::from_utf8_lossy(&o.stdout).trim().to_string())
         .filter(|s| !s.is_empty())
-        .unwrap_or_else(|| "unknown".to_string())
+    {
+        return git_sha;
+    }
+    if let Ok(file_sha) = fs::read_to_string(root.join(".release-commit")) {
+        let trimmed = file_sha.trim();
+        if !trimmed.is_empty() {
+            return trimmed.to_string();
+        }
+    }
+    "unknown".to_string()
 }
 
 fn stage_release_metadata(root: &Path, dest: &Path) -> Result<(), Box<dyn std::error::Error>> {
@@ -1052,5 +1067,13 @@ mod tests {
         assert!(manifest.contains("\"package\": \"ucc-rusted\""));
         assert!(manifest.contains("lib/ucc/ucc-sleep"));
         assert!(dest.join("share/doc/ucc/SBOM.json").is_file());
+    }
+
+    #[test]
+    fn commit_sha_falls_back_to_release_commit_file_when_git_absent() {
+        let tmp = tempfile::tempdir().unwrap();
+        let outside_git = tmp.path();
+        fs::write(outside_git.join(".release-commit"), "abc1234\n").unwrap();
+        assert_eq!(current_git_short_sha(outside_git), "abc1234");
     }
 }

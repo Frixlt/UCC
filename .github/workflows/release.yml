@@ -39,10 +39,17 @@ jobs:
       - name: Build vendored release source archive
         run: make dist
 
-      - name: Upload source tarball artifact
+      - name: Build release binaries & stage manifest/SBOM
+        run: |
+          cargo build --workspace --bins --release --locked
+          cargo run -p xtask --locked -- dist dist/stage target/release
+
+      - name: Upload release source tarball, manifest, and SBOM artifacts
         uses: actions/upload-artifact@v4
         with:
           name: source-dist
           path: |
             dist/*.tar.gz
             dist/*.tar.gz.sha256
+            dist/stage/share/doc/ucc/RELEASE_MANIFEST.json
+            dist/stage/share/doc/ucc/SBOM.json
