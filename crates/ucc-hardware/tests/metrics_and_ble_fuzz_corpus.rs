@@ -890,10 +890,16 @@ fn ble_deterministic_fuzz_corpus_random_and_mutated_frames() {
         }
 
         now += Duration::from_millis(100);
-        let _ = ctrl.flush_ready(&transport, now);
+        ctrl.flush_ready(&transport, now)
+            .expect("connected mock transport flush must succeed");
     }
 
-    for pkt in transport.packets() {
+    let packets = transport.packets();
+    assert!(
+        !packets.is_empty(),
+        "randomized cooler sequence must emit at least one wire packet"
+    );
+    for pkt in packets {
         assert_eq!(CoolerPacketEncoder::validate_packet(&pkt), Ok(()));
         if pkt[1] == CMD_FAN && pkt[2] == 0x01 {
             assert!(pkt[3] <= 100, "emitted out-of-range fan speed {}", pkt[3]);

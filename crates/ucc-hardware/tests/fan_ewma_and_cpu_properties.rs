@@ -1024,9 +1024,25 @@ fn prop_cpu_frequency_ordering_clamping_and_snapping() {
             let smin = core.read_scaling_min_freq().unwrap();
             let smax = core.read_scaling_max_freq().unwrap();
             assert!(
-                hw_min <= smin && smin <= smax && smax <= eff_max,
+                (hw_min..=smax).contains(&smin) && smax <= eff_max,
                 "case {case}: bad freq order hw_min={hw_min} smin={smin} smax={smax} max={eff_max}"
             );
         }
     }
+
+    // Regression: high u32 cpuinfo_min_freq + cpuinfo_max_freq must not overflow midpoint.
+    let overflow_dir = tempfile::tempdir().unwrap();
+    let cpufreq = overflow_dir.path().join("cpu0/cpufreq");
+    fs::create_dir_all(&cpufreq).unwrap();
+    fs::write(
+        cpufreq.join("cpuinfo_min_freq"),
+        (u32::MAX - 10).to_string(),
+    )
+    .unwrap();
+    fs::write(cpufreq.join("cpuinfo_max_freq"), u32::MAX.to_string()).unwrap();
+    let overflow_ctrl = CpuController::new(overflow_dir.path().to_path_buf());
+    assert_eq!(
+        overflow_ctrl.cores[0].get_reduced_available_freq(),
+        Some(u32::MAX - 5)
+    );
 }
