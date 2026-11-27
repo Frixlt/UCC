@@ -399,11 +399,12 @@ impl DaemonRuntime {
         // cannot be acknowledged or overwritten during predecessor handoff/activation (`M8-HANDOFF-01`).
         backend.set_activation_pending(true);
 
-        // Perform strictly read-only telemetry/fan/profile priming on a detached OS thread BEFORE
-        // exporting objects or requesting bus_name.
+        // Perform strictly read-only telemetry/fan/profile priming and sleep snapshot load on a
+        // detached OS thread BEFORE exporting objects or requesting bus_name (`FULL-27-01`).
         let mut sig_rx = backend.subscribe_signals();
         let prime_backend = Arc::clone(&backend);
         if let Err(err) = run_detached_blocking("uccd-prime", move || {
+            let _ = prime_backend.load_sleep_state_read_only();
             prime_backend.prime_read_only();
         })
         .await
@@ -469,9 +470,10 @@ impl DaemonRuntime {
 
         let activate_backend = Arc::clone(&backend);
         if let Err(err) = run_detached_blocking("uccd-activate", move || {
-            activate_backend.load_sleep_state_read_only();
+            let _ = activate_backend.load_sleep_state_read_only();
             activate_backend.seed_inherited_cpu_defaults(inherited_cpu_defaults);
             activate_backend.activate_hardware();
+            activate_backend.clear_consumed_sleep_state();
         })
         .await
         {

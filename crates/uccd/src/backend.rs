@@ -238,6 +238,7 @@ pub struct LiveUccdBackend {
     pub(super) next_custom_profile_seq: AtomicU64,
     pub(super) tdp_write_seq: AtomicU64,
     pub(super) odm_write_seq: AtomicU64,
+    pub(super) sleep_state_pending_clear: AtomicBool,
     pub(super) cpu_reapply_attempts: AtomicU32,
     pub(super) in_flight_tdp_baselines: Mutex<Vec<(u64, usize, i32)>>,
     pub(super) in_flight_odm_baselines: Mutex<Vec<(u64, i32)>>,
@@ -395,6 +396,7 @@ impl LiveUccdBackend {
             next_custom_profile_seq: AtomicU64::new(0),
             tdp_write_seq: AtomicU64::new(0),
             odm_write_seq: AtomicU64::new(0),
+            sleep_state_pending_clear: AtomicBool::new(false),
             cpu_reapply_attempts: AtomicU32::new(0),
             in_flight_tdp_baselines: Mutex::new(Vec::new()),
             in_flight_odm_baselines: Mutex::new(Vec::new()),
@@ -581,19 +583,53 @@ impl LiveUccdBackend {
         }
     }
 
-    /// Loads volatile `/run/ucc/sleep-state.json` BEFORE `request_name` on production hosts (`ISSUE-04`).
-    pub fn load_sleep_state_read_only(&self) {
-        if self.sys_root != Path::new("/") {
-            return;
+    fn effective_sleep_state_store(&self) -> Option<SleepStateStore> {
+        if self.sys_root == Path::new("/") {
+            return Some(SleepStateStore::default());
         }
-        if let Ok(Some(state)) = SleepStateStore::default().load() {
+        let test_path = self.sys_root.join("run/ucc/sleep-state.json");
+        if std::fs::symlink_metadata(&test_path).is_ok() {
+            let owner_uid = unsafe { nix::libc::geteuid() };
+            return Some(SleepStateStore::new(test_path, owner_uid));
+        }
+        None
+    }
+
+    /// Applies an already-validated [`SleepStateStore`] snapshot into RAM without deleting it (`FULL-27-01`).
+    pub fn load_sleep_state_from(&self, store: &SleepStateStore) -> bool {
+        if let Ok(Some(state)) = store.load() {
             let _ = self
                 .write_rw(&self.power_policy)
                 .set_manual_mode(&state.manual_mode);
-            if state.cooler_enabled && self.water_cooler_available.load(Ordering::SeqCst) {
-                self.water_cooler_enabled.store(true, Ordering::SeqCst);
+            if self.water_cooler_available.load(Ordering::SeqCst) {
+                self.water_cooler_enabled
+                    .store(state.cooler_enabled, Ordering::SeqCst);
             }
             self.lock_mutex(&self.lightbar_ctrl).skip_welcome();
+            self.sleep_state_pending_clear.store(true, Ordering::SeqCst);
+            return true;
+        }
+        false
+    }
+
+    /// Loads volatile `/run/ucc/sleep-state.json` BEFORE `request_name` on production hosts (`ISSUE-04`, `FULL-27-01`).
+    pub fn load_sleep_state_read_only(&self) -> bool {
+        let Some(store) = self.effective_sleep_state_store() else {
+            return false;
+        };
+        self.load_sleep_state_from(&store)
+    }
+
+    /// Deletes a previously loaded sleep snapshot once daemon hardware activation completes (`FULL-27-01`).
+    pub fn clear_consumed_sleep_state(&self) {
+        if ucc_config::is_read_only_preview() {
+            return;
+        }
+        if !self.sleep_state_pending_clear.swap(false, Ordering::SeqCst) {
+            return;
+        }
+        if let Some(store) = self.effective_sleep_state_store() {
+            let _ = store.clear();
         }
     }
 

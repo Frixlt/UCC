@@ -5318,3 +5318,88 @@ async fn m5_9_auto_wc_curve_and_aquaris_led_restore_across_suspend_resume() {
 
     runtime.shutdown(Duration::from_secs(2)).await;
 }
+
+#[tokio::test]
+async fn full_27_01_sleep_state_survives_resume_until_daemon_consumes_it() {
+    use std::os::unix::fs::MetadataExt;
+    use ucc_dbus::UccdBackend;
+    use uccd::{resume_sleep, SleepOperations, SleepState, SleepStateStore};
+
+    struct StartSucceedsImmediateOps;
+    impl SleepOperations for StartSucceedsImmediateOps {
+        fn is_daemon_active(&self) -> Result<bool, String> {
+            Ok(true)
+        }
+        fn capture_runtime_state(&self) -> Result<SleepState, String> {
+            unreachable!()
+        }
+        fn stop_daemon(&self) -> Result<(), String> {
+            unreachable!()
+        }
+        fn start_daemon(&self) -> Result<(), String> {
+            Ok(())
+        }
+    }
+
+    struct StartFailsOps;
+    impl SleepOperations for StartFailsOps {
+        fn is_daemon_active(&self) -> Result<bool, String> {
+            Ok(true)
+        }
+        fn capture_runtime_state(&self) -> Result<SleepState, String> {
+            unreachable!()
+        }
+        fn stop_daemon(&self) -> Result<(), String> {
+            unreachable!()
+        }
+        fn start_daemon(&self) -> Result<(), String> {
+            Err("simulated start failure".to_string())
+        }
+    }
+
+    let root = tempfile::tempdir().unwrap();
+    let run_ucc = root.path().join("run/ucc");
+    std::fs::create_dir_all(&run_ucc).unwrap();
+    let uid = std::fs::metadata(root.path()).unwrap().uid();
+    let state_path = run_ucc.join("sleep-state.json");
+    let store = SleepStateStore::new(&state_path, uid);
+
+    // 1. Active snapshot survives resume_sleep even when start_daemon fails or returns immediately.
+    let expected = SleepState {
+        was_active: true,
+        manual_mode: "type_c".to_string(),
+        cooler_enabled: true,
+    };
+    store.save(&expected).unwrap();
+    assert!(resume_sleep(&store, &StartFailsOps).is_err());
+    assert_eq!(store.load().unwrap(), Some(expected.clone()));
+    resume_sleep(&store, &StartSucceedsImmediateOps).unwrap();
+    assert_eq!(store.load().unwrap(), Some(expected.clone()));
+    // Repeated resume before daemon consumes it preserves the snapshot.
+    resume_sleep(&store, &StartSucceedsImmediateOps).unwrap();
+    assert_eq!(store.load().unwrap(), Some(expected));
+
+    // 2. When DaemonRuntime starts, it consumes and applies the snapshot and clears the file only afterward.
+    let (backend, _, _, _) = build_test_backend(root.path());
+    let runtime = start_runtime(Arc::clone(&backend), "org.test.uccd.full_27_01", false).await;
+    assert!(backend.is_water_cooler_enabled());
+    let policy: serde_json::Value = serde_json::from_str(&backend.get_power_policy_json()).unwrap();
+    assert_eq!(policy["manual_mode"], "type_c");
+    assert_eq!(
+        store.load().unwrap(),
+        None,
+        "snapshot must be cleared once daemon activation consumes it"
+    );
+    runtime.shutdown(Duration::from_secs(1)).await;
+
+    // 3. Inactive snapshot (was_active=false) is cleared directly by resume_sleep.
+    store
+        .save(&SleepState {
+            was_active: false,
+            manual_mode: "bat".to_string(),
+            cooler_enabled: false,
+        })
+        .unwrap();
+    resume_sleep(&store, &StartSucceedsImmediateOps).unwrap();
+    assert_eq!(store.load().unwrap(), None);
+}

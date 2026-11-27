@@ -234,7 +234,11 @@ pub fn resume_sleep(store: &SleepStateStore, ops: &dyn SleepOperations) -> Resul
         return Ok(());
     };
     if state.was_active {
-        ops.start_daemon()?;
+        // With systemd Type=dbus, `start_daemon()` finishes as soon as `BusName` is owned —
+        // potentially before `uccd` reads & activates the snapshot. Leave deletion to `uccd`
+        // once it has consumed the snapshot and completed hardware activation (`FULL-27-01`).
+        ops.start_daemon()
+    } else {
+        store.clear()
     }
-    store.clear()
 }
