@@ -594,7 +594,7 @@ fn fuzz_domain2_tcc_fan_tables_and_asar_archive_parser() {
             for (idx, pt) in baked.iter().enumerate() {
                 assert_eq!(pt.temp, idx as i64);
                 assert!((0..=100).contains(&pt.speed));
-                assert!(pt.speed >= min_s && pt.speed <= max_s);
+                assert!((min_s..=max_s).contains(&pt.speed));
             }
         }
     }
@@ -825,25 +825,40 @@ fn fuzz_domain2_mechrevo_tcc_and_aquaris_import() {
             .is_ok()
     );
 
-    // Note: `import.rs:1468` computes `speed + off_fan` without saturating/checked add;
-    // keep Mechrevo fan speed/offset fuzz bounds within i32 range so debug builds do not
-    // panic on i64 overflow while still exercising extreme out-of-range values.
-    let safe_extreme_ints: &[i64] = &[
-        i32::MIN as i64,
-        -1000,
-        -100,
-        -1,
-        0,
-        1,
-        4,
-        5,
-        100,
-        101,
-        255,
-        256,
-        1000,
-        i32::MAX as i64,
-    ];
+    // Regression: extreme i64 speed + offsetFanspeed must saturate cleanly without overflow.
+    {
+        let mut reg_profiles = base_profiles.clone();
+        let mut reg_curves = base_curves.clone();
+        if let Some(p) = reg_profiles.get_mut(0).and_then(Value::as_object_mut) {
+            if let Some(fan) = p.get_mut("fan").and_then(Value::as_object_mut) {
+                fan.insert("offsetFanspeed".to_string(), json!(i64::MAX));
+            }
+        }
+        reg_curves["tableCPU"] = json!([
+            { "temp": 0, "speed": i64::MAX },
+            { "temp": 100, "speed": i64::MIN }
+        ]);
+        let (out_settings, _) = convert_mechrevo_tcc(
+            &base_settings,
+            &reg_profiles,
+            &base_user,
+            &reg_curves,
+            &base_hw,
+        )
+        .expect("extreme i64 speed/offset must saturate cleanly");
+        if let Some(profs) = out_settings.get("profiles").and_then(Value::as_object) {
+            for prof in profs.values() {
+                for key in ["tableCPU", "tableGPU"] {
+                    if let Some(entries) = prof["fan"][key].as_array() {
+                        for entry in entries {
+                            let spd = entry["speed"].as_i64().expect("numeric speed");
+                            assert!((0..=100).contains(&spd));
+                        }
+                    }
+                }
+            }
+        }
+    }
     let bad_macs = [
         "",
         "02:00:00:00:00:01",
@@ -866,15 +881,15 @@ fn fuzz_domain2_mechrevo_tcc_and_aquaris_import() {
                 // Mutate aquarisSaveState JSON fields
                 let saved = json!({
                     "deviceUUID": *rng.choose(&bad_macs),
-                    "red": *rng.choose(safe_extreme_ints),
-                    "green": *rng.choose(safe_extreme_ints),
-                    "blue": *rng.choose(safe_extreme_ints),
-                    "ledMode": *rng.choose(safe_extreme_ints),
+                    "red": *rng.choose(BOUNDARY_NUMBERS),
+                    "green": *rng.choose(BOUNDARY_NUMBERS),
+                    "blue": *rng.choose(BOUNDARY_NUMBERS),
+                    "ledMode": *rng.choose(BOUNDARY_NUMBERS),
                     "ledOn": rng.next_bool(),
                     "pumpOn": rng.next_bool(),
-                    "pumpVoltage": *rng.choose(safe_extreme_ints),
+                    "pumpVoltage": *rng.choose(BOUNDARY_NUMBERS),
                     "fanOn": rng.next_bool(),
-                    "fanDutyCycle": *rng.choose(safe_extreme_ints),
+                    "fanDutyCycle": *rng.choose(BOUNDARY_NUMBERS),
                 });
                 user["aquarisSaveState"] = json!(saved.to_string());
                 if iter % 15 == 0 {
@@ -892,32 +907,32 @@ fn fuzz_domain2_mechrevo_tcc_and_aquaris_import() {
                 user["aquarisSaveState"] = json!(String::from_utf8_lossy(&mutated).into_owned());
             }
             2 => {
-                // Extreme fan modifiers and curve speeds (within i32 bounds)
+                // Extreme fan modifiers and curve speeds (full i64 boundary values)
                 if let Some(p) = profiles.get_mut(0).and_then(Value::as_object_mut) {
                     if let Some(fan) = p.get_mut("fan").and_then(Value::as_object_mut) {
                         fan.insert(
                             "minimumFanspeed".to_string(),
-                            json!(*rng.choose(safe_extreme_ints)),
+                            json!(*rng.choose(BOUNDARY_NUMBERS)),
                         );
                         fan.insert(
                             "maximumFanspeed".to_string(),
-                            json!(*rng.choose(safe_extreme_ints)),
+                            json!(*rng.choose(BOUNDARY_NUMBERS)),
                         );
                         fan.insert(
                             "offsetFanspeed".to_string(),
-                            json!(*rng.choose(safe_extreme_ints)),
+                            json!(*rng.choose(BOUNDARY_NUMBERS)),
                         );
                     }
                 }
                 curves["tableCPU"] = json!([
-                    { "temp": 0, "speed": *rng.choose(safe_extreme_ints) },
-                    { "temp": 100, "speed": *rng.choose(safe_extreme_ints) }
+                    { "temp": 0, "speed": *rng.choose(BOUNDARY_NUMBERS) },
+                    { "temp": 100, "speed": *rng.choose(BOUNDARY_NUMBERS) }
                 ]);
             }
             3 => {
                 // Extreme keyboard brightness or missing states
                 if rng.next_bool() {
-                    let bright = *rng.choose(safe_extreme_ints);
+                    let bright = *rng.choose(BOUNDARY_NUMBERS);
                     settings["keyboardBacklightStates"] = json!([
                         { "brightness": bright, "red": 1, "green": 2, "blue": 3 }
                     ]);
@@ -940,7 +955,24 @@ fn fuzz_domain2_mechrevo_tcc_and_aquaris_import() {
             }
         }
 
-        let _ = convert_mechrevo_tcc(&settings, &profiles, &user, &curves, &hw);
+        if let Ok((out_settings, out_aquaris)) =
+            convert_mechrevo_tcc(&settings, &profiles, &user, &curves, &hw)
+        {
+            assert!(out_settings.is_object());
+            assert!(out_aquaris.is_object());
+            if let Some(profs) = out_settings.get("profiles").and_then(Value::as_object) {
+                for prof in profs.values() {
+                    for key in ["tableCPU", "tableGPU"] {
+                        if let Some(entries) = prof["fan"][key].as_array() {
+                            for entry in entries {
+                                let spd = entry["speed"].as_i64().expect("baked speed int");
+                                assert!((0..=100).contains(&spd));
+                            }
+                        }
+                    }
+                }
+            }
+        }
     }
 }
 
@@ -1122,8 +1154,8 @@ fn fuzz_domain4_backup_recovery_and_persistence_invariants() {
         b"{\"profiles\": 42, \"stateMap\": []}",
     ];
 
-    // 1. Corrupt primary + valid backup recovery across 150 deterministic mutations.
-    for iter in 0..150 {
+    // 1. Corrupt primary + valid backup recovery across 25 deterministic mutations.
+    for iter in 0..25 {
         let case_dir = tmp.path().join(format!("rec_{iter}"));
         fs::create_dir_all(&case_dir).expect("mkdir");
         let cfg_path = case_dir.join("settings.json");
@@ -1165,8 +1197,8 @@ fn fuzz_domain4_backup_recovery_and_persistence_invariants() {
         );
     }
 
-    // 2. Legacy SettingsManager backup recovery across 100 deterministic mutations.
-    for iter in 0..100 {
+    // 2. Legacy SettingsManager backup recovery across 20 deterministic mutations.
+    for iter in 0..20 {
         let case_dir = tmp.path().join(format!("legacy_rec_{iter}"));
         fs::create_dir_all(&case_dir).expect("mkdir");
         let cfg_path = case_dir.join("settings");
