@@ -5060,7 +5060,7 @@ async fn m8_10_lid_close_blanks_and_restores_keyboard_and_wc_led_in_ram_only() {
     assert!(backend.set_power_device_settings_json(&pd_both));
     backend.set_cooler_connected_state(true);
     assert!(backend.set_water_cooler_led_color(200, 30, 90, 0));
-    let _ = backend.drain_cooler_commands();
+    let _ = drain_cooler_packets(&backend, 5).await;
 
     let after_cfg_settings = std::fs::read_to_string(root.path().join("settings.json")).unwrap();
     let _ = before_settings;
@@ -5072,8 +5072,7 @@ async fn m8_10_lid_close_blanks_and_restores_keyboard_and_wc_led_in_ram_only() {
         serde_json::from_str(&backend.get_keyboard_backlight_states_json()).unwrap();
     assert_eq!(kb_while_closed[0]["brightness"].as_u64(), Some(0));
     assert_eq!(backend.cooler_desired_rgb(), RgbTarget::Off);
-    tokio::time::sleep(Duration::from_millis(90)).await;
-    let pkts = backend.drain_cooler_commands();
+    let pkts = drain_cooler_packets(&backend, 5).await;
     assert!(
         pkts.contains(&CoolerPacketEncoder::turn_off(ucc_hardware::CMD_RGB)),
         "closing lid must enqueue TurnOffLed packet when WC LED blanking is enabled: {pkts:?}"
