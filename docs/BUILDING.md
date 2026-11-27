@@ -207,7 +207,7 @@ cmake --build build-preview --target ucc-gui --parallel 2
 
 ### Arch Linux (`PKGBUILD`)
 
-Пакет: `ucc-rusted` (`provides=("uniwill-control-center=$pkgver" "frixit-control-center=$pkgver")`, `conflicts=('uniwill-control-center' 'uniwill-control-center-mechrevo' 'frixit-control-center')`, `replaces=('frixit-control-center')`, хук `ucc.install`).
+Пакет: `ucc-rusted` (`epoch=1`, `provides=("uniwill-control-center=$epoch:$pkgver" "frixit-control-center=$epoch:$pkgver")`, `conflicts=('uniwill-control-center' 'uniwill-control-center-mechrevo' 'frixit-control-center')`, `replaces=('frixit-control-center')`, хук `ucc.install`).
 
 Сборка из локального checkout:
 
@@ -239,7 +239,7 @@ make rpm    # результат: dist/rpmbuild/RPMS/ и dist/rpmbuild/SRPMS/
 make srpm   # только SRPM
 ```
 
-`ucc.spec` включает `%global _hardened_build 1`, `Provides: ucc-rusted = %{version}-%{release}`, собирает Rust-бинарники в `target/rpm` и устанавливает их через `xtask install-runtime "%{buildroot}%{_prefix}" target/rpm/release`.
+`ucc.spec` включает `%global _hardened_build 1`, `Provides: ucc-rusted = %{epoch}:%{version}-%{release}`, собирает Rust-бинарники в `target/rpm` и устанавливает их через `xtask install-runtime "%{buildroot}%{_prefix}" target/rpm/release`.
 
 ### Nix / NixOS (`flake.nix`, `package.nix`, `nix/nixos-module.nix`)
 

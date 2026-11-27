@@ -16,7 +16,7 @@
       ],
       "cases": [
         "crates/ucc-hardware/tests/vendor_detection.rs",
-        "crates/ucc-hardware/tests/v4_audit_probes.rs"
+        "crates/ucc-hardware/tests/hardware_probe_matrix.rs"
       ],
       "notes": "DMI/SKU/UWID и mock detection есть. Текущие capabilities и привязка writes к физическому устройству проходят HW-06 и аппаратную матрицу.",
       "verified_sha": "e16f9ea",
@@ -253,7 +253,7 @@
         "DIFF-04"
       ],
       "cases": [
-        "crates/ucc-hardware/tests/v4_audit_probes.rs"
+        "crates/ucc-hardware/tests/hardware_probe_matrix.rs"
       ],
       "notes": "Базовый governor/EPP drift и bounded retry есть. Missing-node и reapply false-positive остаются. HW-04.",
       "verified_sha": "e16f9ea",
@@ -309,7 +309,7 @@
         "HW-07"
       ],
       "cases": [
-        "crates/ucc-hardware/tests/v4_audit_probes.rs"
+        "crates/ucc-hardware/tests/hardware_probe_matrix.rs"
       ],
       "notes": "Аргументы процесса разделены, короткие пути исправлены. Общий containment и deadlines отсутствуют. HW-02/03/07.",
       "verified_sha": "e16f9ea",
@@ -369,8 +369,8 @@
       "cases": [
         "crates/ucc-hardware/tests/platform_backend.rs",
         "crates/ucc-hardware/tests/cooling_engine.rs",
-        "crates/ucc-hardware/tests/wave1_remediation.rs",
-        "crates/ucc-hardware/tests/v4_audit_probes.rs"
+        "crates/ucc-hardware/tests/hardware_driver_contracts.rs",
+        "crates/ucc-hardware/tests/hardware_probe_matrix.rs"
       ],
       "notes": "W1-01..03 и W1-09 закрыты: повтор failed auto, честный applied status, запрет 0% на пустых кривых и spawn_fan_worker shutdown recovery проверены; подключение в uccd вместо DefaultUccdBackend в M8.",
       "verified_sha": "e16f9ea",
@@ -397,7 +397,7 @@
       "cases": [
         "crates/ucc-core/tests/cooler_codec.rs",
         "crates/ucc-hardware/tests/cooling_engine.rs",
-        "crates/ucc-hardware/tests/wave1_remediation.rs",
+        "crates/ucc-hardware/tests/hardware_driver_contracts.rs",
         "crates/ucc-hardware/tests/fake_bluez_cooler.rs"
       ],
       "notes": "W1-04, W1-05, W1-10, W1-11 закрыты на моках и fake BlueZ ObjectManager: явный Off, retry без потери пакета, Auto/Manual режимы и BluezCoolerClient проверены; оркестрация в uccd (M8) и живая СЖО (M5.8) впереди.",
@@ -424,7 +424,7 @@
       "legacy_findings": [],
       "cases": [
         "crates/ucc-hardware/tests/cooling_engine.rs",
-        "crates/ucc-hardware/tests/wave1_remediation.rs",
+        "crates/ucc-hardware/tests/hardware_driver_contracts.rs",
         "crates/ucc-hardware/tests/fake_bluez_cooler.rs"
       ],
       "notes": "W1-04, W1-05, W1-10, W1-11 закрыты на моках и fake BlueZ ObjectManager: явный Off, retry без потери пакета, Auto/Manual режимы и BluezCoolerClient проверены; оркестрация в uccd (M8) и живая СЖО (M5.8) впереди.",
@@ -455,7 +455,7 @@
       "cases": [
         "crates/ucc-core/tests/cooler_controls.rs",
         "crates/ucc-hardware/tests/cooling_engine.rs",
-        "crates/ucc-hardware/tests/wave1_remediation.rs",
+        "crates/ucc-hardware/tests/hardware_driver_contracts.rs",
         "crates/ucc-hardware/tests/fake_bluez_cooler.rs"
       ],
       "notes": "W1-04, W1-05, W1-10, W1-11 закрыты на моках и fake BlueZ ObjectManager: явный Off, retry без потери пакета, Auto/Manual режимы и BluezCoolerClient проверены; оркестрация в uccd (M8) и живая СЖО (M5.8) впереди.",
@@ -482,7 +482,7 @@
       "legacy_findings": [],
       "cases": [
         "crates/ucc-lighting/tests/lighting_tests.rs",
-        "crates/ucc-lighting/tests/wave1_remediation.rs"
+        "crates/ucc-lighting/tests/lighting_device_controls.rs"
       ],
       "notes": "W1-06, W1-07, W1-13 закрыты: ошибки buffer_input/lightbar возвращаются вызывающему, 126-зонная раскладка маппится по LED ID без сдвига, on_resume не повторяет welcome; подключение в uccd (M8) и Qt6 UI (M10) впереди.",
       "verified_sha": "e16f9ea",
@@ -508,7 +508,7 @@
       "legacy_findings": [],
       "cases": [
         "crates/ucc-lighting/tests/lighting_tests.rs",
-        "crates/ucc-lighting/tests/wave1_remediation.rs"
+        "crates/ucc-lighting/tests/lighting_device_controls.rs"
       ],
       "notes": "W1-06, W1-07, W1-13 закрыты: ошибки buffer_input/lightbar возвращаются вызывающему, 126-зонная раскладка маппится по LED ID без сдвига, on_resume не повторяет welcome; подключение в uccd (M8) и Qt6 UI (M10) впереди.",
       "verified_sha": "e16f9ea",
@@ -534,7 +534,7 @@
       "legacy_findings": [],
       "cases": [
         "crates/ucc-lighting/tests/lighting_tests.rs",
-        "crates/ucc-lighting/tests/wave1_remediation.rs"
+        "crates/ucc-lighting/tests/lighting_device_controls.rs"
       ],
       "notes": "W1-06, W1-07, W1-13 закрыты: ошибки buffer_input/lightbar возвращаются вызывающему, 126-зонная раскладка маппится по LED ID без сдвига, on_resume не повторяет welcome; подключение в uccd (M8) и Qt6 UI (M10) впереди.",
       "verified_sha": "e16f9ea",
@@ -560,7 +560,7 @@
       "legacy_findings": [],
       "cases": [
         "crates/ucc-lighting/tests/lighting_tests.rs",
-        "crates/ucc-lighting/tests/wave1_remediation.rs"
+        "crates/ucc-lighting/tests/lighting_device_controls.rs"
       ],
       "notes": "W1-06, W1-07, W1-13 закрыты: ошибки buffer_input/lightbar возвращаются вызывающему, 126-зонная раскладка маппится по LED ID без сдвига, on_resume не повторяет welcome; подключение в uccd (M8) и Qt6 UI (M10) впереди.",
       "verified_sha": "e16f9ea",
@@ -760,7 +760,7 @@
         "crates/ucc-hardware/src/telemetry/gpu.rs",
         "crates/ucc-hardware/src/telemetry/mod.rs",
         "crates/ucc-hardware/tests/telemetry_suite.rs",
-        "crates/ucc-hardware/tests/wave1_nvml_remediation.rs"
+        "crates/ucc-hardware/tests/nvml_memory_and_bdf.rs"
       ]
     },
     {
@@ -774,9 +774,9 @@
       "shell_decision": false,
       "legacy_findings": [],
       "cases": [
-        "crates/ucc-hardware/tests/v4_audit_nvml.rs",
-        "crates/ucc-hardware/tests/verify_e16_edges.rs",
-        "crates/ucc-hardware/tests/wave1_nvml_remediation.rs"
+        "crates/ucc-hardware/tests/nvml_telemetry_abi.rs",
+        "crates/ucc-hardware/tests/nvml_edge_cases.rs",
+        "crates/ucc-hardware/tests/nvml_memory_and_bdf.rs"
       ],
       "notes": "BDF cache and D3cold gating pass tracked fixture tests. Physical RTX idle and live cadence remain open.",
       "verified_sha": "e16f9ea",
@@ -794,7 +794,7 @@
         "crates/ucc-hardware/src/telemetry/collector.rs",
         "crates/ucc-hardware/src/telemetry/gpu.rs",
         "crates/ucc-hardware/tests/telemetry_suite.rs",
-        "crates/ucc-hardware/tests/wave1_nvml_remediation.rs"
+        "crates/ucc-hardware/tests/nvml_memory_and_bdf.rs"
       ]
     },
     {
@@ -1027,7 +1027,7 @@
       "shell_decision": false,
       "legacy_findings": [],
       "cases": [
-        "crates/ucc-config/tests/v4_audit_probes.rs"
+        "crates/ucc-config/tests/config_policy_parsing.rs"
       ],
       "notes": "Save/restore guards подтверждены. Отдельная instance identity и полный write matrix ещё открыты.",
       "verified_sha": "e16f9ea",
@@ -1129,8 +1129,8 @@
         "CLI-05"
       ],
       "cases": [
-        "crates/ucc-cli/tests/full_audit_cli.rs",
-        "crates/ucc-cli/tests/consolidated_cli.rs"
+        "crates/ucc-cli/tests/cli_error_handling.rs",
+        "crates/ucc-cli/tests/cli_options_and_flags.rs"
       ],
       "notes": "Wire есть, основные FULL regressions закрыты. CLI-01–05, owner и Polkit, semantic/error parity и реальный C++ daemon остаются.",
       "verified_sha": "e16f9ea",

@@ -60,10 +60,10 @@ fn contained_write_survives_symlink_swap_after_validation() {
             .env("LD_PRELOAD", &shim_so)
             .env("UCC_VERIFY_3F4_REEXEC", "1")
             .output()
-            .expect("re-exec verify_3f4_sysfs with LD_PRELOAD");
+            .expect("re-exec sysfs_path_containment with LD_PRELOAD");
         assert!(
             child.status.success(),
-            "LD_PRELOAD verify_3f4_sysfs child failed:\nstdout: {}\nstderr: {}",
+            "LD_PRELOAD sysfs_path_containment child failed:\nstdout: {}\nstderr: {}",
             String::from_utf8_lossy(&child.stdout),
             String::from_utf8_lossy(&child.stderr)
         );

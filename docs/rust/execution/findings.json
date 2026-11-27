@@ -625,7 +625,7 @@
       "priority": "P2",
       "title": "Parallel CLI test execution on single session bus causes name collision",
       "files": [
-        "crates/ucc-cli/tests/full_audit_cli.rs"
+        "crates/ucc-cli/tests/cli_error_handling.rs"
       ],
       "status": "resolved",
       "resolution": "Use async Mutex test serialization and graceful fallback for C++ parity binary in clean checkout."
@@ -960,7 +960,7 @@
       "evidence": "Отсутствующий sender проходит. Переменная окружения отключает проверку. `unix-process` строится только по PID с нулевым start-time. Нет подтверждённых лимитов payload, concurrent prompts, cancellation на disconnect или backend queue. Для обычного system bus sender даёт шина, обход через отсутствующий sender на ней не заявлен.",
       "acceptance": "Явно ограничить trusted peer/test bypass. Использовать устойчивые credentials, bounded admission, deadlines и размер запросов. Прогнать разные UID, PID reuse, disconnect, slow Polkit, перегрузку и чтения без UI prompt.",
       "status": "resolved",
-      "resolution": "d81a9f3 added global read Polkit semaphore (32, 2s timeout), per-sender read (8) and interactive (2) RAII admission guards, and 256 KiB JSON payload bounds across all 14 D-Bus mutators, verified by t_sec_ipc03_per_sender_read_load_bounded_without_starving_other_clients and t_sec_ipc03_oversized_json_payloads_rejected_before_auth_and_backend in crates/ucc-dbus/tests/audit_security_regressions.rs."
+      "resolution": "d81a9f3 added global read Polkit semaphore (32, 2s timeout), per-sender read (8) and interactive (2) RAII admission guards, and 256 KiB JSON payload bounds across all 14 D-Bus mutators, verified by t_sec_ipc03_per_sender_read_load_bounded_without_starving_other_clients and t_sec_ipc03_oversized_json_payloads_rejected_before_auth_and_backend in crates/ucc-dbus/tests/dbus_security_limits.rs."
     },
     {
       "id": "IPC-04",
@@ -1107,7 +1107,7 @@
       "evidence": "Receiver существует и получил ToggleFanAuto, но ещё ничего не применил. Трей сразу показывает Max. Аналогичное обновление есть для профиля, очередь unbounded. Закрытый канал уже не обновляет состояние.",
       "acceptance": "Отдельные pending и подтверждённый state от backend, bounded queue, отказ и sync после reconnect. Проверить отрицательное подтверждение, перестановку ответов и invalid profile id.",
       "status": "resolved",
-      "resolution": "d81a9f3 added bounded mpsc::channel(32) tray action queue, daemon disconnect/reconnect loop with disabled controls and \"Service unavailable\" state, confirmed water-cooler readback, non-root guard, session D-Bus singleton, and ActivateWithToken/preview activation, verified by crates/ucc-desktop/tests/desk01_and_activation.rs."
+      "resolution": "d81a9f3 added bounded mpsc::channel(32) tray action queue, daemon disconnect/reconnect loop with disabled controls and \"Service unavailable\" state, confirmed water-cooler readback, non-root guard, session D-Bus singleton, and ActivateWithToken/preview activation, verified by crates/ucc-desktop/tests/window_activation.rs."
     },
     {
       "id": "BUILD-01",
@@ -1129,9 +1129,9 @@
       "verification": "reproduced",
       "title": "Штатный параллельный suite воспроизводимо падает на изоляции фикстур",
       "locations": [
-        "crates/ucc-hardware/tests/verify_e1_hardware.rs:19",
-        "crates/ucc-hardware/tests/verify_e1_hardware.rs:38",
-        "crates/ucc-cli/tests/full_audit_cli.rs:1"
+        "crates/ucc-hardware/tests/hardware_device_discovery.rs:19",
+        "crates/ucc-hardware/tests/hardware_device_discovery.rs:38",
+        "crates/ucc-cli/tests/cli_error_handling.rs:1"
       ],
       "evidence": "Последовательно 224/224, с параллельностью по умолчанию 222 passed, 2 failed. Shared env и счётчики mock NVML пересекаются. Комплект C/preload фикстур находится вне коммита. C++ фаза CLI проверки условно пропускается без бинарника.",
       "acceptance": "Зафиксировать исходники и автоматическую сборку фикстур. Варьировать env только в отдельных child processes, приватная D-Bus шина на fixture, явный fail/skip по обязательной матрице. Прогонять serial, parallel и stress.",

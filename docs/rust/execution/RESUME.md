@@ -32,7 +32,7 @@
 
 | Слой приёмки | Статус на `e16f9ea` | Свидетельства и ограничения |
 |---|---|---|
-| **Wire Parity (D-Bus)** | **VERIFIED** | Все 122 метода и 7 сигналов совпадают с C++ XML `de.uniwill.uccd.xml` на обоих интерфейсах (`/com/uniwill/uccd` и `/de/uniwill/uccd`). Проверено тестами `crates/ucc-dbus/tests/contract_tests.rs` и `v4_audit_introspection.rs`. |
+| **Wire Parity (D-Bus)** | **VERIFIED** | Все 122 метода и 7 сигналов совпадают с C++ XML `de.uniwill.uccd.xml` на обоих интерфейсах (`/com/uniwill/uccd` и `/de/uniwill/uccd`). Проверено тестами `crates/ucc-dbus/tests/contract_tests.rs` и `dbus_introspection_parity.rs`. |
 | **CLI Parity** | **AUDITED / PARITY ISSUES TRACKED** | Команды сверены с эталонным C++ бинарником `/tmp/ucc-full-audit-5cqyt_e7/audit-cpp-build/bin/ucc-cli`. Выявлены расхождения CLI-01..05. |
 | **Semantics** | **PARTIAL / REMEDIATION** | Базовые модели и хэндлеры реализованы. 14 проб воспроизводят семантические дефекты (CPU apply reporting, pump curve, device apply bypass). |
 | **Authorization (Polkit)** | **DEFECTS TRACKED** | Выявлены IPC-01 (fallback bypass), IPC-02 (потеря identity вызывающего), IPC-03 (отсутствие rate-limiting/очереди). |

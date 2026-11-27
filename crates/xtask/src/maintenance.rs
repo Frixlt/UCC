@@ -283,8 +283,79 @@ fn copy_dir_recursive(src: &Path, dst: &Path) -> Result<(), String> {
 }
 
 fn file_sha256(path: &Path) -> Result<String, String> {
-    let bytes = fs::read(path).map_err(|e| format!("Failed to hash {}: {e}", path.display()))?;
+    use std::io::Read;
+    let mut opts = fs::OpenOptions::new();
+    opts.read(true);
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::OpenOptionsExt;
+        opts.custom_flags(o_nofollow_flag());
+    }
+    let mut file = opts
+        .open(path)
+        .map_err(|e| format!("Failed to hash {}: {e}", path.display()))?;
+    let meta = file
+        .metadata()
+        .map_err(|e| format!("Failed to inspect {}: {e}", path.display()))?;
+    if !meta.is_file() {
+        return Err(format!("Refusing to hash non-regular file {}", path.display()));
+    }
+    let mut bytes = Vec::new();
+    file.read_to_end(&mut bytes)
+        .map_err(|e| format!("Failed to hash {}: {e}", path.display()))?;
     Ok(sha256_hex(&bytes))
+}
+
+fn copy_private_regular_file(src: &Path, dst: &Path) -> Result<(), String> {
+    let mut src_opts = fs::OpenOptions::new();
+    src_opts.read(true);
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::OpenOptionsExt;
+        src_opts.custom_flags(o_nofollow_flag());
+    }
+    let mut src_file = src_opts.open(src).map_err(|e| {
+        format!(
+            "Failed opening {} for private copy: {e}",
+            src.display()
+        )
+    })?;
+    let src_meta = src_file.metadata().map_err(|e| {
+        format!(
+            "Failed inspecting opened {}: {e}",
+            src.display()
+        )
+    })?;
+    if !src_meta.is_file() {
+        return Err(format!(
+            "Refusing to copy non-regular file {}",
+            src.display()
+        ));
+    }
+
+    let _ = fs::remove_file(dst);
+    let mut dst_opts = fs::OpenOptions::new();
+    dst_opts.write(true).create_new(true);
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::OpenOptionsExt;
+        dst_opts.mode(0o600).custom_flags(o_nofollow_flag());
+    }
+    let mut dst_file = dst_opts.open(dst).map_err(|e| {
+        format!(
+            "Failed creating private copy {}: {e}",
+            dst.display()
+        )
+    })?;
+    if let Err(e) = io::copy(&mut src_file, &mut dst_file).and_then(|_| dst_file.sync_all()) {
+        let _ = fs::remove_file(dst);
+        return Err(format!(
+            "Failed copying {} to {}: {e}",
+            src.display(),
+            dst.display()
+        ));
+    }
+    Ok(())
 }
 
 #[cfg(unix)]
@@ -786,6 +857,7 @@ pub fn prepare_deployment(
     }
 
     let rust_target_dir = std::env::var_os("CARGO_TARGET_DIR")
+        .filter(|v| !v.is_empty())
         .map(PathBuf::from)
         .unwrap_or_else(|| repo_root.join("target"));
     let rust_release_dir = rust_target_dir.join("release");
@@ -1200,55 +1272,7 @@ impl<'a> DeploymentManager<'a> {
         self.backup = Some(backup.clone());
 
         let private_package = backup.join(pkg_filename);
-        let mut src_opts = fs::OpenOptions::new();
-        src_opts.read(true);
-        #[cfg(unix)]
-        {
-            use std::os::unix::fs::OpenOptionsExt;
-            src_opts.custom_flags(o_nofollow_flag());
-        }
-        let mut src_file = src_opts.open(&package).map_err(|e| {
-            format!(
-                "Failed opening package {} for private copy: {e}",
-                package.display()
-            )
-        })?;
-        let src_meta = src_file.metadata().map_err(|e| {
-            format!(
-                "Failed inspecting opened package {}: {e}",
-                package.display()
-            )
-        })?;
-        if !src_meta.is_file() {
-            return Err(format!(
-                "Refusing to copy non-regular package {}",
-                package.display()
-            ));
-        }
-
-        let _ = fs::remove_file(&private_package);
-        let mut dst_opts = fs::OpenOptions::new();
-        dst_opts.write(true).create_new(true);
-        #[cfg(unix)]
-        {
-            use std::os::unix::fs::OpenOptionsExt;
-            dst_opts.mode(0o600).custom_flags(o_nofollow_flag());
-        }
-        let mut dst_file = dst_opts.open(&private_package).map_err(|e| {
-            format!(
-                "Failed creating private package copy {}: {e}",
-                private_package.display()
-            )
-        })?;
-        if let Err(e) = io::copy(&mut src_file, &mut dst_file).and_then(|_| dst_file.sync_all()) {
-            let _ = fs::remove_file(&private_package);
-            return Err(format!(
-                "Failed copying package {} into private backup dir: {e}",
-                package.display()
-            ));
-        }
-        drop(dst_file);
-        drop(src_file);
+        copy_private_regular_file(&package, &private_package)?;
 
         let private_meta = fs::symlink_metadata(&private_package).map_err(|e| {
             let _ = fs::remove_file(&private_package);
@@ -1348,7 +1372,7 @@ impl<'a> DeploymentManager<'a> {
                             ));
                         }
                     }
-                    fs::copy(&src, &dst)
+                    copy_private_regular_file(&src, &dst)
                         .map_err(|e| format!("Backup copy failed for {}: {e}", src.display()))?;
                 }
             }

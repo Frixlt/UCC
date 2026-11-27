@@ -1263,7 +1263,7 @@
       "owned_paths": [
         "crates/ucc-hardware/src/fan_controller.rs",
         "crates/ucc-hardware/tests/cooling_engine.rs",
-        "crates/ucc-hardware/tests/wave1_remediation.rs"
+        "crates/ucc-hardware/tests/hardware_driver_contracts.rs"
       ],
       "feature_ids": [],
       "test_ids": [
@@ -1352,7 +1352,7 @@
       "dependency_refinement_required": true,
       "owned_paths": [
         "crates/ucc-hardware/src/cooler.rs",
-        "crates/ucc-hardware/tests/wave1_remediation.rs"
+        "crates/ucc-hardware/tests/hardware_driver_contracts.rs"
       ],
       "feature_ids": [],
       "test_ids": [
@@ -1379,7 +1379,7 @@
       "dependency_refinement_required": true,
       "owned_paths": [
         "crates/ucc-hardware/src/cooler.rs",
-        "crates/ucc-hardware/tests/wave1_remediation.rs"
+        "crates/ucc-hardware/tests/hardware_driver_contracts.rs"
       ],
       "feature_ids": [],
       "test_ids": [
@@ -1494,7 +1494,7 @@
       "dependency_refinement_required": true,
       "owned_paths": [
         "crates/ucc-lighting/src/keyboard.rs",
-        "crates/ucc-lighting/tests/wave1_remediation.rs"
+        "crates/ucc-lighting/tests/lighting_device_controls.rs"
       ],
       "feature_ids": [],
       "test_ids": [
@@ -1521,7 +1521,7 @@
       "dependency_refinement_required": true,
       "owned_paths": [
         "crates/ucc-lighting/src/keyboard.rs",
-        "crates/ucc-lighting/tests/wave1_remediation.rs"
+        "crates/ucc-lighting/tests/lighting_device_controls.rs"
       ],
       "feature_ids": [],
       "test_ids": [
@@ -1548,7 +1548,7 @@
       "dependency_refinement_required": true,
       "owned_paths": [
         "crates/ucc-lighting/src/lightbar.rs",
-        "crates/ucc-lighting/tests/wave1_remediation.rs"
+        "crates/ucc-lighting/tests/lighting_device_controls.rs"
       ],
       "feature_ids": [],
       "test_ids": [
@@ -1575,7 +1575,7 @@
       "dependency_refinement_required": true,
       "owned_paths": [
         "crates/ucc-lighting/src/lightbar.rs",
-        "crates/ucc-lighting/tests/wave1_remediation.rs"
+        "crates/ucc-lighting/tests/lighting_device_controls.rs"
       ],
       "feature_ids": [],
       "test_ids": [
@@ -1611,7 +1611,7 @@
       "r1_review": "passed",
       "r2_evidence": [
         "crates/ucc-lighting/tests/lighting_tests.rs",
-        "crates/ucc-lighting/tests/wave1_remediation.rs",
+        "crates/ucc-lighting/tests/lighting_device_controls.rs",
         "Stage 2B live 126-zone ite_8291 keyboard sysfs readback & GetLightbarStatusJSON (ALL_STAGE2B_HW_PASSED)"
       ],
       "integration_sha": "66b6b50",
@@ -1681,7 +1681,7 @@
         "crates/ucc-hardware/src/telemetry/history.rs",
         "crates/ucc-hardware/src/telemetry/collector.rs",
         "crates/ucc-hardware/tests/telemetry_suite.rs",
-        "crates/ucc-hardware/tests/wave1_nvml_remediation.rs"
+        "crates/ucc-hardware/tests/nvml_memory_and_bdf.rs"
       ]
     },
     {
@@ -1716,7 +1716,7 @@
         "crates/ucc-hardware/src/telemetry/history.rs",
         "crates/ucc-hardware/src/telemetry/collector.rs",
         "crates/ucc-hardware/tests/telemetry_suite.rs",
-        "crates/ucc-hardware/tests/wave1_nvml_remediation.rs"
+        "crates/ucc-hardware/tests/nvml_memory_and_bdf.rs"
       ]
     },
     {
@@ -1751,7 +1751,7 @@
         "crates/ucc-hardware/src/telemetry/history.rs",
         "crates/ucc-hardware/src/telemetry/collector.rs",
         "crates/ucc-hardware/tests/telemetry_suite.rs",
-        "crates/ucc-hardware/tests/wave1_nvml_remediation.rs"
+        "crates/ucc-hardware/tests/nvml_memory_and_bdf.rs"
       ]
     },
     {
@@ -1786,7 +1786,7 @@
         "crates/ucc-hardware/src/telemetry/history.rs",
         "crates/ucc-hardware/src/telemetry/collector.rs",
         "crates/ucc-hardware/tests/telemetry_suite.rs",
-        "crates/ucc-hardware/tests/wave1_nvml_remediation.rs"
+        "crates/ucc-hardware/tests/nvml_memory_and_bdf.rs"
       ]
     },
     {
@@ -1821,7 +1821,7 @@
         "crates/ucc-hardware/src/telemetry/history.rs",
         "crates/ucc-hardware/src/telemetry/collector.rs",
         "crates/ucc-hardware/tests/telemetry_suite.rs",
-        "crates/ucc-hardware/tests/wave1_nvml_remediation.rs"
+        "crates/ucc-hardware/tests/nvml_memory_and_bdf.rs"
       ]
     },
     {
@@ -1856,7 +1856,7 @@
         "crates/ucc-hardware/src/telemetry/history.rs",
         "crates/ucc-hardware/src/telemetry/collector.rs",
         "crates/ucc-hardware/tests/telemetry_suite.rs",
-        "crates/ucc-hardware/tests/wave1_nvml_remediation.rs"
+        "crates/ucc-hardware/tests/nvml_memory_and_bdf.rs"
       ]
     },
     {
@@ -1891,7 +1891,7 @@
         "crates/ucc-hardware/src/telemetry/history.rs",
         "crates/ucc-hardware/src/telemetry/collector.rs",
         "crates/ucc-hardware/tests/telemetry_suite.rs",
-        "crates/ucc-hardware/tests/wave1_nvml_remediation.rs"
+        "crates/ucc-hardware/tests/nvml_memory_and_bdf.rs"
       ]
     },
     {
@@ -2349,7 +2349,7 @@
       "wave": "V9",
       "title": "Реализовать GUI activation endpoint с token forwarding и отдельные service names preview.",
       "status": "done",
-      "status_basis": "Implemented ActivateWithToken / Activate D-Bus handoff, preview bus names (com.uniwill.UccGuiPreview / com.uniwill.UccDesktopTrayPreview), --show launch fallback, singleton lock, and non-root guard in crates/ucc-desktop, verified by crates/ucc-desktop/tests/desk01_and_activation.rs (d81a9f3).",
+      "status_basis": "Implemented ActivateWithToken / Activate D-Bus handoff, preview bus names (com.uniwill.UccGuiPreview / com.uniwill.UccDesktopTrayPreview), --show launch fallback, singleton lock, and non-root guard in crates/ucc-desktop, verified by crates/ucc-desktop/tests/window_activation.rs (d81a9f3).",
       "suggested_role": null,
       "assigned_agent_id": null,
       "depends_on": [],
@@ -2357,7 +2357,7 @@
       "owned_paths": [
         "crates/ucc-desktop/src/launcher.rs",
         "crates/ucc-desktop/src/main.rs",
-        "crates/ucc-desktop/tests/desk01_and_activation.rs"
+        "crates/ucc-desktop/tests/window_activation.rs"
       ],
       "feature_ids": [],
       "test_ids": [
@@ -2366,7 +2366,7 @@
       "implementation_sha": "d81a9f3",
       "r1_review": null,
       "r2_evidence": [
-        "crates/ucc-desktop/tests/desk01_and_activation.rs"
+        "crates/ucc-desktop/tests/window_activation.rs"
       ],
       "integration_sha": "d81a9f3",
       "children": [],
@@ -2892,7 +2892,7 @@
         "ucc-gnome/extension.js",
         "ucc-gnome/uccdClient.js",
         "crates/ucc-desktop",
-        "crates/xtask/tests/audit_packaging_regressions.rs"
+        "crates/xtask/tests/packaging_contracts.rs"
       ],
       "feature_ids": [],
       "test_ids": [
@@ -2923,7 +2923,7 @@
       "dependency_refinement_required": false,
       "owned_paths": [
         "docs/rust/execution/decisions/ADR-03-shell-embedding-policy.md",
-        "crates/xtask/tests/audit_packaging_regressions.rs"
+        "crates/xtask/tests/packaging_contracts.rs"
       ],
       "feature_ids": [],
       "test_ids": [
@@ -2975,7 +2975,7 @@
       "depends_on": [],
       "dependency_refinement_required": false,
       "owned_paths": [
-        "crates/xtask/tests/audit_packaging_regressions.rs"
+        "crates/xtask/tests/packaging_contracts.rs"
       ],
       "feature_ids": [],
       "test_ids": [

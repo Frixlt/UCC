@@ -23,7 +23,7 @@
           "status": "verified",
           "test_paths": [
             "crates/ucc-dbus/tests/contract_tests.rs",
-            "crates/ucc-dbus/tests/v4_audit_introspection.rs"
+            "crates/ucc-dbus/tests/dbus_introspection_parity.rs"
           ],
           "evidence": [
             "Introspection signatures match C++ baseline for GetDeviceName on both /com/uniwill/uccd and /de/uniwill/uccd at e16f9ea"
@@ -96,7 +96,7 @@
           "status": "verified",
           "test_paths": [
             "crates/ucc-dbus/tests/contract_tests.rs",
-            "crates/ucc-dbus/tests/v4_audit_introspection.rs"
+            "crates/ucc-dbus/tests/dbus_introspection_parity.rs"
           ],
           "evidence": [
             "Introspection signatures match C++ baseline for GetSystemInfoJSON on both /com/uniwill/uccd and /de/uniwill/uccd at e16f9ea"
@@ -169,7 +169,7 @@
           "status": "verified",
           "test_paths": [
             "crates/ucc-dbus/tests/contract_tests.rs",
-            "crates/ucc-dbus/tests/v4_audit_introspection.rs"
+            "crates/ucc-dbus/tests/dbus_introspection_parity.rs"
           ],
           "evidence": [
             "Introspection signatures match C++ baseline for IsDeviceSupported on both /com/uniwill/uccd and /de/uniwill/uccd at e16f9ea"
@@ -240,7 +240,7 @@
           "status": "verified",
           "test_paths": [
             "crates/ucc-dbus/tests/contract_tests.rs",
-            "crates/ucc-dbus/tests/v4_audit_introspection.rs"
+            "crates/ucc-dbus/tests/dbus_introspection_parity.rs"
           ],
           "evidence": [
             "Introspection signatures match C++ baseline for GetDisplayModesJSON on both /com/uniwill/uccd and /de/uniwill/uccd at e16f9ea"
@@ -309,7 +309,7 @@
           "status": "verified",
           "test_paths": [
             "crates/ucc-dbus/tests/contract_tests.rs",
-            "crates/ucc-dbus/tests/v4_audit_introspection.rs"
+            "crates/ucc-dbus/tests/dbus_introspection_parity.rs"
           ],
           "evidence": [
             "Introspection signatures match C++ baseline for GetIsX11 on both /com/uniwill/uccd and /de/uniwill/uccd at e16f9ea"
@@ -378,7 +378,7 @@
           "status": "verified",
           "test_paths": [
             "crates/ucc-dbus/tests/contract_tests.rs",
-            "crates/ucc-dbus/tests/v4_audit_introspection.rs"
+            "crates/ucc-dbus/tests/dbus_introspection_parity.rs"
           ],
           "evidence": [
             "Introspection signatures match C++ baseline for TuxedoWmiAvailable on both /com/uniwill/uccd and /de/uniwill/uccd at e16f9ea"
@@ -447,7 +447,7 @@
           "status": "verified",
           "test_paths": [
             "crates/ucc-dbus/tests/contract_tests.rs",
-            "crates/ucc-dbus/tests/v4_audit_introspection.rs"
+            "crates/ucc-dbus/tests/dbus_introspection_parity.rs"
           ],
           "evidence": [
             "Introspection signatures match C++ baseline for FanHwmonAvailable on both /com/uniwill/uccd and /de/uniwill/uccd at e16f9ea"
@@ -516,7 +516,7 @@
           "status": "verified",
           "test_paths": [
             "crates/ucc-dbus/tests/contract_tests.rs",
-            "crates/ucc-dbus/tests/v4_audit_introspection.rs"
+            "crates/ucc-dbus/tests/dbus_introspection_parity.rs"
           ],
           "evidence": [
             "Introspection signatures match C++ baseline for UccdVersion on both /com/uniwill/uccd and /de/uniwill/uccd at e16f9ea"
@@ -587,7 +587,7 @@
           "status": "verified",
           "test_paths": [
             "crates/ucc-dbus/tests/contract_tests.rs",
-            "crates/ucc-dbus/tests/v4_audit_introspection.rs"
+            "crates/ucc-dbus/tests/dbus_introspection_parity.rs"
           ],
           "evidence": [
             "Introspection signatures match C++ baseline for GetFanDataCPU on both /com/uniwill/uccd and /de/uniwill/uccd at e16f9ea"
@@ -658,7 +658,7 @@
           "status": "verified",
           "test_paths": [
             "crates/ucc-dbus/tests/contract_tests.rs",
-            "crates/ucc-dbus/tests/v4_audit_introspection.rs"
+            "crates/ucc-dbus/tests/dbus_introspection_parity.rs"
           ],
           "evidence": [
             "Introspection signatures match C++ baseline for GetFanDataGPU1 on both /com/uniwill/uccd and /de/uniwill/uccd at e16f9ea"
@@ -729,7 +729,7 @@
           "status": "verified",
           "test_paths": [
             "crates/ucc-dbus/tests/contract_tests.rs",
-            "crates/ucc-dbus/tests/v4_audit_introspection.rs"
+            "crates/ucc-dbus/tests/dbus_introspection_parity.rs"
           ],
           "evidence": [
             "Introspection signatures match C++ baseline for GetFanDataGPU2 on both /com/uniwill/uccd and /de/uniwill/uccd at e16f9ea"
@@ -800,7 +800,7 @@
           "status": "verified",
           "test_paths": [
             "crates/ucc-dbus/tests/contract_tests.rs",
-            "crates/ucc-dbus/tests/v4_audit_introspection.rs"
+            "crates/ucc-dbus/tests/dbus_introspection_parity.rs"
           ],
           "evidence": [
             "Introspection signatures match C++ baseline for WebcamSWAvailable on both /com/uniwill/uccd and /de/uniwill/uccd at e16f9ea"
@@ -869,7 +869,7 @@
           "status": "verified",
           "test_paths": [
             "crates/ucc-dbus/tests/contract_tests.rs",
-            "crates/ucc-dbus/tests/v4_audit_introspection.rs"
+            "crates/ucc-dbus/tests/dbus_introspection_parity.rs"
           ],
           "evidence": [
             "Introspection signatures match C++ baseline for GetWebcamSWStatus on both /com/uniwill/uccd and /de/uniwill/uccd at e16f9ea"
@@ -938,7 +938,7 @@
           "status": "verified",
           "test_paths": [
             "crates/ucc-dbus/tests/contract_tests.rs",
-            "crates/ucc-dbus/tests/v4_audit_introspection.rs"
+            "crates/ucc-dbus/tests/dbus_introspection_parity.rs"
           ],
           "evidence": [
             "Introspection signatures match C++ baseline for GetForceYUV420OutputSwitchAvailable on both /com/uniwill/uccd and /de/uniwill/uccd at e16f9ea"
@@ -1007,7 +1007,7 @@
           "status": "verified",
           "test_paths": [
             "crates/ucc-dbus/tests/contract_tests.rs",
-            "crates/ucc-dbus/tests/v4_audit_introspection.rs"
+            "crates/ucc-dbus/tests/dbus_introspection_parity.rs"
           ],
           "evidence": [
             "Introspection signatures match C++ baseline for GetDisplayBrightness on both /com/uniwill/uccd and /de/uniwill/uccd at e16f9ea"
@@ -1078,7 +1078,7 @@
           "status": "verified",
           "test_paths": [
             "crates/ucc-dbus/tests/contract_tests.rs",
-            "crates/ucc-dbus/tests/v4_audit_introspection.rs"
+            "crates/ucc-dbus/tests/dbus_introspection_parity.rs"
           ],
           "evidence": [
             "Introspection signatures match C++ baseline for GetKeyboardBacklightControlSupported on both /com/uniwill/uccd and /de/uniwill/uccd at e16f9ea"
@@ -1149,7 +1149,7 @@
           "status": "verified",
           "test_paths": [
             "crates/ucc-dbus/tests/contract_tests.rs",
-            "crates/ucc-dbus/tests/v4_audit_introspection.rs"
+            "crates/ucc-dbus/tests/dbus_introspection_parity.rs"
           ],
           "evidence": [
             "Introspection signatures match C++ baseline for SetDisplayBrightness on both /com/uniwill/uccd and /de/uniwill/uccd at e16f9ea"
@@ -1173,7 +1173,7 @@
           "status": "defect",
           "test_paths": [
             "crates/ucc-dbus/src/interface.rs",
-            "crates/ucc-dbus/tests/consolidated_dbus.rs"
+            "crates/ucc-dbus/tests/dbus_method_dispatch.rs"
           ],
           "evidence": [
             "IPC-01: Fallback Polkit rule overrides explicit denial; IPC-03: Polkit rate-limiting/trust queue unbounded"
@@ -1192,7 +1192,7 @@
         "preview_if_mutating": {
           "status": "partial_mock",
           "test_paths": [
-            "crates/ucc-config/tests/v4_audit_probes.rs"
+            "crates/ucc-config/tests/config_policy_parsing.rs"
           ],
           "evidence": [
             "Preview mode read-only guard verified for config manager and file writers; live daemon transaction boundary in progress"
@@ -1227,7 +1227,7 @@
           "status": "verified",
           "test_paths": [
             "crates/ucc-dbus/tests/contract_tests.rs",
-            "crates/ucc-dbus/tests/v4_audit_introspection.rs"
+            "crates/ucc-dbus/tests/dbus_introspection_parity.rs"
           ],
           "evidence": [
             "Introspection signatures match C++ baseline for SetDisplayRefreshRate on both /com/uniwill/uccd and /de/uniwill/uccd at e16f9ea"
@@ -1249,7 +1249,7 @@
           "status": "defect",
           "test_paths": [
             "crates/ucc-dbus/src/interface.rs",
-            "crates/ucc-dbus/tests/consolidated_dbus.rs"
+            "crates/ucc-dbus/tests/dbus_method_dispatch.rs"
           ],
           "evidence": [
             "IPC-01: Fallback Polkit rule overrides explicit denial; IPC-03: Polkit rate-limiting/trust queue unbounded"
@@ -1268,7 +1268,7 @@
         "preview_if_mutating": {
           "status": "partial_mock",
           "test_paths": [
-            "crates/ucc-config/tests/v4_audit_probes.rs"
+            "crates/ucc-config/tests/config_policy_parsing.rs"
           ],
           "evidence": [
             "Preview mode read-only guard verified for config manager and file writers; live daemon transaction boundary in progress"
@@ -1301,7 +1301,7 @@
           "status": "verified",
           "test_paths": [
             "crates/ucc-dbus/tests/contract_tests.rs",
-            "crates/ucc-dbus/tests/v4_audit_introspection.rs"
+            "crates/ucc-dbus/tests/dbus_introspection_parity.rs"
           ],
           "evidence": [
             "Introspection signatures match C++ baseline for GetDGpuInfoValuesJSON on both /com/uniwill/uccd and /de/uniwill/uccd at e16f9ea"
@@ -1370,7 +1370,7 @@
           "status": "verified",
           "test_paths": [
             "crates/ucc-dbus/tests/contract_tests.rs",
-            "crates/ucc-dbus/tests/v4_audit_introspection.rs"
+            "crates/ucc-dbus/tests/dbus_introspection_parity.rs"
           ],
           "evidence": [
             "Introspection signatures match C++ baseline for GetIGpuInfoValuesJSON on both /com/uniwill/uccd and /de/uniwill/uccd at e16f9ea"
@@ -1439,7 +1439,7 @@
           "status": "verified",
           "test_paths": [
             "crates/ucc-dbus/tests/contract_tests.rs",
-            "crates/ucc-dbus/tests/v4_audit_introspection.rs"
+            "crates/ucc-dbus/tests/dbus_introspection_parity.rs"
           ],
           "evidence": [
             "Introspection signatures match C++ baseline for GetCpuPowerValuesJSON on both /com/uniwill/uccd and /de/uniwill/uccd at e16f9ea"
@@ -1508,7 +1508,7 @@
           "status": "verified",
           "test_paths": [
             "crates/ucc-dbus/tests/contract_tests.rs",
-            "crates/ucc-dbus/tests/v4_audit_introspection.rs"
+            "crates/ucc-dbus/tests/dbus_introspection_parity.rs"
           ],
           "evidence": [
             "Introspection signatures match C++ baseline for GetPrimeState on both /com/uniwill/uccd and /de/uniwill/uccd at e16f9ea"
@@ -1577,7 +1577,7 @@
           "status": "verified",
           "test_paths": [
             "crates/ucc-dbus/tests/contract_tests.rs",
-            "crates/ucc-dbus/tests/v4_audit_introspection.rs"
+            "crates/ucc-dbus/tests/dbus_introspection_parity.rs"
           ],
           "evidence": [
             "Introspection signatures match C++ baseline for ConsumeModeReapplyPending on both /com/uniwill/uccd and /de/uniwill/uccd at e16f9ea"
@@ -1646,7 +1646,7 @@
           "status": "verified",
           "test_paths": [
             "crates/ucc-dbus/tests/contract_tests.rs",
-            "crates/ucc-dbus/tests/v4_audit_introspection.rs"
+            "crates/ucc-dbus/tests/dbus_introspection_parity.rs"
           ],
           "evidence": [
             "Introspection signatures match C++ baseline for GetActiveProfileJSON on both /com/uniwill/uccd and /de/uniwill/uccd at e16f9ea"
@@ -1717,7 +1717,7 @@
           "status": "verified",
           "test_paths": [
             "crates/ucc-dbus/tests/contract_tests.rs",
-            "crates/ucc-dbus/tests/v4_audit_introspection.rs"
+            "crates/ucc-dbus/tests/dbus_introspection_parity.rs"
           ],
           "evidence": [
             "Introspection signatures match C++ baseline for GetPowerState on both /com/uniwill/uccd and /de/uniwill/uccd at e16f9ea"
@@ -1790,7 +1790,7 @@
           "status": "verified",
           "test_paths": [
             "crates/ucc-dbus/tests/contract_tests.rs",
-            "crates/ucc-dbus/tests/v4_audit_introspection.rs"
+            "crates/ucc-dbus/tests/dbus_introspection_parity.rs"
           ],
           "evidence": [
             "Introspection signatures match C++ baseline for GetPowerPolicyJSON on both /com/uniwill/uccd and /de/uniwill/uccd at e16f9ea"
@@ -1863,7 +1863,7 @@
           "status": "verified",
           "test_paths": [
             "crates/ucc-dbus/tests/contract_tests.rs",
-            "crates/ucc-dbus/tests/v4_audit_introspection.rs"
+            "crates/ucc-dbus/tests/dbus_introspection_parity.rs"
           ],
           "evidence": [
             "Introspection signatures match C++ baseline for GetPowerDeviceSettingsJSON on both /com/uniwill/uccd and /de/uniwill/uccd at e16f9ea"
@@ -1936,7 +1936,7 @@
           "status": "verified",
           "test_paths": [
             "crates/ucc-dbus/tests/contract_tests.rs",
-            "crates/ucc-dbus/tests/v4_audit_introspection.rs"
+            "crates/ucc-dbus/tests/dbus_introspection_parity.rs"
           ],
           "evidence": [
             "Introspection signatures match C++ baseline for GetPowerDeviceStatusJSON on both /com/uniwill/uccd and /de/uniwill/uccd at e16f9ea"
@@ -2009,7 +2009,7 @@
           "status": "verified",
           "test_paths": [
             "crates/ucc-dbus/tests/contract_tests.rs",
-            "crates/ucc-dbus/tests/v4_audit_introspection.rs"
+            "crates/ucc-dbus/tests/dbus_introspection_parity.rs"
           ],
           "evidence": [
             "Introspection signatures match C++ baseline for SetPowerDeviceSettingsJSON on both /com/uniwill/uccd and /de/uniwill/uccd at e16f9ea"
@@ -2033,7 +2033,7 @@
           "status": "defect",
           "test_paths": [
             "crates/ucc-dbus/src/interface.rs",
-            "crates/ucc-dbus/tests/consolidated_dbus.rs"
+            "crates/ucc-dbus/tests/dbus_method_dispatch.rs"
           ],
           "evidence": [
             "IPC-01: Fallback Polkit rule overrides explicit denial; IPC-03: Polkit rate-limiting/trust queue unbounded"
@@ -2052,7 +2052,7 @@
         "preview_if_mutating": {
           "status": "partial_mock",
           "test_paths": [
-            "crates/ucc-config/tests/v4_audit_probes.rs"
+            "crates/ucc-config/tests/config_policy_parsing.rs"
           ],
           "evidence": [
             "Preview mode read-only guard verified for config manager and file writers; live daemon transaction boundary in progress"
@@ -2087,7 +2087,7 @@
           "status": "verified",
           "test_paths": [
             "crates/ucc-dbus/tests/contract_tests.rs",
-            "crates/ucc-dbus/tests/v4_audit_introspection.rs"
+            "crates/ucc-dbus/tests/dbus_introspection_parity.rs"
           ],
           "evidence": [
             "Introspection signatures match C++ baseline for ScanPowerDevices on both /com/uniwill/uccd and /de/uniwill/uccd at e16f9ea"
@@ -2111,7 +2111,7 @@
           "status": "defect",
           "test_paths": [
             "crates/ucc-dbus/src/interface.rs",
-            "crates/ucc-dbus/tests/consolidated_dbus.rs"
+            "crates/ucc-dbus/tests/dbus_method_dispatch.rs"
           ],
           "evidence": [
             "IPC-01: Fallback Polkit rule overrides explicit denial; IPC-03: Polkit rate-limiting/trust queue unbounded"
@@ -2130,7 +2130,7 @@
         "preview_if_mutating": {
           "status": "partial_mock",
           "test_paths": [
-            "crates/ucc-config/tests/v4_audit_probes.rs"
+            "crates/ucc-config/tests/config_policy_parsing.rs"
           ],
           "evidence": [
             "Preview mode read-only guard verified for config manager and file writers; live daemon transaction boundary in progress"
@@ -2165,7 +2165,7 @@
           "status": "verified",
           "test_paths": [
             "crates/ucc-dbus/tests/contract_tests.rs",
-            "crates/ucc-dbus/tests/v4_audit_introspection.rs"
+            "crates/ucc-dbus/tests/dbus_introspection_parity.rs"
           ],
           "evidence": [
             "Introspection signatures match C++ baseline for GetLightbarSettingsJSON on both /com/uniwill/uccd and /de/uniwill/uccd at e16f9ea"
@@ -2238,7 +2238,7 @@
           "status": "verified",
           "test_paths": [
             "crates/ucc-dbus/tests/contract_tests.rs",
-            "crates/ucc-dbus/tests/v4_audit_introspection.rs"
+            "crates/ucc-dbus/tests/dbus_introspection_parity.rs"
           ],
           "evidence": [
             "Introspection signatures match C++ baseline for GetLightbarStatusJSON on both /com/uniwill/uccd and /de/uniwill/uccd at e16f9ea"
@@ -2311,7 +2311,7 @@
           "status": "verified",
           "test_paths": [
             "crates/ucc-dbus/tests/contract_tests.rs",
-            "crates/ucc-dbus/tests/v4_audit_introspection.rs"
+            "crates/ucc-dbus/tests/dbus_introspection_parity.rs"
           ],
           "evidence": [
             "Introspection signatures match C++ baseline for GetDriverHealthJSON on both /com/uniwill/uccd and /de/uniwill/uccd at e16f9ea"
@@ -2382,7 +2382,7 @@
           "status": "verified",
           "test_paths": [
             "crates/ucc-dbus/tests/contract_tests.rs",
-            "crates/ucc-dbus/tests/v4_audit_introspection.rs"
+            "crates/ucc-dbus/tests/dbus_introspection_parity.rs"
           ],
           "evidence": [
             "Introspection signatures match C++ baseline for SetLightbarSettingsJSON on both /com/uniwill/uccd and /de/uniwill/uccd at e16f9ea"
@@ -2406,7 +2406,7 @@
           "status": "defect",
           "test_paths": [
             "crates/ucc-dbus/src/interface.rs",
-            "crates/ucc-dbus/tests/consolidated_dbus.rs"
+            "crates/ucc-dbus/tests/dbus_method_dispatch.rs"
           ],
           "evidence": [
             "IPC-01: Fallback Polkit rule overrides explicit denial; IPC-03: Polkit rate-limiting/trust queue unbounded"
@@ -2425,7 +2425,7 @@
         "preview_if_mutating": {
           "status": "partial_mock",
           "test_paths": [
-            "crates/ucc-config/tests/v4_audit_probes.rs"
+            "crates/ucc-config/tests/config_policy_parsing.rs"
           ],
           "evidence": [
             "Preview mode read-only guard verified for config manager and file writers; live daemon transaction boundary in progress"
@@ -2460,7 +2460,7 @@
           "status": "verified",
           "test_paths": [
             "crates/ucc-dbus/tests/contract_tests.rs",
-            "crates/ucc-dbus/tests/v4_audit_introspection.rs"
+            "crates/ucc-dbus/tests/dbus_introspection_parity.rs"
           ],
           "evidence": [
             "Introspection signatures match C++ baseline for TriggerLightbarAnimation on both /com/uniwill/uccd and /de/uniwill/uccd at e16f9ea"
@@ -2484,7 +2484,7 @@
           "status": "defect",
           "test_paths": [
             "crates/ucc-dbus/src/interface.rs",
-            "crates/ucc-dbus/tests/consolidated_dbus.rs"
+            "crates/ucc-dbus/tests/dbus_method_dispatch.rs"
           ],
           "evidence": [
             "IPC-01: Fallback Polkit rule overrides explicit denial; IPC-03: Polkit rate-limiting/trust queue unbounded"
@@ -2503,7 +2503,7 @@
         "preview_if_mutating": {
           "status": "partial_mock",
           "test_paths": [
-            "crates/ucc-config/tests/v4_audit_probes.rs"
+            "crates/ucc-config/tests/config_policy_parsing.rs"
           ],
           "evidence": [
             "Preview mode read-only guard verified for config manager and file writers; live daemon transaction boundary in progress"
@@ -2538,7 +2538,7 @@
           "status": "verified",
           "test_paths": [
             "crates/ucc-dbus/tests/contract_tests.rs",
-            "crates/ucc-dbus/tests/v4_audit_introspection.rs"
+            "crates/ucc-dbus/tests/dbus_introspection_parity.rs"
           ],
           "evidence": [
             "Introspection signatures match C++ baseline for SetManualPowerMode on both /com/uniwill/uccd and /de/uniwill/uccd at e16f9ea"
@@ -2562,7 +2562,7 @@
           "status": "defect",
           "test_paths": [
             "crates/ucc-dbus/src/interface.rs",
-            "crates/ucc-dbus/tests/consolidated_dbus.rs"
+            "crates/ucc-dbus/tests/dbus_method_dispatch.rs"
           ],
           "evidence": [
             "IPC-01: Fallback Polkit rule overrides explicit denial; IPC-03: Polkit rate-limiting/trust queue unbounded"
@@ -2581,7 +2581,7 @@
         "preview_if_mutating": {
           "status": "partial_mock",
           "test_paths": [
-            "crates/ucc-config/tests/v4_audit_probes.rs"
+            "crates/ucc-config/tests/config_policy_parsing.rs"
           ],
           "evidence": [
             "Preview mode read-only guard verified for config manager and file writers; live daemon transaction boundary in progress"
@@ -2616,7 +2616,7 @@
           "status": "verified",
           "test_paths": [
             "crates/ucc-dbus/tests/contract_tests.rs",
-            "crates/ucc-dbus/tests/v4_audit_introspection.rs"
+            "crates/ucc-dbus/tests/dbus_introspection_parity.rs"
           ],
           "evidence": [
             "Introspection signatures match C++ baseline for RegisterPowerRequest on both /com/uniwill/uccd and /de/uniwill/uccd at e16f9ea"
@@ -2640,7 +2640,7 @@
           "status": "defect",
           "test_paths": [
             "crates/ucc-dbus/src/interface.rs",
-            "crates/ucc-dbus/tests/consolidated_dbus.rs"
+            "crates/ucc-dbus/tests/dbus_method_dispatch.rs"
           ],
           "evidence": [
             "IPC-01: Fallback Polkit rule overrides explicit denial; IPC-03: Polkit rate-limiting/trust queue unbounded"
@@ -2659,7 +2659,7 @@
         "preview_if_mutating": {
           "status": "partial_mock",
           "test_paths": [
-            "crates/ucc-config/tests/v4_audit_probes.rs"
+            "crates/ucc-config/tests/config_policy_parsing.rs"
           ],
           "evidence": [
             "Preview mode read-only guard verified for config manager and file writers; live daemon transaction boundary in progress"
@@ -2694,7 +2694,7 @@
           "status": "verified",
           "test_paths": [
             "crates/ucc-dbus/tests/contract_tests.rs",
-            "crates/ucc-dbus/tests/v4_audit_introspection.rs"
+            "crates/ucc-dbus/tests/dbus_introspection_parity.rs"
           ],
           "evidence": [
             "Introspection signatures match C++ baseline for UnregisterPowerRequest on both /com/uniwill/uccd and /de/uniwill/uccd at e16f9ea"
@@ -2718,7 +2718,7 @@
           "status": "defect",
           "test_paths": [
             "crates/ucc-dbus/src/interface.rs",
-            "crates/ucc-dbus/tests/consolidated_dbus.rs"
+            "crates/ucc-dbus/tests/dbus_method_dispatch.rs"
           ],
           "evidence": [
             "IPC-01: Fallback Polkit rule overrides explicit denial; IPC-03: Polkit rate-limiting/trust queue unbounded"
@@ -2737,7 +2737,7 @@
         "preview_if_mutating": {
           "status": "partial_mock",
           "test_paths": [
-            "crates/ucc-config/tests/v4_audit_probes.rs"
+            "crates/ucc-config/tests/config_policy_parsing.rs"
           ],
           "evidence": [
             "Preview mode read-only guard verified for config manager and file writers; live daemon transaction boundary in progress"
@@ -2772,7 +2772,7 @@
           "status": "verified",
           "test_paths": [
             "crates/ucc-dbus/tests/contract_tests.rs",
-            "crates/ucc-dbus/tests/v4_audit_introspection.rs"
+            "crates/ucc-dbus/tests/dbus_introspection_parity.rs"
           ],
           "evidence": [
             "Introspection signatures match C++ baseline for SetTempProfile on both /com/uniwill/uccd and /de/uniwill/uccd at e16f9ea"
@@ -2794,7 +2794,7 @@
           "status": "defect",
           "test_paths": [
             "crates/ucc-dbus/src/interface.rs",
-            "crates/ucc-dbus/tests/consolidated_dbus.rs"
+            "crates/ucc-dbus/tests/dbus_method_dispatch.rs"
           ],
           "evidence": [
             "IPC-01: Fallback Polkit rule overrides explicit denial; IPC-03: Polkit rate-limiting/trust queue unbounded"
@@ -2813,7 +2813,7 @@
         "preview_if_mutating": {
           "status": "partial_mock",
           "test_paths": [
-            "crates/ucc-config/tests/v4_audit_probes.rs"
+            "crates/ucc-config/tests/config_policy_parsing.rs"
           ],
           "evidence": [
             "Preview mode read-only guard verified for config manager and file writers; live daemon transaction boundary in progress"
@@ -2848,7 +2848,7 @@
           "status": "verified",
           "test_paths": [
             "crates/ucc-dbus/tests/contract_tests.rs",
-            "crates/ucc-dbus/tests/v4_audit_introspection.rs"
+            "crates/ucc-dbus/tests/dbus_introspection_parity.rs"
           ],
           "evidence": [
             "Introspection signatures match C++ baseline for SetActiveProfile on both /com/uniwill/uccd and /de/uniwill/uccd at e16f9ea"
@@ -2872,7 +2872,7 @@
           "status": "defect",
           "test_paths": [
             "crates/ucc-dbus/src/interface.rs",
-            "crates/ucc-dbus/tests/consolidated_dbus.rs"
+            "crates/ucc-dbus/tests/dbus_method_dispatch.rs"
           ],
           "evidence": [
             "IPC-01: Fallback Polkit rule overrides explicit denial; IPC-03: Polkit rate-limiting/trust queue unbounded"
@@ -2891,7 +2891,7 @@
         "preview_if_mutating": {
           "status": "partial_mock",
           "test_paths": [
-            "crates/ucc-config/tests/v4_audit_probes.rs"
+            "crates/ucc-config/tests/config_policy_parsing.rs"
           ],
           "evidence": [
             "Preview mode read-only guard verified for config manager and file writers; live daemon transaction boundary in progress"
@@ -2926,7 +2926,7 @@
           "status": "verified",
           "test_paths": [
             "crates/ucc-dbus/tests/contract_tests.rs",
-            "crates/ucc-dbus/tests/v4_audit_introspection.rs"
+            "crates/ucc-dbus/tests/dbus_introspection_parity.rs"
           ],
           "evidence": [
             "Introspection signatures match C++ baseline for ApplyProfile on both /com/uniwill/uccd and /de/uniwill/uccd at e16f9ea"
@@ -2950,7 +2950,7 @@
           "status": "defect",
           "test_paths": [
             "crates/ucc-dbus/src/interface.rs",
-            "crates/ucc-dbus/tests/consolidated_dbus.rs"
+            "crates/ucc-dbus/tests/dbus_method_dispatch.rs"
           ],
           "evidence": [
             "IPC-01: Fallback Polkit rule overrides explicit denial; IPC-03: Polkit rate-limiting/trust queue unbounded"
@@ -2969,7 +2969,7 @@
         "preview_if_mutating": {
           "status": "partial_mock",
           "test_paths": [
-            "crates/ucc-config/tests/v4_audit_probes.rs"
+            "crates/ucc-config/tests/config_policy_parsing.rs"
           ],
           "evidence": [
             "Preview mode read-only guard verified for config manager and file writers; live daemon transaction boundary in progress"
@@ -3002,7 +3002,7 @@
           "status": "verified",
           "test_paths": [
             "crates/ucc-dbus/tests/contract_tests.rs",
-            "crates/ucc-dbus/tests/v4_audit_introspection.rs"
+            "crates/ucc-dbus/tests/dbus_introspection_parity.rs"
           ],
           "evidence": [
             "Introspection signatures match C++ baseline for GetProfilesJSON on both /com/uniwill/uccd and /de/uniwill/uccd at e16f9ea"
@@ -3073,7 +3073,7 @@
           "status": "verified",
           "test_paths": [
             "crates/ucc-dbus/tests/contract_tests.rs",
-            "crates/ucc-dbus/tests/v4_audit_introspection.rs"
+            "crates/ucc-dbus/tests/dbus_introspection_parity.rs"
           ],
           "evidence": [
             "Introspection signatures match C++ baseline for GetCustomProfilesJSON on both /com/uniwill/uccd and /de/uniwill/uccd at e16f9ea"
@@ -3146,7 +3146,7 @@
           "status": "verified",
           "test_paths": [
             "crates/ucc-dbus/tests/contract_tests.rs",
-            "crates/ucc-dbus/tests/v4_audit_introspection.rs"
+            "crates/ucc-dbus/tests/dbus_introspection_parity.rs"
           ],
           "evidence": [
             "Introspection signatures match C++ baseline for SetFanProfileCPU on both /com/uniwill/uccd and /de/uniwill/uccd at e16f9ea"
@@ -3168,7 +3168,7 @@
           "status": "defect",
           "test_paths": [
             "crates/ucc-dbus/src/interface.rs",
-            "crates/ucc-dbus/tests/consolidated_dbus.rs"
+            "crates/ucc-dbus/tests/dbus_method_dispatch.rs"
           ],
           "evidence": [
             "IPC-01: Fallback Polkit rule overrides explicit denial; IPC-03: Polkit rate-limiting/trust queue unbounded"
@@ -3187,7 +3187,7 @@
         "preview_if_mutating": {
           "status": "partial_mock",
           "test_paths": [
-            "crates/ucc-config/tests/v4_audit_probes.rs"
+            "crates/ucc-config/tests/config_policy_parsing.rs"
           ],
           "evidence": [
             "Preview mode read-only guard verified for config manager and file writers; live daemon transaction boundary in progress"
@@ -3222,7 +3222,7 @@
           "status": "verified",
           "test_paths": [
             "crates/ucc-dbus/tests/contract_tests.rs",
-            "crates/ucc-dbus/tests/v4_audit_introspection.rs"
+            "crates/ucc-dbus/tests/dbus_introspection_parity.rs"
           ],
           "evidence": [
             "Introspection signatures match C++ baseline for SetFanProfileDGPU on both /com/uniwill/uccd and /de/uniwill/uccd at e16f9ea"
@@ -3244,7 +3244,7 @@
           "status": "defect",
           "test_paths": [
             "crates/ucc-dbus/src/interface.rs",
-            "crates/ucc-dbus/tests/consolidated_dbus.rs"
+            "crates/ucc-dbus/tests/dbus_method_dispatch.rs"
           ],
           "evidence": [
             "IPC-01: Fallback Polkit rule overrides explicit denial; IPC-03: Polkit rate-limiting/trust queue unbounded"
@@ -3263,7 +3263,7 @@
         "preview_if_mutating": {
           "status": "partial_mock",
           "test_paths": [
-            "crates/ucc-config/tests/v4_audit_probes.rs"
+            "crates/ucc-config/tests/config_policy_parsing.rs"
           ],
           "evidence": [
             "Preview mode read-only guard verified for config manager and file writers; live daemon transaction boundary in progress"
@@ -3298,7 +3298,7 @@
           "status": "verified",
           "test_paths": [
             "crates/ucc-dbus/tests/contract_tests.rs",
-            "crates/ucc-dbus/tests/v4_audit_introspection.rs"
+            "crates/ucc-dbus/tests/dbus_introspection_parity.rs"
           ],
           "evidence": [
             "Introspection signatures match C++ baseline for ApplyFanProfiles on both /com/uniwill/uccd and /de/uniwill/uccd at e16f9ea"
@@ -3322,7 +3322,7 @@
           "status": "defect",
           "test_paths": [
             "crates/ucc-dbus/src/interface.rs",
-            "crates/ucc-dbus/tests/consolidated_dbus.rs"
+            "crates/ucc-dbus/tests/dbus_method_dispatch.rs"
           ],
           "evidence": [
             "IPC-01: Fallback Polkit rule overrides explicit denial; IPC-03: Polkit rate-limiting/trust queue unbounded"
@@ -3341,7 +3341,7 @@
         "preview_if_mutating": {
           "status": "partial_mock",
           "test_paths": [
-            "crates/ucc-config/tests/v4_audit_probes.rs"
+            "crates/ucc-config/tests/config_policy_parsing.rs"
           ],
           "evidence": [
             "Preview mode read-only guard verified for config manager and file writers; live daemon transaction boundary in progress"
@@ -3376,7 +3376,7 @@
           "status": "verified",
           "test_paths": [
             "crates/ucc-dbus/tests/contract_tests.rs",
-            "crates/ucc-dbus/tests/v4_audit_introspection.rs"
+            "crates/ucc-dbus/tests/dbus_introspection_parity.rs"
           ],
           "evidence": [
             "Introspection signatures match C++ baseline for RevertFanProfiles on both /com/uniwill/uccd and /de/uniwill/uccd at e16f9ea"
@@ -3400,7 +3400,7 @@
           "status": "defect",
           "test_paths": [
             "crates/ucc-dbus/src/interface.rs",
-            "crates/ucc-dbus/tests/consolidated_dbus.rs"
+            "crates/ucc-dbus/tests/dbus_method_dispatch.rs"
           ],
           "evidence": [
             "IPC-01: Fallback Polkit rule overrides explicit denial; IPC-03: Polkit rate-limiting/trust queue unbounded"
@@ -3419,7 +3419,7 @@
         "preview_if_mutating": {
           "status": "partial_mock",
           "test_paths": [
-            "crates/ucc-config/tests/v4_audit_probes.rs"
+            "crates/ucc-config/tests/config_policy_parsing.rs"
           ],
           "evidence": [
             "Preview mode read-only guard verified for config manager and file writers; live daemon transaction boundary in progress"
@@ -3452,7 +3452,7 @@
           "status": "verified",
           "test_paths": [
             "crates/ucc-dbus/tests/contract_tests.rs",
-            "crates/ucc-dbus/tests/v4_audit_introspection.rs"
+            "crates/ucc-dbus/tests/dbus_introspection_parity.rs"
           ],
           "evidence": [
             "Introspection signatures match C++ baseline for GetDefaultProfilesJSON on both /com/uniwill/uccd and /de/uniwill/uccd at e16f9ea"
@@ -3523,7 +3523,7 @@
           "status": "verified",
           "test_paths": [
             "crates/ucc-dbus/tests/contract_tests.rs",
-            "crates/ucc-dbus/tests/v4_audit_introspection.rs"
+            "crates/ucc-dbus/tests/dbus_introspection_parity.rs"
           ],
           "evidence": [
             "Introspection signatures match C++ baseline for GetCpuFrequencyLimitsJSON on both /com/uniwill/uccd and /de/uniwill/uccd at e16f9ea"
@@ -3592,7 +3592,7 @@
           "status": "verified",
           "test_paths": [
             "crates/ucc-dbus/tests/contract_tests.rs",
-            "crates/ucc-dbus/tests/v4_audit_introspection.rs"
+            "crates/ucc-dbus/tests/dbus_introspection_parity.rs"
           ],
           "evidence": [
             "Introspection signatures match C++ baseline for GetDefaultValuesProfileJSON on both /com/uniwill/uccd and /de/uniwill/uccd at e16f9ea"
@@ -3663,7 +3663,7 @@
           "status": "verified",
           "test_paths": [
             "crates/ucc-dbus/tests/contract_tests.rs",
-            "crates/ucc-dbus/tests/v4_audit_introspection.rs"
+            "crates/ucc-dbus/tests/dbus_introspection_parity.rs"
           ],
           "evidence": [
             "Introspection signatures match C++ baseline for AddCustomProfile on both /com/uniwill/uccd and /de/uniwill/uccd at e16f9ea"
@@ -3685,7 +3685,7 @@
           "status": "defect",
           "test_paths": [
             "crates/ucc-dbus/src/interface.rs",
-            "crates/ucc-dbus/tests/consolidated_dbus.rs"
+            "crates/ucc-dbus/tests/dbus_method_dispatch.rs"
           ],
           "evidence": [
             "IPC-01: Fallback Polkit rule overrides explicit denial; IPC-03: Polkit rate-limiting/trust queue unbounded"
@@ -3704,7 +3704,7 @@
         "preview_if_mutating": {
           "status": "partial_mock",
           "test_paths": [
-            "crates/ucc-config/tests/v4_audit_probes.rs"
+            "crates/ucc-config/tests/config_policy_parsing.rs"
           ],
           "evidence": [
             "Preview mode read-only guard verified for config manager and file writers; live daemon transaction boundary in progress"
@@ -3739,7 +3739,7 @@
           "status": "verified",
           "test_paths": [
             "crates/ucc-dbus/tests/contract_tests.rs",
-            "crates/ucc-dbus/tests/v4_audit_introspection.rs"
+            "crates/ucc-dbus/tests/dbus_introspection_parity.rs"
           ],
           "evidence": [
             "Introspection signatures match C++ baseline for SaveCustomProfile on both /com/uniwill/uccd and /de/uniwill/uccd at e16f9ea"
@@ -3763,7 +3763,7 @@
           "status": "defect",
           "test_paths": [
             "crates/ucc-dbus/src/interface.rs",
-            "crates/ucc-dbus/tests/consolidated_dbus.rs"
+            "crates/ucc-dbus/tests/dbus_method_dispatch.rs"
           ],
           "evidence": [
             "IPC-01: Fallback Polkit rule overrides explicit denial; IPC-03: Polkit rate-limiting/trust queue unbounded"
@@ -3782,7 +3782,7 @@
         "preview_if_mutating": {
           "status": "partial_mock",
           "test_paths": [
-            "crates/ucc-config/tests/v4_audit_probes.rs"
+            "crates/ucc-config/tests/config_policy_parsing.rs"
           ],
           "evidence": [
             "Preview mode read-only guard verified for config manager and file writers; live daemon transaction boundary in progress"
@@ -3817,7 +3817,7 @@
           "status": "verified",
           "test_paths": [
             "crates/ucc-dbus/tests/contract_tests.rs",
-            "crates/ucc-dbus/tests/v4_audit_introspection.rs"
+            "crates/ucc-dbus/tests/dbus_introspection_parity.rs"
           ],
           "evidence": [
             "Introspection signatures match C++ baseline for DeleteCustomProfile on both /com/uniwill/uccd and /de/uniwill/uccd at e16f9ea"
@@ -3841,7 +3841,7 @@
           "status": "defect",
           "test_paths": [
             "crates/ucc-dbus/src/interface.rs",
-            "crates/ucc-dbus/tests/consolidated_dbus.rs"
+            "crates/ucc-dbus/tests/dbus_method_dispatch.rs"
           ],
           "evidence": [
             "IPC-01: Fallback Polkit rule overrides explicit denial; IPC-03: Polkit rate-limiting/trust queue unbounded"
@@ -3860,7 +3860,7 @@
         "preview_if_mutating": {
           "status": "partial_mock",
           "test_paths": [
-            "crates/ucc-config/tests/v4_audit_probes.rs"
+            "crates/ucc-config/tests/config_policy_parsing.rs"
           ],
           "evidence": [
             "Preview mode read-only guard verified for config manager and file writers; live daemon transaction boundary in progress"
@@ -3895,7 +3895,7 @@
           "status": "verified",
           "test_paths": [
             "crates/ucc-dbus/tests/contract_tests.rs",
-            "crates/ucc-dbus/tests/v4_audit_introspection.rs"
+            "crates/ucc-dbus/tests/dbus_introspection_parity.rs"
           ],
           "evidence": [
             "Introspection signatures match C++ baseline for UpdateCustomProfile on both /com/uniwill/uccd and /de/uniwill/uccd at e16f9ea"
@@ -3917,7 +3917,7 @@
           "status": "defect",
           "test_paths": [
             "crates/ucc-dbus/src/interface.rs",
-            "crates/ucc-dbus/tests/consolidated_dbus.rs"
+            "crates/ucc-dbus/tests/dbus_method_dispatch.rs"
           ],
           "evidence": [
             "IPC-01: Fallback Polkit rule overrides explicit denial; IPC-03: Polkit rate-limiting/trust queue unbounded"
@@ -3936,7 +3936,7 @@
         "preview_if_mutating": {
           "status": "partial_mock",
           "test_paths": [
-            "crates/ucc-config/tests/v4_audit_probes.rs"
+            "crates/ucc-config/tests/config_policy_parsing.rs"
           ],
           "evidence": [
             "Preview mode read-only guard verified for config manager and file writers; live daemon transaction boundary in progress"
@@ -3969,7 +3969,7 @@
           "status": "verified",
           "test_paths": [
             "crates/ucc-dbus/tests/contract_tests.rs",
-            "crates/ucc-dbus/tests/v4_audit_introspection.rs"
+            "crates/ucc-dbus/tests/dbus_introspection_parity.rs"
           ],
           "evidence": [
             "Introspection signatures match C++ baseline for GetFanProfile on both /com/uniwill/uccd and /de/uniwill/uccd at e16f9ea"
@@ -4040,7 +4040,7 @@
           "status": "verified",
           "test_paths": [
             "crates/ucc-dbus/tests/contract_tests.rs",
-            "crates/ucc-dbus/tests/v4_audit_introspection.rs"
+            "crates/ucc-dbus/tests/dbus_introspection_parity.rs"
           ],
           "evidence": [
             "Introspection signatures match C++ baseline for GetFanProfileNames on both /com/uniwill/uccd and /de/uniwill/uccd at e16f9ea"
@@ -4113,7 +4113,7 @@
           "status": "verified",
           "test_paths": [
             "crates/ucc-dbus/tests/contract_tests.rs",
-            "crates/ucc-dbus/tests/v4_audit_introspection.rs"
+            "crates/ucc-dbus/tests/dbus_introspection_parity.rs"
           ],
           "evidence": [
             "Introspection signatures match C++ baseline for SetFanProfile on both /com/uniwill/uccd and /de/uniwill/uccd at e16f9ea"
@@ -4137,7 +4137,7 @@
           "status": "defect",
           "test_paths": [
             "crates/ucc-dbus/src/interface.rs",
-            "crates/ucc-dbus/tests/consolidated_dbus.rs"
+            "crates/ucc-dbus/tests/dbus_method_dispatch.rs"
           ],
           "evidence": [
             "IPC-01: Fallback Polkit rule overrides explicit denial; IPC-03: Polkit rate-limiting/trust queue unbounded"
@@ -4156,7 +4156,7 @@
         "preview_if_mutating": {
           "status": "partial_mock",
           "test_paths": [
-            "crates/ucc-config/tests/v4_audit_probes.rs"
+            "crates/ucc-config/tests/config_policy_parsing.rs"
           ],
           "evidence": [
             "Preview mode read-only guard verified for config manager and file writers; live daemon transaction boundary in progress"
@@ -4189,7 +4189,7 @@
           "status": "verified",
           "test_paths": [
             "crates/ucc-dbus/tests/contract_tests.rs",
-            "crates/ucc-dbus/tests/v4_audit_introspection.rs"
+            "crates/ucc-dbus/tests/dbus_introspection_parity.rs"
           ],
           "evidence": [
             "Introspection signatures match C++ baseline for GetSettingsJSON on both /com/uniwill/uccd and /de/uniwill/uccd at e16f9ea"
@@ -4262,7 +4262,7 @@
           "status": "verified",
           "test_paths": [
             "crates/ucc-dbus/tests/contract_tests.rs",
-            "crates/ucc-dbus/tests/v4_audit_introspection.rs"
+            "crates/ucc-dbus/tests/dbus_introspection_parity.rs"
           ],
           "evidence": [
             "Introspection signatures match C++ baseline for SetStateMap on both /com/uniwill/uccd and /de/uniwill/uccd at e16f9ea"
@@ -4286,7 +4286,7 @@
           "status": "defect",
           "test_paths": [
             "crates/ucc-dbus/src/interface.rs",
-            "crates/ucc-dbus/tests/consolidated_dbus.rs"
+            "crates/ucc-dbus/tests/dbus_method_dispatch.rs"
           ],
           "evidence": [
             "IPC-01: Fallback Polkit rule overrides explicit denial; IPC-03: Polkit rate-limiting/trust queue unbounded"
@@ -4305,7 +4305,7 @@
         "preview_if_mutating": {
           "status": "partial_mock",
           "test_paths": [
-            "crates/ucc-config/tests/v4_audit_probes.rs"
+            "crates/ucc-config/tests/config_policy_parsing.rs"
           ],
           "evidence": [
             "Preview mode read-only guard verified for config manager and file writers; live daemon transaction boundary in progress"
@@ -4340,7 +4340,7 @@
           "status": "verified",
           "test_paths": [
             "crates/ucc-dbus/tests/contract_tests.rs",
-            "crates/ucc-dbus/tests/v4_audit_introspection.rs"
+            "crates/ucc-dbus/tests/dbus_introspection_parity.rs"
           ],
           "evidence": [
             "Introspection signatures match C++ baseline for SetBatchStateMap on both /com/uniwill/uccd and /de/uniwill/uccd at e16f9ea"
@@ -4364,7 +4364,7 @@
           "status": "defect",
           "test_paths": [
             "crates/ucc-dbus/src/interface.rs",
-            "crates/ucc-dbus/tests/consolidated_dbus.rs"
+            "crates/ucc-dbus/tests/dbus_method_dispatch.rs"
           ],
           "evidence": [
             "IPC-01: Fallback Polkit rule overrides explicit denial; IPC-03: Polkit rate-limiting/trust queue unbounded"
@@ -4383,7 +4383,7 @@
         "preview_if_mutating": {
           "status": "partial_mock",
           "test_paths": [
-            "crates/ucc-config/tests/v4_audit_probes.rs"
+            "crates/ucc-config/tests/config_policy_parsing.rs"
           ],
           "evidence": [
             "Preview mode read-only guard verified for config manager and file writers; live daemon transaction boundary in progress"
@@ -4416,7 +4416,7 @@
           "status": "verified",
           "test_paths": [
             "crates/ucc-dbus/tests/contract_tests.rs",
-            "crates/ucc-dbus/tests/v4_audit_introspection.rs"
+            "crates/ucc-dbus/tests/dbus_introspection_parity.rs"
           ],
           "evidence": [
             "Introspection signatures match C++ baseline for ODMProfilesAvailable on both /com/uniwill/uccd and /de/uniwill/uccd at e16f9ea"
@@ -4487,7 +4487,7 @@
           "status": "verified",
           "test_paths": [
             "crates/ucc-dbus/tests/contract_tests.rs",
-            "crates/ucc-dbus/tests/v4_audit_introspection.rs"
+            "crates/ucc-dbus/tests/dbus_introspection_parity.rs"
           ],
           "evidence": [
             "Introspection signatures match C++ baseline for ODMPowerLimitsJSON on both /com/uniwill/uccd and /de/uniwill/uccd at e16f9ea"
@@ -4556,7 +4556,7 @@
           "status": "verified",
           "test_paths": [
             "crates/ucc-dbus/tests/contract_tests.rs",
-            "crates/ucc-dbus/tests/v4_audit_introspection.rs"
+            "crates/ucc-dbus/tests/dbus_introspection_parity.rs"
           ],
           "evidence": [
             "Introspection signatures match C++ baseline for GetKeyboardBacklightCapabilitiesJSON on both /com/uniwill/uccd and /de/uniwill/uccd at e16f9ea"
@@ -4625,7 +4625,7 @@
           "status": "verified",
           "test_paths": [
             "crates/ucc-dbus/tests/contract_tests.rs",
-            "crates/ucc-dbus/tests/v4_audit_introspection.rs"
+            "crates/ucc-dbus/tests/dbus_introspection_parity.rs"
           ],
           "evidence": [
             "Introspection signatures match C++ baseline for GetKeyboardBacklightStatesJSON on both /com/uniwill/uccd and /de/uniwill/uccd at e16f9ea"
@@ -4696,7 +4696,7 @@
           "status": "verified",
           "test_paths": [
             "crates/ucc-dbus/tests/contract_tests.rs",
-            "crates/ucc-dbus/tests/v4_audit_introspection.rs"
+            "crates/ucc-dbus/tests/dbus_introspection_parity.rs"
           ],
           "evidence": [
             "Introspection signatures match C++ baseline for SetKeyboardBacklightStatesJSON on both /com/uniwill/uccd and /de/uniwill/uccd at e16f9ea"
@@ -4718,7 +4718,7 @@
           "status": "defect",
           "test_paths": [
             "crates/ucc-dbus/src/interface.rs",
-            "crates/ucc-dbus/tests/consolidated_dbus.rs"
+            "crates/ucc-dbus/tests/dbus_method_dispatch.rs"
           ],
           "evidence": [
             "IPC-01: Fallback Polkit rule overrides explicit denial; IPC-03: Polkit rate-limiting/trust queue unbounded"
@@ -4737,7 +4737,7 @@
         "preview_if_mutating": {
           "status": "partial_mock",
           "test_paths": [
-            "crates/ucc-config/tests/v4_audit_probes.rs"
+            "crates/ucc-config/tests/config_policy_parsing.rs"
           ],
           "evidence": [
             "Preview mode read-only guard verified for config manager and file writers; live daemon transaction boundary in progress"
@@ -4770,7 +4770,7 @@
           "status": "verified",
           "test_paths": [
             "crates/ucc-dbus/tests/contract_tests.rs",
-            "crates/ucc-dbus/tests/v4_audit_introspection.rs"
+            "crates/ucc-dbus/tests/dbus_introspection_parity.rs"
           ],
           "evidence": [
             "Introspection signatures match C++ baseline for GetCustomKeyboardProfilesJSON on both /com/uniwill/uccd and /de/uniwill/uccd at e16f9ea"
@@ -4841,7 +4841,7 @@
           "status": "verified",
           "test_paths": [
             "crates/ucc-dbus/tests/contract_tests.rs",
-            "crates/ucc-dbus/tests/v4_audit_introspection.rs"
+            "crates/ucc-dbus/tests/dbus_introspection_parity.rs"
           ],
           "evidence": [
             "Introspection signatures match C++ baseline for SaveCustomKeyboardProfile on both /com/uniwill/uccd and /de/uniwill/uccd at e16f9ea"
@@ -4863,7 +4863,7 @@
           "status": "defect",
           "test_paths": [
             "crates/ucc-dbus/src/interface.rs",
-            "crates/ucc-dbus/tests/consolidated_dbus.rs"
+            "crates/ucc-dbus/tests/dbus_method_dispatch.rs"
           ],
           "evidence": [
             "IPC-01: Fallback Polkit rule overrides explicit denial; IPC-03: Polkit rate-limiting/trust queue unbounded"
@@ -4882,7 +4882,7 @@
         "preview_if_mutating": {
           "status": "partial_mock",
           "test_paths": [
-            "crates/ucc-config/tests/v4_audit_probes.rs"
+            "crates/ucc-config/tests/config_policy_parsing.rs"
           ],
           "evidence": [
             "Preview mode read-only guard verified for config manager and file writers; live daemon transaction boundary in progress"
@@ -4917,7 +4917,7 @@
           "status": "verified",
           "test_paths": [
             "crates/ucc-dbus/tests/contract_tests.rs",
-            "crates/ucc-dbus/tests/v4_audit_introspection.rs"
+            "crates/ucc-dbus/tests/dbus_introspection_parity.rs"
           ],
           "evidence": [
             "Introspection signatures match C++ baseline for DeleteCustomKeyboardProfile on both /com/uniwill/uccd and /de/uniwill/uccd at e16f9ea"
@@ -4939,7 +4939,7 @@
           "status": "defect",
           "test_paths": [
             "crates/ucc-dbus/src/interface.rs",
-            "crates/ucc-dbus/tests/consolidated_dbus.rs"
+            "crates/ucc-dbus/tests/dbus_method_dispatch.rs"
           ],
           "evidence": [
             "IPC-01: Fallback Polkit rule overrides explicit denial; IPC-03: Polkit rate-limiting/trust queue unbounded"
@@ -4958,7 +4958,7 @@
         "preview_if_mutating": {
           "status": "partial_mock",
           "test_paths": [
-            "crates/ucc-config/tests/v4_audit_probes.rs"
+            "crates/ucc-config/tests/config_policy_parsing.rs"
           ],
           "evidence": [
             "Preview mode read-only guard verified for config manager and file writers; live daemon transaction boundary in progress"
@@ -4991,7 +4991,7 @@
           "status": "verified",
           "test_paths": [
             "crates/ucc-dbus/tests/contract_tests.rs",
-            "crates/ucc-dbus/tests/v4_audit_introspection.rs"
+            "crates/ucc-dbus/tests/dbus_introspection_parity.rs"
           ],
           "evidence": [
             "Introspection signatures match C++ baseline for GetCustomFanProfilesJSON on both /com/uniwill/uccd and /de/uniwill/uccd at e16f9ea"
@@ -5062,7 +5062,7 @@
           "status": "verified",
           "test_paths": [
             "crates/ucc-dbus/tests/contract_tests.rs",
-            "crates/ucc-dbus/tests/v4_audit_introspection.rs"
+            "crates/ucc-dbus/tests/dbus_introspection_parity.rs"
           ],
           "evidence": [
             "Introspection signatures match C++ baseline for SaveCustomFanProfile on both /com/uniwill/uccd and /de/uniwill/uccd at e16f9ea"
@@ -5084,7 +5084,7 @@
           "status": "defect",
           "test_paths": [
             "crates/ucc-dbus/src/interface.rs",
-            "crates/ucc-dbus/tests/consolidated_dbus.rs"
+            "crates/ucc-dbus/tests/dbus_method_dispatch.rs"
           ],
           "evidence": [
             "IPC-01: Fallback Polkit rule overrides explicit denial; IPC-03: Polkit rate-limiting/trust queue unbounded"
@@ -5103,7 +5103,7 @@
         "preview_if_mutating": {
           "status": "partial_mock",
           "test_paths": [
-            "crates/ucc-config/tests/v4_audit_probes.rs"
+            "crates/ucc-config/tests/config_policy_parsing.rs"
           ],
           "evidence": [
             "Preview mode read-only guard verified for config manager and file writers; live daemon transaction boundary in progress"
@@ -5138,7 +5138,7 @@
           "status": "verified",
           "test_paths": [
             "crates/ucc-dbus/tests/contract_tests.rs",
-            "crates/ucc-dbus/tests/v4_audit_introspection.rs"
+            "crates/ucc-dbus/tests/dbus_introspection_parity.rs"
           ],
           "evidence": [
             "Introspection signatures match C++ baseline for DeleteCustomFanProfile on both /com/uniwill/uccd and /de/uniwill/uccd at e16f9ea"
@@ -5160,7 +5160,7 @@
           "status": "defect",
           "test_paths": [
             "crates/ucc-dbus/src/interface.rs",
-            "crates/ucc-dbus/tests/consolidated_dbus.rs"
+            "crates/ucc-dbus/tests/dbus_method_dispatch.rs"
           ],
           "evidence": [
             "IPC-01: Fallback Polkit rule overrides explicit denial; IPC-03: Polkit rate-limiting/trust queue unbounded"
@@ -5179,7 +5179,7 @@
         "preview_if_mutating": {
           "status": "partial_mock",
           "test_paths": [
-            "crates/ucc-config/tests/v4_audit_probes.rs"
+            "crates/ucc-config/tests/config_policy_parsing.rs"
           ],
           "evidence": [
             "Preview mode read-only guard verified for config manager and file writers; live daemon transaction boundary in progress"
@@ -5212,7 +5212,7 @@
           "status": "verified",
           "test_paths": [
             "crates/ucc-dbus/tests/contract_tests.rs",
-            "crates/ucc-dbus/tests/v4_audit_introspection.rs"
+            "crates/ucc-dbus/tests/dbus_introspection_parity.rs"
           ],
           "evidence": [
             "Introspection signatures match C++ baseline for GetFansMinSpeed on both /com/uniwill/uccd and /de/uniwill/uccd at e16f9ea"
@@ -5283,7 +5283,7 @@
           "status": "verified",
           "test_paths": [
             "crates/ucc-dbus/tests/contract_tests.rs",
-            "crates/ucc-dbus/tests/v4_audit_introspection.rs"
+            "crates/ucc-dbus/tests/dbus_introspection_parity.rs"
           ],
           "evidence": [
             "Introspection signatures match C++ baseline for GetFansOffAvailable on both /com/uniwill/uccd and /de/uniwill/uccd at e16f9ea"
@@ -5354,7 +5354,7 @@
           "status": "verified",
           "test_paths": [
             "crates/ucc-dbus/tests/contract_tests.rs",
-            "crates/ucc-dbus/tests/v4_audit_introspection.rs"
+            "crates/ucc-dbus/tests/dbus_introspection_parity.rs"
           ],
           "evidence": [
             "Introspection signatures match C++ baseline for GetChargingProfilesAvailable on both /com/uniwill/uccd and /de/uniwill/uccd at e16f9ea"
@@ -5423,7 +5423,7 @@
           "status": "verified",
           "test_paths": [
             "crates/ucc-dbus/tests/contract_tests.rs",
-            "crates/ucc-dbus/tests/v4_audit_introspection.rs"
+            "crates/ucc-dbus/tests/dbus_introspection_parity.rs"
           ],
           "evidence": [
             "Introspection signatures match C++ baseline for GetCurrentChargingProfile on both /com/uniwill/uccd and /de/uniwill/uccd at e16f9ea"
@@ -5496,7 +5496,7 @@
           "status": "verified",
           "test_paths": [
             "crates/ucc-dbus/tests/contract_tests.rs",
-            "crates/ucc-dbus/tests/v4_audit_introspection.rs"
+            "crates/ucc-dbus/tests/dbus_introspection_parity.rs"
           ],
           "evidence": [
             "Introspection signatures match C++ baseline for SetChargingProfile on both /com/uniwill/uccd and /de/uniwill/uccd at e16f9ea"
@@ -5520,7 +5520,7 @@
           "status": "defect",
           "test_paths": [
             "crates/ucc-dbus/src/interface.rs",
-            "crates/ucc-dbus/tests/consolidated_dbus.rs"
+            "crates/ucc-dbus/tests/dbus_method_dispatch.rs"
           ],
           "evidence": [
             "IPC-01: Fallback Polkit rule overrides explicit denial; IPC-03: Polkit rate-limiting/trust queue unbounded"
@@ -5539,7 +5539,7 @@
         "preview_if_mutating": {
           "status": "partial_mock",
           "test_paths": [
-            "crates/ucc-config/tests/v4_audit_probes.rs"
+            "crates/ucc-config/tests/config_policy_parsing.rs"
           ],
           "evidence": [
             "Preview mode read-only guard verified for config manager and file writers; live daemon transaction boundary in progress"
@@ -5572,7 +5572,7 @@
           "status": "verified",
           "test_paths": [
             "crates/ucc-dbus/tests/contract_tests.rs",
-            "crates/ucc-dbus/tests/v4_audit_introspection.rs"
+            "crates/ucc-dbus/tests/dbus_introspection_parity.rs"
           ],
           "evidence": [
             "Introspection signatures match C++ baseline for GetChargingPrioritiesAvailable on both /com/uniwill/uccd and /de/uniwill/uccd at e16f9ea"
@@ -5641,7 +5641,7 @@
           "status": "verified",
           "test_paths": [
             "crates/ucc-dbus/tests/contract_tests.rs",
-            "crates/ucc-dbus/tests/v4_audit_introspection.rs"
+            "crates/ucc-dbus/tests/dbus_introspection_parity.rs"
           ],
           "evidence": [
             "Introspection signatures match C++ baseline for GetCurrentChargingPriority on both /com/uniwill/uccd and /de/uniwill/uccd at e16f9ea"
@@ -5712,7 +5712,7 @@
           "status": "verified",
           "test_paths": [
             "crates/ucc-dbus/tests/contract_tests.rs",
-            "crates/ucc-dbus/tests/v4_audit_introspection.rs"
+            "crates/ucc-dbus/tests/dbus_introspection_parity.rs"
           ],
           "evidence": [
             "Introspection signatures match C++ baseline for SetChargingPriority on both /com/uniwill/uccd and /de/uniwill/uccd at e16f9ea"
@@ -5734,7 +5734,7 @@
           "status": "defect",
           "test_paths": [
             "crates/ucc-dbus/src/interface.rs",
-            "crates/ucc-dbus/tests/consolidated_dbus.rs"
+            "crates/ucc-dbus/tests/dbus_method_dispatch.rs"
           ],
           "evidence": [
             "IPC-01: Fallback Polkit rule overrides explicit denial; IPC-03: Polkit rate-limiting/trust queue unbounded"
@@ -5753,7 +5753,7 @@
         "preview_if_mutating": {
           "status": "partial_mock",
           "test_paths": [
-            "crates/ucc-config/tests/v4_audit_probes.rs"
+            "crates/ucc-config/tests/config_policy_parsing.rs"
           ],
           "evidence": [
             "Preview mode read-only guard verified for config manager and file writers; live daemon transaction boundary in progress"
@@ -5786,7 +5786,7 @@
           "status": "verified",
           "test_paths": [
             "crates/ucc-dbus/tests/contract_tests.rs",
-            "crates/ucc-dbus/tests/v4_audit_introspection.rs"
+            "crates/ucc-dbus/tests/dbus_introspection_parity.rs"
           ],
           "evidence": [
             "Introspection signatures match C++ baseline for GetChargeStartAvailableThresholds on both /com/uniwill/uccd and /de/uniwill/uccd at e16f9ea"
@@ -5855,7 +5855,7 @@
           "status": "verified",
           "test_paths": [
             "crates/ucc-dbus/tests/contract_tests.rs",
-            "crates/ucc-dbus/tests/v4_audit_introspection.rs"
+            "crates/ucc-dbus/tests/dbus_introspection_parity.rs"
           ],
           "evidence": [
             "Introspection signatures match C++ baseline for GetChargeEndAvailableThresholds on both /com/uniwill/uccd and /de/uniwill/uccd at e16f9ea"
@@ -5924,7 +5924,7 @@
           "status": "verified",
           "test_paths": [
             "crates/ucc-dbus/tests/contract_tests.rs",
-            "crates/ucc-dbus/tests/v4_audit_introspection.rs"
+            "crates/ucc-dbus/tests/dbus_introspection_parity.rs"
           ],
           "evidence": [
             "Introspection signatures match C++ baseline for GetChargeStartThreshold on both /com/uniwill/uccd and /de/uniwill/uccd at e16f9ea"
@@ -5995,7 +5995,7 @@
           "status": "verified",
           "test_paths": [
             "crates/ucc-dbus/tests/contract_tests.rs",
-            "crates/ucc-dbus/tests/v4_audit_introspection.rs"
+            "crates/ucc-dbus/tests/dbus_introspection_parity.rs"
           ],
           "evidence": [
             "Introspection signatures match C++ baseline for GetChargeEndThreshold on both /com/uniwill/uccd and /de/uniwill/uccd at e16f9ea"
@@ -6068,7 +6068,7 @@
           "status": "verified",
           "test_paths": [
             "crates/ucc-dbus/tests/contract_tests.rs",
-            "crates/ucc-dbus/tests/v4_audit_introspection.rs"
+            "crates/ucc-dbus/tests/dbus_introspection_parity.rs"
           ],
           "evidence": [
             "Introspection signatures match C++ baseline for SetChargeStartThreshold on both /com/uniwill/uccd and /de/uniwill/uccd at e16f9ea"
@@ -6141,7 +6141,7 @@
           "status": "verified",
           "test_paths": [
             "crates/ucc-dbus/tests/contract_tests.rs",
-            "crates/ucc-dbus/tests/v4_audit_introspection.rs"
+            "crates/ucc-dbus/tests/dbus_introspection_parity.rs"
           ],
           "evidence": [
             "Introspection signatures match C++ baseline for SetChargeEndThreshold on both /com/uniwill/uccd and /de/uniwill/uccd at e16f9ea"
@@ -6212,7 +6212,7 @@
           "status": "verified",
           "test_paths": [
             "crates/ucc-dbus/tests/contract_tests.rs",
-            "crates/ucc-dbus/tests/v4_audit_introspection.rs"
+            "crates/ucc-dbus/tests/dbus_introspection_parity.rs"
           ],
           "evidence": [
             "Introspection signatures match C++ baseline for GetChargeType on both /com/uniwill/uccd and /de/uniwill/uccd at e16f9ea"
@@ -6285,7 +6285,7 @@
           "status": "verified",
           "test_paths": [
             "crates/ucc-dbus/tests/contract_tests.rs",
-            "crates/ucc-dbus/tests/v4_audit_introspection.rs"
+            "crates/ucc-dbus/tests/dbus_introspection_parity.rs"
           ],
           "evidence": [
             "Introspection signatures match C++ baseline for SetChargeType on both /com/uniwill/uccd and /de/uniwill/uccd at e16f9ea"
@@ -6356,7 +6356,7 @@
           "status": "verified",
           "test_paths": [
             "crates/ucc-dbus/tests/contract_tests.rs",
-            "crates/ucc-dbus/tests/v4_audit_introspection.rs"
+            "crates/ucc-dbus/tests/dbus_introspection_parity.rs"
           ],
           "evidence": [
             "Introspection signatures match C++ baseline for GetFnLockSupported on both /com/uniwill/uccd and /de/uniwill/uccd at e16f9ea"
@@ -6425,7 +6425,7 @@
           "status": "verified",
           "test_paths": [
             "crates/ucc-dbus/tests/contract_tests.rs",
-            "crates/ucc-dbus/tests/v4_audit_introspection.rs"
+            "crates/ucc-dbus/tests/dbus_introspection_parity.rs"
           ],
           "evidence": [
             "Introspection signatures match C++ baseline for GetFnLockStatus on both /com/uniwill/uccd and /de/uniwill/uccd at e16f9ea"
@@ -6496,7 +6496,7 @@
           "status": "verified",
           "test_paths": [
             "crates/ucc-dbus/tests/contract_tests.rs",
-            "crates/ucc-dbus/tests/v4_audit_introspection.rs"
+            "crates/ucc-dbus/tests/dbus_introspection_parity.rs"
           ],
           "evidence": [
             "Introspection signatures match C++ baseline for SetFnLockStatus on both /com/uniwill/uccd and /de/uniwill/uccd at e16f9ea"
@@ -6518,7 +6518,7 @@
           "status": "defect",
           "test_paths": [
             "crates/ucc-dbus/src/interface.rs",
-            "crates/ucc-dbus/tests/consolidated_dbus.rs"
+            "crates/ucc-dbus/tests/dbus_method_dispatch.rs"
           ],
           "evidence": [
             "IPC-01: Fallback Polkit rule overrides explicit denial; IPC-03: Polkit rate-limiting/trust queue unbounded"
@@ -6537,7 +6537,7 @@
         "preview_if_mutating": {
           "status": "partial_mock",
           "test_paths": [
-            "crates/ucc-config/tests/v4_audit_probes.rs"
+            "crates/ucc-config/tests/config_policy_parsing.rs"
           ],
           "evidence": [
             "Preview mode read-only guard verified for config manager and file writers; live daemon transaction boundary in progress"
@@ -6572,7 +6572,7 @@
           "status": "verified",
           "test_paths": [
             "crates/ucc-dbus/tests/contract_tests.rs",
-            "crates/ucc-dbus/tests/v4_audit_introspection.rs"
+            "crates/ucc-dbus/tests/dbus_introspection_parity.rs"
           ],
           "evidence": [
             "Introspection signatures match C++ baseline for SetSensorDataCollectionStatus on both /com/uniwill/uccd and /de/uniwill/uccd at e16f9ea"
@@ -6594,7 +6594,7 @@
           "status": "defect",
           "test_paths": [
             "crates/ucc-dbus/src/interface.rs",
-            "crates/ucc-dbus/tests/consolidated_dbus.rs"
+            "crates/ucc-dbus/tests/dbus_method_dispatch.rs"
           ],
           "evidence": [
             "IPC-01: Fallback Polkit rule overrides explicit denial; IPC-03: Polkit rate-limiting/trust queue unbounded"
@@ -6613,7 +6613,7 @@
         "preview_if_mutating": {
           "status": "partial_mock",
           "test_paths": [
-            "crates/ucc-config/tests/v4_audit_probes.rs"
+            "crates/ucc-config/tests/config_policy_parsing.rs"
           ],
           "evidence": [
             "Preview mode read-only guard verified for config manager and file writers; live daemon transaction boundary in progress"
@@ -6646,7 +6646,7 @@
           "status": "verified",
           "test_paths": [
             "crates/ucc-dbus/tests/contract_tests.rs",
-            "crates/ucc-dbus/tests/v4_audit_introspection.rs"
+            "crates/ucc-dbus/tests/dbus_introspection_parity.rs"
           ],
           "evidence": [
             "Introspection signatures match C++ baseline for GetSensorDataCollectionStatus on both /com/uniwill/uccd and /de/uniwill/uccd at e16f9ea"
@@ -6717,7 +6717,7 @@
           "status": "verified",
           "test_paths": [
             "crates/ucc-dbus/tests/contract_tests.rs",
-            "crates/ucc-dbus/tests/v4_audit_introspection.rs"
+            "crates/ucc-dbus/tests/dbus_introspection_parity.rs"
           ],
           "evidence": [
             "Introspection signatures match C++ baseline for SetDGpuD0Metrics on both /com/uniwill/uccd and /de/uniwill/uccd at e16f9ea"
@@ -6739,7 +6739,7 @@
           "status": "defect",
           "test_paths": [
             "crates/ucc-dbus/src/interface.rs",
-            "crates/ucc-dbus/tests/consolidated_dbus.rs"
+            "crates/ucc-dbus/tests/dbus_method_dispatch.rs"
           ],
           "evidence": [
             "IPC-01: Fallback Polkit rule overrides explicit denial; IPC-03: Polkit rate-limiting/trust queue unbounded"
@@ -6758,7 +6758,7 @@
         "preview_if_mutating": {
           "status": "partial_mock",
           "test_paths": [
-            "crates/ucc-config/tests/v4_audit_probes.rs"
+            "crates/ucc-config/tests/config_policy_parsing.rs"
           ],
           "evidence": [
             "Preview mode read-only guard verified for config manager and file writers; live daemon transaction boundary in progress"
@@ -6791,7 +6791,7 @@
           "status": "verified",
           "test_paths": [
             "crates/ucc-dbus/tests/contract_tests.rs",
-            "crates/ucc-dbus/tests/v4_audit_introspection.rs"
+            "crates/ucc-dbus/tests/dbus_introspection_parity.rs"
           ],
           "evidence": [
             "Introspection signatures match C++ baseline for GetNVIDIAPowerCTRLDefaultPowerLimit on both /com/uniwill/uccd and /de/uniwill/uccd at e16f9ea"
@@ -6860,7 +6860,7 @@
           "status": "verified",
           "test_paths": [
             "crates/ucc-dbus/tests/contract_tests.rs",
-            "crates/ucc-dbus/tests/v4_audit_introspection.rs"
+            "crates/ucc-dbus/tests/dbus_introspection_parity.rs"
           ],
           "evidence": [
             "Introspection signatures match C++ baseline for GetNVIDIAPowerCTRLMaxPowerLimit on both /com/uniwill/uccd and /de/uniwill/uccd at e16f9ea"
@@ -6929,7 +6929,7 @@
           "status": "verified",
           "test_paths": [
             "crates/ucc-dbus/tests/contract_tests.rs",
-            "crates/ucc-dbus/tests/v4_audit_introspection.rs"
+            "crates/ucc-dbus/tests/dbus_introspection_parity.rs"
           ],
           "evidence": [
             "Introspection signatures match C++ baseline for GetNVIDIAPowerCTRLAvailable on both /com/uniwill/uccd and /de/uniwill/uccd at e16f9ea"
@@ -7000,7 +7000,7 @@
           "status": "verified",
           "test_paths": [
             "crates/ucc-dbus/tests/contract_tests.rs",
-            "crates/ucc-dbus/tests/v4_audit_introspection.rs"
+            "crates/ucc-dbus/tests/dbus_introspection_parity.rs"
           ],
           "evidence": [
             "Introspection signatures match C++ baseline for SetNVIDIAPowerOffset on both /com/uniwill/uccd and /de/uniwill/uccd at e16f9ea"
@@ -7022,7 +7022,7 @@
           "status": "defect",
           "test_paths": [
             "crates/ucc-dbus/src/interface.rs",
-            "crates/ucc-dbus/tests/consolidated_dbus.rs"
+            "crates/ucc-dbus/tests/dbus_method_dispatch.rs"
           ],
           "evidence": [
             "IPC-01: Fallback Polkit rule overrides explicit denial; IPC-03: Polkit rate-limiting/trust queue unbounded"
@@ -7041,7 +7041,7 @@
         "preview_if_mutating": {
           "status": "partial_mock",
           "test_paths": [
-            "crates/ucc-config/tests/v4_audit_probes.rs"
+            "crates/ucc-config/tests/config_policy_parsing.rs"
           ],
           "evidence": [
             "Preview mode read-only guard verified for config manager and file writers; live daemon transaction boundary in progress"
@@ -7074,7 +7074,7 @@
           "status": "verified",
           "test_paths": [
             "crates/ucc-dbus/tests/contract_tests.rs",
-            "crates/ucc-dbus/tests/v4_audit_introspection.rs"
+            "crates/ucc-dbus/tests/dbus_introspection_parity.rs"
           ],
           "evidence": [
             "Introspection signatures match C++ baseline for GetAvailableGovernors on both /com/uniwill/uccd and /de/uniwill/uccd at e16f9ea"
@@ -7143,7 +7143,7 @@
           "status": "verified",
           "test_paths": [
             "crates/ucc-dbus/tests/contract_tests.rs",
-            "crates/ucc-dbus/tests/v4_audit_introspection.rs"
+            "crates/ucc-dbus/tests/dbus_introspection_parity.rs"
           ],
           "evidence": [
             "Introspection signatures match C++ baseline for GetAvailableEPPs on both /com/uniwill/uccd and /de/uniwill/uccd at e16f9ea"
@@ -7212,7 +7212,7 @@
           "status": "verified",
           "test_paths": [
             "crates/ucc-dbus/tests/contract_tests.rs",
-            "crates/ucc-dbus/tests/v4_audit_introspection.rs"
+            "crates/ucc-dbus/tests/dbus_introspection_parity.rs"
           ],
           "evidence": [
             "Introspection signatures match C++ baseline for GetCpuCoreCount on both /com/uniwill/uccd and /de/uniwill/uccd at e16f9ea"
@@ -7281,7 +7281,7 @@
           "status": "verified",
           "test_paths": [
             "crates/ucc-dbus/tests/contract_tests.rs",
-            "crates/ucc-dbus/tests/v4_audit_introspection.rs"
+            "crates/ucc-dbus/tests/dbus_introspection_parity.rs"
           ],
           "evidence": [
             "Introspection signatures match C++ baseline for GetCpuTopologyJSON on both /com/uniwill/uccd and /de/uniwill/uccd at e16f9ea"
@@ -7350,7 +7350,7 @@
           "status": "verified",
           "test_paths": [
             "crates/ucc-dbus/tests/contract_tests.rs",
-            "crates/ucc-dbus/tests/v4_audit_introspection.rs"
+            "crates/ucc-dbus/tests/dbus_introspection_parity.rs"
           ],
           "evidence": [
             "Introspection signatures match C++ baseline for GetWaterCoolerAvailable on both /com/uniwill/uccd and /de/uniwill/uccd at e16f9ea"
@@ -7421,7 +7421,7 @@
           "status": "verified",
           "test_paths": [
             "crates/ucc-dbus/tests/contract_tests.rs",
-            "crates/ucc-dbus/tests/v4_audit_introspection.rs"
+            "crates/ucc-dbus/tests/dbus_introspection_parity.rs"
           ],
           "evidence": [
             "Introspection signatures match C++ baseline for GetWaterCoolerConnected on both /com/uniwill/uccd and /de/uniwill/uccd at e16f9ea"
@@ -7492,7 +7492,7 @@
           "status": "verified",
           "test_paths": [
             "crates/ucc-dbus/tests/contract_tests.rs",
-            "crates/ucc-dbus/tests/v4_audit_introspection.rs"
+            "crates/ucc-dbus/tests/dbus_introspection_parity.rs"
           ],
           "evidence": [
             "Introspection signatures match C++ baseline for GetWaterCoolerFanSpeed on both /com/uniwill/uccd and /de/uniwill/uccd at e16f9ea"
@@ -7563,7 +7563,7 @@
           "status": "verified",
           "test_paths": [
             "crates/ucc-dbus/tests/contract_tests.rs",
-            "crates/ucc-dbus/tests/v4_audit_introspection.rs"
+            "crates/ucc-dbus/tests/dbus_introspection_parity.rs"
           ],
           "evidence": [
             "Introspection signatures match C++ baseline for GetWaterCoolerPumpLevel on both /com/uniwill/uccd and /de/uniwill/uccd at e16f9ea"
@@ -7636,7 +7636,7 @@
           "status": "verified",
           "test_paths": [
             "crates/ucc-dbus/tests/contract_tests.rs",
-            "crates/ucc-dbus/tests/v4_audit_introspection.rs"
+            "crates/ucc-dbus/tests/dbus_introspection_parity.rs"
           ],
           "evidence": [
             "Introspection signatures match C++ baseline for EnableWaterCooler on both /com/uniwill/uccd and /de/uniwill/uccd at e16f9ea"
@@ -7660,7 +7660,7 @@
           "status": "defect",
           "test_paths": [
             "crates/ucc-dbus/src/interface.rs",
-            "crates/ucc-dbus/tests/consolidated_dbus.rs"
+            "crates/ucc-dbus/tests/dbus_method_dispatch.rs"
           ],
           "evidence": [
             "IPC-01: Fallback Polkit rule overrides explicit denial; IPC-03: Polkit rate-limiting/trust queue unbounded"
@@ -7679,7 +7679,7 @@
         "preview_if_mutating": {
           "status": "partial_mock",
           "test_paths": [
-            "crates/ucc-config/tests/v4_audit_probes.rs"
+            "crates/ucc-config/tests/config_policy_parsing.rs"
           ],
           "evidence": [
             "Preview mode read-only guard verified for config manager and file writers; live daemon transaction boundary in progress"
@@ -7712,7 +7712,7 @@
           "status": "verified",
           "test_paths": [
             "crates/ucc-dbus/tests/contract_tests.rs",
-            "crates/ucc-dbus/tests/v4_audit_introspection.rs"
+            "crates/ucc-dbus/tests/dbus_introspection_parity.rs"
           ],
           "evidence": [
             "Introspection signatures match C++ baseline for IsWaterCoolerEnabled on both /com/uniwill/uccd and /de/uniwill/uccd at e16f9ea"
@@ -7785,7 +7785,7 @@
           "status": "verified",
           "test_paths": [
             "crates/ucc-dbus/tests/contract_tests.rs",
-            "crates/ucc-dbus/tests/v4_audit_introspection.rs"
+            "crates/ucc-dbus/tests/dbus_introspection_parity.rs"
           ],
           "evidence": [
             "Introspection signatures match C++ baseline for SetWaterCoolerFanSpeed on both /com/uniwill/uccd and /de/uniwill/uccd at e16f9ea"
@@ -7809,7 +7809,7 @@
           "status": "defect",
           "test_paths": [
             "crates/ucc-dbus/src/interface.rs",
-            "crates/ucc-dbus/tests/consolidated_dbus.rs"
+            "crates/ucc-dbus/tests/dbus_method_dispatch.rs"
           ],
           "evidence": [
             "IPC-01: Fallback Polkit rule overrides explicit denial; IPC-03: Polkit rate-limiting/trust queue unbounded"
@@ -7828,7 +7828,7 @@
         "preview_if_mutating": {
           "status": "partial_mock",
           "test_paths": [
-            "crates/ucc-config/tests/v4_audit_probes.rs"
+            "crates/ucc-config/tests/config_policy_parsing.rs"
           ],
           "evidence": [
             "Preview mode read-only guard verified for config manager and file writers; live daemon transaction boundary in progress"
@@ -7863,7 +7863,7 @@
           "status": "verified",
           "test_paths": [
             "crates/ucc-dbus/tests/contract_tests.rs",
-            "crates/ucc-dbus/tests/v4_audit_introspection.rs"
+            "crates/ucc-dbus/tests/dbus_introspection_parity.rs"
           ],
           "evidence": [
             "Introspection signatures match C++ baseline for SetWaterCoolerPumpVoltage on both /com/uniwill/uccd and /de/uniwill/uccd at e16f9ea"
@@ -7887,7 +7887,7 @@
           "status": "defect",
           "test_paths": [
             "crates/ucc-dbus/src/interface.rs",
-            "crates/ucc-dbus/tests/consolidated_dbus.rs"
+            "crates/ucc-dbus/tests/dbus_method_dispatch.rs"
           ],
           "evidence": [
             "IPC-01: Fallback Polkit rule overrides explicit denial; IPC-03: Polkit rate-limiting/trust queue unbounded"
@@ -7906,7 +7906,7 @@
         "preview_if_mutating": {
           "status": "partial_mock",
           "test_paths": [
-            "crates/ucc-config/tests/v4_audit_probes.rs"
+            "crates/ucc-config/tests/config_policy_parsing.rs"
           ],
           "evidence": [
             "Preview mode read-only guard verified for config manager and file writers; live daemon transaction boundary in progress"
@@ -7941,7 +7941,7 @@
           "status": "verified",
           "test_paths": [
             "crates/ucc-dbus/tests/contract_tests.rs",
-            "crates/ucc-dbus/tests/v4_audit_introspection.rs"
+            "crates/ucc-dbus/tests/dbus_introspection_parity.rs"
           ],
           "evidence": [
             "Introspection signatures match C++ baseline for SetWaterCoolerLEDColor on both /com/uniwill/uccd and /de/uniwill/uccd at e16f9ea"
@@ -7963,7 +7963,7 @@
           "status": "defect",
           "test_paths": [
             "crates/ucc-dbus/src/interface.rs",
-            "crates/ucc-dbus/tests/consolidated_dbus.rs"
+            "crates/ucc-dbus/tests/dbus_method_dispatch.rs"
           ],
           "evidence": [
             "IPC-01: Fallback Polkit rule overrides explicit denial; IPC-03: Polkit rate-limiting/trust queue unbounded"
@@ -7982,7 +7982,7 @@
         "preview_if_mutating": {
           "status": "partial_mock",
           "test_paths": [
-            "crates/ucc-config/tests/v4_audit_probes.rs"
+            "crates/ucc-config/tests/config_policy_parsing.rs"
           ],
           "evidence": [
             "Preview mode read-only guard verified for config manager and file writers; live daemon transaction boundary in progress"
@@ -8017,7 +8017,7 @@
           "status": "verified",
           "test_paths": [
             "crates/ucc-dbus/tests/contract_tests.rs",
-            "crates/ucc-dbus/tests/v4_audit_introspection.rs"
+            "crates/ucc-dbus/tests/dbus_introspection_parity.rs"
           ],
           "evidence": [
             "Introspection signatures match C++ baseline for TurnOffWaterCoolerLED on both /com/uniwill/uccd and /de/uniwill/uccd at e16f9ea"
@@ -8041,7 +8041,7 @@
           "status": "defect",
           "test_paths": [
             "crates/ucc-dbus/src/interface.rs",
-            "crates/ucc-dbus/tests/consolidated_dbus.rs"
+            "crates/ucc-dbus/tests/dbus_method_dispatch.rs"
           ],
           "evidence": [
             "IPC-01: Fallback Polkit rule overrides explicit denial; IPC-03: Polkit rate-limiting/trust queue unbounded"
@@ -8060,7 +8060,7 @@
         "preview_if_mutating": {
           "status": "partial_mock",
           "test_paths": [
-            "crates/ucc-config/tests/v4_audit_probes.rs"
+            "crates/ucc-config/tests/config_policy_parsing.rs"
           ],
           "evidence": [
             "Preview mode read-only guard verified for config manager and file writers; live daemon transaction boundary in progress"
@@ -8095,7 +8095,7 @@
           "status": "verified",
           "test_paths": [
             "crates/ucc-dbus/tests/contract_tests.rs",
-            "crates/ucc-dbus/tests/v4_audit_introspection.rs"
+            "crates/ucc-dbus/tests/dbus_introspection_parity.rs"
           ],
           "evidence": [
             "Introspection signatures match C++ baseline for TurnOffWaterCoolerFan on both /com/uniwill/uccd and /de/uniwill/uccd at e16f9ea"
@@ -8119,7 +8119,7 @@
           "status": "defect",
           "test_paths": [
             "crates/ucc-dbus/src/interface.rs",
-            "crates/ucc-dbus/tests/consolidated_dbus.rs"
+            "crates/ucc-dbus/tests/dbus_method_dispatch.rs"
           ],
           "evidence": [
             "IPC-01: Fallback Polkit rule overrides explicit denial; IPC-03: Polkit rate-limiting/trust queue unbounded"
@@ -8138,7 +8138,7 @@
         "preview_if_mutating": {
           "status": "partial_mock",
           "test_paths": [
-            "crates/ucc-config/tests/v4_audit_probes.rs"
+            "crates/ucc-config/tests/config_policy_parsing.rs"
           ],
           "evidence": [
             "Preview mode read-only guard verified for config manager and file writers; live daemon transaction boundary in progress"
@@ -8173,7 +8173,7 @@
           "status": "verified",
           "test_paths": [
             "crates/ucc-dbus/tests/contract_tests.rs",
-            "crates/ucc-dbus/tests/v4_audit_introspection.rs"
+            "crates/ucc-dbus/tests/dbus_introspection_parity.rs"
           ],
           "evidence": [
             "Introspection signatures match C++ baseline for TurnOffWaterCoolerPump on both /com/uniwill/uccd and /de/uniwill/uccd at e16f9ea"
@@ -8197,7 +8197,7 @@
           "status": "defect",
           "test_paths": [
             "crates/ucc-dbus/src/interface.rs",
-            "crates/ucc-dbus/tests/consolidated_dbus.rs"
+            "crates/ucc-dbus/tests/dbus_method_dispatch.rs"
           ],
           "evidence": [
             "IPC-01: Fallback Polkit rule overrides explicit denial; IPC-03: Polkit rate-limiting/trust queue unbounded"
@@ -8216,7 +8216,7 @@
         "preview_if_mutating": {
           "status": "partial_mock",
           "test_paths": [
-            "crates/ucc-config/tests/v4_audit_probes.rs"
+            "crates/ucc-config/tests/config_policy_parsing.rs"
           ],
           "evidence": [
             "Preview mode read-only guard verified for config manager and file writers; live daemon transaction boundary in progress"
@@ -8249,7 +8249,7 @@
           "status": "verified",
           "test_paths": [
             "crates/ucc-dbus/tests/contract_tests.rs",
-            "crates/ucc-dbus/tests/v4_audit_introspection.rs"
+            "crates/ucc-dbus/tests/dbus_introspection_parity.rs"
           ],
           "evidence": [
             "Introspection signatures match C++ baseline for IsWaterCoolerAutoControlEnabled on both /com/uniwill/uccd and /de/uniwill/uccd at e16f9ea"
@@ -8322,7 +8322,7 @@
           "status": "verified",
           "test_paths": [
             "crates/ucc-dbus/tests/contract_tests.rs",
-            "crates/ucc-dbus/tests/v4_audit_introspection.rs"
+            "crates/ucc-dbus/tests/dbus_introspection_parity.rs"
           ],
           "evidence": [
             "Introspection signatures match C++ baseline for SetWaterCoolerAutoControl on both /com/uniwill/uccd and /de/uniwill/uccd at e16f9ea"
@@ -8346,7 +8346,7 @@
           "status": "defect",
           "test_paths": [
             "crates/ucc-dbus/src/interface.rs",
-            "crates/ucc-dbus/tests/consolidated_dbus.rs"
+            "crates/ucc-dbus/tests/dbus_method_dispatch.rs"
           ],
           "evidence": [
             "IPC-01: Fallback Polkit rule overrides explicit denial; IPC-03: Polkit rate-limiting/trust queue unbounded"
@@ -8365,7 +8365,7 @@
         "preview_if_mutating": {
           "status": "partial_mock",
           "test_paths": [
-            "crates/ucc-config/tests/v4_audit_probes.rs"
+            "crates/ucc-config/tests/config_policy_parsing.rs"
           ],
           "evidence": [
             "Preview mode read-only guard verified for config manager and file writers; live daemon transaction boundary in progress"
@@ -8398,7 +8398,7 @@
           "status": "verified",
           "test_paths": [
             "crates/ucc-dbus/tests/contract_tests.rs",
-            "crates/ucc-dbus/tests/v4_audit_introspection.rs"
+            "crates/ucc-dbus/tests/dbus_introspection_parity.rs"
           ],
           "evidence": [
             "Introspection signatures match C++ baseline for GetWaterCoolerSupported on both /com/uniwill/uccd and /de/uniwill/uccd at e16f9ea"
@@ -8469,7 +8469,7 @@
           "status": "verified",
           "test_paths": [
             "crates/ucc-dbus/tests/contract_tests.rs",
-            "crates/ucc-dbus/tests/v4_audit_introspection.rs"
+            "crates/ucc-dbus/tests/dbus_introspection_parity.rs"
           ],
           "evidence": [
             "Introspection signatures match C++ baseline for GetCTGPAdjustmentSupported on both /com/uniwill/uccd and /de/uniwill/uccd at e16f9ea"
@@ -8538,7 +8538,7 @@
           "status": "verified",
           "test_paths": [
             "crates/ucc-dbus/tests/contract_tests.rs",
-            "crates/ucc-dbus/tests/v4_audit_introspection.rs"
+            "crates/ucc-dbus/tests/dbus_introspection_parity.rs"
           ],
           "evidence": [
             "Introspection signatures match C++ baseline for GetHwpDynamicBoostSupported on both /com/uniwill/uccd and /de/uniwill/uccd at e16f9ea"
@@ -8607,7 +8607,7 @@
           "status": "verified",
           "test_paths": [
             "crates/ucc-dbus/tests/contract_tests.rs",
-            "crates/ucc-dbus/tests/v4_audit_introspection.rs"
+            "crates/ucc-dbus/tests/dbus_introspection_parity.rs"
           ],
           "evidence": [
             "Introspection signatures match C++ baseline for GetMonitorDataSince on both /com/uniwill/uccd and /de/uniwill/uccd at e16f9ea"
@@ -8678,7 +8678,7 @@
           "status": "verified",
           "test_paths": [
             "crates/ucc-dbus/tests/contract_tests.rs",
-            "crates/ucc-dbus/tests/v4_audit_introspection.rs"
+            "crates/ucc-dbus/tests/dbus_introspection_parity.rs"
           ],
           "evidence": [
             "Introspection signatures match C++ baseline for SetMonitorHistoryHorizon on both /com/uniwill/uccd and /de/uniwill/uccd at e16f9ea"
@@ -8700,7 +8700,7 @@
           "status": "defect",
           "test_paths": [
             "crates/ucc-dbus/src/interface.rs",
-            "crates/ucc-dbus/tests/consolidated_dbus.rs"
+            "crates/ucc-dbus/tests/dbus_method_dispatch.rs"
           ],
           "evidence": [
             "IPC-01: Fallback Polkit rule overrides explicit denial; IPC-03: Polkit rate-limiting/trust queue unbounded"
@@ -8719,7 +8719,7 @@
         "preview_if_mutating": {
           "status": "partial_mock",
           "test_paths": [
-            "crates/ucc-config/tests/v4_audit_probes.rs"
+            "crates/ucc-config/tests/config_policy_parsing.rs"
           ],
           "evidence": [
             "Preview mode read-only guard verified for config manager and file writers; live daemon transaction boundary in progress"
@@ -8752,7 +8752,7 @@
           "status": "verified",
           "test_paths": [
             "crates/ucc-dbus/tests/contract_tests.rs",
-            "crates/ucc-dbus/tests/v4_audit_introspection.rs"
+            "crates/ucc-dbus/tests/dbus_introspection_parity.rs"
           ],
           "evidence": [
             "Introspection signatures match C++ baseline for GetMonitorHistoryHorizon on both /com/uniwill/uccd and /de/uniwill/uccd at e16f9ea"
@@ -8821,7 +8821,7 @@
           "status": "verified",
           "test_paths": [
             "crates/ucc-dbus/tests/contract_tests.rs",
-            "crates/ucc-dbus/tests/v4_audit_introspection.rs"
+            "crates/ucc-dbus/tests/dbus_introspection_parity.rs"
           ],
           "evidence": [
             "Introspection signatures match C++ baseline for GetCpuFrequencyMHz on both /com/uniwill/uccd and /de/uniwill/uccd at e16f9ea"
@@ -9211,7 +9211,7 @@
       }
     ],
     "evidence": [
-      "crates/ucc-dbus/tests/v4_audit_introspection.rs",
+      "crates/ucc-dbus/tests/dbus_introspection_parity.rs",
       "crates/ucc-dbus/tests/contract_tests.rs",
       "crates/uccd/tests/daemon_integration.rs"
     ],

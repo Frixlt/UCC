@@ -58,7 +58,7 @@ cargo build -p uccd --example interop_daemon --locked --offline
 
 Путь к собранному бинарнику передаётся через переменную окружения `UCC_INTEROP_DAEMON_BIN` (по умолчанию `target/debug/examples/interop_daemon`).
 
-### Основной набор (Normal suite — 48 тестов в конфигурации без Plasma / до 51 при наличии `gjs` и `node`)
+### Основной набор (Normal suite — 50 тестов в конфигурации без Plasma / до 54 при наличии `gjs` и `node`)
 
 Конфигурация для автономного Rust runtime (`BUILD_TRAY=OFF`):
 
@@ -81,10 +81,10 @@ UCC_INTEROP_DAEMON_BIN="$PWD/target/debug/examples/interop_daemon" \
 
 В состав основного набора (`tests/CMakeLists.txt`) входят:
 - 19 C++ unit-тестов логики (`test_state_utils`, `test_sleep_state`, `test_lightbar`, `test_driver_health`, `test_notification_monitor`, `test_power_policy`, `test_cpu_selection`, `test_power_devices`, `test_lid_wakeup`, `test_gpu_sysfs`, `test_display_backlight`, `test_keyboard_controller`, `test_fan_profile`, `test_profile_manager`, `test_settings_manager`, `test_metrics_history`, `test_aquaris_selection`, `test_session_telemetry`, `test_process_terminator`);
-- 13 Python-тестов развёртывания, миграции и импорта (`test_deployment`, `test_prepare_deployment`, `test_desktop_transition`, `test_import_check`, `test_sleep_install`, `test_tcc_import`, `test_controlcenter_migration`, `test_control_authorization`, `test_watercooler_override`, `test_device_identification`, `test_bluetooth_retry`, `test_bluetooth_startup`, `test_display_identity`);
+- 14 Python-тестов развёртывания, миграции, упаковки и импорта (`test_deployment`, `test_prepare_deployment`, `test_desktop_transition`, `test_import_check`, `test_sleep_install`, `test_tcc_import`, `test_controlcenter_migration`, `test_control_authorization`, `test_watercooler_override`, `test_device_identification`, `test_bluetooth_retry`, `test_bluetooth_startup`, `test_display_identity`, `test_contrib_packaging`);
 - 3 теста session-агента (`test_driver_alert`, `test_refresh_advisor_modes`, `test_refresh_advisor_lifecycle`);
-- 3 теста GNOME Shell (`test_gnome_async` при наличии `gjs`, `test_gnome_launch` и `test_gnome_refresh` при наличии `node`);
-- 10 GUI-тестов (`test_fan_curve_editor`, 5 шардов `test_gui_audit_*`, `test_gui_instance`, `test_system_monitor`, `test_app_logging`, `test_gui_rust_e2e`) и 1 клиентский interop-тест (`test_rust_uccd_interop`).
+- 4 теста GNOME Shell (`test_gnome_async` при наличии `gjs`, `test_gnome_launch`, `test_gnome_refresh` и `test_gnome_extension_contracts` при наличии `node`);
+- 11 GUI-тестов (`test_fan_curve_editor`, 5 шардов `test_gui_audit_*`, `test_gui_regressions`, `test_gui_instance`, `test_system_monitor`, `test_app_logging`, `test_gui_rust_e2e`) и 1 клиентский interop-тест (`test_rust_uccd_interop`).
 
 Дополнительно в `PKGBUILD` запускается тест миграции:
 
@@ -116,7 +116,7 @@ ctest --test-dir build-preview \
 
 Запускаются через `dbus-run-session -- bash tests/run_rust_interop_test.sh <test-binary> <source-dir> [args...]`:
 - `test_rust_uccd_interop`: проверяет совместимость C++ `UccdClient` (`libucc-dbus`) с живым Rust `interop_daemon` (JSON-контракты, сигналы, управление профилями и политиками, временная директория `UCC_INTEROP_CONFIG_DIR`).
-- `test_gui_rust_e2e`: запускает полный Qt6 `MainWindow` против Rust `LiveUccdBackend` (`interop_daemon`), проверяет все 11 разделов сайдбара, переключение Light/Dark-тем, запись профилей и политик крышки (`F45 Lid`), отклонение невалидных команд без ложного подтверждения успеха и блокировку записей при `UCC_READ_ONLY_PREVIEW=1`.
+- `test_gui_rust_e2e`: запускает полный Qt6 `MainWindow` против Rust `LiveUccdBackend` (`interop_daemon`), проверяет все 10 разделов сайдбара (9 пунктов навигации + About), переключение Light/Dark-тем, запись профилей и политик крышки (`F45 Lid`), отклонение невалидных команд без ложного подтверждения успеха и блокировку записей при `UCC_READ_ONLY_PREVIEW=1`.
 
 ---
 

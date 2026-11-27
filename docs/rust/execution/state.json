@@ -146,13 +146,13 @@
       "W1-06 (BufferInputGuard release marks released only on Ok so Drop retries on failure)"
     ],
     "verification": [
-      "crates/ucc-hardware/tests/wave1_remediation.rs",
-      "crates/ucc-hardware/tests/wave1_nvml_remediation.rs",
+      "crates/ucc-hardware/tests/hardware_driver_contracts.rs",
+      "crates/ucc-hardware/tests/nvml_memory_and_bdf.rs",
       "crates/ucc-hardware/tests/fake_bluez_cooler.rs",
       "crates/ucc-hardware/tests/platform_backend.rs",
-      "crates/ucc-lighting/tests/wave1_remediation.rs",
-      "crates/ucc-hardware/tests/verify_e16_edges.rs (LD_PRELOAD child enforced)",
-      "crates/ucc-hardware/tests/verify_e1_hardware.rs (LD_PRELOAD child enforced)"
+      "crates/ucc-lighting/tests/lighting_device_controls.rs",
+      "crates/ucc-hardware/tests/nvml_edge_cases.rs (LD_PRELOAD child enforced)",
+      "crates/ucc-hardware/tests/hardware_device_discovery.rs (LD_PRELOAD child enforced)"
     ],
     "still_open_beyond_wave1": [
       "M5.5 / W1-10: daemon runtime reconnect/keepalive supervision loop (in M8)",
