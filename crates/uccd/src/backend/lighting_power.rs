@@ -48,11 +48,13 @@ impl LiveUccdBackend {
     ) -> Option<R> {
         let mgr = self.lock_mutex(&self.config_manager);
         if self.write_aborted_by_shutdown() {
+            tracing::warn!("update_settings aborted by shutdown");
             return None;
         }
         let mut candidate = self.read_rw(&self.settings).clone();
         let outcome = mutate(&mut candidate)?;
-        if mgr.save(&candidate).is_err() {
+        if let Err(err) = mgr.save(&candidate) {
+            tracing::warn!("update_settings: ConfigManager::save failed: {err}");
             return None;
         }
         *self.write_rw(&self.settings) = candidate;
@@ -389,19 +391,35 @@ impl LiveUccdBackend {
         keyboard_backlight_states_json: &str,
     ) -> bool {
         let Some(_op_guard) = self.enter_hardware_op() else {
+            tracing::warn!(
+                shutting_down = self.shutting_down.load(Ordering::SeqCst),
+                hardware_activation_pending =
+                    self.hardware_activation_pending.load(Ordering::SeqCst),
+                "set_keyboard_backlight_states_json rejected: enter_hardware_op returned None"
+            );
             return false;
         };
         if keyboard_backlight_states_json.len() > 1024 * 1024 {
+            tracing::warn!(
+                len = keyboard_backlight_states_json.len(),
+                "set_keyboard_backlight_states_json rejected: payload exceeds 1 MiB"
+            );
             return false;
         }
         let Some((states, kb_profile_id)) =
             Self::parse_keyboard_states_payload(keyboard_backlight_states_json)
         else {
+            tracing::warn!(
+                "set_keyboard_backlight_states_json rejected: parse_keyboard_states_payload failed"
+            );
             return false;
         };
 
         // Write to hardware BEFORE updating persistent settings (`ISSUE-13`).
         if self.write_aborted_by_shutdown() {
+            tracing::warn!(
+                "set_keyboard_backlight_states_json rejected: write_aborted_by_shutdown"
+            );
             return false;
         }
         let prev_kb = self.snapshot_keyboard_rollback();
@@ -413,16 +431,23 @@ impl LiveUccdBackend {
         {
             let mut ctrl = self.lock_mutex(&self.keyboard_ctrl);
             if !ctrl.is_available() {
-                let _ = ctrl.init();
+                if let Err(err) = ctrl.init() {
+                    tracing::warn!(
+                        "set_keyboard_backlight_states_json: keyboard init failed: {err}"
+                    );
+                }
             }
-            let write_ok = if blanked_under_lid {
+            let write_res = if blanked_under_lid {
                 let dark = Self::blanked_keyboard_states(&states);
-                ctrl.apply_states(&dark).is_ok()
+                ctrl.apply_states(&dark)
             } else {
-                ctrl.apply_states(&states).is_ok()
+                ctrl.apply_states(&states)
             };
             drop(ctrl);
-            if !write_ok {
+            if let Err(err) = write_res {
+                tracing::warn!(
+                    "set_keyboard_backlight_states_json rejected: ctrl.apply_states failed: {err}"
+                );
                 if let Some(ref snap) = prev_kb {
                     if self.kb_write_seq.load(Ordering::SeqCst) == my_seq {
                         let _ = self.restore_keyboard_rollback(snap, None);
@@ -444,6 +469,9 @@ impl LiveUccdBackend {
             })
             .is_none()
         {
+            tracing::warn!(
+                "set_keyboard_backlight_states_json rejected: update_settings returned None"
+            );
             if let Some(ref snap) = prev_kb {
                 if self.kb_write_seq.load(Ordering::SeqCst) == my_seq {
                     let _ = self.restore_keyboard_rollback(snap, None);

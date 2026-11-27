@@ -32,3 +32,31 @@ fn legacy_manager_preserves_ycbcr_port_values() {
         serde_json::from_str(&fs::read_to_string(path).unwrap()).unwrap();
     assert_eq!(stored["ycbcr420Workaround"], data["ycbcr420Workaround"]);
 }
+
+#[test]
+fn config_manager_roundtrips_126_zone_and_host_settings() {
+    let dir = tempfile::tempdir().unwrap();
+    let target = dir.path().join("settings");
+    let host_settings = std::path::Path::new("/etc/ucc/settings");
+    if host_settings.exists() {
+        let (mut loaded, _) = ConfigManager::load_with_recovery(host_settings).unwrap();
+        loaded.keyboard_backlight_states = Some(vec![
+            ucc_core::KeyboardBacklightState {
+                brightness: 31,
+                red: 180,
+                green: 0,
+                blue: 220,
+            };
+            126
+        ]);
+        ConfigManager::with_custom_path(&target)
+            .save(&loaded)
+            .unwrap();
+        let (reloaded, recovered) = ConfigManager::load_with_recovery(&target).unwrap();
+        assert!(!recovered);
+        assert_eq!(
+            reloaded.keyboard_backlight_states.as_ref().map(Vec::len),
+            Some(126)
+        );
+    }
+}

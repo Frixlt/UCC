@@ -79,6 +79,7 @@ struct DiscoveredSysfsPaths {
     kbd_led_paths: Vec<PathBuf>,
     kbd_buffer_input: Option<PathBuf>,
     kbd_is_rgb: bool,
+    last_kbd_brightness: Option<u32>,
     lightbar_path: Option<PathBuf>,
     lightbar_zones: usize,
 }
@@ -322,7 +323,11 @@ impl LightingTransport for SysfsLedTransport {
     }
 
     fn write_keyboard_brightness(&self, brightness: u32) -> Result<(), LightingError> {
-        let paths = self.cache.lock().unwrap().kbd_led_paths.clone();
+        let paths = {
+            let mut cache = self.cache.lock().unwrap();
+            cache.last_kbd_brightness = Some(brightness);
+            cache.kbd_led_paths.clone()
+        };
         if paths.is_empty() {
             return Err(LightingError::Unavailable);
         }
@@ -334,9 +339,13 @@ impl LightingTransport for SysfsLedTransport {
     }
 
     fn write_keyboard_zones(&self, colors: &[RgbColor]) -> Result<(), LightingError> {
-        let (paths, is_rgb) = {
+        let (paths, is_rgb, last_brightness) = {
             let cache = self.cache.lock().unwrap();
-            (cache.kbd_led_paths.clone(), cache.kbd_is_rgb)
+            (
+                cache.kbd_led_paths.clone(),
+                cache.kbd_is_rgb,
+                cache.last_kbd_brightness,
+            )
         };
         if paths.is_empty() {
             return Err(LightingError::Unavailable);
@@ -344,6 +353,12 @@ impl LightingTransport for SysfsLedTransport {
         if !is_rgb {
             return Ok(());
         }
+        let commit_brightness = last_brightness.or_else(|| {
+            paths
+                .first()
+                .and_then(|first| self.read_u32(&first.join("brightness")))
+        });
+        let commit_brightness_str = commit_brightness.map(|b| b.to_string());
         for (p, color) in paths.iter().zip(colors.iter()) {
             let mi_path = p.join("multi_intensity");
             if !self.sysfs.exists(&mi_path) {
@@ -351,6 +366,12 @@ impl LightingTransport for SysfsLedTransport {
             }
             let payload = format!("{} {} {}", color.r, color.g, color.b);
             self.sysfs.write(&mi_path, &payload)?;
+            // Linux led-class-multicolor drivers such as ite_8291 copy subled_info intensities
+            // into row_data inside brightness_set; rewrite brightness after multi_intensity so
+            // color updates take effect on buffer_input=0 flush without changing existing colors.
+            if let Some(ref b_val) = commit_brightness_str {
+                self.sysfs.write(&p.join("brightness"), b_val)?;
+            }
         }
         Ok(())
     }

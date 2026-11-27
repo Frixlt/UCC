@@ -241,3 +241,55 @@ fn sysfs_keyboard_readback_sorts_zones_numerically_and_hydrates_controller() {
         assert_eq!(st.blue, 20);
     }
 }
+
+#[test]
+fn sysfs_write_keyboard_zones_commits_brightness_after_multi_intensity() {
+    use ucc_hardware::MockSysfs;
+
+    let sysfs = Arc::new(MockSysfs::new());
+    let base = std::path::PathBuf::from("/sys/bus/hid/drivers/ite_8291/0003:048D:600B.0004/leds");
+    for suffix in ["", "_1", "_2", "_3"] {
+        let p = base.join(format!("rgb:kbd_backlight{suffix}"));
+        sysfs.set_file(p.join("max_brightness"), "50\n");
+        sysfs.set_file(p.join("brightness"), "32\n");
+        sysfs.set_file(p.join("multi_intensity"), "0 0 0\n");
+    }
+    let buf_path = base.join("rgb:kbd_backlight/device/controls/buffer_input");
+    sysfs.set_file(&buf_path, "0\n");
+
+    let transport = Arc::new(SysfsLedTransport::new(sysfs.clone(), "/"));
+    let mut kbd = KeyboardBacklightController::new(transport);
+    kbd.init().unwrap();
+    sysfs.clear_journal();
+
+    let states: Vec<KeyboardBacklightState> = (0..4)
+        .map(|i| KeyboardBacklightState {
+            brightness: 31,
+            red: (i * 50) as u8,
+            green: 10,
+            blue: 200,
+        })
+        .collect();
+    kbd.apply_states(&states).unwrap();
+
+    let journal = sysfs.journal();
+    let entries: Vec<(std::path::PathBuf, String)> =
+        journal.into_iter().map(|w| (w.path, w.content)).collect();
+
+    assert_eq!(entries.first(), Some(&(buf_path.clone(), "1".to_string())));
+    assert_eq!(entries.last(), Some(&(buf_path, "0".to_string())));
+
+    // After the initial brightness pass, every zone must write multi_intensity and then commit brightness=31 before buffer_input=0.
+    let commit_slice = &entries[5..entries.len() - 1];
+    assert_eq!(commit_slice.len(), 8);
+    for (idx, chunk) in commit_slice.as_chunks::<2>().0.iter().enumerate() {
+        let suffix = if idx == 0 {
+            String::new()
+        } else {
+            format!("_{idx}")
+        };
+        let zone = base.join(format!("rgb:kbd_backlight{suffix}"));
+        assert_eq!(chunk[0].0, zone.join("multi_intensity"));
+        assert_eq!(chunk[1], (zone.join("brightness"), "31".to_string()));
+    }
+}
