@@ -99,7 +99,7 @@ fn build_mock_platform() -> Arc<MockPlatformBackend> {
     platform.set_tdp_limits(1, (20, 130));
     platform.set_tdp_value(0, 55);
     platform.set_tdp_value(1, 75);
-    let _ = platform.set_perf_profile(2);
+    platform.set_perf_profile(2).unwrap();
     platform.clear_journal();
     platform
 }
@@ -482,7 +482,7 @@ async fn stress_1_burst_dbus_commands_no_deadlock_and_consistent_final_state() {
     runtime.shutdown(Duration::from_secs(2)).await;
 }
 
-/// Scenario 2: Profile switch arriving mid-flight during a slow backend reply (400 ms, within the
+/// Scenario 2: Profile switch arriving mid-flight during a slow backend reply (1000 ms, within the
 /// 300–3000 ms window) must win via commit-epoch ordering so the stale profile never overwrites
 /// the newer profile, while unrelated read RPCs stay responsive.
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
