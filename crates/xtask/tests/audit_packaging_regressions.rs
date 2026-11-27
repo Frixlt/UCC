@@ -246,3 +246,97 @@ fn dist_stages_all_runtime_binaries_from_cargo_target_dir() {
         PathBuf::from("uccd-sleep.service")
     );
 }
+
+#[test]
+fn t_m11_6_shell_adapter_boundary_no_cpp_backend_and_no_plasma_tray() {
+    let root = repo_root();
+
+    for manifest in ["PKGBUILD", "ucc.spec", "package.nix", "debian/rules"] {
+        let text = std::fs::read_to_string(root.join(manifest)).unwrap();
+        assert!(
+            text.contains("-DBUILD_TRAY=OFF"),
+            "{manifest} must disable legacy C++/QML Plasma tray with -DBUILD_TRAY=OFF"
+        );
+        assert!(
+            text.contains("-DUCC_PACKAGE_RUST_RUNTIME=ON"),
+            "{manifest} must enable -DUCC_PACKAGE_RUST_RUNTIME=ON"
+        );
+    }
+
+    let deb_install = std::fs::read_to_string(root.join("debian/ucc.install")).unwrap();
+    for gjs_file in [
+        "usr/share/gnome-shell/extensions/ucc@uniwill.com/metadata.json",
+        "usr/share/gnome-shell/extensions/ucc@uniwill.com/extension.js",
+        "usr/share/gnome-shell/extensions/ucc@uniwill.com/uccdClient.js",
+        "usr/share/gnome-shell/extensions/ucc@uniwill.com/stylesheet.css",
+    ] {
+        assert!(
+            deb_install.contains(gjs_file),
+            "debian/ucc.install must ship pure-GJS adapter file {gjs_file}"
+        );
+    }
+    assert!(
+        !deb_install.contains("plasma/plasmoids") && !deb_install.contains("libucc_tray"),
+        "debian/ucc.install must not ship retired Plasma tray plugin or QML C++ backend"
+    );
+
+    for entry in std::fs::read_dir(root.join("ucc-gnome")).unwrap() {
+        let entry = entry.unwrap();
+        let name = entry.file_name().to_string_lossy().into_owned();
+        assert_ne!(
+            name, "CMakeLists.txt",
+            "ucc-gnome must not have native CMake build"
+        );
+        for forbidden_ext in [".c", ".cpp", ".h", ".hpp", ".so"] {
+            assert!(
+                !name.ends_with(forbidden_ext),
+                "ucc-gnome must remain pure GJS without native file {name}"
+            );
+        }
+    }
+
+    let adr03 = std::fs::read_to_string(
+        root.join("docs/rust/execution/decisions/ADR-03-shell-embedding-policy.md"),
+    )
+    .unwrap();
+    assert!(
+        adr03.contains("ucc-desktop-tray") && adr03.contains("ucc-gnome"),
+        "ADR-03 must document ucc-desktop-tray SNI replacement and thin GJS ucc-gnome exception"
+    );
+}
+
+#[test]
+fn t_m11_8_research_probes_excluded_from_runtime_and_attribution_preserved() {
+    let root = repo_root();
+
+    for packaging_file in [
+        "CMakeLists.txt",
+        "PKGBUILD",
+        "ucc.spec",
+        "package.nix",
+        "debian/ucc.install",
+        "crates/xtask/src/main.rs",
+    ] {
+        let text = std::fs::read_to_string(root.join(packaging_file)).unwrap();
+        assert!(
+            !text.contains("nvidia_findings"),
+            "{packaging_file} must never package or install research probes from nvidia_findings"
+        );
+    }
+
+    for doc in [
+        "COPYING",
+        "LICENSE",
+        "PROJECT_ORIGINS.md",
+        "THIRD_PARTY.md",
+        "nvidia_findings/README.md",
+        "nvidia_findings/nvidia_undocumented_api_findings.md",
+    ] {
+        let path = root.join(doc);
+        assert!(path.is_file(), "missing attribution/historical doc {doc}");
+        assert!(
+            std::fs::metadata(&path).unwrap().len() > 0,
+            "attribution/historical doc {doc} must not be empty"
+        );
+    }
+}
