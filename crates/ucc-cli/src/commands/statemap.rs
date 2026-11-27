@@ -1,7 +1,7 @@
 //! Statemap command implementation.
 
 use crate::cli::StatemapAction;
-use crate::client::{with_rpc_timeout, CliClient};
+use crate::client::{with_rpc_timeout, with_write_rpc_timeout, CliClient};
 use crate::format::*;
 use serde_json::Value;
 
@@ -85,7 +85,7 @@ pub async fn run_statemap(
             Ok(())
         }
         StatemapAction::Set { state, profile_id } => {
-            let res = with_rpc_timeout(client.proxy().set_state_map(state, profile_id))
+            let res = with_write_rpc_timeout(client.proxy().set_state_map(state, profile_id))
                 .await
                 .unwrap_or(false);
             ok(res)

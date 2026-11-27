@@ -51,7 +51,7 @@ impl NotificationMonitorParser {
             return false;
         };
         let needle = format!("sender={own}");
-        line.contains(&needle)
+        line.split_whitespace().any(|tok| tok == needle)
     }
 
     fn parse_string_arg(line: &str) -> Option<&str> {

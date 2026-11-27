@@ -1,7 +1,7 @@
 //! Cooler (liquid cooling / LCT) command implementation.
 
 use crate::cli::CoolerAction;
-use crate::client::{with_rpc_timeout, CliClient};
+use crate::client::{with_write_rpc_timeout, CliClient};
 use crate::format::*;
 use serde_json::json;
 
@@ -51,19 +51,19 @@ pub async fn run_cooler(
             Ok(())
         }
         CoolerAction::Enable => {
-            let res = with_rpc_timeout(client.proxy().enable_water_cooler(true))
+            let res = with_write_rpc_timeout(client.proxy().enable_water_cooler(true))
                 .await
                 .unwrap_or(false);
             ok(res)
         }
         CoolerAction::Disable => {
-            let res = with_rpc_timeout(client.proxy().enable_water_cooler(false))
+            let res = with_write_rpc_timeout(client.proxy().enable_water_cooler(false))
                 .await
                 .unwrap_or(false);
             ok(res)
         }
         CoolerAction::Fan { percent } => {
-            let res = with_rpc_timeout(client.proxy().set_water_cooler_fan_speed(*percent))
+            let res = with_write_rpc_timeout(client.proxy().set_water_cooler_fan_speed(*percent))
                 .await
                 .unwrap_or(false);
             ok(res)
@@ -75,20 +75,21 @@ pub async fn run_cooler(
                 );
                 return Err(1);
             }
-            let res = with_rpc_timeout(client.proxy().set_water_cooler_pump_voltage(*code))
+            let res = with_write_rpc_timeout(client.proxy().set_water_cooler_pump_voltage(*code))
                 .await
                 .unwrap_or(false);
             ok(res)
         }
         CoolerAction::Led { r, g, b, mode } => {
-            let res =
-                with_rpc_timeout(client.proxy().set_water_cooler_led_color(*r, *g, *b, *mode))
-                    .await
-                    .unwrap_or(false);
+            let res = with_write_rpc_timeout(
+                client.proxy().set_water_cooler_led_color(*r, *g, *b, *mode),
+            )
+            .await
+            .unwrap_or(false);
             ok(res)
         }
         CoolerAction::LedOff => {
-            let res = with_rpc_timeout(client.proxy().turn_off_water_cooler_led())
+            let res = with_write_rpc_timeout(client.proxy().turn_off_water_cooler_led())
                 .await
                 .unwrap_or(false);
             ok(res)

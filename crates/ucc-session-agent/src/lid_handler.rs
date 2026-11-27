@@ -87,7 +87,11 @@ impl LidDisplayHandler {
 
         let mut cmds = Vec::new();
         for mon in internal_monitors {
-            if !(mon.starts_with("eDP-") || mon.starts_with("LVDS-")) {
+            let upper = mon.to_ascii_uppercase();
+            if !(upper.starts_with("EDP-")
+                || upper.starts_with("LVDS-")
+                || upper.starts_with("DSI-"))
+            {
                 continue;
             }
             match self.backend {

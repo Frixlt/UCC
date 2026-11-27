@@ -1,7 +1,7 @@
 //! Lightbar command implementation.
 
 use crate::cli::LightbarAction;
-use crate::client::{with_rpc_timeout, CliClient};
+use crate::client::{with_rpc_timeout, with_write_rpc_timeout, CliClient};
 use crate::format::*;
 use serde_json::Value;
 
@@ -44,19 +44,19 @@ pub async fn run_lightbar(
             Ok(())
         }
         LightbarAction::Set { json } => {
-            let res = with_rpc_timeout(client.proxy().set_lightbar_settings_json(json))
+            let res = with_write_rpc_timeout(client.proxy().set_lightbar_settings_json(json))
                 .await
                 .unwrap_or(false);
             ok(res)
         }
         LightbarAction::Test => {
-            let res = with_rpc_timeout(client.proxy().trigger_lightbar_animation(true))
+            let res = with_write_rpc_timeout(client.proxy().trigger_lightbar_animation(true))
                 .await
                 .unwrap_or(false);
             ok(res)
         }
         LightbarAction::Notify => {
-            let res = with_rpc_timeout(client.proxy().trigger_lightbar_animation(false))
+            let res = with_write_rpc_timeout(client.proxy().trigger_lightbar_animation(false))
                 .await
                 .unwrap_or(false);
             ok(res)

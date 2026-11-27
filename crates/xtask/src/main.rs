@@ -956,7 +956,16 @@ fn parse_manifest_version(kind: ManifestKind, content: &str) -> Result<String, S
             let first = content.lines().next().unwrap_or("");
             if let Some(open) = first.find('(') {
                 if let Some(close) = first[open + 1..].find(')') {
-                    return Ok(first[open + 1..open + 1 + close].trim().to_string());
+                    let raw = first[open + 1..open + 1 + close].trim();
+                    let stripped = match raw.split_once(':') {
+                        Some((epoch, ver))
+                            if !epoch.is_empty() && epoch.chars().all(|c| c.is_ascii_digit()) =>
+                        {
+                            ver
+                        }
+                        _ => raw,
+                    };
+                    return Ok(stripped.to_string());
                 }
             }
             Err("Missing top version entry in debian/changelog".to_string())
@@ -1068,9 +1077,24 @@ fn rewrite_manifest_version(
             if current == new_version {
                 return Ok(content.to_string());
             }
+            let raw_top = content
+                .lines()
+                .next()
+                .and_then(|l| l.split_once('(').map(|x| x.1))
+                .and_then(|r| r.split_once(')').map(|x| x.0))
+                .unwrap_or("")
+                .trim();
+            let deb_version = match raw_top.split_once(':') {
+                Some((epoch, _))
+                    if !epoch.is_empty() && epoch.chars().all(|c| c.is_ascii_digit()) =>
+                {
+                    format!("{epoch}:{new_version}")
+                }
+                _ => new_version.to_string(),
+            };
             let rfc_date = current_rfc2822_date();
             let entry = vec![
-                format!("ucc ({new_version}) unstable; urgency=medium"),
+                format!("ucc ({deb_version}) unstable; urgency=medium"),
                 String::new(),
                 format!("  * Release v{new_version}."),
                 String::new(),

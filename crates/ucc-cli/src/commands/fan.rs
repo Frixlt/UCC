@@ -1,7 +1,7 @@
 //! Fan command implementation.
 
 use crate::cli::FanAction;
-use crate::client::{with_rpc_timeout, CliClient};
+use crate::client::{with_rpc_timeout, with_write_rpc_timeout, CliClient};
 use crate::format::*;
 use serde_json::Value;
 
@@ -231,19 +231,19 @@ pub async fn run_fan(client: &CliClient, action: &FanAction, json_mode: bool) ->
             }
 
             let apply_json = serde_json::to_string(&Value::Object(dst)).unwrap_or_default();
-            let res = with_rpc_timeout(client.proxy().apply_fan_profiles(&apply_json))
+            let res = with_write_rpc_timeout(client.proxy().apply_fan_profiles(&apply_json))
                 .await
                 .unwrap_or(false);
             ok(res)
         }
         FanAction::Apply { json } => {
-            let res = with_rpc_timeout(client.proxy().apply_fan_profiles(json))
+            let res = with_write_rpc_timeout(client.proxy().apply_fan_profiles(json))
                 .await
                 .unwrap_or(false);
             ok(res)
         }
         FanAction::Revert => {
-            let res = with_rpc_timeout(client.proxy().revert_fan_profiles())
+            let res = with_write_rpc_timeout(client.proxy().revert_fan_profiles())
                 .await
                 .unwrap_or(false);
             ok(res)

@@ -491,7 +491,11 @@ async fn main() {
     };
 
     let mut monitor_state = spawn_monitor();
-    let mut restart_at: Option<tokio::time::Instant> = None;
+    let mut restart_at: Option<tokio::time::Instant> = if monitor_state.is_none() {
+        Some(tokio::time::Instant::now() + Duration::from_secs(5))
+    } else {
+        None
+    };
     let mut buf = [0u8; 4096];
 
     loop {

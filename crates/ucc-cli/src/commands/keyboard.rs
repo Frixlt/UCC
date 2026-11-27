@@ -1,7 +1,7 @@
 //! Keyboard command implementation.
 
 use crate::cli::KeyboardAction;
-use crate::client::{with_rpc_timeout, CliClient};
+use crate::client::{with_rpc_timeout, with_write_rpc_timeout, CliClient};
 use crate::format::*;
 use serde_json::{json, Value};
 
@@ -154,9 +154,10 @@ pub async fn run_keyboard(
             Ok(())
         }
         KeyboardAction::Set { json } => {
-            let res = with_rpc_timeout(client.proxy().set_keyboard_backlight_states_json(json))
-                .await
-                .unwrap_or(false);
+            let res =
+                with_write_rpc_timeout(client.proxy().set_keyboard_backlight_states_json(json))
+                    .await
+                    .unwrap_or(false);
             ok(res)
         }
         KeyboardAction::Color {
@@ -192,9 +193,10 @@ pub async fn run_keyboard(
                 "states": states,
             });
             let payload = serde_json::to_string(&root).unwrap_or_else(|_| "{}".to_string());
-            let res = with_rpc_timeout(client.proxy().set_keyboard_backlight_states_json(&payload))
-                .await
-                .unwrap_or(false);
+            let res =
+                with_write_rpc_timeout(client.proxy().set_keyboard_backlight_states_json(&payload))
+                    .await
+                    .unwrap_or(false);
             ok(res)
         }
         KeyboardAction::Profiles => {
@@ -255,7 +257,7 @@ pub async fn run_keyboard(
                                 _ => None,
                             };
                             if let Some(json_content) = payload {
-                                let res = with_rpc_timeout(
+                                let res = with_write_rpc_timeout(
                                     client
                                         .proxy()
                                         .set_keyboard_backlight_states_json(&json_content),

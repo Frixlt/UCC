@@ -72,16 +72,18 @@ pub async fn run_charging(
             Ok(())
         }
         ChargingAction::SetProfile { profile } => {
-            let res = crate::client::with_rpc_timeout(client.proxy().set_charging_profile(profile))
-                .await
-                .unwrap_or(false);
+            let res =
+                crate::client::with_write_rpc_timeout(client.proxy().set_charging_profile(profile))
+                    .await
+                    .unwrap_or(false);
             ok(res)
         }
         ChargingAction::SetPriority { priority } => {
-            let res =
-                crate::client::with_rpc_timeout(client.proxy().set_charging_priority(priority))
-                    .await
-                    .unwrap_or(false);
+            let res = crate::client::with_write_rpc_timeout(
+                client.proxy().set_charging_priority(priority),
+            )
+            .await
+            .unwrap_or(false);
             ok(res)
         }
         ChargingAction::SetThresholds { start, end } => {
@@ -94,22 +96,25 @@ pub async fn run_charging(
             let prev_start =
                 crate::client::with_rpc_timeout(client.proxy().get_charge_start_threshold())
                     .await
-                    .ok();
+                    .ok()
+                    .filter(|&v| v >= 0);
             let prev_end =
                 crate::client::with_rpc_timeout(client.proxy().get_charge_end_threshold())
                     .await
-                    .ok();
+                    .ok()
+                    .filter(|&v| v >= 0);
 
             if *end >= prev_end.unwrap_or(0) {
-                let e =
-                    crate::client::with_rpc_timeout(client.proxy().set_charge_end_threshold(*end))
-                        .await
-                        .unwrap_or(false);
+                let e = crate::client::with_write_rpc_timeout(
+                    client.proxy().set_charge_end_threshold(*end),
+                )
+                .await
+                .unwrap_or(false);
                 if !e {
                     eprintln!("Error: failed to set charge end threshold");
                     return Err(1);
                 }
-                let s = crate::client::with_rpc_timeout(
+                let s = crate::client::with_write_rpc_timeout(
                     client.proxy().set_charge_start_threshold(*start),
                 )
                 .await
@@ -119,15 +124,24 @@ pub async fn run_charging(
                         "Error: failed to set charge start threshold, rolling back end threshold"
                     );
                     if let Some(prev) = prev_end {
-                        let _ = crate::client::with_rpc_timeout(
+                        match crate::client::with_write_rpc_timeout(
                             client.proxy().set_charge_end_threshold(prev),
                         )
-                        .await;
+                        .await
+                        {
+                            Ok(true) => {}
+                            Ok(false) => eprintln!(
+                                "Error: failed to roll back end threshold to {prev} (daemon rejected)"
+                            ),
+                            Err(err) => eprintln!(
+                                "Error: failed to roll back end threshold to {prev}: {err}"
+                            ),
+                        }
                     }
                     return Err(1);
                 }
             } else {
-                let s = crate::client::with_rpc_timeout(
+                let s = crate::client::with_write_rpc_timeout(
                     client.proxy().set_charge_start_threshold(*start),
                 )
                 .await
@@ -136,19 +150,29 @@ pub async fn run_charging(
                     eprintln!("Error: failed to set charge start threshold");
                     return Err(1);
                 }
-                let e =
-                    crate::client::with_rpc_timeout(client.proxy().set_charge_end_threshold(*end))
-                        .await
-                        .unwrap_or(false);
+                let e = crate::client::with_write_rpc_timeout(
+                    client.proxy().set_charge_end_threshold(*end),
+                )
+                .await
+                .unwrap_or(false);
                 if !e {
                     eprintln!(
                         "Error: failed to set charge end threshold, rolling back start threshold"
                     );
                     if let Some(prev) = prev_start {
-                        let _ = crate::client::with_rpc_timeout(
+                        match crate::client::with_write_rpc_timeout(
                             client.proxy().set_charge_start_threshold(prev),
                         )
-                        .await;
+                        .await
+                        {
+                            Ok(true) => {}
+                            Ok(false) => eprintln!(
+                                "Error: failed to roll back start threshold to {prev} (daemon rejected)"
+                            ),
+                            Err(err) => eprintln!(
+                                "Error: failed to roll back start threshold to {prev}: {err}"
+                            ),
+                        }
                     }
                     return Err(1);
                 }

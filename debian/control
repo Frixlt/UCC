@@ -26,7 +26,7 @@ Depends: ${shlibs:Depends}, ${misc:Depends},
          systemd,
          tuxedo-drivers,
          qt6-qpa-plugins,
-         policykit-1
+         polkitd | policykit-1
 Description: ucc-rusted (Uniwill Control Center)
  ucc-rusted is a Rust-backed system control application suite for Uniwill
  (TUXEDO, XMG, Mechrevo, Clevo) laptops. Includes the Rust system daemon,

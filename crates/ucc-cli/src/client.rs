@@ -9,11 +9,23 @@ pub const DAEMON_CONNECT_ERR: &str =
     "Error: Cannot connect to uccd daemon (com.uniwill.uccd on system bus).\nMake sure uccd is running: systemctl status uccd";
 
 pub const DEFAULT_RPC_TIMEOUT: std::time::Duration = std::time::Duration::from_millis(1500);
+pub const WRITE_RPC_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(35);
 
 pub async fn with_rpc_timeout<T>(
     fut: impl std::future::Future<Output = zbus::Result<T>>,
 ) -> zbus::Result<T> {
     match tokio::time::timeout(DEFAULT_RPC_TIMEOUT, fut).await {
+        Ok(res) => res,
+        Err(_) => Err(zbus::Error::Failure(
+            "RPC call deadline exceeded".to_string(),
+        )),
+    }
+}
+
+pub async fn with_write_rpc_timeout<T>(
+    fut: impl std::future::Future<Output = zbus::Result<T>>,
+) -> zbus::Result<T> {
+    match tokio::time::timeout(WRITE_RPC_TIMEOUT, fut).await {
         Ok(res) => res,
         Err(_) => Err(zbus::Error::Failure(
             "RPC call deadline exceeded".to_string(),

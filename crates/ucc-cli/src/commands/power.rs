@@ -1,7 +1,7 @@
 //! Power command implementation.
 
 use crate::cli::PowerAction;
-use crate::client::{with_rpc_timeout, CliClient};
+use crate::client::{with_rpc_timeout, with_write_rpc_timeout, CliClient};
 use crate::format::*;
 use serde_json::Value;
 
@@ -28,7 +28,7 @@ pub async fn run_power(
             Ok(())
         }
         PowerAction::Mode { mode } => {
-            let res = with_rpc_timeout(client.proxy().set_manual_power_mode(mode))
+            let res = with_write_rpc_timeout(client.proxy().set_manual_power_mode(mode))
                 .await
                 .unwrap_or(false);
             ok(res)

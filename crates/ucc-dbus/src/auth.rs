@@ -65,6 +65,18 @@ pub trait PolicyKitAuthority {
         flags: u32,
         cancellation_id: &str,
     ) -> zbus::Result<(bool, bool, HashMap<String, String>)>;
+
+    fn cancel_check_authorization(&self, cancellation_id: &str) -> zbus::Result<()>;
+}
+
+static POLKIT_CANCEL_SEQ: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(1);
+
+fn next_cancellation_id() -> String {
+    format!(
+        "uccd-{}-{}",
+        std::process::id(),
+        POLKIT_CANCEL_SEQ.fetch_add(1, std::sync::atomic::Ordering::Relaxed)
+    )
 }
 
 /// Abstract authorizer trait for UCC D-Bus calls.
@@ -303,7 +315,6 @@ impl PolkitAuthorizer {
             AuthAction::Read => (0u32, Duration::from_secs(5)),
             AuthAction::Control | AuthAction::ManageHardware => (0x1u32, Duration::from_secs(30)),
         };
-        let cancellation_id = "";
 
         let (_interactive_permit, _read_permit) = if flags != 0 {
             match tokio::time::timeout(
@@ -328,6 +339,7 @@ impl PolkitAuthorizer {
         };
 
         // Check primary action
+        let primary_cancel_id = next_cancellation_id();
         match tokio::time::timeout(
             timeout,
             authority.check_authorization(
@@ -335,7 +347,7 @@ impl PolkitAuthorizer {
                 action.action_id(),
                 &details,
                 flags,
-                cancellation_id,
+                &primary_cancel_id,
             ),
         )
         .await
@@ -361,11 +373,17 @@ impl PolkitAuthorizer {
                     "Polkit primary check timed out for '{}'",
                     action.action_id()
                 );
+                let _ = tokio::time::timeout(
+                    Duration::from_secs(2),
+                    authority.cancel_check_authorization(&primary_cancel_id),
+                )
+                .await;
                 return false;
             }
         }
 
         // Fallback to legacy action ID (`de.uniwill.uccd.*`) only when primary action is unregistered
+        let fallback_cancel_id = next_cancellation_id();
         match tokio::time::timeout(
             timeout,
             authority.check_authorization(
@@ -373,7 +391,7 @@ impl PolkitAuthorizer {
                 action.legacy_action_id(),
                 &details,
                 flags,
-                cancellation_id,
+                &fallback_cancel_id,
             ),
         )
         .await
@@ -391,6 +409,11 @@ impl PolkitAuthorizer {
                     "Polkit fallback check timed out for '{}'",
                     action.legacy_action_id()
                 );
+                let _ = tokio::time::timeout(
+                    Duration::from_secs(2),
+                    authority.cancel_check_authorization(&fallback_cancel_id),
+                )
+                .await;
                 false
             }
         }

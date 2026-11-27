@@ -35,7 +35,7 @@ fn offload_queue_timeout() -> Duration {
 }
 
 #[derive(Clone)]
-struct OffloadLanes {
+pub(crate) struct OffloadLanes {
     read: Arc<Semaphore>,
     profile: Arc<Semaphore>,
     charging: Arc<Semaphore>,
@@ -47,7 +47,7 @@ struct OffloadLanes {
 }
 
 impl OffloadLanes {
-    fn new() -> Self {
+    pub(crate) fn new() -> Self {
         Self {
             read: Arc::new(Semaphore::new(16)),
             profile: Arc::new(Semaphore::new(4)),
@@ -365,10 +365,18 @@ impl<B: UccdBackend> UccdInterface<B> {
     }
 
     pub fn new_with_backend_authorizer(backend: Arc<B>, authorizer: Arc<dyn Authorizer>) -> Self {
+        Self::new_with_shared_lanes(backend, authorizer, OffloadLanes::new())
+    }
+
+    pub(crate) fn new_with_shared_lanes(
+        backend: Arc<B>,
+        authorizer: Arc<dyn Authorizer>,
+        lanes: OffloadLanes,
+    ) -> Self {
         Self {
             backend,
             authorizer,
-            lanes: OffloadLanes::new(),
+            lanes,
         }
     }
 
@@ -480,10 +488,18 @@ impl<B: UccdBackend> UccdLegacyInterface<B> {
     }
 
     pub fn new_with_backend_authorizer(backend: Arc<B>, authorizer: Arc<dyn Authorizer>) -> Self {
+        Self::new_with_shared_lanes(backend, authorizer, OffloadLanes::new())
+    }
+
+    pub(crate) fn new_with_shared_lanes(
+        backend: Arc<B>,
+        authorizer: Arc<dyn Authorizer>,
+        lanes: OffloadLanes,
+    ) -> Self {
         Self {
             backend,
             authorizer,
-            lanes: OffloadLanes::new(),
+            lanes,
         }
     }
 
@@ -1043,7 +1059,10 @@ macro_rules! impl_uccd_methods {
                 {
                     return String::new();
                 }
-                self.backend.get_prime_state()
+                self.offload_or(OffloadLane::PowerGpu, String::new(), |b| {
+                    b.get_prime_state()
+                })
+                .await
             }
 
             #[zbus(name = "ConsumeModeReapplyPending")]

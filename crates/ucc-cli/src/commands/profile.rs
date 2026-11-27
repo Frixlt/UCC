@@ -1,7 +1,7 @@
 //! Profile command implementation.
 
 use crate::cli::ProfileAction;
-use crate::client::{with_rpc_timeout, CliClient};
+use crate::client::{with_rpc_timeout, with_write_rpc_timeout, CliClient};
 use crate::format::*;
 use serde_json::Value;
 
@@ -160,7 +160,7 @@ pub async fn run_profile(
             Ok(())
         }
         ProfileAction::Set { id } => {
-            let res = with_rpc_timeout(client.proxy().set_active_profile(id))
+            let res = with_write_rpc_timeout(client.proxy().set_active_profile(id))
                 .await
                 .unwrap_or(false);
             ok(res)
@@ -216,19 +216,19 @@ pub async fn run_profile(
             Ok(())
         }
         ProfileAction::Apply { json } => {
-            let res = with_rpc_timeout(client.proxy().apply_profile(json))
+            let res = with_write_rpc_timeout(client.proxy().apply_profile(json))
                 .await
                 .unwrap_or(false);
             ok(res)
         }
         ProfileAction::Save { json } => {
-            let res = with_rpc_timeout(client.proxy().save_custom_profile(json))
+            let res = with_write_rpc_timeout(client.proxy().save_custom_profile(json))
                 .await
                 .unwrap_or(false);
             ok(res)
         }
         ProfileAction::Delete { id } => {
-            let res = with_rpc_timeout(client.proxy().delete_custom_profile(id))
+            let res = with_write_rpc_timeout(client.proxy().delete_custom_profile(id))
                 .await
                 .unwrap_or(false);
             ok(res)

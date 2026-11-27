@@ -27,6 +27,16 @@ jobs:
       - name: Verify version parity across all manifests
         run: cargo run -p xtask --locked -- check-versions
 
+      - name: Verify release tag matches manifest version
+        if: github.ref_type == 'tag'
+        run: |
+          EXPECTED_VERSION="${GITHUB_REF_NAME#v}"
+          ACTUAL_VERSION="$(awk '/^\[workspace\.package\]/{f=1;next} /^\[/{f=0} f && /^version *=/{gsub(/.*version *= *"|".*/,""); print; exit}' Cargo.toml)"
+          if [ "$EXPECTED_VERSION" != "$ACTUAL_VERSION" ]; then
+            echo "Release tag ${GITHUB_REF_NAME} (${EXPECTED_VERSION}) does not match Cargo.toml version (${ACTUAL_VERSION})" >&2
+            exit 1
+          fi
+
       - name: Verify Rust formatting
         run: cargo fmt --all -- --check
 

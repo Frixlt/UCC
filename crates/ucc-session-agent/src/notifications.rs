@@ -240,9 +240,6 @@ pub fn internal_monitors_from_config(cfg: Option<&Value>) -> Vec<String> {
             }
         }
     }
-    if monitors.is_empty() {
-        monitors.push("eDP-1".to_string());
-    }
     monitors
 }
 

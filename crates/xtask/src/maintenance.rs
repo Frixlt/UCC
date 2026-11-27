@@ -21,7 +21,7 @@ use crate::sha256_hex;
 
 pub const OLD_UNITS: [&str; 3] = ["tccd-sleep.service", "tccd.service", "tuxedo-power.service"];
 pub const NEW_UNITS: [&str; 2] = ["uccd.service", "uccd-sleep.service"];
-pub const PACKAGE_NAME: &str = "frixit-control-center";
+pub const PACKAGE_NAME: &str = "ucc-rusted";
 
 pub const DESKTOP_FILES: [&str; 3] = [
     ".config/autostart/control-center.desktop",
@@ -756,9 +756,29 @@ pub fn prepare_deployment(
         &["--install", &build_str],
         &[("DESTDIR", &stage_str)],
     )?;
+    let stage_usr_str = stage.join("usr").display().to_string();
+    let rust_bin_str = repo_root.join("target/release").display().to_string();
+    let runtime_out = run_checked(
+        runner,
+        "cargo",
+        &[
+            "run",
+            "-p",
+            "xtask",
+            "--locked",
+            "--",
+            "install-runtime",
+            &stage_usr_str,
+            &rust_bin_str,
+        ],
+        &[],
+    )?;
     write_private_file(
         &bundle.join("install.log"),
-        &format!("{}{}", install_out.stdout, install_out.stderr),
+        &format!(
+            "{}{}{}{}",
+            install_out.stdout, install_out.stderr, runtime_out.stdout, runtime_out.stderr
+        ),
         0o600,
     )?;
 

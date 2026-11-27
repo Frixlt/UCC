@@ -112,10 +112,10 @@ impl PidLock {
 
 impl Drop for PidLock {
     fn drop(&mut self) {
+        let _ = fs::remove_file(&self.path);
         unsafe {
             libc::flock(self.file.as_raw_fd(), libc::LOCK_UN);
         }
-        let _ = fs::remove_file(&self.path);
     }
 }
 
@@ -181,13 +181,19 @@ fn stop_daemon(pid_path: &Path) -> i32 {
         return 0;
     }
 
-    // Verify process identity to avoid signaling a recycled PID
-    if let Ok(comm) = fs::read_to_string(format!("/proc/{pid}/comm")) {
-        let comm_trimmed = comm.trim();
-        if comm_trimmed != DAEMON_NAME {
-            eprintln!(
-                "PID {pid} comm ('{comm_trimmed}') does not match daemon name '{DAEMON_NAME}'"
-            );
+    // Verify process identity to avoid signaling a recycled PID (fail closed on unreadable comm).
+    match fs::read_to_string(format!("/proc/{pid}/comm")) {
+        Ok(comm) => {
+            let comm_trimmed = comm.trim();
+            if comm_trimmed != DAEMON_NAME {
+                eprintln!(
+                    "PID {pid} comm ('{comm_trimmed}') does not match daemon name '{DAEMON_NAME}'"
+                );
+                return 1;
+            }
+        }
+        Err(err) => {
+            eprintln!("Failed to verify /proc/{pid}/comm identity: {err}; refusing to signal.");
             return 1;
         }
     }

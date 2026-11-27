@@ -1,7 +1,7 @@
 //! Power devices command implementation.
 
 use crate::cli::DevicesAction;
-use crate::client::{with_rpc_timeout, CliClient};
+use crate::client::{with_rpc_timeout, with_write_rpc_timeout, CliClient};
 use crate::format::*;
 use serde_json::Value;
 
@@ -45,13 +45,13 @@ pub async fn run_devices(
             Ok(())
         }
         DevicesAction::Scan => {
-            let res = with_rpc_timeout(client.proxy().scan_power_devices())
+            let res = with_write_rpc_timeout(client.proxy().scan_power_devices())
                 .await
                 .unwrap_or(false);
             ok(res)
         }
         DevicesAction::Set { json } => {
-            let res = with_rpc_timeout(client.proxy().set_power_device_settings_json(json))
+            let res = with_write_rpc_timeout(client.proxy().set_power_device_settings_json(json))
                 .await
                 .unwrap_or(false);
             ok(res)

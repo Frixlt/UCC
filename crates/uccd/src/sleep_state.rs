@@ -74,14 +74,35 @@ impl SleepStateStore {
         &self.path
     }
 
-    pub fn load(&self) -> Result<Option<SleepState>, String> {
+    fn verify_existing_file_safe(&self) -> Result<bool, String> {
         if let Err(err) = fs::symlink_metadata(&self.path) {
             if err.kind() == std::io::ErrorKind::NotFound {
-                return Ok(None);
+                return Ok(false);
             }
             return Err("Cannot inspect sleep snapshot".to_string());
         }
         self.verify_directory(false)?;
+
+        let file = OpenOptions::new()
+            .read(true)
+            .custom_flags(libc::O_CLOEXEC | libc::O_NOFOLLOW | libc::O_NONBLOCK)
+            .open(&self.path)
+            .map_err(|_| "Cannot open sleep snapshot".to_string())?;
+
+        let st = fstat(file.as_raw_fd()).map_err(|_| "Cannot stat sleep snapshot".to_string())?;
+        let is_reg = (st.st_mode & libc::S_IFMT) == libc::S_IFREG;
+        let bad_perms = (st.st_mode & 0o077) != 0;
+        let size = u64::try_from(st.st_size).unwrap_or(u64::MAX);
+        if !is_reg || st.st_uid != self.owner_uid || bad_perms || size > MAX_SLEEP_SNAPSHOT_BYTES {
+            return Err("Unsafe sleep snapshot ownership, permissions or size".to_string());
+        }
+        Ok(true)
+    }
+
+    pub fn load(&self) -> Result<Option<SleepState>, String> {
+        if !self.verify_existing_file_safe()? {
+            return Ok(None);
+        }
 
         let file = OpenOptions::new()
             .read(true)
@@ -123,7 +144,7 @@ impl SleepStateStore {
             return Err("Invalid manual power mode".to_string());
         }
         self.verify_directory(true)?;
-        let _ = self.load()?;
+        let _ = self.verify_existing_file_safe()?;
 
         let parent = self
             .path
@@ -169,7 +190,7 @@ impl SleepStateStore {
     }
 
     pub fn clear(&self) -> Result<(), String> {
-        if self.load()?.is_none() {
+        if !self.verify_existing_file_safe()? {
             return Ok(());
         }
         fs::remove_file(&self.path).map_err(|_| "Cannot remove sleep snapshot".to_string())

@@ -2373,6 +2373,16 @@ impl LiveUccdBackend {
                     if require_existing && !s.profiles.contains_key(&prof.id) {
                         return None;
                     }
+                    if !s.profiles.contains_key(&prof.id) {
+                        let custom_count = s
+                            .profiles
+                            .keys()
+                            .filter(|id| !is_builtin_profile_id(id))
+                            .count();
+                        if custom_count >= MAX_CUSTOM_PROFILES {
+                            return None;
+                        }
+                    }
                     s.profiles.insert(prof.id.clone(), prof.clone());
                     Some(())
                 })

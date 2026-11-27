@@ -14,17 +14,25 @@ fn test_build_01_workspace_rust_version_is_harmonized() {
         "Workspace rust-version must be at least 1.89 for dependencies"
     );
 
-    let crates = [
-        "ucc-core",
-        "ucc-config",
-        "ucc-hardware",
-        "ucc-dbus",
-        "uccd",
-        "ucc-cli",
-        "ucc-desktop",
-        "ucc-lighting",
-        "xtask",
-    ];
+    let members_start = root_cargo
+        .find("members = [")
+        .expect("root Cargo.toml must define [workspace] members = [...]");
+    let after = &root_cargo[members_start + "members = [".len()..];
+    let members_end = after
+        .find(']')
+        .expect("closing bracket for workspace members");
+    let crates: Vec<&str> = after[..members_end]
+        .lines()
+        .filter_map(|line| {
+            let trimmed = line.trim().trim_end_matches(',').trim();
+            let unquoted = trimmed.strip_prefix('"')?.strip_suffix('"')?;
+            Some(unquoted.strip_prefix("crates/").unwrap_or(unquoted))
+        })
+        .collect();
+    assert!(
+        !crates.is_empty(),
+        "workspace members = [...] must list workspace crates"
+    );
 
     for krate in crates {
         let manifest = root.join("crates").join(krate).join("Cargo.toml");

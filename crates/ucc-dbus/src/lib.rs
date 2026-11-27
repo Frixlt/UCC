@@ -34,9 +34,14 @@ pub async fn register_uccd_service<B: UccdBackend>(
     backend: std::sync::Arc<B>,
     authorizer: std::sync::Arc<dyn Authorizer>,
 ) -> zbus::Result<()> {
-    let primary = UccdInterface::new_with_backend_authorizer(backend.clone(), authorizer.clone());
-    let legacy =
-        UccdLegacyInterface::new_with_backend_authorizer(backend.clone(), authorizer.clone());
+    let lanes = interface::OffloadLanes::new();
+    let primary =
+        UccdInterface::new_with_shared_lanes(backend.clone(), authorizer.clone(), lanes.clone());
+    let legacy = UccdLegacyInterface::new_with_shared_lanes(
+        backend.clone(),
+        authorizer.clone(),
+        lanes.clone(),
+    );
 
     // Primary path /com/uniwill/uccd hosts both com.uniwill.uccd and de.uniwill.uccd
     connection.object_server().at(DBUS_PATH, primary).await?;
@@ -44,8 +49,8 @@ pub async fn register_uccd_service<B: UccdBackend>(
 
     // Also register on legacy path /de/uniwill/uccd for full transparent alias
     let primary_alt =
-        UccdInterface::new_with_backend_authorizer(backend.clone(), authorizer.clone());
-    let legacy_alt = UccdLegacyInterface::new_with_backend_authorizer(backend, authorizer);
+        UccdInterface::new_with_shared_lanes(backend.clone(), authorizer.clone(), lanes.clone());
+    let legacy_alt = UccdLegacyInterface::new_with_shared_lanes(backend, authorizer, lanes);
     connection
         .object_server()
         .at(DBUS_PATH_ALT, primary_alt)

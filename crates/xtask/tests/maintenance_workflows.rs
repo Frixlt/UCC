@@ -270,7 +270,7 @@ fn prepare_deployment_stages_package_and_validates_junit() {
                 fs::write(&args[pkg_idx], b"fake-zstd-pkg").unwrap();
                 Some(CmdOutput::ok(""))
             }
-            "pacman" => Some(CmdOutput::ok("Name : frixit-control-center\n")),
+            "pacman" => Some(CmdOutput::ok("Name : ucc-rusted\n")),
             _ => Some(CmdOutput::ok("")),
         })),
         ..Default::default()
@@ -332,7 +332,7 @@ fn deployment_install_rollback_and_checksum_verification() {
     let bundle = tmp.path().join("bundle");
     fs::create_dir_all(&bundle).unwrap();
     let pkg_bytes = b"pkg-payload";
-    let pkg_name = "frixit-control-center-0.0.1-1-x86_64.pkg.tar.zst";
+    let pkg_name = "ucc-rusted-0.0.1-1-x86_64.pkg.tar.zst";
     fs::write(bundle.join(pkg_name), pkg_bytes).unwrap();
     fs::write(bundle.join("capabilities.json"), b"{}").unwrap();
     fs::write(

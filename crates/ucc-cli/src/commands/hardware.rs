@@ -1,7 +1,7 @@
 //! Hardware toggle commands (brightness, webcam, fnlock).
 
 use crate::cli::{BrightnessAction, ToggleAction};
-use crate::client::{with_rpc_timeout, CliClient};
+use crate::client::{with_rpc_timeout, with_write_rpc_timeout, CliClient};
 use crate::format::*;
 use serde_json::json;
 
@@ -27,7 +27,7 @@ pub async fn run_brightness(
             Ok(())
         }
         BrightnessAction::Set { value } => {
-            let res = with_rpc_timeout(client.proxy().set_display_brightness(*value))
+            let res = with_write_rpc_timeout(client.proxy().set_display_brightness(*value))
                 .await
                 .unwrap_or(false);
             ok(res)
@@ -64,7 +64,7 @@ pub async fn run_webcam(
                     return Err(1);
                 }
             };
-            let res = with_rpc_timeout(client.proxy().set_webcam(enable))
+            let res = with_write_rpc_timeout(client.proxy().set_webcam(enable))
                 .await
                 .unwrap_or(false);
             ok(res)
@@ -101,7 +101,7 @@ pub async fn run_fnlock(
                     return Err(1);
                 }
             };
-            let res = with_rpc_timeout(client.proxy().set_fn_lock_status(enable))
+            let res = with_write_rpc_timeout(client.proxy().set_fn_lock_status(enable))
                 .await
                 .is_ok();
             ok(res)
