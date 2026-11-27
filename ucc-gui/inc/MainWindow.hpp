@@ -45,7 +45,6 @@
 #include "PumpCurveEditorWidget.hpp"
 #include "KeyboardVisualizerWidget.hpp"
 #include "DashboardTab.hpp"
-#include "HardwareTab.hpp"
 #include "FanControlTab.hpp"
 #include "MonitorTab.hpp"
 
@@ -130,7 +129,6 @@ namespace ucc
     void setupDashboardPage();
     void setupProfilesPage();
     void setupLightingPage();
-    void setupHardwarePage();
     void setupKeyboardBacklightPage( QTabWidget *targetTabs = nullptr );
     void refreshKeyboardLightingState();
     void connectKeyboardBacklightPageWidgets();
@@ -156,6 +154,7 @@ namespace ucc
     void updateProfileEditingWidgets( bool isCustom );
     void refreshCtgpCapabilities();
     void fetchStartupCapabilities();
+    void rebuildRefreshRateCombo( int selectedHz = 0 );
     void applyWaterCoolerSupported( bool supported );
     void applyHwpDynamicBoostSupported( bool supported );
     bool hasValidCtgpRange( int &defaultPower, int &maxPower ) const;
@@ -178,9 +177,6 @@ namespace ucc
 
     // Dashboard tab
     DashboardTab *m_dashboardTab = nullptr;
-
-    // Hardware tab
-    HardwareTab *m_hardwareTab = nullptr;
 
     // Monitor tab
     MonitorTab *m_monitorTab = nullptr;
@@ -209,6 +205,8 @@ namespace ucc
     QComboBox *m_profileKeyboardProfileCombo = nullptr;
     QCheckBox *m_profileLidOffKbd = nullptr;
     QCheckBox *m_profileLidOffWcLed = nullptr;
+    QComboBox *m_profileLidCloseAction = nullptr;
+    QVector<int> m_supportedRefreshRates{ 60, 120, 144, 165, 240 };
 
     // Charging profile (per-profile firmware-level mode)
 

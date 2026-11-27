@@ -114,13 +114,13 @@ private slots:
     QVERIFY(pages);
     QVERIFY(brand);
     QCOMPARE(brand->text(), QStringLiteral("ucc-rusted"));
-    QCOMPARE(nav->count(), 10);
+    QCOMPARE(nav->count(), 9);
     QCOMPARE(nav->item(5)->text(), QStringLiteral("Lighting"));
-    QCOMPARE(nav->item(6)->text(), QStringLiteral("Hardware"));
+    QCOMPARE(nav->item(6)->text(), QStringLiteral("Power & Devices"));
     QCOMPARE(aboutBtn->text(), QStringLiteral("About"));
 
-    const int expectedPageIndices[] = {0, 1, 2, 2, 3, 4, 5, 6, 7, 8};
-    for (int row = 0; row < 10; ++row) {
+    const int expectedPageIndices[] = {0, 1, 2, 2, 3, 4, 5, 6, 7};
+    for (int row = 0; row < 9; ++row) {
       if (!(nav->item(row)->flags() & Qt::ItemIsEnabled)) {
         continue;
       }
@@ -128,10 +128,10 @@ private slots:
       QCOMPARE(pages->currentIndex(), expectedPageIndices[row]);
     }
     QTest::mouseClick(aboutBtn, Qt::LeftButton);
-    QCOMPARE(pages->currentIndex(), 9);
+    QCOMPARE(pages->currentIndex(), 8);
     QVERIFY(aboutBtn->isChecked());
 
-    // Verify Lighting browser tabs (non-closable), Hardware page, per-profile lid toggles,
+    // Verify Lighting browser tabs (non-closable), per-profile lid toggles,
     // per-core monitor checkbox, and Experimental widgets exist inside live MainWindow.
     auto *lightingTabs = window.findChild<QTabWidget *>(QStringLiteral("lightingTabs"));
     auto *segBar = window.findChild<QFrame *>(QStringLiteral("lightingSegmentedBar"));
@@ -144,7 +144,6 @@ private slots:
     QCOMPARE(lightingTabs->tabText(0), QStringLiteral("Keyboard"));
     QCOMPARE(lightingTabs->tabText(1), QStringLiteral("Lightbar"));
     QCOMPARE(lightingTabs->tabText(2), QStringLiteral("Logo"));
-    QVERIFY(window.findChild<QWidget *>(QStringLiteral("hardwarePage")));
     QVERIFY(window.findChild<QCheckBox *>(QStringLiteral("turnOffKeyboardBacklightOnLidClose")));
     QVERIFY(window.findChild<QCheckBox *>(QStringLiteral("turnOffWaterCoolerLedOnLidClose")));
     QVERIFY(window.findChild<QCheckBox *>(QStringLiteral("monitorCpuCoreLoad")));
@@ -155,7 +154,7 @@ private slots:
     for (auto theme : {ucc::FluentTheme::Mode::Light, ucc::FluentTheme::Mode::Dark}) {
       ucc::FluentTheme::setMode(theme, false);
       QCoreApplication::processEvents();
-      QCOMPARE(nav->count(), 10);
+      QCOMPARE(nav->count(), 9);
       QCOMPARE(aboutBtn->text(), QStringLiteral("About"));
     }
 
@@ -200,7 +199,7 @@ private slots:
     auto *nav = window.findChild<QListWidget *>(QStringLiteral("navigation"));
     auto *aboutBtn = window.findChild<QPushButton *>(QStringLiteral("aboutNavigation"));
     QVERIFY(nav && aboutBtn);
-    for (int row = 0; row < 10; ++row) {
+    for (int row = 0; row < 9; ++row) {
       if (nav->item(row)->flags() & Qt::ItemIsEnabled) {
         nav->setCurrentRow(row);
       }

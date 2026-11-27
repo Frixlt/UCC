@@ -23,6 +23,8 @@ void GuiAudit::profileRefreshRateSavesAndChargingLivesOutsideProfiles() {
     QCOMPARE(rate->currentData().toInt(),60);
     auto* lidOffKbd=window.findChild<QCheckBox*>("turnOffKeyboardBacklightOnLidClose");QVERIFY(lidOffKbd);
     auto* lidOffWcLed=window.findChild<QCheckBox*>("turnOffWaterCoolerLedOnLidClose");QVERIFY(lidOffWcLed);
+    auto* lidAction=window.findChild<QComboBox*>("profileLidCloseAction");QVERIFY(lidAction);
+    QCOMPARE(lidAction->currentData().toString(),QString());
     QVERIFY(lidOffKbd->isChecked());QVERIFY(!lidOffWcLed->isChecked());
     auto* charging=window.findChild<QComboBox*>("globalChargingProfile");QVERIFY(charging);
     QTRY_COMPARE(charging->count(),2);QVERIFY(!charging->isVisible());
@@ -30,12 +32,14 @@ void GuiAudit::profileRefreshRateSavesAndChargingLivesOutsideProfiles() {
 #ifndef UCC_READ_ONLY_PREVIEW
     QVERIFY(lidOffKbd->isEnabled());QVERIFY(lidOffWcLed->isEnabled());
     lidOffKbd->setChecked(false);lidOffWcLed->setChecked(true);
+    lidAction->setCurrentIndex(lidAction->findData("suspend"));
     rate->setCurrentIndex(rate->findData(240));
     window.findChild<QPushButton*>("saveProfile")->click();
     QTRY_VERIFY(!control("TestLastSavedProfile").toString().isEmpty());
     auto saved=QJsonDocument::fromJson(control("TestLastSavedProfile").toString().toUtf8()).object();
     QCOMPARE(saved["display"].toObject()["refreshRate"].toInt(),240);
     QVERIFY(saved["display"].toObject()["useRefRate"].toBool());
+    QCOMPARE(saved["display"].toObject()["lidCloseAction"].toString(),QString("suspend"));
     QVERIFY(!saved["lid"].toObject()["turnOffKeyboardBacklightOnLidClose"].toBool());
     QVERIFY(saved["lid"].toObject()["turnOffWaterCoolerLedOnLidClose"].toBool());
     QVERIFY(!saved.contains("chargingProfile"));QVERIFY(!saved.contains("chargeType"));
@@ -47,7 +51,7 @@ void GuiAudit::profileRefreshRateSavesAndChargingLivesOutsideProfiles() {
 #endif
     const auto output=qEnvironmentVariable("UCC_SCREENSHOT_DIR");
     if(!output.isEmpty()) {QTest::qWait(450);for(auto* scroll:window.findChildren<QScrollArea*>()) if(scroll->widget() && scroll->widget()->isAncestorOf(rate)) scroll->ensureWidgetVisible(rate);QTest::qWait(100);QDir().mkpath(output);QVERIFY(window.grab().save(output+"/profile-refresh.png"));}
-    nav->setCurrentRow(8);QVERIFY(charging->isVisible());
+    nav->setCurrentRow(7);QVERIFY(charging->isVisible());
 #ifndef UCC_READ_ONLY_PREVIEW
     const auto before=stats()["writes"].toArray().size();
     charging->setCurrentIndex(charging->findData("high_capacity"));

@@ -27,6 +27,7 @@
 #include <QJsonDocument>
 #include <QSet>
 #include <QMap>
+#include <QThread>
 #include <vector>
 #include <map>
 
@@ -55,7 +56,7 @@ class KeyboardVisualizerWidget : public QWidget
 public:
   explicit KeyboardVisualizerWidget( int zones, int maxBrightness = 255, QWidget *parent = nullptr,
                                      bool calibratedLayout = false, const QJsonArray &ledIds = {} );
-  ~KeyboardVisualizerWidget() override = default;
+  ~KeyboardVisualizerWidget() override;
 
   /**
    * @brief Load current keyboard backlight states from daemon
@@ -135,6 +136,9 @@ private:
 
   // Zone mappings
   QMap<int, QString> m_zoneMappings;
+
+  // Background keyboard layout detection thread
+  QThread *m_layoutThread = nullptr;
 };
 
 } // namespace ucc

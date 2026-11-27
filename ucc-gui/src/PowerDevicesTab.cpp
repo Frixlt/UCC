@@ -9,140 +9,208 @@
 #include <QSpinBox>
 #include <QComboBox>
 #include <QJsonDocument>
-#include <QScrollArea>
+#include <QSignalBlocker>
+#include <QVector>
 #include <QWheelEvent>
+#include <algorithm>
 
 namespace ucc {
 namespace {
 const QStringList modes={"ac","type_c","bat"};
+const QStringList modeLabels={"AC","Type-C","Battery"};
+
 class ValueSpin : public QSpinBox {
 public:
   using QSpinBox::QSpinBox;
 protected:
   void wheelEvent(QWheelEvent *event) override {event->ignore();}
 };
+
 class ValueSelector : public QComboBox {
 public:
   using QComboBox::QComboBox;
 protected:
   void wheelEvent(QWheelEvent *event) override {event->ignore();}
 };
-QComboBox *selector(const QStringList &values,const QString &selected,bool allowDefault=false) {
-  auto *combo=new ValueSelector;
+
+void populateSelector(QComboBox *combo,const QStringList &values,const QString &selected,bool allowDefault=false) {
+  const QSignalBlocker blocked(combo);
+  combo->clear();
   if(allowDefault) combo->addItem("Profile default",QString());
   for(const auto &value:values) combo->addItem(value,value);
   int index=combo->findData(selected);
   if(index<0 && !selected.isEmpty()) {combo->addItem(selected,selected);index=combo->count()-1;}
-  combo->setCurrentIndex(qMax(0,index));return combo;
+  combo->setCurrentIndex(qMax(0,index));
 }
+
+QComboBox *selector(const QStringList &values,const QString &selected,bool allowDefault=false) {
+  auto *combo=new ValueSelector;
+  populateSelector(combo,values,selected,allowDefault);
+  return combo;
+}
+
+QString cleanDeviceName(QString name) {
+  name.remove(QLatin1Char('"'));
+  return name.simplified();
+}
+
+int devicePinPriority(const QJsonObject &entry) {
+  const QString type=entry["type"].toString().toLower();
+  const QString lower=cleanDeviceName(entry["name"].toString()).toLower();
+  if(lower.contains(QLatin1String("nvidia"))) return 0;
+  if(type==QLatin1String("wifi") || lower.contains(QLatin1String("wi-fi")) || lower.contains(QLatin1String("wifi")) || lower.contains(QLatin1String("wireless"))) return 1;
+  if(lower.contains(QLatin1String("audio")) || lower.contains(QLatin1String("sound")) || lower.contains(QLatin1String("hda"))) return 2;
+  if(type==QLatin1String("usb") || lower.contains(QLatin1String("usb")) || lower.contains(QLatin1String("xhci"))) return 3;
+  return 4;
+}
+
+bool isAdvancedPcieDevice(const QJsonObject &entry) {
+  if(entry["type"].toString()!=QLatin1String("pci")) return false;
+  const QString lower=cleanDeviceName(entry["name"].toString()).toLower();
+  return lower.contains(QLatin1String("root port")) ||
+         lower.contains(QLatin1String("bridge"));
+}
+
 void tableStyle(QTableWidget *table) {
-  table->verticalHeader()->hide();table->setAlternatingRowColors(true);
+  table->verticalHeader()->hide();
+  table->verticalHeader()->setDefaultSectionSize(38);
+  table->setShowGrid(false);
+  table->setAlternatingRowColors(true);
   table->setSelectionMode(QAbstractItemView::NoSelection);
   table->setEditTriggers(QAbstractItemView::NoEditTriggers);
   table->setWordWrap(false);
 }
 }
+
 PowerDevicesTab::PowerDevicesTab(UccdClient *client,QWidget *parent) : QWidget(parent),m_client(client) {
   auto *layout=new QVBoxLayout(this);layout->setContentsMargins(0,0,0,0);layout->setSpacing(12);
   auto *description=new QLabel("Choose each device's behavior on AC, USB-C power and battery. These policies follow the effective power mode, including manual overrides.");
   description->setWordWrap(true);description->setObjectName("muted");layout->addWidget(description);
   m_enabled=new QCheckBox("Enable per-mode CPU and device policies");m_enabled->setObjectName("powerDevicesEnabled");
   m_enabled->setEnabled(!readOnlyPreview);layout->addWidget(m_enabled);
-  auto *cpuCard=FluentTheme::createCard();auto *cpuLayout=new QVBoxLayout(cpuCard);
+
+  auto *cpuCard=FluentTheme::createCard();
+  auto *cpuLayout=new QVBoxLayout(cpuCard);
+  cpuLayout->setContentsMargins(16,14,16,14);
+  cpuLayout->setSpacing(10);
   auto *title=new QLabel("CPU and PCIe power policy");title->setObjectName("cardTitle");cpuLayout->addWidget(title);
-  m_cpu=new QTableWidget(3,4);m_cpu->setObjectName("cpuPowerPolicyTable");
-  m_cpu->setHorizontalHeaderLabels({"Mode","Governor","Energy preference","PCIe ASPM"});tableStyle(m_cpu);
-  m_cpu->horizontalHeader()->setSectionResizeMode(QHeaderView::Stretch);
-  m_cpu->setMinimumHeight(148);m_cpu->setMaximumHeight(168);cpuLayout->addWidget(m_cpu);layout->addWidget(cpuCard);
+
+  auto *cpuGridHost=new QWidget(cpuCard);
+  cpuGridHost->setObjectName("cpuPowerPolicyGrid");
+  auto *cpuGrid=new QGridLayout(cpuGridHost);
+  cpuGrid->setContentsMargins(0,0,0,0);
+  cpuGrid->setHorizontalSpacing(12);
+  cpuGrid->setVerticalSpacing(8);
+
+  const QStringList headers={"Mode","Governor","Energy preference","PCIe ASPM"};
+  for(int col=0;col<headers.size();++col) {
+    auto *hdr=new QLabel(headers[col],cpuGridHost);
+    hdr->setObjectName("subheading");
+    cpuGrid->addWidget(hdr,0,col);
+  }
+  for(int row=0;row<3;++row) {
+    auto *modeLabel=new QLabel(modeLabels[row],cpuGridHost);
+    modeLabel->setMinimumWidth(56);
+    cpuGrid->addWidget(modeLabel,row+1,0);
+    for(int col=0;col<3;++col) {
+      auto *combo=new ValueSelector(cpuGridHost);
+      combo->setSizeAdjustPolicy(QComboBox::AdjustToMinimumContentsLengthWithIcon);
+      combo->setMinimumContentsLength(10);
+      combo->setSizePolicy(QSizePolicy::Expanding,QSizePolicy::Fixed);
+      m_cpuCombos[static_cast<size_t>(row)][static_cast<size_t>(col)]=combo;
+      cpuGrid->addWidget(combo,row+1,col+1);
+    }
+  }
+  cpuGrid->setColumnStretch(0,0);
+  for(int col=1;col<=3;++col) cpuGrid->setColumnStretch(col,1);
+  cpuLayout->addWidget(cpuGridHost);
+  layout->addWidget(cpuCard);
+
   m_nvidia=new QCheckBox("Keep NVIDIA awake (Blackwell workaround)");m_nvidia->setObjectName("keepNvidiaAwake");
   m_nvidia->setToolTip("Keeps NVIDIA awake in every power mode and enables persistence. Uncheck and Save and apply to restore the per-mode policy; auto also disables persistence.");
   m_nvidia->setEnabled(!readOnlyPreview);layout->addWidget(m_nvidia);
-  auto *lidCard=FluentTheme::createCard();auto *lidLayout=new QVBoxLayout(lidCard);
-  auto *lidTitle=new QLabel("Lid close action & sleep wakeup");lidTitle->setObjectName("cardTitle");lidLayout->addWidget(lidTitle);
-  auto *lidRow=new QGridLayout;lidRow->setHorizontalSpacing(12);lidRow->setVerticalSpacing(6);
-  auto makeLidSelector=[&](const char *objectName) {
-    auto *combo=new ValueSelector;
-    combo->setObjectName(objectName);
-    combo->setSizeAdjustPolicy(QComboBox::AdjustToMinimumContentsLengthWithIcon);
-    combo->setMinimumContentsLength(10);
-    combo->setSizePolicy(QSizePolicy::Expanding,QSizePolicy::Fixed);
-    combo->addItem("Turn off screen (keep running)","screen_off");
-    combo->addItem("Suspend","suspend");
-    combo->addItem("Lock & turn off screen","lock");
-    combo->addItem("Hibernate","hibernate");
-    combo->addItem("Shut down","poweroff");
-    combo->addItem("Do nothing (keep screen on)","ignore");
-    combo->setEnabled(!readOnlyPreview);
-    return combo;
-  };
-  m_lidAc=makeLidSelector("lidActionAc");
-  m_lidTypeC=makeLidSelector("lidActionTypeC");
-  m_lidBat=makeLidSelector("lidActionBat");
-  lidRow->addWidget(new QLabel("On AC:"),0,0);
-  lidRow->addWidget(new QLabel("On Type-C:"),0,1);
-  lidRow->addWidget(new QLabel("On Battery:"),0,2);
-  lidRow->addWidget(m_lidAc,1,0);
-  lidRow->addWidget(m_lidTypeC,1,1);
-  lidRow->addWidget(m_lidBat,1,2);
-  for(int col=0;col<3;++col) lidRow->setColumnStretch(col,1);
-  lidLayout->addLayout(lidRow);
+
+  auto *lidCard=FluentTheme::createCard();
+  auto *lidLayout=new QVBoxLayout(lidCard);
+  lidLayout->setContentsMargins(16,12,16,12);
+  lidLayout->setSpacing(8);
+  auto *lidTitle=new QLabel("Sleep wakeup");lidTitle->setObjectName("cardTitle");lidLayout->addWidget(lidTitle);
   m_wakeOnlyLidKbd=new QCheckBox("Wake from sleep only by opening lid or pressing built-in keyboard");
   m_wakeOnlyLidKbd->setObjectName("wakeOnlyLidAndKeyboard");
   m_wakeOnlyLidKbd->setToolTip("Disables wakeups from mouse, USB receivers, AC/USB-C power, RTC timers, and Thunderbolt devices.");
   m_wakeOnlyLidKbd->setEnabled(!readOnlyPreview);
   lidLayout->addWidget(m_wakeOnlyLidKbd);
   layout->addWidget(lidCard);
+
   auto *toolbar=new QHBoxLayout;
+  toolbar->setSpacing(8);
   m_search=new QLineEdit;m_search->setPlaceholderText("Filter devices by name or path");toolbar->addWidget(m_search,1);
+  m_showAdvancedPcie=new QCheckBox("Show advanced PCIe devices");
+  m_showAdvancedPcie->setObjectName("showAdvancedPcieDevices");
+  m_showAdvancedPcie->setChecked(false);
+  toolbar->addWidget(m_showAdvancedPcie);
   auto *reloadButton=new QPushButton("Reload");toolbar->addWidget(reloadButton);
   m_scan=new QPushButton("Re-scan hardware");m_scan->setObjectName("scanPowerDevices");toolbar->addWidget(m_scan);
-  m_save=new QPushButton("Save and apply");m_save->setObjectName("savePowerDevices");m_save->setProperty("primary",true);toolbar->addWidget(m_save);layout->addLayout(toolbar);
+  m_save=new QPushButton("Save and apply");m_save->setObjectName("savePowerDevices");m_save->setProperty("primary",true);toolbar->addWidget(m_save);
+  layout->addLayout(toolbar);
+
   m_devices=new QTableWidget(0,5);m_devices->setObjectName("powerDeviceTable");
   m_devices->setHorizontalHeaderLabels({"Device","AC","Type-C","Battery","Last application"});tableStyle(m_devices);
   m_devices->horizontalHeader()->setSectionResizeMode(0,QHeaderView::Stretch);
   for(int column=1;column<5;++column) m_devices->horizontalHeader()->setSectionResizeMode(column,QHeaderView::ResizeToContents);
   layout->addWidget(m_devices,1);
   m_status=new QLabel;m_status->setObjectName("powerDevicesStatus");m_status->setWordWrap(true);layout->addWidget(m_status);
+
   connect(m_search,&QLineEdit::textChanged,this,[this]{filter();});
+  connect(m_showAdvancedPcie,&QCheckBox::toggled,this,[this]{filter();});
   connect(reloadButton,&QPushButton::clicked,this,&PowerDevicesTab::reload);
   connect(m_save,&QPushButton::clicked,this,&PowerDevicesTab::save);
   connect(m_scan,&QPushButton::clicked,this,&PowerDevicesTab::scan);
   connect(m_client,&UccdClient::powerDeviceStatusChanged,this,&PowerDevicesTab::showStatus);
   connect(m_client,&UccdClient::connectionStatusChanged,this,[this](bool connected){
-    if(connected) reload();else {m_save->setEnabled(false);m_scan->setEnabled(false);m_lidAc->setEnabled(false);m_lidTypeC->setEnabled(false);m_lidBat->setEnabled(false);m_wakeOnlyLidKbd->setEnabled(false);m_status->setText("Service unavailable");}
+    if(connected) reload();
+    else {m_save->setEnabled(false);m_scan->setEnabled(false);m_wakeOnlyLidKbd->setEnabled(false);m_status->setText("Service unavailable");}
   });
   reload();
 }
+
 void PowerDevicesTab::reload() {
   const auto json=m_client->getPowerDeviceSettingsJSON();
   const auto document=json ? QJsonDocument::fromJson(QByteArray::fromStdString(*json)) : QJsonDocument();
   const bool available=document.isObject();
   m_save->setEnabled(available && !readOnlyPreview);m_scan->setEnabled(available && !readOnlyPreview);
-  m_lidAc->setEnabled(available && !readOnlyPreview);m_lidTypeC->setEnabled(available && !readOnlyPreview);m_lidBat->setEnabled(available && !readOnlyPreview);m_wakeOnlyLidKbd->setEnabled(available && !readOnlyPreview);
+  m_wakeOnlyLidKbd->setEnabled(available && !readOnlyPreview);
   if(!available) {m_status->setText("Per-device controls require the updated UCC daemon.");return;}
   m_settings=document.object();m_enabled->setChecked(m_settings["enabled"].toBool(false));
   m_nvidia->setChecked(m_settings["keepNvidiaAwake"].toBool(false));
   const auto lid=m_settings["lid"].toObject();
-  auto selectLid=[](QComboBox *combo,const QString &value) {
-    const int idx=combo->findData(value);
-    combo->setCurrentIndex(idx>=0 ? idx : 0);
-  };
-  selectLid(m_lidAc,lid.value("ac").toString("screen_off"));
-  selectLid(m_lidTypeC,lid.value("type_c").toString("screen_off"));
-  selectLid(m_lidBat,lid.value("bat").toString("suspend"));
   m_wakeOnlyLidKbd->setChecked(lid.value("wakeOnlyLidAndKeyboard").toBool(true));
+
   const auto cpu=m_settings["cpu"].toObject();
   for(int row=0;row<3;++row) {
-    m_cpu->setItem(row,0,new QTableWidgetItem(QStringList{"AC","Type-C","Battery"}[row]));
     const auto policy=cpu[modes[row]].toObject();
-    m_cpu->setCellWidget(row,1,selector({"performance","powersave","ondemand","conservative","schedutil","userspace"},policy["governor"].toString(),true));
-    m_cpu->setCellWidget(row,2,selector({"performance","balance_performance","balance_power","power","default"},policy["epp"].toString(),true));
-    m_cpu->setCellWidget(row,3,selector({"default","performance","powersave","powersupersave"},policy["aspm"].toString(),true));
+    populateSelector(m_cpuCombos[static_cast<size_t>(row)][0],{"performance","powersave","ondemand","conservative","schedutil","userspace"},policy["governor"].toString(),true);
+    populateSelector(m_cpuCombos[static_cast<size_t>(row)][1],{"performance","balance_performance","balance_power","power","default"},policy["epp"].toString(),true);
+    populateSelector(m_cpuCombos[static_cast<size_t>(row)][2],{"default","performance","powersave","powersupersave"},policy["aspm"].toString(),true);
   }
-  m_entries=m_settings["devices"].toArray();m_devices->setRowCount(0);m_devices->setRowCount(static_cast<int>(m_entries.size()));
+
+  QVector<QJsonObject> sortedEntries;
+  const auto rawDevices=m_settings["devices"].toArray();
+  sortedEntries.reserve(rawDevices.size());
+  for(const auto &val:rawDevices) sortedEntries.push_back(val.toObject());
+  std::stable_sort(sortedEntries.begin(),sortedEntries.end(),[](const QJsonObject &a,const QJsonObject &b){
+    return devicePinPriority(a) < devicePinPriority(b);
+  });
+  m_entries=QJsonArray();
+  for(const auto &obj:sortedEntries) m_entries.append(obj);
+
+  m_devices->setRowCount(0);m_devices->setRowCount(static_cast<int>(m_entries.size()));
   for(int row=0;row<m_entries.size();++row) {
+    m_devices->setRowHeight(row,38);
     const auto entry=m_entries[row].toObject();const auto type=entry["type"].toString(),path=entry["path"].toString();
-    auto *label=new QTableWidgetItem(entry["name"].toString());label->setToolTip(type.toUpper()+" · "+path);m_devices->setItem(row,0,label);
+    auto *label=new QTableWidgetItem(cleanDeviceName(entry["name"].toString()));
+    label->setToolTip(type.toUpper()+" · "+path);
+    m_devices->setItem(row,0,label);
     for(int column=1;column<=3;++column) {
       const auto value=entry[modes[column-1]+"_val"].toString();
       QStringList values;
@@ -172,13 +240,17 @@ void PowerDevicesTab::reload() {
   filter();
   if(auto status=m_client->getPowerDeviceStatusJSON()) showStatus(QString::fromStdString(*status));
 }
+
 QJsonObject PowerDevicesTab::collect() const {
   auto result=m_settings;result["enabled"]=m_enabled->isChecked();result["keepNvidiaAwake"]=m_nvidia->isChecked();
   auto cpu=result["cpu"].toObject();
+  const QStringList policyKeys={"governor","epp","aspm"};
   for(int row=0;row<3;++row) {
     auto policy=cpu[modes[row]].toObject();
-    for(int column=1;column<=3;++column)
-      policy[QStringList{"governor","epp","aspm"}[column-1]]=qobject_cast<QComboBox *>(m_cpu->cellWidget(row,column))->currentData().toString();
+    for(int col=0;col<3;++col) {
+      if(auto *combo=m_cpuCombos[static_cast<size_t>(row)][static_cast<size_t>(col)])
+        policy[policyKeys[col]]=combo->currentData().toString();
+    }
     cpu[modes[row]]=policy;
   }
   result["cpu"]=cpu;auto entries=m_entries;
@@ -193,31 +265,36 @@ QJsonObject PowerDevicesTab::collect() const {
   }
   result["devices"]=entries;
   auto lid=result["lid"].toObject();
-  lid["ac"]=m_lidAc->currentData().toString();
-  lid["type_c"]=m_lidTypeC->currentData().toString();
-  lid["bat"]=m_lidBat->currentData().toString();
   lid["wakeOnlyLidAndKeyboard"]=m_wakeOnlyLidKbd->isChecked();
   result["lid"]=lid;
   return result;
 }
+
 void PowerDevicesTab::save() {
   if(readOnlyPreview) return;
   const auto json=QJsonDocument(collect()).toJson(QJsonDocument::Compact).toStdString();
   if(m_client->setPowerDeviceSettingsJSON(json)) {emit message("Power policies saved; applying to the current mode");reload();}
   else emit message("Power policies could not be saved; check values and daemon logs");
 }
+
 void PowerDevicesTab::scan() {
   if(readOnlyPreview) return;
   if(m_client->scanPowerDevices()) {emit message("Hardware scan complete; existing per-mode settings preserved");reload();}
   else emit message("Hardware scan failed");
 }
+
 void PowerDevicesTab::filter() {
   const auto query=m_search->text();
+  const bool showAdvanced=m_showAdvancedPcie && m_showAdvancedPcie->isChecked();
   for(int row=0;row<m_entries.size();++row) {
     const auto entry=m_entries[row].toObject();
-    m_devices->setRowHidden(row,!(entry["name"].toString()+" "+entry["path"].toString()).contains(query,Qt::CaseInsensitive));
+    const QString displayName=cleanDeviceName(entry["name"].toString());
+    const bool matchesQuery=(displayName+" "+entry["path"].toString()).contains(query,Qt::CaseInsensitive);
+    const bool hiddenAdvanced=!showAdvanced && isAdvancedPcieDevice(entry);
+    m_devices->setRowHidden(row,!matchesQuery || hiddenAdvanced);
   }
 }
+
 void PowerDevicesTab::showStatus(const QString &json) {
   const auto status=QJsonDocument::fromJson(json.toUtf8()).object();
   if(status.isEmpty()) {m_status->setText("No application results yet");return;}

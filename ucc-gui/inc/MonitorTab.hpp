@@ -42,6 +42,10 @@
 #include <QWheelEvent>
 #include <QGraphicsSceneMouseEvent>
 #include <QRubberBand>
+#include <QMap>
+#include <QVector>
+#include <QPaintEvent>
+#include <QResizeEvent>
 #include <map>
 #include <vector>
 #include <functional>
@@ -50,6 +54,44 @@ namespace ucc
 {
 
 class UccdClient;
+
+/**
+ * @brief Fluent-themed btop-style per-core CPU load widget with P/E core grouping.
+ */
+class CpuCoreGridWidget : public QWidget
+{
+  Q_OBJECT
+
+public:
+  explicit CpuCoreGridWidget( QWidget *parent = nullptr );
+
+  void setTopology( const QMap< int, QString > &coreTypes );
+  void setCoreLoads( const QVector< double > &loads );
+  void clearLoads();
+  int coreCount() const { return static_cast< int >( m_loads.size() ); }
+
+  QSize sizeHint() const override;
+  QSize minimumSizeHint() const override;
+
+protected:
+  void paintEvent( QPaintEvent *event ) override;
+  void resizeEvent( QResizeEvent *event ) override;
+
+private:
+  struct CoreGroup
+  {
+    QString title;
+    QVector< int > coreIds;
+  };
+
+  QVector< CoreGroup > buildGroups() const;
+  int columnsForWidth( int width ) const;
+  int computeContentHeight( int width ) const;
+
+  QMap< int, QString > m_coreTypes;
+  QVector< double > m_loads;
+  int m_lastColumns = 2;
+};
 
 /**
  * @brief Metric group categories for normalisation and colouring
@@ -101,13 +143,10 @@ private:
   void setupFrequencyChart();
   void setupVoltageChart();
   void setupCoreLoadCard();
+  void fetchCpuTopology();
   void setupControls();
   void setupUnifiedChart();
-  void sampleAndUpdateCoreLoad( qint64 timestampMs );
-  void trimCoreLoadSeries();
-  void ensureCoreSeries( int coreCount );
-  QColor coreSeriesColor( int coreIndex, int coreCount ) const;
-  void updateCoreHighlight();
+  void sampleAndUpdateCoreLoad();
 
   /** Apply a new time window (clears series, re-fetches, updates label). */
   void setTimeWindow( int seconds );
@@ -176,28 +215,24 @@ private:
   QChart *m_powerChart    = nullptr;
   QChart *m_freqChart     = nullptr;
   QChart *m_voltChart     = nullptr;
-  QChart *m_coreLoadChart = nullptr;
 
   QChartView *m_tempChartView     = nullptr;
   QChartView *m_dutyChartView     = nullptr;
   QChartView *m_powerChartView    = nullptr;
   QChartView *m_freqChartView     = nullptr;
   QChartView *m_voltChartView     = nullptr;
-  QChartView *m_coreLoadChartView = nullptr;
 
   QDateTimeAxis *m_tempXAxis     = nullptr;
   QDateTimeAxis *m_dutyXAxis     = nullptr;
   QDateTimeAxis *m_powerXAxis    = nullptr;
   QDateTimeAxis *m_freqXAxis     = nullptr;
   QDateTimeAxis *m_voltXAxis     = nullptr;
-  QDateTimeAxis *m_coreLoadXAxis = nullptr;
 
   QValueAxis *m_tempYAxis     = nullptr;
   QValueAxis *m_dutyYAxis     = nullptr;
   QValueAxis *m_powerYAxis    = nullptr;
   QValueAxis *m_freqYAxis     = nullptr;
   QValueAxis *m_voltYAxis     = nullptr;
-  QValueAxis *m_coreLoadYAxis = nullptr;
 
   // Per-core CPU load card
   struct CoreCpuSample
@@ -210,12 +245,9 @@ private:
   QFrame                       *m_coreLoadCard     = nullptr;
   QFrame                       *m_coreLoadSwatch   = nullptr;
   QLabel                       *m_coreLoadSummary  = nullptr;
-  QGridLayout                  *m_coreBadgesLayout = nullptr;
+  CpuCoreGridWidget            *m_coreLoadGrid     = nullptr;
+  QMap< int, QString >          m_coreTypes;
   std::vector< CoreCpuSample >  m_prevCoreSamples;
-  std::vector< QLineSeries * >  m_coreSeries;
-  std::vector< QList< QPointF > > m_coreBuffers;
-  std::vector< QPushButton * >  m_coreBadges;
-  int                           m_highlightedCore  = -1;
 
   // Unified "all-in-one" chart
   QChart          *m_unifiedChart     = nullptr;

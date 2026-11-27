@@ -27,9 +27,9 @@
 #include <QDBusInterface>
 #include <QDBusReply>
 #include <QDBusArgument>
-#include <QCoreApplication>
-#include <QPointer>
-#include <thread>
+#include <QThread>
+#include <algorithm>
+#include <memory>
 #include "DetectLayout.hpp"
 #include "AssignKeyZones.hpp"
 
@@ -75,37 +75,43 @@ KeyboardVisualizerWidget::KeyboardVisualizerWidget( int zones, int maxBrightness
 
   if ( !calibratedLayout )
   {
-    QPointer< KeyboardVisualizerWidget > self( this );
-    QPointer< QCoreApplication > app( QCoreApplication::instance() );
-    if ( app )
-    {
-      std::thread( [self, app]() {
-        const QString detected = detectKeyboardLayout();
-        if ( detected.isEmpty() || detected == QLatin1String( "us" ) )
-          return;
-        if ( QCoreApplication *inst = app.data() )
+    auto detectedLayout = std::make_shared< QString >();
+    m_layoutThread = QThread::create( [detectedLayout]() {
+      *detectedLayout = detectKeyboardLayout();
+    } );
+    connect( m_layoutThread, &QThread::finished, this, [this, detectedLayout]() {
+      const QString detected = *detectedLayout;
+      if ( !detected.isEmpty() && detected != QLatin1String( "us" ) )
+      {
+        m_zoneMappings = assignKeyZones( detected );
+        for ( int i = 0; i < static_cast< int >( m_keys.size() ); ++i )
+          m_keys[i].label = getKeyLabel( i );
+        if ( m_keyboardWidget )
         {
-          QMetaObject::invokeMethod(
-            inst,
-            [self, detected]() {
-              if ( !self )
-                return;
-              self->m_zoneMappings = assignKeyZones( detected );
-              for ( int i = 0; i < static_cast< int >( self->m_keys.size() ); ++i )
-                self->m_keys[i].label = self->getKeyLabel( i );
-              if ( self->m_keyboardWidget )
-              {
-                for ( auto *button : self->m_keyboardWidget->findChildren< QPushButton * >() )
-                {
-                  const int zone = button->property( "zoneId" ).toInt();
-                  button->setText( self->getKeyLabel( zone ) );
-                }
-              }
-            },
-            Qt::QueuedConnection );
+          for ( auto *button : m_keyboardWidget->findChildren< QPushButton * >() )
+          {
+            const int zone = button->property( "zoneId" ).toInt();
+            button->setText( getKeyLabel( zone ) );
+          }
         }
-      } ).detach();
+      }
+      m_layoutThread = nullptr;
+    } );
+    connect( m_layoutThread, &QThread::finished, m_layoutThread, &QObject::deleteLater );
+    m_layoutThread->start();
+  }
+}
+
+KeyboardVisualizerWidget::~KeyboardVisualizerWidget()
+{
+  if ( m_layoutThread )
+  {
+    m_layoutThread->disconnect( this );
+    if ( m_layoutThread->wait( 600 ) )
+    {
+      delete m_layoutThread;
     }
+    m_layoutThread = nullptr;
   }
 }
 

@@ -677,8 +677,10 @@ class UccIndicator extends PanelMenu.Button {
             const id = s.keyboardProfileIds[i];
             const name = s.keyboardProfileNames[i] ?? id;
             const isActive = id === s.activeKeyboardProfileId;
-            const row = this._makeChooserRow(name, isActive, () => {
-                this._applyKeyboardProfile(id);
+            const row = this._makeChooserRow(name, isActive, async () => {
+                const generation = this._connectionGeneration;
+                const ok = await this._applyKeyboardProfile(id);
+                if (!ok || this._destroyed || generation !== this._connectionGeneration) return;
                 s.activeKeyboardProfileId = id;
                 this._rebuildKeyboardProfileButtons();
             });
@@ -704,25 +706,30 @@ class UccIndicator extends PanelMenu.Button {
     async _applyKeyboardProfile(kbProfileId) {
         const s = this._state;
         const idx = s.keyboardProfileIds.indexOf(kbProfileId);
-        if (idx < 0) return;
+        if (idx < 0) return false;
         const profileData = s.keyboardProfilesData[idx];
-        if (!profileData) return;
+        if (!profileData) return false;
         const json = profileData.json;
-        if (json) {
-            let payload = null;
-            try {
-                const parsed = typeof json === 'string' ? JSON.parse(json) : {...json};
-                if (parsed && typeof parsed === 'object') {
-                    parsed.keyboardProfileId = kbProfileId;
-                    payload = JSON.stringify(parsed);
-                }
-            } catch {
-                payload = typeof json === 'string' ? json : JSON.stringify(json);
+        if (!json) return false;
+        let payload = null;
+        try {
+            const parsed = typeof json === 'string'
+                ? JSON.parse(json)
+                : (Array.isArray(json) ? [...json] : {...json});
+            if (Array.isArray(parsed)) {
+                payload = JSON.stringify({
+                    keyboardProfileId: kbProfileId,
+                    states: parsed,
+                });
+            } else if (parsed && typeof parsed === 'object') {
+                parsed.keyboardProfileId = kbProfileId;
+                payload = JSON.stringify(parsed);
             }
-            if (payload) {
-                await this._client.setKeyboardBacklight(payload);
-            }
+        } catch {
+            payload = typeof json === 'string' ? json : JSON.stringify(json);
         }
+        if (!payload) return false;
+        return Boolean(await this._client.setKeyboardBacklight(payload));
     }
 
     _updatePumpVoltageUI() {

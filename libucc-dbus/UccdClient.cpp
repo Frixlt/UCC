@@ -39,13 +39,18 @@ namespace ucc
 
 static int methodTimeoutMs( const QString &method )
 {
-  if ( method == QLatin1String( "ApplyProfileJSON" ) ||
+  if ( method == QLatin1String( "ApplyProfile" ) ||
        method == QLatin1String( "SaveCustomProfile" ) ||
        method == QLatin1String( "DeleteCustomProfile" ) ||
+       method == QLatin1String( "SaveCustomFanProfile" ) ||
+       method == QLatin1String( "DeleteCustomFanProfile" ) ||
+       method == QLatin1String( "SaveCustomKeyboardProfile" ) ||
+       method == QLatin1String( "DeleteCustomKeyboardProfile" ) ||
+       method == QLatin1String( "RevertFanProfiles" ) ||
        method == QLatin1String( "SetBatchStateMap" ) ||
        method == QLatin1String( "SetStateMap" ) ||
        method == QLatin1String( "SetActiveProfile" ) ||
-       method == QLatin1String( "SetFanProfiles" ) ||
+       method == QLatin1String( "ApplyFanProfiles" ) ||
        method == QLatin1String( "SetKeyboardBacklight" ) ||
        method == QLatin1String( "SetKeyboardBacklightStatesJSON" ) ||
        method == QLatin1String( "SetLightbarSettingsJSON" ) ||
@@ -519,7 +524,10 @@ static QDBusPendingCallWatcher *dispatchAsyncBoolProfileCall(
     return nullptr;
   }
 
+  const int prevTimeout = iface->timeout();
+  iface->setTimeout( methodTimeoutMs( method ) );
   QDBusPendingCall pending = iface->asyncCall( method, payload );
+  iface->setTimeout( prevTimeout );
   QObject *owner = context ? context : defaultOwner;
   auto *watcher = new QDBusPendingCallWatcher( pending, owner );
   QObject::connect(

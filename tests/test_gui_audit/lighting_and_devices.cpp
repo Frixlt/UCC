@@ -16,7 +16,7 @@ void GuiAudit::standaloneTrayShowsModesAndHonorsCommandFailures() {
     const auto forced=ucc::DesktopTray::statusIcon({{"current_mode","ac"},{"manual_mode","bat"}},{},"Balanced").pixmap(64,64).toImage();QVERIFY(plain!=forced);
   }
 void GuiAudit::batteryAndProcessPageStaysReadOnlyUntilConfirmed() {
-    control("TestVisualFixture");ucc::MainWindow window;window.resize(1280,900);window.show();auto *nav=window.findChild<QListWidget*>("navigation");QVERIFY(nav);nav->setCurrentRow(8);QTest::qWait(350);
+    control("TestVisualFixture");ucc::MainWindow window;window.resize(1280,900);window.show();auto *nav=window.findChild<QListWidget*>("navigation");QVERIFY(nav);nav->setCurrentRow(7);QTest::qWait(350);
     QCOMPARE(window.findChild<QLabel*>("pageTitle")->text(),QString("Battery & Processes"));
     auto *refresh=window.findChild<QCheckBox*>("refreshRateNotifications");QVERIFY(refresh);
     QSettings preferences("UniwillControlCenter","desktop");const auto previous=preferences.value("refreshRateNotifications");
@@ -139,29 +139,26 @@ void GuiAudit::sparseKeyboardZonesKeepSavedPhysicalIndices() {
   }
 void GuiAudit::deviceMatrixKeepsThreeIndependentModes() {
     control("TestVisualFixture");ucc::MainWindow window;window.resize(1280,900);window.show();
-    auto *navigation=window.findChild<QListWidget *>("navigation");navigation->setCurrentRow(7);
+    auto *navigation=window.findChild<QListWidget *>("navigation");navigation->setCurrentRow(6);
     QCOMPARE(window.findChild<QLabel *>("pageTitle")->text(),QString("Power & Devices"));
     QVERIFY(window.findChild<QLabel *>("subtitle")->text().contains("modules"));
     auto *pdTab=window.findChild<ucc::PowerDevicesTab*>();QVERIFY(pdTab);
     QVERIFY(!pdTab->findChild<QCheckBox*>("turnOffKeyboardBacklightOnLidClose"));
     QVERIFY(!pdTab->findChild<QCheckBox*>("turnOffWaterCoolerLedOnLidClose"));
+    QVERIFY(!pdTab->findChild<QComboBox*>("lidActionAc"));
+    QVERIFY(!pdTab->findChild<QComboBox*>("lidActionTypeC"));
+    QVERIFY(!pdTab->findChild<QComboBox*>("lidActionBat"));
     auto *table=window.findChild<QTableWidget *>("powerDeviceTable");QVERIFY(table);QCOMPARE(table->rowCount(),4);
-    auto *cpu=window.findChild<QTableWidget *>("cpuPowerPolicyTable");QVERIFY(cpu);QCOMPARE(cpu->rowCount(),3);
+    auto *cpuGrid=window.findChild<QWidget *>("cpuPowerPolicyGrid");QVERIFY(cpuGrid);QCOMPARE(cpuGrid->findChildren<QComboBox *>().size(),9);
+    auto *advPcie=window.findChild<QCheckBox *>("showAdvancedPcieDevices");QVERIFY(advPcie);QVERIFY(!advPcie->isChecked());
     auto *battery=qobject_cast<QComboBox *>(table->cellWidget(0,3));QVERIFY(battery);
     QCOMPARE(battery->currentData().toString(),QString("auto"));
     battery->setCurrentIndex(battery->findData("on"));
-    auto *lidAc=window.findChild<QComboBox *>("lidActionAc");QVERIFY(lidAc);
-    auto *lidTypeC=window.findChild<QComboBox *>("lidActionTypeC");QVERIFY(lidTypeC);
-    auto *lidBat=window.findChild<QComboBox *>("lidActionBat");QVERIFY(lidBat);
     auto *wakeOnly=window.findChild<QCheckBox *>("wakeOnlyLidAndKeyboard");QVERIFY(wakeOnly);
-    QCOMPARE(lidAc->currentData().toString(),QString("screen_off"));
-    QCOMPARE(lidTypeC->currentData().toString(),QString("screen_off"));
-    QCOMPARE(lidBat->currentData().toString(),QString("suspend"));
     QVERIFY(wakeOnly->isChecked());
     auto *save=window.findChild<QPushButton *>("savePowerDevices");QVERIFY(save);
 #ifdef UCC_READ_ONLY_PREVIEW
     QVERIFY(!save->isEnabled());
-    QVERIFY(!lidAc->isEnabled());
     QVERIFY(!wakeOnly->isEnabled());
     QVERIFY(stats()["writes"].toArray().isEmpty());
 #else

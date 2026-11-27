@@ -32,6 +32,11 @@
 #include <QStatusBar>
 #include <QApplication>
 #include <QGraphicsLayout>
+#include <QPainter>
+#include <QJsonDocument>
+#include <QJsonArray>
+#include <QJsonObject>
+#include <cmath>
 #include <cstring>
 #include <algorithm>
 #include <functional>
@@ -241,6 +246,7 @@ MonitorTab::MonitorTab( UccdClient *client, QWidget *parent )
 {
   initializeMaxPowerFromHardware();
   setupUI();
+  fetchCpuTopology();
   connect(FluentTheme::events(),&FluentTheme::ThemeEvents::changed,this,&MonitorTab::refreshTheme);
   refreshTheme();
 
@@ -257,7 +263,7 @@ MonitorTab::MonitorTab( UccdClient *client, QWidget *parent )
 
 void MonitorTab::refreshTheme() {
   const auto c=FluentTheme::colors();
-  for(auto *chart:{m_tempChart,m_dutyChart,m_powerChart,m_freqChart,m_voltChart,m_coreLoadChart,m_unifiedChart}) {
+  for(auto *chart:{m_tempChart,m_dutyChart,m_powerChart,m_freqChart,m_voltChart,m_unifiedChart}) {
     if(!chart) continue;
     chart->setBackgroundBrush(c.surface);chart->setPlotAreaBackgroundBrush(c.surface);chart->setTitleBrush(c.text);
     for(auto *axis:chart->axes()) styleAxis(axis);
@@ -266,7 +272,8 @@ void MonitorTab::refreshTheme() {
       if(index>=0){auto pen=series->pen();pen.setColor(metricColor(kMetrics[index]));series->setPen(pen);}
     }
   }
-  updateCoreHighlight();
+  if ( m_coreLoadGrid )
+    m_coreLoadGrid->update();
   if (m_coreLoadSwatch) {
     m_coreLoadSwatch->setStyleSheet("border: none; border-radius: 1px; background: " + metricColor(kMetrics[0]).name() + ";");
   }
@@ -345,15 +352,15 @@ void MonitorTab::setMonitoringActive( bool active )
       }
     }
     m_prevCoreSamples.clear();
-    for ( auto &buf : m_coreBuffers ) buf.clear();
-    for ( auto *s : m_coreSeries ) if ( s ) s->clear();
+    if ( m_coreLoadGrid )
+      m_coreLoadGrid->clearLoads();
 
     // Only fetch data that fits in the current visible window - not the full
     // daemon history horizon (which can be 30 minutes). This bounds the
     // initial render cost to m_windowSeconds worth of points.
     const qint64 now = QDateTime::currentMSecsSinceEpoch();
     m_lastTimestamp = now - m_fetchTimer.interval() - static_cast< qint64 >( m_windowSeconds ) * 1000;
-    sampleAndUpdateCoreLoad( now );
+    sampleAndUpdateCoreLoad();
     fetchData();
     m_fetchTimer.start();
     m_unifiedChartView->setFocus();  // Immediate key events (crosshair Ctrl)
@@ -452,7 +459,11 @@ void MonitorTab::setupUI()
   m_pauseLabel = new QLabel;
   m_pauseLabel->setObjectName("monitorStatus");
   updateMonitorStatus();
-  connect(m_client, &UccdClient::connectionStatusChanged, this, [this] { updateMonitorStatus(); });
+  connect(m_client, &UccdClient::connectionStatusChanged, this, [this](bool connected) {
+    updateMonitorStatus();
+    if (connected && m_coreTypes.isEmpty())
+      fetchCpuTopology();
+  });
   legendLayout->addWidget( m_pauseLabel, row, col,1,2 );
 
   legendLayout->setRowStretch(row+1,1);
@@ -609,11 +620,11 @@ void MonitorTab::setTimeWindow( int seconds )
           uni->clear();
     }
     m_prevCoreSamples.clear();
-    for ( auto &buf : m_coreBuffers ) buf.clear();
-    for ( auto *s : m_coreSeries ) if ( s ) s->clear();
+    if ( m_coreLoadGrid )
+      m_coreLoadGrid->clearLoads();
     const qint64 now = QDateTime::currentMSecsSinceEpoch();
     m_lastTimestamp = now - m_fetchTimer.interval() - static_cast< qint64 >( m_windowSeconds ) * 1000;
-    sampleAndUpdateCoreLoad( now );
+    sampleAndUpdateCoreLoad();
     fetchData();
     updateAxes();
   }
@@ -1867,43 +1878,305 @@ void MonitorTab::setupVoltageChart()
   m_voltChartView = createChartView( m_voltChart );
 }
 
-QColor MonitorTab::coreSeriesColor( int coreIndex, int coreCount ) const
+CpuCoreGridWidget::CpuCoreGridWidget( QWidget *parent )
+  : QWidget( parent )
 {
-  const int hue = coreCount > 0 ? ( ( coreIndex * 360 ) / coreCount ) % 360 : 210;
-  const int sat = FluentTheme::isDark() ? 190 : 205;
-  const int val = FluentTheme::isDark() ? 235 : 175;
-  return QColor::fromHsv( hue, sat, val );
+  setObjectName( QStringLiteral( "cpuCoreGridWidget" ) );
+  setSizePolicy( QSizePolicy::Expanding, QSizePolicy::Minimum );
+  setMinimumHeight( 72 );
+}
+
+void CpuCoreGridWidget::setTopology( const QMap< int, QString > &coreTypes )
+{
+  m_coreTypes = coreTypes;
+  setMinimumHeight( computeContentHeight( width() ) );
+  updateGeometry();
+  update();
+}
+
+void CpuCoreGridWidget::setCoreLoads( const QVector< double > &loads )
+{
+  const bool countChanged = ( loads.size() != m_loads.size() );
+  m_loads = loads;
+  if ( countChanged )
+  {
+    setMinimumHeight( computeContentHeight( width() ) );
+    updateGeometry();
+  }
+  update();
+}
+
+void CpuCoreGridWidget::clearLoads()
+{
+  for ( double &v : m_loads )
+    v = -1.0;
+  update();
+}
+
+QVector< CpuCoreGridWidget::CoreGroup > CpuCoreGridWidget::buildGroups() const
+{
+  QVector< CoreGroup > groups;
+  const int count = static_cast< int >( m_loads.size() );
+  if ( count <= 0 )
+    return groups;
+
+  bool hasHybrid = false;
+  for ( int id = 0; id < count; ++id )
+  {
+    const QString t = m_coreTypes.value( id );
+    if ( t == QLatin1String( "P" ) || t == QLatin1String( "E" ) )
+    {
+      hasHybrid = true;
+      break;
+    }
+  }
+
+  if ( !hasHybrid )
+  {
+    CoreGroup all;
+    all.title = QStringLiteral( "Cores" );
+    all.coreIds.reserve( count );
+    for ( int id = 0; id < count; ++id )
+      all.coreIds.push_back( id );
+    groups.push_back( std::move( all ) );
+    return groups;
+  }
+
+  CoreGroup pGroup{ QStringLiteral( "P-cores" ), {} };
+  CoreGroup eGroup{ QStringLiteral( "E-cores" ), {} };
+  CoreGroup otherGroup{ QStringLiteral( "Other cores" ), {} };
+  for ( int id = 0; id < count; ++id )
+  {
+    const QString t = m_coreTypes.value( id );
+    if ( t == QLatin1String( "P" ) )
+      pGroup.coreIds.push_back( id );
+    else if ( t == QLatin1String( "E" ) )
+      eGroup.coreIds.push_back( id );
+    else
+      otherGroup.coreIds.push_back( id );
+  }
+  if ( !pGroup.coreIds.isEmpty() )
+    groups.push_back( std::move( pGroup ) );
+  if ( !eGroup.coreIds.isEmpty() )
+    groups.push_back( std::move( eGroup ) );
+  if ( !otherGroup.coreIds.isEmpty() )
+    groups.push_back( std::move( otherGroup ) );
+  return groups;
+}
+
+int CpuCoreGridWidget::columnsForWidth( int w ) const
+{
+  if ( w >= 760 )
+    return 4;
+  if ( w >= 520 )
+    return 3;
+  return 2;
+}
+
+int CpuCoreGridWidget::computeContentHeight( int w ) const
+{
+  const auto groups = buildGroups();
+  if ( groups.isEmpty() )
+    return 56;
+  const int cols = columnsForWidth( w > 0 ? w : 640 );
+  constexpr int kHeaderH = 18;
+  constexpr int kRowH = 22;
+  constexpr int kRowGap = 4;
+  constexpr int kGroupGap = 10;
+  int totalH = 4;
+  for ( qsizetype g = 0; g < groups.size(); ++g )
+  {
+    if ( g > 0 )
+      totalH += kGroupGap;
+    totalH += kHeaderH;
+    const int rows = ( static_cast< int >( groups[g].coreIds.size() ) + cols - 1 ) / cols;
+    totalH += rows * kRowH + std::max( 0, rows - 1 ) * kRowGap;
+  }
+  totalH += 4;
+  return std::max( 56, totalH );
+}
+
+QSize CpuCoreGridWidget::sizeHint() const
+{
+  return QSize( 640, computeContentHeight( width() > 0 ? width() : 640 ) );
+}
+
+QSize CpuCoreGridWidget::minimumSizeHint() const
+{
+  return QSize( 320, computeContentHeight( width() > 0 ? width() : 480 ) );
+}
+
+void CpuCoreGridWidget::resizeEvent( QResizeEvent *event )
+{
+  QWidget::resizeEvent( event );
+  const int cols = columnsForWidth( event->size().width() );
+  if ( cols != m_lastColumns )
+  {
+    m_lastColumns = cols;
+    setMinimumHeight( computeContentHeight( event->size().width() ) );
+    updateGeometry();
+  }
+}
+
+void CpuCoreGridWidget::paintEvent( QPaintEvent *event )
+{
+  Q_UNUSED( event );
+  QPainter p( this );
+  p.setRenderHint( QPainter::Antialiasing, true );
+
+  const auto c = FluentTheme::colors();
+  const bool dark = FluentTheme::isDark();
+  const auto groups = buildGroups();
+  if ( groups.isEmpty() )
+  {
+    p.setPen( c.secondary );
+    p.drawText( rect(), Qt::AlignCenter, QStringLiteral( "Sampling CPU cores…" ) );
+    return;
+  }
+
+  const QColor amber = dark ? QColor( "#F59E0B" ) : QColor( "#D97706" );
+  const QColor crimson = dark ? QColor( "#F87171" ) : QColor( "#DC2626" );
+
+  const int cols = columnsForWidth( width() );
+  constexpr int kColGap = 14;
+  constexpr int kHeaderH = 18;
+  constexpr int kRowH = 22;
+  constexpr int kRowGap = 4;
+  constexpr int kGroupGap = 10;
+
+  const int usableW = std::max( 1, width() - ( cols - 1 ) * kColGap );
+  const int cellW = usableW / cols;
+
+  QFont groupFont = font();
+  groupFont.setPixelSize( 11 );
+  groupFont.setWeight( QFont::DemiBold );
+
+  QFont labelFont = font();
+  labelFont.setPixelSize( 11 );
+  labelFont.setStyleHint( QFont::Monospace );
+
+  QFont badgeFont = font();
+  badgeFont.setPixelSize( 9 );
+  badgeFont.setWeight( QFont::Bold );
+
+  QFont pctFont = labelFont;
+  QFont pctBoldFont = labelFont;
+  pctBoldFont.setWeight( QFont::Bold );
+
+  int y = 2;
+  for ( qsizetype g = 0; g < groups.size(); ++g )
+  {
+    if ( g > 0 )
+      y += kGroupGap;
+
+    const auto &group = groups[g];
+    p.setFont( groupFont );
+    p.setPen( c.secondary );
+    p.drawText( QRect( 0, y, width(), kHeaderH ), Qt::AlignLeft | Qt::AlignVCenter, group.title );
+    y += kHeaderH;
+
+    const int n = static_cast< int >( group.coreIds.size() );
+    const int rows = ( n + cols - 1 ) / cols;
+    for ( int i = 0; i < n; ++i )
+    {
+      const int coreId = group.coreIds[i];
+      const int col = i % cols;
+      const int row = i / cols;
+      const int x = col * ( cellW + kColGap );
+      const int ry = y + row * ( kRowH + kRowGap );
+
+      const double rawVal = ( coreId >= 0 && coreId < static_cast< int >( m_loads.size() ) )
+        ? m_loads[coreId]
+        : -1.0;
+      const bool hasVal = ( rawVal >= 0.0 );
+      const double pct = hasVal ? std::clamp( rawVal, 0.0, 100.0 ) : 0.0;
+      const int pctInt = hasVal ? qRound( pct ) : -1;
+
+      const QString coreType = m_coreTypes.value( coreId );
+      const bool hasBadge = ( coreType == QLatin1String( "P" ) || coreType == QLatin1String( "E" ) );
+
+      // Core ID label (e.g. C03)
+      constexpr int kIdW = 28;
+      constexpr int kBadgeW = 16;
+      constexpr int kBadgeGap = 4;
+      constexpr int kPctW = 34;
+      const int leftBlockW = kIdW + ( hasBadge ? ( kBadgeGap + kBadgeW ) : 0 );
+
+      p.setFont( labelFont );
+      p.setPen( c.text );
+      const QString idText = QStringLiteral( "C%1" ).arg( coreId, 2, 10, QLatin1Char( '0' ) );
+      p.drawText( QRect( x, ry, kIdW, kRowH ), Qt::AlignLeft | Qt::AlignVCenter, idText );
+
+      // Subtle P / E badge pill
+      if ( hasBadge )
+      {
+        const QRect badgeRect( x + kIdW + kBadgeGap, ry + ( kRowH - 14 ) / 2, kBadgeW, 14 );
+        QColor badgeBg = ( coreType == QLatin1String( "P" ) ) ? c.accent : c.secondary;
+        badgeBg.setAlpha( dark ? 48 : 32 );
+        p.setPen( Qt::NoPen );
+        p.setBrush( badgeBg );
+        p.drawRoundedRect( badgeRect, 3, 3 );
+        p.setFont( badgeFont );
+        p.setPen( ( coreType == QLatin1String( "P" ) ) ? c.accent : c.secondary );
+        p.drawText( badgeRect, Qt::AlignCenter, coreType );
+      }
+
+      // Horizontal btop-style bar
+      const int barX = x + leftBlockW + 6;
+      const int barW = std::max( 24, cellW - leftBlockW - 6 - kPctW - 6 );
+      const int barH = 10;
+      const int barY = ry + ( kRowH - barH ) / 2;
+      const QRectF trackRect( barX, barY, barW, barH );
+
+      p.setPen( QPen( c.border, 1.0 ) );
+      p.setBrush( c.inset );
+      p.drawRoundedRect( trackRect, 3.0, 3.0 );
+
+      const QColor fillColor = ( pct >= 90.0 ) ? crimson : ( pct >= 70.0 ? amber : c.accent );
+      if ( hasVal && pct > 0.5 )
+      {
+        const qreal fillW = std::max< qreal >( 3.0, ( barW - 2.0 ) * ( pct / 100.0 ) );
+        const QRectF fillRect( barX + 1.0, barY + 1.0, fillW, barH - 2.0 );
+        p.setPen( Qt::NoPen );
+        p.setBrush( fillColor );
+        p.drawRoundedRect( fillRect, 2.0, 2.0 );
+
+        // Subtle segmented btop ticks
+        QColor tickColor = c.surface;
+        tickColor.setAlpha( dark ? 70 : 95 );
+        p.setPen( QPen( tickColor, 1.0 ) );
+        constexpr int kSegments = 10;
+        for ( int seg = 1; seg < kSegments; ++seg )
+        {
+          const qreal tx = barX + 1.0 + ( ( barW - 2.0 ) * seg ) / kSegments;
+          if ( tx < barX + 1.0 + fillW - 1.0 )
+            p.drawLine( QPointF( tx, barY + 1.0 ), QPointF( tx, barY + barH - 1.0 ) );
+        }
+      }
+
+      // Right-aligned percentage
+      const QRect pctRect( barX + barW + 6, ry, kPctW, kRowH );
+      p.setFont( pct >= 90.0 ? pctBoldFont : pctFont );
+      p.setPen( !hasVal ? c.secondary : ( pct >= 90.0 ? crimson : ( pct >= 70.0 ? amber : c.text ) ) );
+      const QString pctText = hasVal ? QStringLiteral( "%1%" ).arg( pctInt ) : QStringLiteral( "—%" );
+      p.drawText( pctRect, Qt::AlignRight | Qt::AlignVCenter, pctText );
+    }
+
+    y += rows * kRowH + std::max( 0, rows - 1 ) * kRowGap;
+  }
 }
 
 void MonitorTab::setupCoreLoadCard()
 {
-  m_coreLoadChart = createChart();
-  m_coreLoadXAxis = createXAxis();
-  m_coreLoadYAxis = createYAxis( "Core Load (%)", 0, 100 );
-  m_coreLoadChart->addAxis( m_coreLoadXAxis, Qt::AlignBottom );
-  m_coreLoadChart->addAxis( m_coreLoadYAxis, Qt::AlignLeft );
-
-  // Invisible anchor series keeps axes rendering smoothly before first core sample arrives
-  auto *anchor = new QLineSeries();
-  anchor->setVisible( false );
-  anchor->setPen( QPen( Qt::transparent ) );
-  m_coreLoadChart->addSeries( anchor );
-  anchor->attachAxis( m_coreLoadXAxis );
-  anchor->attachAxis( m_coreLoadYAxis );
-
-  m_coreLoadChartView = createChartView( m_coreLoadChart );
-  m_coreLoadChartView->setObjectName( "cpuCoreLoadChartView" );
-  m_coreLoadChartView->setMinimumHeight( 135 );
-
   m_coreLoadCard = FluentTheme::createCard();
   m_coreLoadCard->setObjectName( "cpuCoreLoadCard" );
   auto *layout = new QVBoxLayout( m_coreLoadCard );
-  layout->setContentsMargins( 12, 10, 12, 10 );
-  layout->setSpacing( 6 );
+  layout->setContentsMargins( 14, 12, 14, 12 );
+  layout->setSpacing( 8 );
 
   auto *header = new QHBoxLayout;
   header->setSpacing( 12 );
-  auto *heading = new QLabel( "CPU Core Load · %" );
+  auto *heading = new QLabel( "CPU Core Load" );
   heading->setObjectName( "cardTitle" );
   header->addWidget( heading );
   header->addStretch();
@@ -1912,110 +2185,33 @@ void MonitorTab::setupCoreLoadCard()
   m_coreLoadSummary->setStyleSheet( "font-size: 12px;" );
   header->addWidget( m_coreLoadSummary );
   layout->addLayout( header );
-  layout->addWidget( m_coreLoadChartView, 1 );
 
-  auto *badgesWrap = new QWidget( m_coreLoadCard );
-  m_coreBadgesLayout = new QGridLayout( badgesWrap );
-  m_coreBadgesLayout->setContentsMargins( 0, 2, 0, 0 );
-  m_coreBadgesLayout->setHorizontalSpacing( 6 );
-  m_coreBadgesLayout->setVerticalSpacing( 4 );
-  layout->addWidget( badgesWrap );
-
-  installHoverCallout( m_coreLoadChart );
+  m_coreLoadGrid = new CpuCoreGridWidget( m_coreLoadCard );
+  layout->addWidget( m_coreLoadGrid );
 }
 
-void MonitorTab::ensureCoreSeries( int coreCount )
+void MonitorTab::fetchCpuTopology()
 {
-  if ( coreCount <= 0 || static_cast< int >( m_coreSeries.size() ) == coreCount || !m_coreLoadChart || !m_coreBadgesLayout )
-    return;
-
-  for ( auto *s : m_coreSeries )
-  {
-    if ( s )
+  readUccdAsync( this, QStringLiteral( "GetCpuTopologyJSON" ), {}, [this]( std::optional< QVariant > reply ) {
+    if ( !reply )
+      return;
+    const QJsonArray arr = QJsonDocument::fromJson( reply->toString().toUtf8() ).array();
+    QMap< int, QString > types;
+    for ( const auto &val : arr )
     {
-      m_coreLoadChart->removeSeries( s );
-      delete s;
+      const auto obj = val.toObject();
+      const int id = obj.value( QStringLiteral( "id" ) ).toInt( -1 );
+      const QString type = obj.value( QStringLiteral( "type" ) ).toString();
+      if ( id >= 0 && !type.isEmpty() )
+        types.insert( id, type );
     }
-  }
-  m_coreSeries.clear();
-  m_coreBuffers.clear();
-  for ( auto *btn : m_coreBadges )
-  {
-    if ( btn ) btn->deleteLater();
-  }
-  m_coreBadges.clear();
-  m_highlightedCore = -1;
-
-  m_coreSeries.resize( static_cast< size_t >( coreCount ), nullptr );
-  m_coreBuffers.resize( static_cast< size_t >( coreCount ) );
-  m_coreBadges.resize( static_cast< size_t >( coreCount ), nullptr );
-
-  const int cols = coreCount >= 16 ? 8 : ( coreCount >= 8 ? 6 : std::max( 1, coreCount ) );
-  for ( int i = 0; i < coreCount; ++i )
-  {
-    const QColor col = coreSeriesColor( i, coreCount );
-    auto *s = new QLineSeries();
-    s->setName( QStringLiteral( "CPU %1" ).arg( i ) );
-    s->setProperty( "_unit", QStringLiteral( "%" ) );
-    QPen pen( col );
-    pen.setWidthF( 1.2 );
-    s->setPen( pen );
-    m_coreLoadChart->addSeries( s );
-    s->attachAxis( m_coreLoadXAxis );
-    s->attachAxis( m_coreLoadYAxis );
-    m_coreSeries[ static_cast< size_t >( i ) ] = s;
-
-    auto *pill = new QPushButton( QStringLiteral( "C%1 —%" ).arg( i ) );
-    pill->setCheckable( true );
-    pill->setFlat( true );
-    pill->setCursor( Qt::PointingHandCursor );
-    pill->setToolTip( QStringLiteral( "Click to highlight CPU core %1" ).arg( i ) );
-    connect( pill, &QPushButton::clicked, this, [this, i]() {
-      m_highlightedCore = ( m_highlightedCore == i ) ? -1 : i;
-      updateCoreHighlight();
-    } );
-    m_coreBadgesLayout->addWidget( pill, i / cols, i % cols );
-    m_coreBadges[ static_cast< size_t >( i ) ] = pill;
-  }
-
-  installHoverCallout( m_coreLoadChart );
-  updateCoreHighlight();
+    m_coreTypes = std::move( types );
+    if ( m_coreLoadGrid )
+      m_coreLoadGrid->setTopology( m_coreTypes );
+  } );
 }
 
-void MonitorTab::updateCoreHighlight()
-{
-  const int count = static_cast< int >( m_coreSeries.size() );
-  const auto theme = FluentTheme::colors();
-  for ( int i = 0; i < count; ++i )
-  {
-    const QColor base = coreSeriesColor( i, count );
-    const bool isolated = ( m_highlightedCore >= 0 );
-    const bool focused = ( m_highlightedCore == i );
-    if ( auto *s = m_coreSeries[ static_cast< size_t >( i ) ] )
-    {
-      QColor c = base;
-      c.setAlphaF( !isolated ? 0.90 : ( focused ? 1.0 : 0.16 ) );
-      QPen pen( c );
-      pen.setWidthF( focused ? 2.4 : 1.1 );
-      s->setPen( pen );
-    }
-    if ( auto *btn = m_coreBadges[ static_cast< size_t >( i ) ] )
-    {
-      const QSignalBlocker blocked( btn );
-      btn->setChecked( focused );
-      const QString bg = focused ? theme.selected.name() : theme.inset.name();
-      const QString border = focused ? base.name() : theme.border.name();
-      const QString fg = ( !isolated || focused ) ? theme.text.name() : theme.secondary.name();
-      btn->setStyleSheet(
-        QStringLiteral(
-          "QPushButton { font-size: 11px; padding: 2px 6px; min-height: 16px; border-radius: 4px; "
-          "background: %1; color: %2; border: 1px solid %3; border-left: 3px solid %4; text-align: left; }" )
-          .arg( bg, fg, border, base.name() ) );
-    }
-  }
-}
-
-void MonitorTab::sampleAndUpdateCoreLoad( qint64 timestampMs )
+void MonitorTab::sampleAndUpdateCoreLoad()
 {
   QFile statFile( QStringLiteral( "/proc/stat" ) );
   if ( !statFile.open( QIODevice::ReadOnly | QIODevice::Text ) )
@@ -2059,12 +2255,15 @@ void MonitorTab::sampleAndUpdateCoreLoad( qint64 timestampMs )
   for ( const auto &c : parsed )
     maxIdx = std::max( maxIdx, c.idx );
   const int coreCount = maxIdx + 1;
-  ensureCoreSeries( coreCount );
   if ( m_prevCoreSamples.size() != static_cast< size_t >( coreCount ) )
     m_prevCoreSamples.assign( static_cast< size_t >( coreCount ), CoreCpuSample{} );
 
+  QVector< double > loads( coreCount, -1.0 );
   double sumPct = 0.0;
   int activeSamples = 0;
+  int peakCore = -1;
+  double peakPct = -1.0;
+
   for ( const auto &c : parsed )
   {
     const size_t i = static_cast< size_t >( c.idx );
@@ -2074,44 +2273,40 @@ void MonitorTab::sampleAndUpdateCoreLoad( qint64 timestampMs )
       const quint64 dTotal = c.total - prev.total;
       const quint64 dBusy = c.busy - prev.busy;
       const double pct = std::clamp( 100.0 * static_cast< double >( dBusy ) / static_cast< double >( dTotal ), 0.0, 100.0 );
-      m_coreBuffers[ i ].append( QPointF( static_cast< qreal >( timestampMs ), pct ) );
+      loads[ c.idx ] = pct;
       sumPct += pct;
       ++activeSamples;
-      if ( auto *btn = m_coreBadges[ i ] )
-        btn->setText( QStringLiteral( "C%1 %2%" ).arg( c.idx ).arg( qRound( pct ) ) );
+      if ( pct > peakPct )
+      {
+        peakPct = pct;
+        peakCore = c.idx;
+      }
     }
     prev.busy = c.busy;
     prev.total = c.total;
     prev.valid = true;
   }
 
-  trimCoreLoadSeries();
-  for ( size_t i = 0; i < m_coreSeries.size(); ++i )
-  {
-    if ( m_coreSeries[ i ] )
-      m_coreSeries[ i ]->replace( m_coreBuffers[ i ] );
-  }
+  if ( m_coreLoadGrid )
+    m_coreLoadGrid->setCoreLoads( loads );
 
   if ( m_coreLoadSummary )
   {
-    if ( activeSamples > 0 )
-      m_coreLoadSummary->setText( QStringLiteral( "%1 cores · avg %2%" ).arg( coreCount ).arg( qRound( sumPct / activeSamples ) ) );
+    if ( activeSamples > 0 && peakCore >= 0 )
+    {
+      const int totalPct = qRound( sumPct / activeSamples );
+      const QString peakId = QStringLiteral( "C%1" ).arg( peakCore, 2, 10, QLatin1Char( '0' ) );
+      const QString peakType = m_coreTypes.value( peakCore );
+      const QString peakTag = ( peakType == QLatin1String( "P" ) || peakType == QLatin1String( "E" ) )
+        ? QStringLiteral( "%1 (%2)" ).arg( peakId, peakType )
+        : peakId;
+      m_coreLoadSummary->setText(
+        QStringLiteral( "Total: %1% · Peak: %2 %3%" ).arg( totalPct ).arg( peakTag ).arg( qRound( peakPct ) ) );
+    }
     else
-      m_coreLoadSummary->setText( QStringLiteral( "%1 cores · baseline" ).arg( coreCount ) );
-  }
-}
-
-void MonitorTab::trimCoreLoadSeries()
-{
-  const qint64 now = QDateTime::currentMSecsSinceEpoch();
-  const qreal cutoff = static_cast< qreal >( now - m_fetchTimer.interval() - static_cast< qint64 >( m_windowSeconds ) * 1000 );
-  for ( auto &buf : m_coreBuffers )
-  {
-    int stale = 0;
-    while ( stale < buf.size() && buf[ stale ].x() < cutoff )
-      ++stale;
-    if ( stale > 1 )
-      buf.remove( 0, stale - 1 );
+    {
+      m_coreLoadSummary->setText( QStringLiteral( "%1 cores · Sampling…" ).arg( coreCount ) );
+    }
   }
 }
 
@@ -2120,11 +2315,7 @@ void MonitorTab::trimCoreLoadSeries()
 void MonitorTab::fetchData()
 {
   if (!m_client || m_paused || !m_monitoringActive || m_fetchPending) return;
-  if ( m_coreLoadChartView )
-    m_coreLoadChartView->setUpdatesEnabled( false );
-  sampleAndUpdateCoreLoad( QDateTime::currentMSecsSinceEpoch() );
-  if ( m_coreLoadChartView )
-    m_coreLoadChartView->setUpdatesEnabled( true );
+  sampleAndUpdateCoreLoad();
   m_fetchPending = true;
   const auto generation = m_fetchGeneration;
   // Query with a small overlap window so late samples from asynchronous daemon producers
@@ -2287,7 +2478,6 @@ void MonitorTab::trimSeries()
     if ( stale > 1 )
       buf.remove( 0, stale - 1 );
   }
-  trimCoreLoadSeries();
 }
 
 void MonitorTab::commitSeries()
@@ -2340,7 +2530,6 @@ void MonitorTab::updateAxes()
     setRange( m_powerXAxis, m_powerChartView );
     setRange( m_freqXAxis, m_freqChartView );
     setRange( m_voltXAxis, m_voltChartView );
-    setRange( m_coreLoadXAxis, m_coreLoadChartView );
   }
   else
   {

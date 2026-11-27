@@ -92,10 +92,10 @@ void GuiAudit::monitorScrollsBetweenFetchesAndFreezesOnPause() {
     unified->setChecked(false);
     auto *coreCard=tab.findChild<QFrame*>("cpuCoreLoadCard");
     auto *coreChk=tab.findChild<QCheckBox*>("monitorCpuCoreLoad");
-    auto *coreView=tab.findChild<QChartView*>("cpuCoreLoadChartView");
-    QVERIFY(coreCard && coreChk && coreView);
+    auto *coreGrid=tab.findChild<ucc::CpuCoreGridWidget*>("cpuCoreGridWidget");
+    QVERIFY(coreCard && coreChk && coreGrid);
     QVERIFY(coreChk->isChecked());
-    QVERIFY(coreView->chart()->series().size()>1);
+    QVERIFY(coreGrid->coreCount()>0);
     coreChk->setChecked(false);
     QVERIFY(!coreCard->isVisibleTo(&tab));
     coreChk->setChecked(true);
@@ -110,24 +110,24 @@ void GuiAudit::sidebarNavigationPreservesPages() {
     QCOMPARE(brand->text(),QString("ucc-rusted"));
     auto *navigation=window.findChild<QListWidget*>("navigation");
     auto *aboutBtn=window.findChild<QPushButton*>("aboutNavigation");
-    QVERIFY2(navigation && aboutBtn,"Fluent shell must expose 10 top sections plus bottom-pinned About button");
-    QCOMPARE(navigation->count(),10);
+    QVERIFY2(navigation && aboutBtn,"Fluent shell must expose 9 top sections plus bottom-pinned About button");
+    QCOMPARE(navigation->count(),9);
     auto *pages=window.findChild<QTabWidget*>("pages");
     QVERIFY(pages);
     window.show();
-    const int pageIndices[]={0,1,2,2,3,4,5,6,7,8};
-    for(int index=0;index<10;++index) {
+    const int pageIndices[]={0,1,2,2,3,4,5,6,7};
+    for(int index=0;index<9;++index) {
       if (!(navigation->item(index)->flags() & Qt::ItemIsEnabled)) continue;
       navigation->setCurrentRow(index);
       QCOMPARE(pages->currentIndex(),pageIndices[index]);
       QVERIFY(!aboutBtn->isChecked());
     }
     QTest::mouseClick(aboutBtn,Qt::LeftButton);
-    QCOMPARE(pages->currentIndex(),9);
+    QCOMPARE(pages->currentIndex(),8);
     QVERIFY(aboutBtn->isChecked());
     QVERIFY(window.findChild<QWidget *>("experimentalPage"));
     QVERIFY(window.findChild<QLabel *>("experimentalBanner"));
-    const QStringList iconNames={"Lighting","Hardware","Power & Devices","Battery & Processes","Experimental"};
+    const QStringList iconNames={"Lighting","Power & Devices","Battery & Processes","Experimental"};
     QList<QImage> renderedIcons;
     for(const auto &name:iconNames) renderedIcons.append(ucc::FluentTheme::icon(name).pixmap(24,24).toImage());
     for(int i=0;i<renderedIcons.size();++i)

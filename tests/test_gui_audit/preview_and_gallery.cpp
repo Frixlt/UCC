@@ -94,12 +94,12 @@ void GuiAudit::renderReleaseGallery() {
     auto *navigation=window.findChild<QListWidget*>("navigation");QVERIFY(navigation);
     auto *aboutBtn=window.findChild<QPushButton*>("aboutNavigation");QVERIFY(aboutBtn);
     auto *processes=window.findChild<ucc::SessionProcessesWidget*>();QVERIFY(processes);
-    const QStringList names={"overview","profiles","cooler-settings","watercool-settings","monitor","lighting","hardware","power-devices","battery-processes","experimental","about"};
-    QCOMPARE(navigation->count(),10);
+    const QStringList names={"overview","profiles","cooler-settings","watercool-settings","monitor","lighting","power-devices","battery-processes","experimental","about"};
+    QCOMPARE(navigation->count(),9);
     for(int page=0;page<names.size();++page) {
-      if(page<10) navigation->setCurrentRow(page); else QTest::mouseClick(aboutBtn,Qt::LeftButton);
+      if(page<9) navigation->setCurrentRow(page); else QTest::mouseClick(aboutBtn,Qt::LeftButton);
       QTest::qWait(page==0 || page==4 ? 2400 : 450);
-      if(page==8) {
+      if(page==7) {
         processes->monitor()->setActive(false);QTRY_VERIFY(!processes->monitor()->isBusy());
         processes->setSnapshot({{"batteries",QJsonArray{QJsonObject{{"name","BAT0"},{"capacity",76},{"status","Discharging"},{"powerWatts",12.5}}}},
           {"gpuState","active"},{"processesSampled",true},{"processes",QJsonArray{QJsonObject{{"pid",424242},{"startTime","123456"},{"name","Example GPU application"}}}}});
@@ -131,8 +131,8 @@ void GuiAudit::renderReferencePages() {
     QVERIFY2(hasConnectedStatus,"Overview must reflect the current cooler connection, not its initial placeholder");
     const QString output=qEnvironmentVariable("UCC_SCREENSHOT_DIR");
     if(!output.isEmpty()) QVERIFY(QDir().mkpath(output));
-    const QList<QPair<int,QString>> refPages={{0,"overview"},{1,"profiles"},{2,"cooler-settings"},{3,"watercool-settings"},{4,"monitor"},{5,"lighting"},{6,"hardware"},{10,"about"}};
-    for(const auto &[row,name]:refPages){if(row<10) navigation->setCurrentRow(row);else QTest::mouseClick(aboutBtn,Qt::LeftButton);QTest::qWait(row==3 ? 2400 : 400);if(row==2 || row==3){auto *cooling=window.findChild<QTabWidget *>("coolingPages");QVERIFY(cooling);QCOMPARE(cooling->currentIndex(),row-2);QVERIFY(!cooling->tabBar()->isVisible());}if(!output.isEmpty()) QVERIFY(window.grab().save(output+"/"+name+".png"));}
+    const QList<QPair<int,QString>> refPages={{0,"overview"},{1,"profiles"},{2,"cooler-settings"},{3,"watercool-settings"},{4,"monitor"},{5,"lighting"},{9,"about"}};
+    for(const auto &[row,name]:refPages){if(row<9) navigation->setCurrentRow(row);else QTest::mouseClick(aboutBtn,Qt::LeftButton);QTest::qWait(row==3 ? 2400 : 400);if(row==2 || row==3){auto *cooling=window.findChild<QTabWidget *>("coolingPages");QVERIFY(cooling);QCOMPARE(cooling->currentIndex(),row-2);QVERIFY(!cooling->tabBar()->isVisible());}if(!output.isEmpty()) QVERIFY(window.grab().save(output+"/"+name+".png"));}
     if(!output.isEmpty()) {
       QTest::mouseClick(aboutBtn,Qt::LeftButton);QTest::qWait(350);
       auto *about=window.findChild<QScrollArea*>("aboutPage");QVERIFY(about);
@@ -179,7 +179,7 @@ void GuiAudit::renderReferencePages() {
       QVERIFY(window.grab().save(output+"/notifications-context.png"));center->hide();
     }
     window.resize(1024,768);
-    for(const auto &[row,name]:refPages){if(row<10) navigation->setCurrentRow(row);else QTest::mouseClick(aboutBtn,Qt::LeftButton);QTest::qWait(350);QVERIFY(window.width()<=1024);if(!output.isEmpty()) QVERIFY(window.grab().save(output+"/"+name+"-small.png"));}
+    for(const auto &[row,name]:refPages){if(row<9) navigation->setCurrentRow(row);else QTest::mouseClick(aboutBtn,Qt::LeftButton);QTest::qWait(350);QVERIFY(window.width()<=1024);if(!output.isEmpty()) QVERIFY(window.grab().save(output+"/"+name+"-small.png"));}
     window.hide();
     QVERIFY2(stats().value("writes").toArray().isEmpty(),"Rendering pages must not change hardware or profile settings");
   }
@@ -249,7 +249,7 @@ void GuiAudit::aboutTabStaysPinnedToSidebarBottom() {
     auto *footer=window.findChild<QWidget*>("sidebarFooter");
     auto *pages=window.findChild<QTabWidget*>("pages");
     QVERIFY(navigation && aboutBtn && footer && pages);
-    QCOMPARE(navigation->count(),10);
+    QCOMPARE(navigation->count(),9);
 
     const int ySmall=aboutBtn->mapTo(&window,QPoint(0,0)).y();
     const int navBottomSmall=navigation->mapTo(&window,QPoint(0,navigation->height())).y();
@@ -265,7 +265,7 @@ void GuiAudit::aboutTabStaysPinnedToSidebarBottom() {
     QVERIFY2(footerTopLarge-(yLarge+aboutBtn->height())<=24,"About button must stay pinned above footer at tall window size");
 
     QTest::mouseClick(aboutBtn,Qt::LeftButton);
-    QCOMPARE(pages->currentIndex(),9);
+    QCOMPARE(pages->currentIndex(),8);
     QVERIFY(aboutBtn->isChecked());
     QCOMPARE(navigation->currentRow(),-1);
     QCOMPARE(window.findChild<QLabel*>("pageTitle")->text(),QString("About"));

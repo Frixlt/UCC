@@ -41,7 +41,6 @@
 #include "PumpCurveEditorWidget.hpp"
 #include "../libucc-dbus/UccdClient.hpp"
 
-#include "HardwareTab.hpp"
 
 #include <QtWidgets/QTableWidget>
 #include <QtWidgets/QHeaderView>
@@ -56,6 +55,7 @@
 #include <QDBusReply>
 #include <QEventLoop>
 #include <algorithm>
+#include <set>
 #include <optional>
 
 namespace {
@@ -274,7 +274,7 @@ void MainWindow::setupUI()
   sideLayout->addWidget(device);sideLayout->addSpacing(20);
   auto *navigation=new QListWidget(sidebar);navigation->setObjectName("navigation");
   navigation->setIconSize(QSize(24,24));
-  const QStringList labels={"Overview","Profiles","Cooler Settings","Watercool Settings","Monitor","Lighting","Hardware","Power & Devices","Battery & Processes","Experimental"};
+  const QStringList labels={"Overview","Profiles","Cooler Settings","Watercool Settings","Monitor","Lighting","Power & Devices","Battery & Processes","Experimental"};
   for(const auto &label:labels) new QListWidgetItem(FluentTheme::icon(label),label,navigation);
   sideLayout->addWidget(navigation,1);
   m_aboutNavButton=new QPushButton(FluentTheme::icon("About"),"About",sidebar);
@@ -377,19 +377,19 @@ void MainWindow::setupUI()
   contentLayout->addWidget(m_tabs,1);shellLayout->addWidget(content,1);setCentralWidget(shell);
   m_entrance=new FluentEntrance(content);
   auto showNavigationHeading=[heading,subtitle,labels](int row) {
-    if(row==10) {
+    if(row==9) {
       heading->setText("About");
       subtitle->setText("Build information, project origins and open-source acknowledgements");
       return;
     }
     if(row<0 || row>=labels.size()) return;
     heading->setText(labels[row]);
-    const QStringList descriptions={"Your system at a glance","Power, cooling and lighting in one profile","Shape CPU and GPU cooling for your profile","Water cooling, pump and lighting controls","Live system telemetry","Keyboard backlight, lightbar and chassis logo lighting","Display brightness, webcam and hardware toggles","CPU, modules and device policies for every power source","Battery power and your NVIDIA processes","Preview and experimental settings under development"};
+    const QStringList descriptions={"Your system at a glance","Power, cooling and lighting in one profile","Shape CPU and GPU cooling for your profile","Water cooling, pump and lighting controls","Live system telemetry","Keyboard backlight, lightbar and chassis logo lighting","CPU, modules and device policies for every power source","Battery power and your NVIDIA processes","Preview and experimental settings under development"};
     subtitle->setText(descriptions.value(row));
   };
   connect(navigation,&QListWidget::currentRowChanged,this,[this,showNavigationHeading](int row){
-    if(row<0 || row>9) return;
-    const int pages[]={0,1,2,2,3,4,5,6,7,8};
+    if(row<0 || row>8) return;
+    const int pages[]={0,1,2,2,3,4,5,6,7};
     if(row==3 && !m_waterCoolerSupported) return;
     if(m_aboutNavButton) {
       const QSignalBlocker blockAbout(m_aboutNavButton);
@@ -412,13 +412,13 @@ void MainWindow::setupUI()
       const QSignalBlocker blockAbout(m_aboutNavButton);
       m_aboutNavButton->setChecked(true);
     }
-    const bool samePage=m_tabs->currentIndex()==9;
-    m_tabs->setCurrentIndex(9);showNavigationHeading(10);
+    const bool samePage=m_tabs->currentIndex()==8;
+    m_tabs->setCurrentIndex(8);showNavigationHeading(9);
     if(samePage) m_entrance->play();
   });
   connect(m_tabs,&QTabWidget::currentChanged,navigation,[this,navigation,showNavigationHeading](int index){
-    if(index<0 || index>9) return;
-    if(index==9) {
+    if(index<0 || index>8) return;
+    if(index==8) {
       const QSignalBlocker blockNav(navigation);
       navigation->clearSelection();
       navigation->setCurrentRow(-1);
@@ -426,7 +426,7 @@ void MainWindow::setupUI()
         const QSignalBlocker blockAbout(m_aboutNavButton);
         m_aboutNavButton->setChecked(true);
       }
-      showNavigationHeading(10);
+      showNavigationHeading(9);
       m_entrance->play();
       return;
     }
@@ -472,7 +472,6 @@ void MainWindow::setupUI()
   m_tabs->addTab( m_monitorTab, "Monitor" );
 
   setupLightingPage();
-  setupHardwarePage();
   auto *powerDevices=new PowerDevicesTab(m_UccdClient.get(),this);
   connect(powerDevices,&PowerDevicesTab::message,statusBar(),[this](const QString &text){statusBar()->showMessage(text);});
   m_tabs->addTab(powerDevices,"Power & Devices");
@@ -581,7 +580,7 @@ void MainWindow::setupLightingPage()
         m_lightingTabs->setCurrentIndex( i );
     } );
   }
-  auto syncSegments = [this, segmentButtons, segmentDefs]( int activeIndex ) {
+  auto syncSegments = [segmentButtons, segmentDefs]( int activeIndex ) {
     const auto c = FluentTheme::colors();
     for ( int i = 0; i < segmentButtons.size(); ++i )
     {
@@ -604,21 +603,6 @@ void MainWindow::setupLightingPage()
 
   lightingLayout->addWidget( m_lightingTabs, 1 );
   m_tabs->addTab( lightingPage, "Lighting" );
-}
-
-void MainWindow::setupHardwarePage()
-{
-  auto *scroll = new QScrollArea( this );
-  scroll->setObjectName( "hardwarePage" );
-  scroll->setWidgetResizable( true );
-  auto *hwContainer = new QWidget();
-  auto *hwLayout = new QVBoxLayout( hwContainer );
-  hwLayout->setContentsMargins( 0, 0, 0, 0 );
-  hwLayout->setSpacing( 16 );
-  m_hardwareTab = new HardwareTab( m_systemMonitor.get(), hwContainer );
-  hwLayout->addStretch( 1 );
-  scroll->setWidget( hwContainer );
-  m_tabs->addTab( scroll, "Hardware" );
 }
 
 void MainWindow::setupFanControlTab()
@@ -832,9 +816,7 @@ void MainWindow::setupProfilesPage()
 
   m_profileRefreshRate = new QComboBox();
   m_profileRefreshRate->setObjectName("profileRefreshRate");
-  m_profileRefreshRate->addItem("Do not change", 0);
-  for(int hz : {60, 90, 120, 144, 165, 180, 240, 300, 360, 480})
-    m_profileRefreshRate->addItem(QString("%1 Hz").arg(hz), hz);
+  rebuildRefreshRateCombo( 0 );
   m_profileRefreshRate->setToolTip("Applies automatically when this profile becomes active. Keeps the current resolution and uses only modes supported by the internal display.");
   detailsLayout->addWidget(new QLabel("Display refresh rate"), row, 0);
   detailsLayout->addWidget(m_profileRefreshRate, row, 1);
@@ -850,6 +832,20 @@ void MainWindow::setupProfilesPage()
   m_profileLidOffWcLed->setObjectName("turnOffWaterCoolerLedOnLidClose");
   m_profileLidOffWcLed->setToolTip("Turns off the external water cooler RGB LED while the lid is closed and restores it when reopened.");
   detailsLayout->addWidget(m_profileLidOffWcLed, row, 0, 1, 2);
+  row++;
+
+  m_profileLidCloseAction = new QComboBox();
+  m_profileLidCloseAction->setObjectName("profileLidCloseAction");
+  m_profileLidCloseAction->addItem("Default (global)", QString());
+  m_profileLidCloseAction->addItem("Turn off screen (keep running)", QStringLiteral("screen_off"));
+  m_profileLidCloseAction->addItem("Ignore", QStringLiteral("ignore"));
+  m_profileLidCloseAction->addItem("Suspend", QStringLiteral("suspend"));
+  m_profileLidCloseAction->addItem("Hibernate", QStringLiteral("hibernate"));
+  m_profileLidCloseAction->addItem("Power off", QStringLiteral("poweroff"));
+  m_profileLidCloseAction->addItem("Lock screen", QStringLiteral("lock"));
+  m_profileLidCloseAction->setToolTip("Overrides the global lid close behavior while this profile is active.");
+  detailsLayout->addWidget(new QLabel("Lid close action"), row, 0);
+  detailsLayout->addWidget(m_profileLidCloseAction, row, 1);
   row++;
 
   // Add spacer
@@ -1313,6 +1309,8 @@ void MainWindow::connectSignals()
     connect( m_profileLidOffKbd, &QCheckBox::toggled, this, &MainWindow::markChanged );
   if ( m_profileLidOffWcLed )
     connect( m_profileLidOffWcLed, &QCheckBox::toggled, this, &MainWindow::markChanged );
+  if ( m_profileLidCloseAction )
+    connect( m_profileLidCloseAction, &QComboBox::currentIndexChanged, this, &MainWindow::markChanged );
 
   connect( m_brightnessSlider, &QSlider::valueChanged,
            this, [this]() { markChanged(); } );
@@ -1708,7 +1706,6 @@ void MainWindow::onAllProfilesChanged()
   m_profileCombo->blockSignals( true );
   m_profileCombo->clear();
   // Populate combo with name + ID userData
-  const QStringList &names = m_profileManager->allProfiles();
   const QJsonArray &defaultData = m_profileManager->defaultProfilesData();
   const QJsonArray &customData = m_profileManager->customProfilesData();
   for ( const auto &p : defaultData )
@@ -2032,6 +2029,7 @@ void MainWindow::loadProfileDetails( const QString &profileId )
   m_keyboardProfileCombo->blockSignals( true );
   if ( m_profileLidOffKbd ) m_profileLidOffKbd->blockSignals( true );
   if ( m_profileLidOffWcLed ) m_profileLidOffWcLed->blockSignals( true );
+  if ( m_profileLidCloseAction ) m_profileLidCloseAction->blockSignals( true );
   m_mainsButton->blockSignals( true );
   m_typeCButton->blockSignals(true);
   m_batteryButton->blockSignals( true );
@@ -2041,12 +2039,13 @@ void MainWindow::loadProfileDetails( const QString &profileId )
   // Load Display settings (nested in display object)
   const auto display = obj["display"].toObject();
   const int refreshHz = display["useRefRate"].toBool() ? display["refreshRate"].toInt() : 0;
-  int refreshIndex = m_profileRefreshRate->findData(refreshHz);
-  if(refreshIndex < 0 && refreshHz > 0) {
-    m_profileRefreshRate->addItem(QString("%1 Hz").arg(refreshHz), refreshHz);
-    refreshIndex = m_profileRefreshRate->count()-1;
+  rebuildRefreshRateCombo( refreshHz );
+  if ( m_profileLidCloseAction )
+  {
+    const QString lidAction = display.value( QStringLiteral( "lidCloseAction" ) ).toString();
+    const int lidIdx = m_profileLidCloseAction->findData( lidAction );
+    m_profileLidCloseAction->setCurrentIndex( lidIdx >= 0 ? lidIdx : 0 );
   }
-  m_profileRefreshRate->setCurrentIndex(qMax(0, refreshIndex));
 
   if ( obj.contains( "display" ) && obj["display"].isObject() )
   {
@@ -2391,6 +2390,7 @@ void MainWindow::loadProfileDetails( const QString &profileId )
   m_keyboardProfileCombo->blockSignals( false );
   if ( m_profileLidOffKbd ) m_profileLidOffKbd->blockSignals( false );
   if ( m_profileLidOffWcLed ) m_profileLidOffWcLed->blockSignals( false );
+  if ( m_profileLidCloseAction ) m_profileLidCloseAction->blockSignals( false );
   m_mainsButton->blockSignals( false );
   m_typeCButton->blockSignals(false);
   m_batteryButton->blockSignals( false );
@@ -2483,6 +2483,7 @@ void MainWindow::updateProfileEditingWidgets( bool isCustom )
   if ( m_profileKeyboardProfileCombo ) m_profileKeyboardProfileCombo->setEnabled( isCustom );
   if ( m_profileLidOffKbd ) m_profileLidOffKbd->setEnabled( isCustom && !readOnlyPreview );
   if ( m_profileLidOffWcLed ) m_profileLidOffWcLed->setEnabled( isCustom && !readOnlyPreview );
+  if ( m_profileLidCloseAction ) m_profileLidCloseAction->setEnabled( isCustom && !readOnlyPreview );
 
   // ODM Power controls
   if ( m_odmPowerLimit1Slider ) m_odmPowerLimit1Slider->setEnabled( isCustom );
@@ -2613,6 +2614,73 @@ void MainWindow::fetchStartupCapabilities()
       updateCtgpVisibility();
     }
   } );
+  asyncCapabilityCall( QStringLiteral( "GetDisplayModesJSON" ), [this]( const QDBusMessage &reply ) {
+    if ( reply.type() == QDBusMessage::ErrorMessage || reply.arguments().isEmpty() )
+      return;
+    const QJsonDocument doc = QJsonDocument::fromJson( reply.arguments().front().toString().toUtf8() );
+    if ( !doc.isObject() )
+      return;
+    const QJsonObject root = doc.object();
+    const QJsonObject activeMode = root.value( QStringLiteral( "activeMode" ) ).toObject();
+    const int activeX = activeMode.value( QStringLiteral( "xResolution" ) ).toInt( 0 );
+    const int activeY = activeMode.value( QStringLiteral( "yResolution" ) ).toInt( 0 );
+    const QJsonArray displayModes = root.value( QStringLiteral( "displayModes" ) ).toArray();
+    std::set< int > uniqueRates;
+    auto collectRates = [&uniqueRates]( const QJsonArray &arr ) {
+      for ( const auto &v : arr )
+      {
+        const int hz = qRound( v.toDouble() );
+        if ( hz > 0 )
+          uniqueRates.insert( hz );
+      }
+    };
+    collectRates( activeMode.value( QStringLiteral( "refreshRates" ) ).toArray() );
+    bool matchedActiveRes = false;
+    if ( activeX > 0 && activeY > 0 )
+    {
+      for ( const auto &modeVal : displayModes )
+      {
+        const QJsonObject modeObj = modeVal.toObject();
+        if ( modeObj.value( QStringLiteral( "xResolution" ) ).toInt( 0 ) == activeX &&
+             modeObj.value( QStringLiteral( "yResolution" ) ).toInt( 0 ) == activeY )
+        {
+          collectRates( modeObj.value( QStringLiteral( "refreshRates" ) ).toArray() );
+          matchedActiveRes = true;
+        }
+      }
+    }
+    if ( !matchedActiveRes )
+    {
+      for ( const auto &modeVal : displayModes )
+        collectRates( modeVal.toObject().value( QStringLiteral( "refreshRates" ) ).toArray() );
+    }
+    if ( !uniqueRates.empty() )
+    {
+      m_supportedRefreshRates.clear();
+      for ( int hz : uniqueRates )
+        m_supportedRefreshRates.push_back( hz );
+      const int currentHz = m_profileRefreshRate ? m_profileRefreshRate->currentData().toInt() : 0;
+      rebuildRefreshRateCombo( currentHz );
+    }
+  } );
+}
+
+void MainWindow::rebuildRefreshRateCombo( int selectedHz )
+{
+  if ( !m_profileRefreshRate )
+    return;
+  const QSignalBlocker blocked( m_profileRefreshRate );
+  m_profileRefreshRate->clear();
+  m_profileRefreshRate->addItem( QStringLiteral( "Do not change" ), 0 );
+  const QVector< int > rates = m_supportedRefreshRates.isEmpty()
+    ? QVector< int >{ 60, 120, 144, 165, 240 }
+    : m_supportedRefreshRates;
+  for ( int hz : rates )
+    m_profileRefreshRate->addItem( QStringLiteral( "%1 Hz" ).arg( hz ), hz );
+  if ( selectedHz > 0 && !rates.contains( selectedHz ) )
+    m_profileRefreshRate->addItem( QStringLiteral( "%1 Hz (unsupported)" ).arg( selectedHz ), selectedHz );
+  const int idx = m_profileRefreshRate->findData( selectedHz );
+  m_profileRefreshRate->setCurrentIndex( qMax( 0, idx ) );
 }
 
 void MainWindow::refreshCtgpCapabilities()
@@ -2697,6 +2765,14 @@ QString MainWindow::buildProfileJSON() const
   const int refreshHz = m_profileRefreshRate->currentData().toInt();
   displayObj["useRefRate"] = refreshHz > 0;
   displayObj["refreshRate"] = refreshHz > 0 ? refreshHz : -1;
+  if ( m_profileLidCloseAction )
+  {
+    const QString lidAction = m_profileLidCloseAction->currentData().toString();
+    if ( lidAction.isEmpty() )
+      displayObj.remove( QStringLiteral( "lidCloseAction" ) );
+    else
+      displayObj["lidCloseAction"] = lidAction;
+  }
   profileObj["display"] = displayObj;
 
   // Fan - embed complete fan profile tables

@@ -9,6 +9,7 @@
 #include <QLabel>
 #include <QLineEdit>
 #include <QPushButton>
+#include <array>
 #include "UccdClient.hpp"
 
 namespace ucc {
@@ -28,11 +29,11 @@ private:
   UccdClient *m_client;
   QJsonObject m_settings;
   QJsonArray m_entries;
-  QTableWidget *m_cpu,*m_devices;
-  QCheckBox *m_enabled,*m_nvidia,*m_wakeOnlyLidKbd;
-  QComboBox *m_lidAc,*m_lidTypeC,*m_lidBat;
-  QLabel *m_status;
-  QLineEdit *m_search;
-  QPushButton *m_save,*m_scan;
+  std::array<std::array<QComboBox *,3>,3> m_cpuCombos{};
+  QTableWidget *m_devices = nullptr;
+  QCheckBox *m_enabled = nullptr,*m_nvidia = nullptr,*m_wakeOnlyLidKbd = nullptr,*m_showAdvancedPcie = nullptr;
+  QLabel *m_status = nullptr;
+  QLineEdit *m_search = nullptr;
+  QPushButton *m_save = nullptr,*m_scan = nullptr;
 };
 }
