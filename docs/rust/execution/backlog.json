@@ -1414,8 +1414,8 @@
       "milestone": "M5",
       "wave": "V5",
       "title": "Исправить надёжное восстановление профиля/состояния СЖО в текущем C++ UCC (если требуется хотфикс до перехода) и во всех 5 причинах в Rust uccd/ucc-hardware (manual_fan_speed/manual_pump_voltage из профиля, мгновенный пересчёт кривой и replay после WC_CONNECT_DEBOUNCE, spawn_blocking для reconcile_power_state, загрузка LED из aquaris.json, PrepareForSleep teardown/resume, авто-включение сканирования при настроенном state_map[power_wc]).",
-      "status": "planned",
-      "status_basis": "Root causes diagnosed across C++ (LCTWaterCoolerWorker.cpp, UccDBusService.cpp) and Rust crates/uccd/src/backend/{profile_tx.rs,cooling.rs} + crates/ucc-hardware/src/cooler.rs; fix and regression tests pending.",
+      "status": "done",
+      "status_basis": "Fixed all 5 Rust cooler restore causes across crates/ucc-hardware/src/cooler.rs and crates/uccd/src/backend{,.rs,/cooling.rs,/profile_tx.rs,/dbus_impl.rs}; per user direction legacy C++ was left untouched. Verified with 3 m5_9_* regression tests and full 94-suite (474/474) workspace + 42/42 CTest pass.",
       "suggested_role": null,
       "assigned_agent_id": null,
       "depends_on": [
@@ -1423,16 +1423,28 @@
       ],
       "dependency_refinement_required": false,
       "owned_paths": [
+        "crates/uccd/src/backend.rs",
         "crates/uccd/src/backend/cooling.rs",
         "crates/uccd/src/backend/profile_tx.rs",
-        "crates/ucc-hardware/src/cooler.rs"
+        "crates/uccd/src/backend/dbus_impl.rs",
+        "crates/ucc-hardware/src/cooler.rs",
+        "crates/uccd/tests/daemon_integration.rs"
       ],
       "feature_ids": [],
-      "test_ids": [],
-      "implementation_sha": null,
-      "r1_review": null,
-      "r2_evidence": [],
-      "integration_sha": null,
+      "test_ids": [
+        "m5_9_startup_auto_enables_wc_scan_when_power_wc_profile_requests_it",
+        "m5_9_manual_wc_fan_and_pump_profile_apply_and_reconnect_replay",
+        "m5_9_auto_wc_curve_and_aquaris_led_restore_across_suspend_resume"
+      ],
+      "implementation_sha": "9906087",
+      "r1_review": "passed",
+      "r2_evidence": [
+        "cargo clippy --workspace --all-targets --locked --offline -- -D warnings (0 warnings)",
+        "dbus-run-session -- cargo test -p ucc-hardware -p uccd m5_9 --locked --offline (3/3 passed)",
+        "dbus-run-session -- cargo test --workspace --locked --offline (94 suites, 474 passed, 0 failed, 0 ignored)",
+        "ctest --output-on-failure (42/42 passed)"
+      ],
+      "integration_sha": "bc1db6a",
       "children": [],
       "blockers": []
     },
@@ -2121,8 +2133,8 @@
       "milestone": "M8",
       "wave": "V8",
       "title": "Гасить подсветку клавиатуры и (опционально) подсветку подключённой СЖО при закрытии крышки и восстанавливать из RAM при открытии или выходе из сна (настройки на карточке Lid в PowerDevicesTab: turnOffKeyboardBacklightOnLidClose и turnOffWaterCoolerLedOnLidClose, без изменения активного профиля/settings.json, плюс подписка на login1 LidClosed / UPower LidIsClosed в run_logind_monitor_loop и регрессионные тесты).",
-      "status": "planned",
-      "status_basis": "run_logind_monitor_loop currently handles PrepareForSleep only and PowerDevicesTab lid settings lack keyboard/water-cooler LED toggles; implementation pending.",
+      "status": "done",
+      "status_basis": "Implemented RAM-only lid close blank/restore for keyboard backlight and optional water cooler LED across whitelist/lid/lighting_power/cooling/orchestrator and PowerDevicesTab GUI checkboxes; verified with t_daemon_05, m8_10_lid_close_blanks_and_restores_keyboard_and_wc_led_in_ram_only, test_gui_audit, and full workspace/CTest suites.",
       "suggested_role": null,
       "assigned_agent_id": null,
       "depends_on": [
@@ -2130,17 +2142,31 @@
       ],
       "dependency_refinement_required": false,
       "owned_paths": [
+        "crates/ucc-hardware/src/devices/whitelist.rs",
+        "crates/uccd/src/lid.rs",
         "crates/uccd/src/orchestrator.rs",
+        "crates/uccd/src/backend.rs",
         "crates/uccd/src/backend/lighting_power.rs",
         "crates/uccd/src/backend/cooling.rs",
-        "ucc-gui/src/PowerDevicesTab.cpp"
+        "ucc-gui/inc/PowerDevicesTab.hpp",
+        "ucc-gui/src/PowerDevicesTab.cpp",
+        "tests/test_gui_audit.cpp",
+        "crates/uccd/tests/daemon_integration.rs"
       ],
       "feature_ids": [],
-      "test_ids": [],
-      "implementation_sha": null,
-      "r1_review": null,
-      "r2_evidence": [],
-      "integration_sha": null,
+      "test_ids": [
+        "t_daemon_05_whitelist_validates_lid_policy_section",
+        "m8_10_lid_close_blanks_and_restores_keyboard_and_wc_led_in_ram_only",
+        "test_gui_audit"
+      ],
+      "implementation_sha": "fb3cf39",
+      "r1_review": "passed",
+      "r2_evidence": [
+        "cargo test -p ucc-hardware t_daemon_05 --locked --offline (1/1 passed)",
+        "dbus-run-session -- cargo test -p uccd m8_10 --locked --offline (1/1 passed)",
+        "ctest -R test_gui_audit --output-on-failure (1/1 passed)"
+      ],
+      "integration_sha": "bc1db6a",
       "children": [],
       "blockers": []
     },
@@ -2567,8 +2593,8 @@
       "milestone": "M10",
       "wave": "V10",
       "title": "Дополировка GUI: добавить уникальные векторные иконки в FluentTheme::icon() для вкладок Power & Devices, Lightbar и Battery & Processes вместо fallback-иконки клавиатуры.",
-      "status": "planned",
-      "status_basis": "FluentTheme::icon() falls through to the keyboard glyph for Power & Devices, Lightbar, and Battery & Processes; custom QPainter icons pending.",
+      "status": "done",
+      "status_basis": "Added dedicated QPainter vector icons in FluentTheme::icon() for Power & Devices, Lightbar, and Battery & Processes; verified pairwise icon distinction in test_gui_audit.",
       "suggested_role": null,
       "assigned_agent_id": null,
       "depends_on": [
@@ -2576,16 +2602,19 @@
       ],
       "dependency_refinement_required": false,
       "owned_paths": [
-        "ucc-gui/src/FluentTheme.cpp"
+        "ucc-gui/src/FluentTheme.cpp",
+        "tests/test_gui_audit.cpp"
       ],
       "feature_ids": [],
       "test_ids": [
         "test_gui_audit"
       ],
-      "implementation_sha": null,
-      "r1_review": null,
-      "r2_evidence": [],
-      "integration_sha": null,
+      "implementation_sha": "bc7d14f",
+      "r1_review": "passed",
+      "r2_evidence": [
+        "ctest -R test_gui_audit --output-on-failure (1/1 passed)"
+      ],
+      "integration_sha": "bc7d14f",
       "children": [],
       "blockers": []
     },
@@ -2594,8 +2623,8 @@
       "milestone": "M10",
       "wave": "V10",
       "title": "Добавить вкладку Experimental в ucc-gui с отдельной иконкой в сайдбаре, предупреждением о тестовом статусе и расширяемой структурой для будущих экспериментальных настроек.",
-      "status": "planned",
-      "status_basis": "Experimental tab scaffold and sidebar icon planned alongside GUI polish (M10.8).",
+      "status": "done",
+      "status_basis": "Added Experimental sidebar entry, dedicated Flask/Experimental QPainter vector icon, and page with test-status warning banner in MainWindow/FluentTheme; verified in test_gui_audit (11 sidebar items).",
       "suggested_role": null,
       "assigned_agent_id": null,
       "depends_on": [
@@ -2604,16 +2633,19 @@
       "dependency_refinement_required": false,
       "owned_paths": [
         "ucc-gui/src/MainWindow.cpp",
-        "ucc-gui/src/FluentTheme.cpp"
+        "ucc-gui/src/FluentTheme.cpp",
+        "tests/test_gui_audit.cpp"
       ],
       "feature_ids": [],
       "test_ids": [
         "test_gui_audit"
       ],
-      "implementation_sha": null,
-      "r1_review": null,
-      "r2_evidence": [],
-      "integration_sha": null,
+      "implementation_sha": "bc7d14f",
+      "r1_review": "passed",
+      "r2_evidence": [
+        "ctest -R test_gui_audit --output-on-failure (1/1 passed)"
+      ],
+      "integration_sha": "bc7d14f",
       "children": [],
       "blockers": []
     },

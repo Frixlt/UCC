@@ -437,7 +437,7 @@ Pump code `0` — высокий режим 11V, `2` — 7V, `3` — 8V, `4` —
 - [x] M5.6 Реализовать ordered writes с gap ≥80 мс, coalescing значений и cancellation поколения соединения.
 - [x] M5.7 Сохранить manual/auto semantics, Fan/Pump/LED restore после reconnect; запрещённый pump code отвергается.
 - [ ] M5.8 Проверить настоящую водянку: initial connect, disconnect, disable/enable, power cycle, manual/auto, отсутствие скачка на неподдержанный режим.
-- [ ] M5.9 Исправить надёжное восстановление профиля/состояния СЖО в текущем C++ UCC (если требуется хотфикс) и во всех 5 причинах в Rust `uccd` и `ucc-hardware` (`manual_fan_speed`/`manual_pump_voltage` из профиля, мгновенный пересчёт кривой и replay после `WC_CONNECT_DEBOUNCE`, `spawn_blocking` для `reconcile_power_state`, загрузка LED из `aquaris.json`, `PrepareForSleep` teardown/resume, авто-включение сканирования при настроенном `state_map["power_wc"]`).
+- [x] M5.9 Исправить надёжное восстановление профиля/состояния СЖО в текущем C++ UCC (если требуется хотфикс) и во всех 5 причинах в Rust `uccd` и `ucc-hardware` (`manual_fan_speed`/`manual_pump_voltage` из профиля, мгновенный пересчёт кривой и replay после `WC_CONNECT_DEBOUNCE`, `spawn_blocking` для `reconcile_power_state`, загрузка LED из `aquaris.json`, `PrepareForSleep` teardown/resume, авто-включение сканирования при настроенном `state_map["power_wc"]`; по решению пользователя legacy C++ оставлен без хотфиксов — все причины и регрессионные тесты реализованы в Rust).
 
 **Выход:** охлаждение работает автономно от GUI; BLE failures не задерживают fan loop, Polkit или shutdown.
 
@@ -476,7 +476,7 @@ Pump code `0` — высокий режим 11V, `2` — 7V, `3` — 8V, `4` —
 - [ ] M8.7 *(частично выполнено)* Проверить restart, corrupt config, unavailable device, D-Bus restart, slow auth, queue overload, sleep cancellation.
 - [ ] M8.8 *(частично выполнено)* Старый C++ GUI/CLI тестируется с новым Rust daemon на изолированной шине и затем в управляемом аппаратном переходе.
 - [ ] M8.9 *(частично выполнено)* Перенести `LidController` (ингибитор `handle-lid-switch`, debounce при отключении питания) и `WakeupPolicy` в `uccd` и `ucc-sleep prepare`.
-- [ ] M8.10 Гасить подсветку клавиатуры и (опционально) подсветку подключённой СЖО при закрытии крышки и восстанавливать из RAM при открытии или выходе из сна (настройки на карточке `Lid` в `PowerDevicesTab`: `turnOffKeyboardBacklightOnLidClose` и `turnOffWaterCoolerLedOnLidClose`, без изменения активного профиля/`settings.json`, плюс подписка на `login1` `LidClosed` / `UPower` `LidIsClosed` в `run_logind_monitor_loop` и тесты).
+- [x] M8.10 Гасить подсветку клавиатуры и (опционально) подсветку подключённой СЖО при закрытии крышки и восстанавливать из RAM при открытии или выходе из сна (настройки на карточке `Lid` в `PowerDevicesTab`: `turnOffKeyboardBacklightOnLidClose` и `turnOffWaterCoolerLedOnLidClose`, без изменения активного профиля/`settings.json`, плюс подписка на `login1` `LidClosed` / `UPower` `LidIsClosed` в `run_logind_monitor_loop` и тесты).
 
 **Выход:** все backend-функции F01–F29/F40 работают без C++ daemon и без запущенного GUI.
 
@@ -503,8 +503,8 @@ Pump code `0` — высокий режим 11V, `2` — 7V, `3` — 8V, `4` —
 - [x] M10.5 Исключить прототип `crates/ucc-gui` (`iced`/`wgpu`) из `Cargo.toml` и `Cargo.lock`, очистив Rust-workspace от графических зависимостей.
 - [x] M10.6 Прогнать полный `test_gui_audit` (все 10 разделов, включая карточку `Lid close action & sleep wakeup` `F45`, обе темы, `UCC_READ_ONLY_PREVIEW` и отказ команд без fake success) в связке с новым Rust-демоном `uccd` на изолированной шине.
 - [ ] M10.7 Проверить на живой сессии Hyprland: масштабирование `1.25`/`2.0`, тему `qt6ct`/Kvantum, открытие из Rust-трея с фокусом и отсутствие пробуждения спящей RTX 5080 при открытии/закрытии `ucc-gui`.
-- [ ] M10.8 Дополировка GUI: добавить уникальные векторные иконки в `FluentTheme::icon()` для вкладок `Power & Devices`, `Lightbar` и `Battery & Processes` вместо fallback-иконки клавиатуры.
-- [ ] M10.9 Добавить вкладку `Experimental` в `ucc-gui` с отдельной иконкой в сайдбаре, предупреждением о тестовом статусе и расширяемой структурой для будущих экспериментальных настроек.
+- [x] M10.8 Дополировка GUI: добавить уникальные векторные иконки в `FluentTheme::icon()` для вкладок `Power & Devices`, `Lightbar` и `Battery & Processes` вместо fallback-иконки клавиатуры.
+- [x] M10.9 Добавить вкладку `Experimental` в `ucc-gui` с отдельной иконкой в сайдбаре, предупреждением о тестовом статусе и расширяемой структурой для будущих экспериментальных настроек.
 
 **Выход:** все 10 разделов `ucc-gui` работают с Rust `uccd` без зависимостей `KF6`/`QML`/`libucc-dbus.so`, а в фоне нет ни одного Qt-процесса.
 

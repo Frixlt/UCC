@@ -164,7 +164,7 @@
   "last_verified": {
     "command": "cargo clippy --workspace --all-targets --locked --offline -- -D warnings; dbus-run-session -- cargo test --workspace --locked --offline --no-fail-fast; ctest --output-on-failure",
     "top_suites": 94,
-    "top_passed": 470,
+    "top_passed": 474,
     "top_failed": 0,
     "top_ignored": 0,
     "clippy_warnings": 0,
@@ -186,6 +186,7 @@
     "read_only_preview": "ucc-gui compiled with UCC_READ_ONLY_PREVIEW=ON in an isolated CMake build"
   },
   "completed_in_current_wave": [
+    "Wave 4 (bc7d14f M10.8/M10.9, fb3cf39 M8.10, 9906087/bc1db6a M5.9): Added distinct sidebar icons for Power & Devices / Lightbar / Battery & Processes plus the Experimental tab in ucc-gui; added RAM-only lid-close keyboard backlight & optional water cooler LED blank/restore with login1/UPower listeners and PowerDevicesTab Lid toggles; fixed all 5 Rust water cooler profile/LED/suspend-resume/power_wc auto-scan causes with 3 m5_9_* regression tests. Verified 474/474 Rust workspace tests across 94 suites (0 Clippy warnings) and 42/42 CTest targets (including test_gui_audit and test_rust_uccd_interop).",
     "Wave 1 (d81a9f3: BUILD-01, IPC-03, DESK-01, M9.7) & Wave 2 (913d1ef: M3.7, M8.8 private-bus interop): Fixed CI MSRV matrix [\"1.89.0\", \"1.99.1\"] (.github/workflows/build.yml); added global read Polkit semaphore (32, 2s timeout), per-sender read (8) & interactive (2) RAII admission guards, and 256 KiB JSON payload bounds across all 14 D-Bus mutators (crates/ucc-dbus); hardened tray bounded action channel (32), disconnect/reconnect loop with disabled controls, confirmed water-cooler readback, non-root guard, session singleton, and ActivateWithToken/preview activation (crates/ucc-desktop); added cross-language C++ UccdClient <-> live Rust LiveUccdBackend private-bus interop suite (crates/uccd/examples/interop_daemon.rs + tests/test_rust_uccd_interop.cpp). Verified 470/470 Rust workspace tests across 94 suites (0 Clippy warnings), 42/42 CTest suites (including test_rust_uccd_interop 8/8), and clean ldd linkage on ucc-gui.",
     "M8.3 and M12: retained a failed CPU restore snapshot across daemon handoff (d0e12e9); switched package recipes to the Rust runtime, preserving the standalone Qt6 GUI per ADR-01 (610f8a8).",
     "M8.1-M8.3 / M8.9 (m8_outcomes_recheck 5/5): Closed all 5 outcome defects across crates/uccd/src/backend.rs and crates/uccd/src/orchestrator.rs: reuse single preflight read_perf_profile() baseline across Phase 2/rollback and fail closed on non-Unavailable errors (odm_read_error_after_preflight), loop custom profile persist_or_reapply without disk write before active check and serialize inactive saves under hw_reconcile_lock (failed_reapply_of_a_superseded_edit), epoch-guard restore_device_writes/rollback_hardware with reconcile_to_latest_committed supersession handoff plus Phase-3 seqlock drift repair (stale_revision_rollback), prevent post-deadline CPU sysfs writes in write_sysfs_if_changed/restore_cpu_defaults while inheriting unrestored CpuDefaultsSnapshot via ShutdownOutcome::Completed(Option<CpuDefaultsSnapshot>) and preserving fan-auto safety after worker drain, and pass expected_stored_profile + StaleRevision retry in reconcile_power_state (power_worker_battery_revision). Added 5 permanent m8_outcomes_* regression tests in crates/uccd/tests/daemon_integration.rs. Verified with 387 passed Rust tests across 77 summaries (daemon_integration 85/85, parallel and --test-threads=1, 0 Clippy warnings), 5/5 m8_outcomes_recheck x4, 7/7 m8_neighbor_recheck, 7/7 m8_handoff_corrected, 6/6 m8_extended_recheck, 15/15 m8_transaction_recheck, and 1/1 full_current_config (umask 022); M8 remains partial pending live hardware stand, real Wayland sessions, and full deb/Arch/Nix package builds",
@@ -198,11 +199,8 @@
   "open_and_next": {
     "M8_remaining": "Daemon BlueZ supervision, logind listener and all three helper binaries are implemented. Host physical resume and full hardware cutover remain open.",
     "M5.8": "Hardware test pass with physical LCT cooler remains open",
-    "M5.9": "Fix water-cooler profile restore (C++ hotfix decision pending; all 5 Rust root causes in uccd/cooling.rs/profile_tx.rs/cooler.rs).",
-    "M8.10": "Blank keyboard backlight and optional water-cooler LED on lid close and restore on lid open/resume in RAM (plus PowerDevicesTab Lid toggles).",
-    "M10.8_M10.9": "Replace fallback keyboard glyph in FluentTheme::icon() for Power & Devices / Lightbar / Battery & Processes (M10.8) and add Experimental tab (M10.9).",
-    "M12.10": "Establish unified code style (rustfmt.toml, .editorconfig, CONTRIBUTING.md) and dynamic release/versioning workflow (awaiting user selection).",
-    "M13": "Live host cutover & hardware acceptance on Arch/CachyOS + Hyprland + RTX 5080 + LCT cooler remain open; M13.10 (project rename) and M13.11 (strict EN/RU docs + open-uniwill-cc comparison) queued.",
+    "M12.10": "Establish unified code style (rustfmt.toml, .editorconfig, CONTRIBUTING.md) and release workflow (Variant A selected: SemVer + Trunk-based + Conventional Commits + cargo xtask release + git-cliff).",
+    "M13": "Live host cutover & hardware acceptance on Arch/CachyOS + Hyprland + RTX 5080 + LCT cooler remain open; M13.10 (rename to ucc-rusted) and M13.11 (strict EN/RU docs + open-uniwill-cc comparison) queued.",
     "M15": "Post-M14 Windows port roadmap planned (Named Pipes/windows-service, ACPI WMI vs EV/WHQL KMDF boundary, WinRT BLE, USB HID, MSI/winget).",
     "M9_remaining": "Rust tray and session agent are built and staged. Live Hyprland compositor/tray/notification acceptance remains open.",
     "deferred_to_community": "Non-Arch packaging (DEB/RPM/Nix native builds & hooks), X11 session refresh backend (M9.5), and hardware not accessible on host are deferred to community contributors on those systems."
