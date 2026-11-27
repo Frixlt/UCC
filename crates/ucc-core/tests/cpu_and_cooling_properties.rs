@@ -489,7 +489,7 @@ fn prop_fan_curve_interpolation_rounding_and_clamping() {
             if t > first.temp && t < last.temp {
                 let seg = points
                     .windows(2)
-                    .find(|w| t >= w[0].temp && t <= w[1].temp)
+                    .find(|w| (w[0].temp..=w[1].temp).contains(&t))
                     .expect("segment covers t");
                 let frac = f64::from(t - seg[0].temp) / f64::from(seg[1].temp - seg[0].temp);
                 let expected = (f64::from(seg[0].speed)
@@ -512,6 +512,16 @@ fn prop_fan_curve_interpolation_rounding_and_clamping() {
     // Once an explicit water cooler fan curve is set, it overrides the fallback.
     fp.table_water_cooler_fan = vec![FanPoint::new(40, 10), FanPoint::new(80, 50)];
     assert_eq!(fp.get_water_cooler_fan_speed_for_temp(60), 30);
+
+    // Regression: extreme unvalidated knot span (i32::MIN..=i32::MAX) must not overflow.
+    let extreme_curve = FanCurve {
+        points: vec![FanPoint::new(i32::MIN, 0), FanPoint::new(i32::MAX, 100)],
+    };
+    let mid_speed = extreme_curve.get_speed_for_temp(0);
+    assert!(
+        (0..=100).contains(&mid_speed),
+        "extreme knot span interpolation out of bounds: {mid_speed}"
+    );
 }
 
 // ========================================================================
@@ -734,6 +744,20 @@ fn prop_cooling_controller_hw_limits_filtering_and_critical_override() {
     let mut empty_ctrl = FanControlLogic::new(FanProfile::new("empty", "Empty"), FanLogicType::Cpu);
     assert_eq!(empty_ctrl.report_temperature_checked(75), None);
     assert_eq!(empty_ctrl.report_temperature(75), 0);
+
+    // Regression: falling filtered temperature near i32::MAX must not overflow hysteresis.
+    let mut extreme_ctrl = FanControlLogic::new(FanCurve {
+        points: vec![FanPoint::new(20, 20), FanPoint::new(90, 100)],
+    });
+    assert_eq!(extreme_ctrl.report_temperature_checked(i32::MAX), Some(100));
+    assert_eq!(
+        extreme_ctrl.report_temperature_checked(i32::MAX - 1),
+        Some(100)
+    );
+    assert_eq!(
+        extreme_ctrl.report_temperature_checked(i32::MAX - 4),
+        Some(100)
+    );
 
     // TemporaryFanCurves overrides only the targeted fan index and non-empty tables.
     let mut base = FanProfile::new("base", "Base");
