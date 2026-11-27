@@ -495,7 +495,7 @@ impl LiveUccdBackend {
     }
 
     pub(super) fn set_display_brightness_internal(&self, brightness: i32) -> bool {
-        if !(0..=100).contains(&brightness) || self.shutdown_wait_expired.load(Ordering::SeqCst) {
+        if !(0..=100).contains(&brightness) || self.write_aborted_by_shutdown() {
             return false;
         }
         let Some((dev, max_val, is_amdgpu)) = self.discover_backlight_device() else {
@@ -503,7 +503,7 @@ impl LiveUccdBackend {
         };
         let brightness_path = dev.join("brightness");
         let prev_raw = self.sysfs.read(&brightness_path).ok();
-        if self.shutdown_wait_expired.load(Ordering::SeqCst) {
+        if self.write_aborted_by_shutdown() {
             return false;
         }
         let mut raw = ((f64::from(brightness) / 100.0) * f64::from(max_val))
@@ -637,8 +637,18 @@ impl LiveUccdBackend {
         None
     }
 
-    fn write_charging_u8_checked(&self, path: &Path, val: u8) -> bool {
-        if self.shutdown_wait_expired.load(Ordering::SeqCst) {
+    pub(super) fn write_charging_u8_checked(
+        &self,
+        path: &Path,
+        val: u8,
+        allow_during_shutdown_rollback: bool,
+    ) -> bool {
+        let aborted = if allow_during_shutdown_rollback {
+            self.shutdown_wait_expired.load(Ordering::SeqCst)
+        } else {
+            self.write_aborted_by_shutdown()
+        };
+        if aborted {
             return false;
         }
         self.charging_write_seq.fetch_add(1, Ordering::SeqCst);
@@ -653,7 +663,7 @@ impl LiveUccdBackend {
         )
     }
 
-    fn parse_active_charging_token(raw: &str) -> Option<&str> {
+    pub(super) fn parse_active_charging_token(raw: &str) -> Option<&str> {
         let trimmed = raw.trim();
         if trimmed.is_empty() {
             return None;
@@ -670,13 +680,23 @@ impl LiveUccdBackend {
         None
     }
 
-    fn active_bracket_token(&self, path: &Path) -> Option<String> {
+    pub(super) fn active_bracket_token(&self, path: &Path) -> Option<String> {
         let raw = self.sysfs.read(path).ok()?;
         Self::parse_active_charging_token(&raw).map(str::to_string)
     }
 
-    fn write_charging_token_checked(&self, path: &Path, token: &str) -> bool {
-        if self.shutdown_wait_expired.load(Ordering::SeqCst) {
+    pub(super) fn write_charging_token_checked(
+        &self,
+        path: &Path,
+        token: &str,
+        allow_during_shutdown_rollback: bool,
+    ) -> bool {
+        let aborted = if allow_during_shutdown_rollback {
+            self.shutdown_wait_expired.load(Ordering::SeqCst)
+        } else {
+            self.write_aborted_by_shutdown()
+        };
+        if aborted {
             return false;
         }
         let target = token.trim();
@@ -725,14 +745,14 @@ impl LiveUccdBackend {
             if restore_end_first {
                 if rb.wrote_end {
                     if let Some(val) = prev_end_u8 {
-                        if !self.write_charging_u8_checked(&end_path, val) {
+                        if !self.write_charging_u8_checked(&end_path, val, true) {
                             ok = false;
                         }
                     }
                 }
                 if rb.wrote_start && !superseded() {
                     if let Some(val) = prev_start_u8 {
-                        if !self.write_charging_u8_checked(&start_path, val) {
+                        if !self.write_charging_u8_checked(&start_path, val, true) {
                             ok = false;
                         }
                     }
@@ -740,14 +760,14 @@ impl LiveUccdBackend {
             } else {
                 if rb.wrote_start {
                     if let Some(val) = prev_start_u8 {
-                        if !self.write_charging_u8_checked(&start_path, val) {
+                        if !self.write_charging_u8_checked(&start_path, val, true) {
                             ok = false;
                         }
                     }
                 }
                 if rb.wrote_end && !superseded() {
                     if let Some(val) = prev_end_u8 {
-                        if !self.write_charging_u8_checked(&end_path, val) {
+                        if !self.write_charging_u8_checked(&end_path, val, true) {
                             ok = false;
                         }
                     }
@@ -756,7 +776,7 @@ impl LiveUccdBackend {
 
             if rb.wrote_type && !superseded() {
                 if let Some(ref prev_ct) = rb.prev_type {
-                    if !self.write_charging_token_checked(&bat.join("charge_type"), prev_ct) {
+                    if !self.write_charging_token_checked(&bat.join("charge_type"), prev_ct, true) {
                         ok = false;
                     }
                 }
@@ -764,14 +784,14 @@ impl LiveUccdBackend {
         }
         if rb.wrote_profile && !superseded() {
             if let (Some(ref p), Some(ref prev)) = (&rb.profile_path, &rb.prev_profile) {
-                if !self.write_charging_token_checked(p, prev) {
+                if !self.write_charging_token_checked(p, prev, true) {
                     ok = false;
                 }
             }
         }
         if rb.wrote_priority && !superseded() {
             if let (Some(ref p), Some(ref prev)) = (&rb.priority_path, &rb.prev_priority) {
-                if !self.write_charging_token_checked(p, prev) {
+                if !self.write_charging_token_checked(p, prev, true) {
                     ok = false;
                 }
             }
@@ -852,7 +872,7 @@ impl LiveUccdBackend {
                 if let Some(e) = end {
                     if has_end {
                         rb.wrote_end = true;
-                        if !self.write_charging_u8_checked(&end_path, e) {
+                        if !self.write_charging_u8_checked(&end_path, e, false) {
                             let _ = self.restore_charging_rollback(rb, start_epoch);
                             return Err(());
                         }
@@ -864,7 +884,7 @@ impl LiveUccdBackend {
                 if let Some(s) = start {
                     if has_start && end.is_none_or(|e| s < e) {
                         rb.wrote_start = true;
-                        if !self.write_charging_u8_checked(&start_path, s) {
+                        if !self.write_charging_u8_checked(&start_path, s, false) {
                             let _ = self.restore_charging_rollback(rb, start_epoch);
                             return Err(());
                         }
@@ -890,7 +910,7 @@ impl LiveUccdBackend {
             {
                 if has_ct {
                     rb.wrote_type = true;
-                    if !self.write_charging_token_checked(&ct_path, &ct) {
+                    if !self.write_charging_token_checked(&ct_path, &ct, false) {
                         let _ = self.restore_charging_rollback(&rb, start_epoch);
                         return Err(());
                     }
@@ -910,7 +930,7 @@ impl LiveUccdBackend {
                     rb.profile_path = Some(cur_path.clone());
                     rb.prev_profile = self.active_bracket_token(&cur_path);
                     rb.wrote_profile = true;
-                    if !self.write_charging_token_checked(&cur_path, prof_desc) {
+                    if !self.write_charging_token_checked(&cur_path, prof_desc, false) {
                         let _ = self.restore_charging_rollback(&rb, start_epoch);
                         return Err(());
                     }
@@ -935,7 +955,7 @@ impl LiveUccdBackend {
                     rb.priority_path = Some(cur_path.clone());
                     rb.prev_priority = self.active_bracket_token(&cur_path);
                     rb.wrote_priority = true;
-                    if !self.write_charging_token_checked(&cur_path, prio_desc) {
+                    if !self.write_charging_token_checked(&cur_path, prio_desc, false) {
                         let _ = self.restore_charging_rollback(&rb, start_epoch);
                         return Err(());
                     }
@@ -1455,6 +1475,9 @@ impl LiveUccdBackend {
                         let Ok(target_mw) = u32::try_from(target_mw_i64) else {
                             return false;
                         };
+                        if self.write_aborted_by_shutdown() {
+                            return false;
+                        }
                         self.ctgp_write_seq.fetch_add(1, Ordering::SeqCst);
                         let nv_res = nvml.set_power_limit_by_bdf(bdf, target_mw);
                         self.ctgp_write_seq.fetch_add(1, Ordering::SeqCst);
@@ -1468,7 +1491,7 @@ impl LiveUccdBackend {
         }
 
         if let Some(ctgp_path) = self.nvidia_ctgp_sysfs_path() {
-            if !(-1000..=1000).contains(&offset) {
+            if !(-1000..=1000).contains(&offset) || self.write_aborted_by_shutdown() {
                 return false;
             }
             self.ctgp_write_seq.fetch_add(1, Ordering::SeqCst);

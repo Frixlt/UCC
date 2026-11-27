@@ -47,6 +47,9 @@ impl LiveUccdBackend {
         mutate: impl FnOnce(&mut UccSettings) -> Option<R>,
     ) -> Option<R> {
         let mgr = self.lock_mutex(&self.config_manager);
+        if self.write_aborted_by_shutdown() {
+            return None;
+        }
         let mut candidate = self.read_rw(&self.settings).clone();
         let outcome = mutate(&mut candidate)?;
         if mgr.save(&candidate).is_err() {
@@ -390,6 +393,9 @@ impl LiveUccdBackend {
         };
 
         // Write to hardware BEFORE updating persistent settings (`ISSUE-13`).
+        if self.write_aborted_by_shutdown() {
+            return false;
+        }
         let blanked_under_lid = self.is_lid_closed()
             && self
                 .current_lid_source_policy()
@@ -484,6 +490,9 @@ impl LiveUccdBackend {
         let Ok(normalized_cfg) = ucc_lighting::LightbarSettings::normalize_json(&val) else {
             return false;
         };
+        if self.write_aborted_by_shutdown() {
+            return false;
+        }
         let normalized_json = normalized_cfg.to_json();
         if self
             .update_settings(|s| {

@@ -243,6 +243,8 @@ pub struct LiveUccdBackend {
     pub(super) dgpu_d0_metrics: AtomicBool,
     pub(super) shutting_down: AtomicBool,
     pub(super) shutdown_wait_expired: AtomicBool,
+    pub(super) prime_degraded: AtomicBool,
+    pub(super) telemetry_poll_in_flight: AtomicBool,
     pub(super) hardware_activation_pending: AtomicBool,
     pub(super) hardware_activated: AtomicBool,
     pub(super) in_flight_ops_wait: Arc<(Mutex<usize>, Condvar)>,
@@ -410,6 +412,8 @@ impl LiveUccdBackend {
             dgpu_d0_metrics: AtomicBool::new(true),
             shutting_down: AtomicBool::new(false),
             shutdown_wait_expired: AtomicBool::new(false),
+            prime_degraded: AtomicBool::new(false),
+            telemetry_poll_in_flight: AtomicBool::new(false),
             hardware_activation_pending: AtomicBool::new(false),
             hardware_activated: AtomicBool::new(false),
             in_flight_ops_wait: Arc::new((Mutex::new(0), Condvar::new())),
@@ -552,6 +556,27 @@ impl LiveUccdBackend {
     /// Marks that `DaemonRuntime::shutdown` timed out waiting for in-flight hardware work.
     pub fn mark_shutdown_wait_expired(&self) {
         self.shutdown_wait_expired.store(true, Ordering::SeqCst);
+    }
+
+    /// Returns true once shutdown has started or its wait deadline has expired (`DEEP-01`).
+    pub(super) fn write_aborted_by_shutdown(&self) -> bool {
+        self.shutting_down.load(Ordering::SeqCst)
+            || self.shutdown_wait_expired.load(Ordering::SeqCst)
+    }
+
+    /// Records whether startup priming timed out (`DEEP-03`).
+    pub fn mark_prime_degraded(&self, degraded: bool) {
+        self.prime_degraded.store(degraded, Ordering::SeqCst);
+    }
+
+    /// Returns whether startup priming timed out (`DEEP-03`).
+    pub fn is_prime_degraded(&self) -> bool {
+        self.prime_degraded.load(Ordering::SeqCst)
+    }
+
+    /// Returns whether a telemetry poll is currently in flight (`DEEP-03`).
+    pub fn is_telemetry_poll_in_flight(&self) -> bool {
+        self.telemetry_poll_in_flight.load(Ordering::SeqCst)
     }
 
     pub(super) fn emit_signal(&self, event: DbusSignalEvent) {
@@ -716,7 +741,9 @@ impl LiveUccdBackend {
     pub fn activate_hardware(&self) {
         if ucc_config::is_read_only_preview() || self.is_vendor_unsupported() {
             self.hardware_activated.store(true, Ordering::SeqCst);
-            self.prime_read_only();
+            if !self.is_prime_degraded() && !self.is_telemetry_poll_in_flight() {
+                self.prime_read_only();
+            }
             if !self.shutting_down.load(Ordering::SeqCst) {
                 self.hardware_activation_pending
                     .store(false, Ordering::SeqCst);
@@ -729,7 +756,9 @@ impl LiveUccdBackend {
         self.hardware_activated.store(true, Ordering::SeqCst);
         self.capture_initial_cpu_defaults();
         self.capture_initial_tdp_defaults();
-        self.prime_read_only();
+        if !self.is_prime_degraded() && !self.is_telemetry_poll_in_flight() {
+            self.prime_read_only();
+        }
 
         let (kb_states, lb_val, pd_val) = {
             let s = self.read_rw(&self.settings);
@@ -776,13 +805,11 @@ impl LiveUccdBackend {
 
     /// Runs one synchronous hardware telemetry poll and stores latest snapshot + history.
     pub fn poll_telemetry_once(&self) -> TelemetrySnapshot {
-        if self.shutting_down.load(Ordering::SeqCst)
-            || !self.sensor_data_collection.load(Ordering::SeqCst)
-        {
+        let fallback_snap = || {
             if let Some(prev) = self.read_rw(&self.latest_telemetry).clone() {
                 return prev;
             }
-            return TelemetrySnapshot {
+            TelemetrySnapshot {
                 timestamp_ms: unix_ms(),
                 collected_at: Instant::now(),
                 cpu: ucc_hardware::CpuTelemetrySnapshot {
@@ -794,8 +821,28 @@ impl LiveUccdBackend {
                 },
                 igpu: None,
                 dgpu: None,
-            };
+            }
+        };
+        if self.shutting_down.load(Ordering::SeqCst)
+            || !self.sensor_data_collection.load(Ordering::SeqCst)
+        {
+            return fallback_snap();
         }
+        if self
+            .telemetry_poll_in_flight
+            .compare_exchange(false, true, Ordering::SeqCst, Ordering::SeqCst)
+            .is_err()
+        {
+            return fallback_snap();
+        }
+        struct TelemetryInFlightGuard<'a>(&'a AtomicBool);
+        impl Drop for TelemetryInFlightGuard<'_> {
+            fn drop(&mut self) {
+                self.0.store(false, Ordering::SeqCst);
+            }
+        }
+        let _in_flight_guard = TelemetryInFlightGuard(&self.telemetry_poll_in_flight);
+
         let now = Instant::now();
         let ts = unix_ms();
         let mut collector = self.lock_mutex(&self.telemetry);

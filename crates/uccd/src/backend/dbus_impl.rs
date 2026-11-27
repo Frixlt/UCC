@@ -784,6 +784,9 @@ impl UccdBackend for LiveUccdBackend {
         if !avail.iter().any(|p| p == desc) {
             return false;
         }
+        if self.write_aborted_by_shutdown() {
+            return false;
+        }
         let Some(prev) = self.update_settings(|s| {
             let p = s.charging_profile.clone();
             s.charging_profile = Some(desc.to_string());
@@ -791,7 +794,7 @@ impl UccdBackend for LiveUccdBackend {
         }) else {
             return false;
         };
-        if self.sysfs.write(&current_path, desc).is_err() {
+        if self.write_aborted_by_shutdown() || self.sysfs.write(&current_path, desc).is_err() {
             let _ = self.update_settings(|s| {
                 if s.charging_profile.as_deref() == Some(desc) {
                     s.charging_profile = prev;
@@ -838,6 +841,9 @@ impl UccdBackend for LiveUccdBackend {
         if !avail.iter().any(|p| p == desc) {
             return false;
         }
+        if self.write_aborted_by_shutdown() {
+            return false;
+        }
         let Some(prev) = self.update_settings(|s| {
             let p = s.charging_priority.clone();
             s.charging_priority = Some(desc.to_string());
@@ -845,7 +851,7 @@ impl UccdBackend for LiveUccdBackend {
         }) else {
             return false;
         };
-        if self.sysfs.write(&current_path, desc).is_err() {
+        if self.write_aborted_by_shutdown() || self.sysfs.write(&current_path, desc).is_err() {
             let _ = self.update_settings(|s| {
                 if s.charging_priority.as_deref() == Some(desc) {
                     s.charging_priority = prev;
@@ -907,6 +913,9 @@ impl UccdBackend for LiveUccdBackend {
         if end >= 0 && value >= end {
             return false;
         }
+        if self.write_aborted_by_shutdown() {
+            return false;
+        }
         let Some(prev) = self.update_settings(|s| {
             let p = s.charge_start_threshold;
             s.charge_start_threshold = Some(value as u8);
@@ -914,7 +923,8 @@ impl UccdBackend for LiveUccdBackend {
         }) else {
             return false;
         };
-        if self.sysfs.write(&path, &value.to_string()).is_err() {
+        if self.write_aborted_by_shutdown() || self.sysfs.write(&path, &value.to_string()).is_err()
+        {
             let _ = self.update_settings(|s| {
                 if s.charge_start_threshold == Some(value as u8) {
                     s.charge_start_threshold = prev;
@@ -946,6 +956,9 @@ impl UccdBackend for LiveUccdBackend {
         if start >= 0 && value <= start {
             return false;
         }
+        if self.write_aborted_by_shutdown() {
+            return false;
+        }
         let Some(prev) = self.update_settings(|s| {
             let p = s.charge_end_threshold;
             s.charge_end_threshold = Some(value as u8);
@@ -953,7 +966,8 @@ impl UccdBackend for LiveUccdBackend {
         }) else {
             return false;
         };
-        if self.sysfs.write(&path, &value.to_string()).is_err() {
+        if self.write_aborted_by_shutdown() || self.sysfs.write(&path, &value.to_string()).is_err()
+        {
             let _ = self.update_settings(|s| {
                 if s.charge_end_threshold == Some(value as u8) {
                     s.charge_end_threshold = prev;
@@ -989,7 +1003,7 @@ impl UccdBackend for LiveUccdBackend {
             return false;
         };
         let path = bat.join("charge_type");
-        if !self.sysfs.exists(&path) {
+        if !self.sysfs.exists(&path) || self.write_aborted_by_shutdown() {
             return false;
         }
         let Some(prev) = self.update_settings(|s| {
@@ -999,7 +1013,7 @@ impl UccdBackend for LiveUccdBackend {
         }) else {
             return false;
         };
-        if self.sysfs.write(&path, trimmed).is_err() {
+        if self.write_aborted_by_shutdown() || self.sysfs.write(&path, trimmed).is_err() {
             let _ = self.update_settings(|s| {
                 if s.charge_type.as_deref() == Some(trimmed) {
                     s.charge_type = prev;
@@ -1034,6 +1048,9 @@ impl UccdBackend for LiveUccdBackend {
         let Some(path) = self.discover_fn_lock_path() else {
             return Err("Fn-Lock control is not supported on this device".to_string());
         };
+        if self.write_aborted_by_shutdown() {
+            return Err("Daemon shutting down".to_string());
+        }
         self.sysfs
             .write(&path, if status { "1" } else { "0" })
             .map_err(|e| format!("Failed to write Fn-Lock status: {e}"))

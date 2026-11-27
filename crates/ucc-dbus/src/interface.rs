@@ -4,16 +4,87 @@ use crate::auth::{AuthAction, Authorizer, PolkitAuthorizer};
 use crate::backend::{DefaultUccdBackend, UccdBackend};
 use std::collections::HashMap;
 use std::sync::{Arc, OnceLock};
-use tokio::sync::Semaphore;
+use std::time::{Duration, Instant};
+use tokio::sync::{OwnedSemaphorePermit, Semaphore};
 use zbus::object_server::SignalEmitter;
 use zbus::zvariant::OwnedValue;
 
-const MAX_CONCURRENT_OFFLOAD_THREADS: usize = 16;
 pub const MAX_DBUS_JSON_PAYLOAD_BYTES: usize = 256 * 1024;
 
-fn offload_semaphore() -> &'static Arc<Semaphore> {
-    static SEM: OnceLock<Arc<Semaphore>> = OnceLock::new();
-    SEM.get_or_init(|| Arc::new(Semaphore::new(MAX_CONCURRENT_OFFLOAD_THREADS)))
+/// Subsystem lanes isolating D-Bus offload threads so a stall in one subsystem
+/// (e.g. Charging) never starves independent subsystems (`DEEP-02`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum OffloadLane {
+    Read,
+    Profile,
+    Charging,
+    Lighting,
+    PowerGpu,
+    Cooler,
+    Display,
+    Misc,
+}
+
+fn offload_queue_timeout() -> Duration {
+    if let Ok(raw) = std::env::var("UCC_OFFLOAD_QUEUE_TIMEOUT_MS") {
+        if let Ok(ms) = raw.trim().parse::<u64>() {
+            return Duration::from_millis(ms.max(10));
+        }
+    }
+    Duration::from_millis(500)
+}
+
+fn lane_semaphore(lane: OffloadLane) -> &'static Arc<Semaphore> {
+    static READ: OnceLock<Arc<Semaphore>> = OnceLock::new();
+    static PROFILE: OnceLock<Arc<Semaphore>> = OnceLock::new();
+    static CHARGING: OnceLock<Arc<Semaphore>> = OnceLock::new();
+    static LIGHTING: OnceLock<Arc<Semaphore>> = OnceLock::new();
+    static POWER_GPU: OnceLock<Arc<Semaphore>> = OnceLock::new();
+    static COOLER: OnceLock<Arc<Semaphore>> = OnceLock::new();
+    static DISPLAY: OnceLock<Arc<Semaphore>> = OnceLock::new();
+    static MISC: OnceLock<Arc<Semaphore>> = OnceLock::new();
+
+    match lane {
+        OffloadLane::Read => READ.get_or_init(|| Arc::new(Semaphore::new(16))),
+        OffloadLane::Profile => PROFILE.get_or_init(|| Arc::new(Semaphore::new(4))),
+        OffloadLane::Charging => CHARGING.get_or_init(|| Arc::new(Semaphore::new(4))),
+        OffloadLane::Lighting => LIGHTING.get_or_init(|| Arc::new(Semaphore::new(4))),
+        OffloadLane::PowerGpu => POWER_GPU.get_or_init(|| Arc::new(Semaphore::new(4))),
+        OffloadLane::Cooler => COOLER.get_or_init(|| Arc::new(Semaphore::new(4))),
+        OffloadLane::Display => DISPLAY.get_or_init(|| Arc::new(Semaphore::new(4))),
+        OffloadLane::Misc => MISC.get_or_init(|| Arc::new(Semaphore::new(8))),
+    }
+}
+
+async fn acquire_lane_permit(
+    lane: OffloadLane,
+    label: &'static str,
+    live_check: Option<(&zbus::Connection, Option<&str>)>,
+) -> Result<OwnedSemaphorePermit, String> {
+    let wait_start = Instant::now();
+    let timeout = offload_queue_timeout();
+    let permit =
+        match tokio::time::timeout(timeout, Arc::clone(lane_semaphore(lane)).acquire_owned()).await
+        {
+            Ok(Ok(permit)) => permit,
+            Ok(Err(_)) => {
+                return Err(format!("{label} offload semaphore closed ({lane:?})"));
+            }
+            Err(_) => {
+                return Err(format!(
+                    "{label} offload lane {lane:?} busy after {timeout:?}"
+                ));
+            }
+        };
+    if let Some((conn, Some(sender))) = live_check {
+        if wait_start.elapsed() > Duration::from_millis(25) && !sender_is_alive(conn, sender).await
+        {
+            return Err(format!(
+                "{label} caller {sender} disconnected before {lane:?} execution"
+            ));
+        }
+    }
+    Ok(permit)
 }
 
 fn payload_within_limit(method: &str, payload: &str) -> bool {
@@ -68,15 +139,25 @@ fn format_panic_payload(payload: Box<dyn std::any::Any + Send>) -> String {
         .unwrap_or_else(|| "panic payload".to_string())
 }
 
-async fn offload_or_impl<B, F, R>(backend: &Arc<B>, label: &'static str, fallback: R, f: F) -> R
+async fn offload_or_impl<B, F, R>(
+    backend: &Arc<B>,
+    lane: OffloadLane,
+    label: &'static str,
+    live_check: Option<(&zbus::Connection, Option<&str>)>,
+    fallback: R,
+    f: F,
+) -> R
 where
     B: UccdBackend,
     F: FnOnce(&B) -> R + Send + 'static,
     R: Send + 'static,
 {
-    let Ok(permit) = Arc::clone(offload_semaphore()).acquire_owned().await else {
-        tracing::error!("{label} offload semaphore closed");
-        return fallback;
+    let permit = match acquire_lane_permit(lane, label, live_check).await {
+        Ok(permit) => permit,
+        Err(reason) => {
+            tracing::warn!("{reason}");
+            return fallback;
+        }
     };
     let backend = Arc::clone(backend);
     let (tx, rx) = tokio::sync::oneshot::channel::<Result<R, String>>();
@@ -108,17 +189,21 @@ where
 
 async fn offload_result_impl<B, F>(
     backend: &Arc<B>,
+    lane: OffloadLane,
     label: &'static str,
+    live_check: Option<(&zbus::Connection, Option<&str>)>,
     f: F,
 ) -> zbus::fdo::Result<()>
 where
     B: UccdBackend,
     F: FnOnce(&B) + Send + 'static,
 {
-    let Ok(permit) = Arc::clone(offload_semaphore()).acquire_owned().await else {
-        return Err(zbus::fdo::Error::Failed(format!(
-            "{label} offload semaphore closed"
-        )));
+    let permit = match acquire_lane_permit(lane, label, live_check).await {
+        Ok(permit) => permit,
+        Err(reason) => {
+            tracing::warn!("{reason}");
+            return Err(zbus::fdo::Error::Failed(reason));
+        }
     };
     let backend = Arc::clone(backend);
     let (tx, rx) = tokio::sync::oneshot::channel::<Result<(), String>>();
@@ -156,17 +241,21 @@ where
 
 async fn offload_fdo_result_impl<B, F>(
     backend: &Arc<B>,
+    lane: OffloadLane,
     label: &'static str,
+    live_check: Option<(&zbus::Connection, Option<&str>)>,
     f: F,
 ) -> zbus::fdo::Result<()>
 where
     B: UccdBackend,
     F: FnOnce(&B) -> Result<(), String> + Send + 'static,
 {
-    let Ok(permit) = Arc::clone(offload_semaphore()).acquire_owned().await else {
-        return Err(zbus::fdo::Error::Failed(format!(
-            "{label} offload semaphore closed"
-        )));
+    let permit = match acquire_lane_permit(lane, label, live_check).await {
+        Ok(permit) => permit,
+        Err(reason) => {
+            tracing::warn!("{reason}");
+            return Err(zbus::fdo::Error::Failed(reason));
+        }
     };
     let backend = Arc::clone(backend);
     let (tx, rx) = tokio::sync::oneshot::channel::<Result<Result<(), String>, String>>();
@@ -239,26 +328,62 @@ impl<B: UccdBackend> UccdInterface<B> {
     /// Runs potentially blocking hardware/config RPCs on a detached OS thread so neither `zbus`'s
     /// internal executor nor `tokio::runtime::Runtime` shutdown wait on stalled I/O (`M8-HANDOFF-03`),
     /// catching worker panics and spawn failures cleanly (`M8-LIFE-06`).
-    async fn offload_or<F, R>(&self, fallback: R, f: F) -> R
+    async fn offload_or<F, R>(&self, lane: OffloadLane, fallback: R, f: F) -> R
     where
         F: FnOnce(&B) -> R + Send + 'static,
         R: Send + 'static,
     {
-        offload_or_impl(&self.backend, "UccdInterface", fallback, f).await
+        offload_or_impl(&self.backend, lane, "UccdInterface", None, fallback, f).await
     }
 
-    async fn offload_result<F>(&self, f: F) -> zbus::fdo::Result<()>
+    async fn offload_or_checked<F, R>(
+        &self,
+        lane: OffloadLane,
+        conn: &zbus::Connection,
+        sender: Option<&str>,
+        fallback: R,
+        f: F,
+    ) -> R
+    where
+        F: FnOnce(&B) -> R + Send + 'static,
+        R: Send + 'static,
+    {
+        offload_or_impl(
+            &self.backend,
+            lane,
+            "UccdInterface",
+            Some((conn, sender)),
+            fallback,
+            f,
+        )
+        .await
+    }
+
+    async fn offload_result<F>(&self, lane: OffloadLane, f: F) -> zbus::fdo::Result<()>
     where
         F: FnOnce(&B) + Send + 'static,
     {
-        offload_result_impl(&self.backend, "UccdInterface", f).await
+        offload_result_impl(&self.backend, lane, "UccdInterface", None, f).await
     }
 
-    async fn offload_fdo_result<F>(&self, f: F) -> zbus::fdo::Result<()>
+    async fn offload_fdo_result<F>(
+        &self,
+        lane: OffloadLane,
+        conn: &zbus::Connection,
+        sender: Option<&str>,
+        f: F,
+    ) -> zbus::fdo::Result<()>
     where
         F: FnOnce(&B) -> Result<(), String> + Send + 'static,
     {
-        offload_fdo_result_impl(&self.backend, "UccdInterface", f).await
+        offload_fdo_result_impl(
+            &self.backend,
+            lane,
+            "UccdInterface",
+            Some((conn, sender)),
+            f,
+        )
+        .await
     }
 }
 
@@ -301,26 +426,70 @@ impl<B: UccdBackend> UccdLegacyInterface<B> {
         &*self.authorizer
     }
 
-    async fn offload_or<F, R>(&self, fallback: R, f: F) -> R
+    async fn offload_or<F, R>(&self, lane: OffloadLane, fallback: R, f: F) -> R
     where
         F: FnOnce(&B) -> R + Send + 'static,
         R: Send + 'static,
     {
-        offload_or_impl(&self.backend, "UccdLegacyInterface", fallback, f).await
+        offload_or_impl(
+            &self.backend,
+            lane,
+            "UccdLegacyInterface",
+            None,
+            fallback,
+            f,
+        )
+        .await
     }
 
-    async fn offload_result<F>(&self, f: F) -> zbus::fdo::Result<()>
+    async fn offload_or_checked<F, R>(
+        &self,
+        lane: OffloadLane,
+        conn: &zbus::Connection,
+        sender: Option<&str>,
+        fallback: R,
+        f: F,
+    ) -> R
+    where
+        F: FnOnce(&B) -> R + Send + 'static,
+        R: Send + 'static,
+    {
+        offload_or_impl(
+            &self.backend,
+            lane,
+            "UccdLegacyInterface",
+            Some((conn, sender)),
+            fallback,
+            f,
+        )
+        .await
+    }
+
+    async fn offload_result<F>(&self, lane: OffloadLane, f: F) -> zbus::fdo::Result<()>
     where
         F: FnOnce(&B) + Send + 'static,
     {
-        offload_result_impl(&self.backend, "UccdLegacyInterface", f).await
+        offload_result_impl(&self.backend, lane, "UccdLegacyInterface", None, f).await
     }
 
-    async fn offload_fdo_result<F>(&self, f: F) -> zbus::fdo::Result<()>
+    async fn offload_fdo_result<F>(
+        &self,
+        lane: OffloadLane,
+        conn: &zbus::Connection,
+        sender: Option<&str>,
+        f: F,
+    ) -> zbus::fdo::Result<()>
     where
         F: FnOnce(&B) -> Result<(), String> + Send + 'static,
     {
-        offload_fdo_result_impl(&self.backend, "UccdLegacyInterface", f).await
+        offload_fdo_result_impl(
+            &self.backend,
+            lane,
+            "UccdLegacyInterface",
+            Some((conn, sender)),
+            f,
+        )
+        .await
     }
 }
 
@@ -616,7 +785,14 @@ macro_rules! impl_uccd_methods {
                 {
                     return false;
                 }
-                self.offload_or(false, move |b| b.set_webcam(enabled)).await
+                self.offload_or_checked(
+                    OffloadLane::Display,
+                    conn,
+                    header.sender().map(|s| s.as_str()),
+                    false,
+                    move |b| b.set_webcam(enabled),
+                )
+                .await
             }
 
             #[zbus(name = "GetForceYUV420OutputSwitchAvailable")]
@@ -685,8 +861,14 @@ macro_rules! impl_uccd_methods {
                 {
                     return false;
                 }
-                self.offload_or(false, move |b| b.set_display_brightness(brightness))
-                    .await
+                self.offload_or_checked(
+                    OffloadLane::Display,
+                    conn,
+                    header.sender().map(|s| s.as_str()),
+                    false,
+                    move |b| b.set_display_brightness(brightness),
+                )
+                .await
             }
 
             #[zbus(name = "SetDisplayRefreshRate")]
@@ -706,9 +888,13 @@ macro_rules! impl_uccd_methods {
                     return false;
                 }
                 let display = display.to_owned();
-                self.offload_or(false, move |b| {
-                    b.set_display_refresh_rate(&display, refresh_rate)
-                })
+                self.offload_or_checked(
+                    OffloadLane::Display,
+                    conn,
+                    header.sender().map(|s| s.as_str()),
+                    false,
+                    move |b| b.set_display_refresh_rate(&display, refresh_rate),
+                )
                 .await
             }
 
@@ -901,8 +1087,14 @@ macro_rules! impl_uccd_methods {
                     return false;
                 }
                 let json = json.to_owned();
-                self.offload_or(false, move |b| b.set_power_device_settings_json(&json))
-                    .await
+                self.offload_or_checked(
+                    OffloadLane::PowerGpu,
+                    conn,
+                    header.sender().map(|s| s.as_str()),
+                    false,
+                    move |b| b.set_power_device_settings_json(&json),
+                )
+                .await
             }
 
             #[zbus(name = "ScanPowerDevices")]
@@ -919,7 +1111,14 @@ macro_rules! impl_uccd_methods {
                 {
                     return false;
                 }
-                self.offload_or(false, |b| b.scan_power_devices()).await
+                self.offload_or_checked(
+                    OffloadLane::PowerGpu,
+                    conn,
+                    header.sender().map(|s| s.as_str()),
+                    false,
+                    |b| b.scan_power_devices(),
+                )
+                .await
             }
 
             #[zbus(name = "GetLightbarSettingsJSON")]
@@ -992,8 +1191,14 @@ macro_rules! impl_uccd_methods {
                     return false;
                 }
                 let json = json.to_owned();
-                self.offload_or(false, move |b| b.set_lightbar_settings_json(&json))
-                    .await
+                self.offload_or_checked(
+                    OffloadLane::Lighting,
+                    conn,
+                    header.sender().map(|s| s.as_str()),
+                    false,
+                    move |b| b.set_lightbar_settings_json(&json),
+                )
+                .await
             }
 
             #[zbus(name = "TriggerLightbarAnimation")]
@@ -1011,8 +1216,14 @@ macro_rules! impl_uccd_methods {
                 {
                     return false;
                 }
-                self.offload_or(false, move |b| b.trigger_lightbar_animation(force))
-                    .await
+                self.offload_or_checked(
+                    OffloadLane::Lighting,
+                    conn,
+                    header.sender().map(|s| s.as_str()),
+                    false,
+                    move |b| b.trigger_lightbar_animation(force),
+                )
+                .await
             }
 
             #[zbus(name = "SetManualPowerMode")]
@@ -1031,8 +1242,14 @@ macro_rules! impl_uccd_methods {
                     return false;
                 }
                 let mode_val = mode_val.to_owned();
-                self.offload_or(false, move |b| b.set_manual_power_mode(&mode_val))
-                    .await
+                self.offload_or_checked(
+                    OffloadLane::PowerGpu,
+                    conn,
+                    header.sender().map(|s| s.as_str()),
+                    false,
+                    move |b| b.set_manual_power_mode(&mode_val),
+                )
+                .await
             }
 
             #[zbus(name = "RegisterPowerRequest")]
@@ -1062,19 +1279,25 @@ macro_rules! impl_uccd_methods {
                 let reason = reason.to_owned();
                 let mode_val = mode_val.to_owned();
                 let ok = self
-                    .offload_or(false, move |b| {
-                        b.register_power_request_with_sender(
-                            &sender_for_req,
-                            &name_for_req,
-                            &reason,
-                            &mode_val,
-                        )
-                    })
+                    .offload_or_checked(
+                        OffloadLane::PowerGpu,
+                        conn,
+                        header.sender().map(|s| s.as_str()),
+                        false,
+                        move |b| {
+                            b.register_power_request_with_sender(
+                                &sender_for_req,
+                                &name_for_req,
+                                &reason,
+                                &mode_val,
+                            )
+                        },
+                    )
                     .await;
                 if ok && !sender_is_alive(conn, &sender_owned).await {
                     let sender_cleanup = sender_owned;
                     let name_cleanup = name_owned;
-                    self.offload_or(false, move |b| {
+                    self.offload_or(OffloadLane::PowerGpu, false, move |b| {
                         b.unregister_power_request_with_sender(&sender_cleanup, &name_cleanup)
                     })
                     .await;
@@ -1098,11 +1321,15 @@ macro_rules! impl_uccd_methods {
                 {
                     return false;
                 }
-                let sender = sender.unwrap_or("").to_owned();
+                let sender_owned = sender.unwrap_or("").to_owned();
                 let name = name.to_owned();
-                self.offload_or(false, move |b| {
-                    b.unregister_power_request_with_sender(&sender, &name)
-                })
+                self.offload_or_checked(
+                    OffloadLane::PowerGpu,
+                    conn,
+                    header.sender().map(|s| s.as_str()),
+                    false,
+                    move |b| b.unregister_power_request_with_sender(&sender_owned, &name),
+                )
                 .await
             }
 
@@ -1122,8 +1349,14 @@ macro_rules! impl_uccd_methods {
                     return false;
                 }
                 let profile_name = profile_name.to_owned();
-                self.offload_or(false, move |b| b.set_temp_profile(&profile_name))
-                    .await
+                self.offload_or_checked(
+                    OffloadLane::Profile,
+                    conn,
+                    header.sender().map(|s| s.as_str()),
+                    false,
+                    move |b| b.set_temp_profile(&profile_name),
+                )
+                .await
             }
 
             #[zbus(name = "SetActiveProfile")]
@@ -1142,8 +1375,14 @@ macro_rules! impl_uccd_methods {
                     return false;
                 }
                 let id = id.to_owned();
-                self.offload_or(false, move |b| b.set_active_profile(&id))
-                    .await
+                self.offload_or_checked(
+                    OffloadLane::Profile,
+                    conn,
+                    header.sender().map(|s| s.as_str()),
+                    false,
+                    move |b| b.set_active_profile(&id),
+                )
+                .await
             }
 
             #[zbus(name = "ApplyProfile")]
@@ -1166,8 +1405,14 @@ macro_rules! impl_uccd_methods {
                     return false;
                 }
                 let profile_json = profile_json.to_owned();
-                self.offload_or(false, move |b| b.apply_profile(&profile_json))
-                    .await
+                self.offload_or_checked(
+                    OffloadLane::Profile,
+                    conn,
+                    header.sender().map(|s| s.as_str()),
+                    false,
+                    move |b| b.apply_profile(&profile_json),
+                )
+                .await
             }
 
             #[zbus(name = "GetProfilesJSON")]
@@ -1223,8 +1468,14 @@ macro_rules! impl_uccd_methods {
                     return false;
                 }
                 let points_json = points_json.to_owned();
-                self.offload_or(false, move |b| b.set_fan_profile_cpu(&points_json))
-                    .await
+                self.offload_or_checked(
+                    OffloadLane::PowerGpu,
+                    conn,
+                    header.sender().map(|s| s.as_str()),
+                    false,
+                    move |b| b.set_fan_profile_cpu(&points_json),
+                )
+                .await
             }
 
             #[zbus(name = "SetFanProfileDGPU")]
@@ -1246,8 +1497,14 @@ macro_rules! impl_uccd_methods {
                     return false;
                 }
                 let points_json = points_json.to_owned();
-                self.offload_or(false, move |b| b.set_fan_profile_dgpu(&points_json))
-                    .await
+                self.offload_or_checked(
+                    OffloadLane::PowerGpu,
+                    conn,
+                    header.sender().map(|s| s.as_str()),
+                    false,
+                    move |b| b.set_fan_profile_dgpu(&points_json),
+                )
+                .await
             }
 
             #[zbus(name = "ApplyFanProfiles")]
@@ -1269,8 +1526,14 @@ macro_rules! impl_uccd_methods {
                     return false;
                 }
                 let fan_profiles_json = fan_profiles_json.to_owned();
-                self.offload_or(false, move |b| b.apply_fan_profiles(&fan_profiles_json))
-                    .await
+                self.offload_or_checked(
+                    OffloadLane::PowerGpu,
+                    conn,
+                    header.sender().map(|s| s.as_str()),
+                    false,
+                    move |b| b.apply_fan_profiles(&fan_profiles_json),
+                )
+                .await
             }
 
             #[zbus(name = "RevertFanProfiles")]
@@ -1287,7 +1550,14 @@ macro_rules! impl_uccd_methods {
                 {
                     return false;
                 }
-                self.offload_or(false, |b| b.revert_fan_profiles()).await
+                self.offload_or_checked(
+                    OffloadLane::PowerGpu,
+                    conn,
+                    header.sender().map(|s| s.as_str()),
+                    false,
+                    |b| b.revert_fan_profiles(),
+                )
+                .await
             }
 
             #[zbus(name = "GetDefaultProfilesJSON")]
@@ -1361,8 +1631,14 @@ macro_rules! impl_uccd_methods {
                     return false;
                 }
                 let profile_json = profile_json.to_owned();
-                self.offload_or(false, move |b| b.add_custom_profile(&profile_json))
-                    .await
+                self.offload_or_checked(
+                    OffloadLane::Profile,
+                    conn,
+                    header.sender().map(|s| s.as_str()),
+                    false,
+                    move |b| b.add_custom_profile(&profile_json),
+                )
+                .await
             }
 
             #[zbus(name = "SaveCustomProfile")]
@@ -1385,8 +1661,14 @@ macro_rules! impl_uccd_methods {
                     return false;
                 }
                 let profile_json = profile_json.to_owned();
-                self.offload_or(false, move |b| b.save_custom_profile(&profile_json))
-                    .await
+                self.offload_or_checked(
+                    OffloadLane::Profile,
+                    conn,
+                    header.sender().map(|s| s.as_str()),
+                    false,
+                    move |b| b.save_custom_profile(&profile_json),
+                )
+                .await
             }
 
             #[zbus(name = "DeleteCustomProfile")]
@@ -1405,8 +1687,14 @@ macro_rules! impl_uccd_methods {
                     return false;
                 }
                 let profile_id = profile_id.to_owned();
-                self.offload_or(false, move |b| b.delete_custom_profile(&profile_id))
-                    .await
+                self.offload_or_checked(
+                    OffloadLane::Profile,
+                    conn,
+                    header.sender().map(|s| s.as_str()),
+                    false,
+                    move |b| b.delete_custom_profile(&profile_id),
+                )
+                .await
             }
 
             #[zbus(name = "UpdateCustomProfile")]
@@ -1429,8 +1717,14 @@ macro_rules! impl_uccd_methods {
                     return false;
                 }
                 let profile_json = profile_json.to_owned();
-                self.offload_or(false, move |b| b.update_custom_profile(&profile_json))
-                    .await
+                self.offload_or_checked(
+                    OffloadLane::Profile,
+                    conn,
+                    header.sender().map(|s| s.as_str()),
+                    false,
+                    move |b| b.update_custom_profile(&profile_json),
+                )
+                .await
             }
 
             #[zbus(name = "GetFanProfile")]
@@ -1489,8 +1783,14 @@ macro_rules! impl_uccd_methods {
                 }
                 let name = name.to_owned();
                 let json = json.to_owned();
-                self.offload_or(false, move |b| b.set_fan_profile(&name, &json))
-                    .await
+                self.offload_or_checked(
+                    OffloadLane::Profile,
+                    conn,
+                    header.sender().map(|s| s.as_str()),
+                    false,
+                    move |b| b.set_fan_profile(&name, &json),
+                )
+                .await
             }
 
             #[zbus(name = "GetSettingsJSON")]
@@ -1528,8 +1828,14 @@ macro_rules! impl_uccd_methods {
                 }
                 let state = state.to_owned();
                 let profile_id = profile_id.to_owned();
-                self.offload_or(false, move |b| b.set_state_map(&state, &profile_id))
-                    .await
+                self.offload_or_checked(
+                    OffloadLane::Profile,
+                    conn,
+                    header.sender().map(|s| s.as_str()),
+                    false,
+                    move |b| b.set_state_map(&state, &profile_id),
+                )
+                .await
             }
 
             #[zbus(name = "SetBatchStateMap")]
@@ -1551,8 +1857,14 @@ macro_rules! impl_uccd_methods {
                     return false;
                 }
                 let state_map_json = state_map_json.to_owned();
-                self.offload_or(false, move |b| b.set_batch_state_map(&state_map_json))
-                    .await
+                self.offload_or_checked(
+                    OffloadLane::Profile,
+                    conn,
+                    header.sender().map(|s| s.as_str()),
+                    false,
+                    move |b| b.set_batch_state_map(&state_map_json),
+                )
+                .await
             }
 
             #[zbus(name = "ODMProfilesAvailable")]
@@ -1645,9 +1957,13 @@ macro_rules! impl_uccd_methods {
                     return false;
                 }
                 let keyboard_backlight_states_json = keyboard_backlight_states_json.to_owned();
-                self.offload_or(false, move |b| {
-                    b.set_keyboard_backlight_states_json(&keyboard_backlight_states_json)
-                })
+                self.offload_or_checked(
+                    OffloadLane::Lighting,
+                    conn,
+                    header.sender().map(|s| s.as_str()),
+                    false,
+                    move |b| b.set_keyboard_backlight_states_json(&keyboard_backlight_states_json),
+                )
                 .await
             }
 
@@ -1691,9 +2007,13 @@ macro_rules! impl_uccd_methods {
                 let id = id.to_owned();
                 let name = name.to_owned();
                 let json = json.to_owned();
-                self.offload_or(false, move |b| {
-                    b.save_custom_keyboard_profile(&id, &name, &json)
-                })
+                self.offload_or_checked(
+                    OffloadLane::Lighting,
+                    conn,
+                    header.sender().map(|s| s.as_str()),
+                    false,
+                    move |b| b.save_custom_keyboard_profile(&id, &name, &json),
+                )
                 .await
             }
 
@@ -1713,8 +2033,14 @@ macro_rules! impl_uccd_methods {
                     return false;
                 }
                 let id = id.to_owned();
-                self.offload_or(false, move |b| b.delete_custom_keyboard_profile(&id))
-                    .await
+                self.offload_or_checked(
+                    OffloadLane::Lighting,
+                    conn,
+                    header.sender().map(|s| s.as_str()),
+                    false,
+                    move |b| b.delete_custom_keyboard_profile(&id),
+                )
+                .await
             }
 
             #[zbus(name = "GetCustomFanProfilesJSON")]
@@ -1757,8 +2083,14 @@ macro_rules! impl_uccd_methods {
                 let id = id.to_owned();
                 let name = name.to_owned();
                 let json = json.to_owned();
-                self.offload_or(false, move |b| b.save_custom_fan_profile(&id, &name, &json))
-                    .await
+                self.offload_or_checked(
+                    OffloadLane::Profile,
+                    conn,
+                    header.sender().map(|s| s.as_str()),
+                    false,
+                    move |b| b.save_custom_fan_profile(&id, &name, &json),
+                )
+                .await
             }
 
             #[zbus(name = "DeleteCustomFanProfile")]
@@ -1777,8 +2109,14 @@ macro_rules! impl_uccd_methods {
                     return false;
                 }
                 let id = id.to_owned();
-                self.offload_or(false, move |b| b.delete_custom_fan_profile(&id))
-                    .await
+                self.offload_or_checked(
+                    OffloadLane::Profile,
+                    conn,
+                    header.sender().map(|s| s.as_str()),
+                    false,
+                    move |b| b.delete_custom_fan_profile(&id),
+                )
+                .await
             }
 
             #[zbus(name = "GetFansMinSpeed")]
@@ -1865,8 +2203,14 @@ macro_rules! impl_uccd_methods {
                     return false;
                 }
                 let profile_descriptor = profile_descriptor.to_owned();
-                self.offload_or(false, move |b| b.set_charging_profile(&profile_descriptor))
-                    .await
+                self.offload_or_checked(
+                    OffloadLane::Charging,
+                    conn,
+                    header.sender().map(|s| s.as_str()),
+                    false,
+                    move |b| b.set_charging_profile(&profile_descriptor),
+                )
+                .await
             }
 
             #[zbus(name = "GetChargingPrioritiesAvailable")]
@@ -1919,9 +2263,13 @@ macro_rules! impl_uccd_methods {
                     return false;
                 }
                 let priority_descriptor = priority_descriptor.to_owned();
-                self.offload_or(false, move |b| {
-                    b.set_charging_priority(&priority_descriptor)
-                })
+                self.offload_or_checked(
+                    OffloadLane::Charging,
+                    conn,
+                    header.sender().map(|s| s.as_str()),
+                    false,
+                    move |b| b.set_charging_priority(&priority_descriptor),
+                )
                 .await
             }
 
@@ -2008,8 +2356,14 @@ macro_rules! impl_uccd_methods {
                 {
                     return false;
                 }
-                self.offload_or(false, move |b| b.set_charge_start_threshold(value))
-                    .await
+                self.offload_or_checked(
+                    OffloadLane::Charging,
+                    conn,
+                    header.sender().map(|s| s.as_str()),
+                    false,
+                    move |b| b.set_charge_start_threshold(value),
+                )
+                .await
             }
 
             #[zbus(name = "SetChargeEndThreshold")]
@@ -2027,8 +2381,14 @@ macro_rules! impl_uccd_methods {
                 {
                     return false;
                 }
-                self.offload_or(false, move |b| b.set_charge_end_threshold(value))
-                    .await
+                self.offload_or_checked(
+                    OffloadLane::Charging,
+                    conn,
+                    header.sender().map(|s| s.as_str()),
+                    false,
+                    move |b| b.set_charge_end_threshold(value),
+                )
+                .await
             }
 
             #[zbus(name = "GetChargeType")]
@@ -2064,8 +2424,14 @@ macro_rules! impl_uccd_methods {
                     return false;
                 }
                 let type_val = type_val.to_owned();
-                self.offload_or(false, move |b| b.set_charge_type(&type_val))
-                    .await
+                self.offload_or_checked(
+                    OffloadLane::Charging,
+                    conn,
+                    header.sender().map(|s| s.as_str()),
+                    false,
+                    move |b| b.set_charge_type(&type_val),
+                )
+                .await
             }
 
             #[zbus(name = "GetFnLockSupported")]
@@ -2119,8 +2485,13 @@ macro_rules! impl_uccd_methods {
                         "Polkit authorization denied".into(),
                     ));
                 }
-                self.offload_fdo_result(move |b| b.set_fn_lock_status(status))
-                    .await
+                self.offload_fdo_result(
+                    OffloadLane::Misc,
+                    conn,
+                    header.sender().map(|s| s.as_str()),
+                    move |b| b.set_fn_lock_status(status),
+                )
+                .await
             }
 
             #[zbus(name = "SetSensorDataCollectionStatus")]
@@ -2140,8 +2511,10 @@ macro_rules! impl_uccd_methods {
                         "Polkit authorization denied".into(),
                     ));
                 }
-                self.offload_result(move |b| b.set_sensor_data_collection_status(status))
-                    .await?;
+                self.offload_result(OffloadLane::Misc, move |b| {
+                    b.set_sensor_data_collection_status(status)
+                })
+                .await?;
                 Ok(())
             }
 
@@ -2179,8 +2552,10 @@ macro_rules! impl_uccd_methods {
                         "Polkit authorization denied".into(),
                     ));
                 }
-                self.offload_result(move |b| b.set_dgpu_d0_metrics(status))
-                    .await?;
+                self.offload_result(OffloadLane::PowerGpu, move |b| {
+                    b.set_dgpu_d0_metrics(status)
+                })
+                .await?;
                 Ok(())
             }
 
@@ -2250,8 +2625,14 @@ macro_rules! impl_uccd_methods {
                 {
                     return false;
                 }
-                self.offload_or(false, move |b| b.set_nvidia_power_offset(offset))
-                    .await
+                self.offload_or_checked(
+                    OffloadLane::PowerGpu,
+                    conn,
+                    header.sender().map(|s| s.as_str()),
+                    false,
+                    move |b| b.set_nvidia_power_offset(offset),
+                )
+                .await
             }
 
             #[zbus(name = "GetAvailableGovernors")]
@@ -2405,8 +2786,14 @@ macro_rules! impl_uccd_methods {
                 {
                     return false;
                 }
-                self.offload_or(false, move |b| b.enable_water_cooler(enable))
-                    .await
+                self.offload_or_checked(
+                    OffloadLane::Cooler,
+                    conn,
+                    header.sender().map(|s| s.as_str()),
+                    false,
+                    move |b| b.enable_water_cooler(enable),
+                )
+                .await
             }
 
             #[zbus(name = "IsWaterCoolerEnabled")]
@@ -2441,9 +2828,13 @@ macro_rules! impl_uccd_methods {
                 {
                     return false;
                 }
-                self.offload_or(false, move |b| {
-                    b.set_water_cooler_fan_speed(duty_cycle_percent)
-                })
+                self.offload_or_checked(
+                    OffloadLane::Cooler,
+                    conn,
+                    header.sender().map(|s| s.as_str()),
+                    false,
+                    move |b| b.set_water_cooler_fan_speed(duty_cycle_percent),
+                )
                 .await
             }
 
@@ -2462,8 +2853,14 @@ macro_rules! impl_uccd_methods {
                 {
                     return false;
                 }
-                self.offload_or(false, move |b| b.set_water_cooler_pump_voltage(voltage))
-                    .await
+                self.offload_or_checked(
+                    OffloadLane::Cooler,
+                    conn,
+                    header.sender().map(|s| s.as_str()),
+                    false,
+                    move |b| b.set_water_cooler_pump_voltage(voltage),
+                )
+                .await
             }
 
             #[zbus(name = "SetWaterCoolerLEDColor")]
@@ -2484,9 +2881,13 @@ macro_rules! impl_uccd_methods {
                 {
                     return false;
                 }
-                self.offload_or(false, move |b| {
-                    b.set_water_cooler_led_color(red, green, blue, mode_val)
-                })
+                self.offload_or_checked(
+                    OffloadLane::Cooler,
+                    conn,
+                    header.sender().map(|s| s.as_str()),
+                    false,
+                    move |b| b.set_water_cooler_led_color(red, green, blue, mode_val),
+                )
                 .await
             }
 
@@ -2504,8 +2905,14 @@ macro_rules! impl_uccd_methods {
                 {
                     return false;
                 }
-                self.offload_or(false, |b| b.turn_off_water_cooler_led())
-                    .await
+                self.offload_or_checked(
+                    OffloadLane::Cooler,
+                    conn,
+                    header.sender().map(|s| s.as_str()),
+                    false,
+                    |b| b.turn_off_water_cooler_led(),
+                )
+                .await
             }
 
             #[zbus(name = "TurnOffWaterCoolerFan")]
@@ -2522,8 +2929,14 @@ macro_rules! impl_uccd_methods {
                 {
                     return false;
                 }
-                self.offload_or(false, |b| b.turn_off_water_cooler_fan())
-                    .await
+                self.offload_or_checked(
+                    OffloadLane::Cooler,
+                    conn,
+                    header.sender().map(|s| s.as_str()),
+                    false,
+                    |b| b.turn_off_water_cooler_fan(),
+                )
+                .await
             }
 
             #[zbus(name = "TurnOffWaterCoolerPump")]
@@ -2540,8 +2953,14 @@ macro_rules! impl_uccd_methods {
                 {
                     return false;
                 }
-                self.offload_or(false, |b| b.turn_off_water_cooler_pump())
-                    .await
+                self.offload_or_checked(
+                    OffloadLane::Cooler,
+                    conn,
+                    header.sender().map(|s| s.as_str()),
+                    false,
+                    |b| b.turn_off_water_cooler_pump(),
+                )
+                .await
             }
 
             #[zbus(name = "IsWaterCoolerAutoControlEnabled")]
@@ -2576,8 +2995,14 @@ macro_rules! impl_uccd_methods {
                 {
                     return false;
                 }
-                self.offload_or(false, move |b| b.set_water_cooler_auto_control(enabled))
-                    .await
+                self.offload_or_checked(
+                    OffloadLane::Cooler,
+                    conn,
+                    header.sender().map(|s| s.as_str()),
+                    false,
+                    move |b| b.set_water_cooler_auto_control(enabled),
+                )
+                .await
             }
 
             #[zbus(name = "GetWaterCoolerSupported")]
@@ -2666,8 +3091,10 @@ macro_rules! impl_uccd_methods {
                         "Polkit authorization denied".into(),
                     ));
                 }
-                self.offload_result(move |b| b.set_monitor_history_horizon(seconds))
-                    .await?;
+                self.offload_result(OffloadLane::Read, move |b| {
+                    b.set_monitor_history_horizon(seconds)
+                })
+                .await?;
                 Ok(())
             }
 

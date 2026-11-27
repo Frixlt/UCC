@@ -178,6 +178,15 @@ where
     }
 }
 
+fn startup_prime_timeout() -> Duration {
+    if let Ok(raw) = std::env::var("UCC_PRIME_TIMEOUT_MS") {
+        if let Ok(ms) = raw.trim().parse::<u64>() {
+            return Duration::from_millis(ms.max(10));
+        }
+    }
+    Duration::from_millis(1500)
+}
+
 fn spawn_periodic_worker(
     thread_name: &'static str,
     interval: Duration,
@@ -392,20 +401,42 @@ impl DaemonRuntime {
         // cannot be acknowledged or overwritten during predecessor handoff/activation (`M8-HANDOFF-01`).
         backend.set_activation_pending(true);
 
-        // Perform strictly read-only telemetry/fan/profile priming and sleep snapshot load on a
-        // detached OS thread BEFORE exporting objects or requesting bus_name (`FULL-27-01`).
+        // Perform strictly read-only sleep snapshot load and bounded priming BEFORE exporting
+        // objects or requesting bus_name (`FULL-27-01`, `DEEP-03`).
         let mut sig_rx = backend.subscribe_signals();
-        let prime_backend = Arc::clone(&backend);
-        if let Err(err) = run_detached_blocking("uccd-prime", move || {
-            let _ = prime_backend.load_sleep_state_read_only();
-            prime_backend.prime_read_only();
-        })
+        let prime_timeout = startup_prime_timeout();
+        let sleep_load_backend = Arc::clone(&backend);
+        if let Err(err) = tokio::time::timeout(
+            prime_timeout,
+            run_detached_blocking("uccd-sleep-load", move || {
+                let _ = sleep_load_backend.load_sleep_state_read_only();
+            }),
+        )
         .await
         {
-            backend.set_activation_pending(false);
-            return Err(zbus::Error::Failure(format!(
-                "Daemon read-only priming failed: {err}"
-            )));
+            warn!("Timed out loading sleep snapshot after {prime_timeout:?}: {err}");
+        }
+        let prime_backend = Arc::clone(&backend);
+        match tokio::time::timeout(
+            prime_timeout,
+            run_detached_blocking("uccd-prime", move || {
+                prime_backend.prime_read_only();
+            }),
+        )
+        .await
+        {
+            Ok(Ok(())) => {}
+            Ok(Err(err)) => {
+                backend.mark_prime_degraded(true);
+                warn!("Daemon read-only priming failed ({err}); continuing in degraded startup");
+            }
+            Err(_) => {
+                backend.mark_prime_degraded(true);
+                warn!(
+                    "Startup priming exceeded {:?}; publishing D-Bus service in degraded mode",
+                    prime_timeout
+                );
+            }
         }
 
         if let Err(err) = register_uccd_service(&connection, Arc::clone(&backend), authorizer).await

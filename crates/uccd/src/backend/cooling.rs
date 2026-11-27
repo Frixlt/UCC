@@ -637,8 +637,9 @@ impl LiveUccdBackend {
         if self.sensor_data_collection.load(Ordering::SeqCst) {
             let cpu_duty = tick.speeds_percent.first().copied().flatten();
             let gpu_duty = tick.speeds_percent.get(1).copied().flatten();
-            let col = self.lock_mutex(&self.telemetry);
-            col.record_fan_duties(ts, cpu_duty, gpu_duty);
+            if let Ok(col) = self.telemetry.try_lock() {
+                col.record_fan_duties(ts, cpu_duty, gpu_duty);
+            }
         }
         tick
     }

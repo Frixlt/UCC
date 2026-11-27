@@ -79,39 +79,50 @@ impl SleepOperations for SystemdSleepOps {
     }
 
     fn capture_runtime_state(&self) -> Result<SleepState, String> {
-        let conn = zbus::blocking::Connection::system()
-            .map_err(|e| format!("Cannot connect to system D-Bus: {e}"))?;
-        let proxy = zbus::blocking::proxy::Builder::<zbus::blocking::Proxy>::new(&conn)
-            .destination(DBUS_SERVICE_NAME)
-            .map_err(|e| format!("Invalid D-Bus destination: {e}"))?
-            .path(DBUS_PATH)
-            .map_err(|e| format!("Invalid D-Bus path: {e}"))?
-            .interface(DBUS_INTERFACE)
-            .map_err(|e| format!("Invalid D-Bus interface: {e}"))?
-            .cache_properties(zbus::proxy::CacheProperties::No)
-            .build()
-            .map_err(|e| format!("Cannot build uccd D-Bus proxy: {e}"))?;
-        let policy_json: String = proxy
-            .call("GetPowerPolicyJSON", &())
-            .map_err(|e| format!("Cannot capture GetPowerPolicyJSON: {e}"))?;
-        let cooler_enabled: bool = proxy
-            .call("IsWaterCoolerEnabled", &())
-            .map_err(|e| format!("Cannot capture IsWaterCoolerEnabled: {e}"))?;
-        let parsed: serde_json::Value = serde_json::from_str(&policy_json)
-            .map_err(|e| format!("Invalid GetPowerPolicyJSON: {e}"))?;
-        let manual_mode = parsed
-            .get("manual_mode")
-            .and_then(|v| v.as_str())
-            .unwrap_or("")
-            .to_string();
-        if !SleepState::valid_mode(&manual_mode) {
-            return Err("Invalid daemon runtime state".to_string());
-        }
-        Ok(SleepState {
-            was_active: true,
-            manual_mode,
-            cooler_enabled,
-        })
+        let (tx, rx) = std::sync::mpsc::channel();
+        std::thread::Builder::new()
+            .name("ucc-sleep-dbus".to_string())
+            .spawn(move || {
+                let res = (|| -> Result<SleepState, String> {
+                    let conn = zbus::blocking::Connection::system()
+                        .map_err(|e| format!("Cannot connect to system D-Bus: {e}"))?;
+                    let proxy = zbus::blocking::proxy::Builder::<zbus::blocking::Proxy>::new(&conn)
+                        .destination(DBUS_SERVICE_NAME)
+                        .map_err(|e| format!("Invalid D-Bus destination: {e}"))?
+                        .path(DBUS_PATH)
+                        .map_err(|e| format!("Invalid D-Bus path: {e}"))?
+                        .interface(DBUS_INTERFACE)
+                        .map_err(|e| format!("Invalid D-Bus interface: {e}"))?
+                        .cache_properties(zbus::proxy::CacheProperties::No)
+                        .build()
+                        .map_err(|e| format!("Cannot build uccd D-Bus proxy: {e}"))?;
+                    let policy_json: String = proxy
+                        .call("GetPowerPolicyJSON", &())
+                        .map_err(|e| format!("Cannot capture GetPowerPolicyJSON: {e}"))?;
+                    let cooler_enabled: bool = proxy
+                        .call("IsWaterCoolerEnabled", &())
+                        .map_err(|e| format!("Cannot capture IsWaterCoolerEnabled: {e}"))?;
+                    let parsed: serde_json::Value = serde_json::from_str(&policy_json)
+                        .map_err(|e| format!("Invalid GetPowerPolicyJSON: {e}"))?;
+                    let manual_mode = parsed
+                        .get("manual_mode")
+                        .and_then(|v| v.as_str())
+                        .unwrap_or("")
+                        .to_string();
+                    if !SleepState::valid_mode(&manual_mode) {
+                        return Err("Invalid daemon runtime state".to_string());
+                    }
+                    Ok(SleepState {
+                        was_active: true,
+                        manual_mode,
+                        cooler_enabled,
+                    })
+                })();
+                let _ = tx.send(res);
+            })
+            .map_err(|e| format!("Cannot spawn D-Bus state capture thread: {e}"))?;
+        rx.recv_timeout(Duration::from_secs(5))
+            .map_err(|_| "Timed out capturing daemon runtime state over D-Bus".to_string())?
     }
 
     fn stop_daemon(&self) -> Result<(), String> {

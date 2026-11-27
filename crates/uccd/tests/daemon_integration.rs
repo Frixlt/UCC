@@ -5769,12 +5769,30 @@ type SysfsWriteGate = (
     std::sync::mpsc::Receiver<()>,
 );
 
+static DEEP_SEQ: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(1);
+
+type SysfsReadGate = (
+    String,
+    std::sync::Arc<std::sync::atomic::AtomicBool>,
+    std::sync::Mutex<Option<std::sync::mpsc::Sender<()>>>,
+    std::sync::Mutex<Option<std::sync::mpsc::Receiver<()>>>,
+);
+
+type SysfsMultiReadGate = (
+    String,
+    Arc<std::sync::Mutex<usize>>,
+    Arc<(std::sync::Mutex<bool>, std::sync::Condvar)>,
+);
+
 #[derive(Default)]
 struct SysfsGateControl {
     gate: std::sync::Mutex<Option<SysfsWriteGate>>,
     deny_write_suffix: std::sync::Mutex<Option<String>>,
+    deny_read_suffix: std::sync::Mutex<Option<String>>,
     silent_noop_suffix: std::sync::Mutex<Option<String>>,
     rewrite_value: std::sync::Mutex<Option<(String, String, String)>>,
+    read_gate: std::sync::Mutex<Option<SysfsReadGate>>,
+    multi_read_gate: std::sync::Mutex<Option<SysfsMultiReadGate>>,
 }
 
 struct AuditSysfsGate {
@@ -5784,6 +5802,56 @@ struct AuditSysfsGate {
 
 impl ucc_hardware::Sysfs for AuditSysfsGate {
     fn read(&self, path: &Path) -> Result<String, std::io::Error> {
+        if let Some(ref suffix) = *self.ctrl.deny_read_suffix.lock().unwrap() {
+            if path.ends_with(suffix) {
+                return Err(std::io::Error::new(
+                    std::io::ErrorKind::PermissionDenied,
+                    "simulated charging read denied",
+                ));
+            }
+        }
+        let maybe_multi = {
+            let guard = self.ctrl.multi_read_gate.lock().unwrap();
+            guard
+                .as_ref()
+                .filter(|(suf, _, _)| path.ends_with(suf))
+                .map(|(_, entered, signal)| (Arc::clone(entered), Arc::clone(signal)))
+        };
+        if let Some((entered, signal)) = maybe_multi {
+            {
+                let mut count = entered.lock().unwrap();
+                *count += 1;
+                signal.1.notify_all();
+            }
+            let mut open = signal.0.lock().unwrap();
+            while !*open {
+                let (g, timeout) = signal.1.wait_timeout(open, Duration::from_secs(5)).unwrap();
+                open = g;
+                if timeout.timed_out() {
+                    break;
+                }
+            }
+        }
+        let maybe_gate = {
+            let guard = self.ctrl.read_gate.lock().unwrap();
+            if let Some((ref suf, ref armed, ref started_tx, ref release_rx)) = *guard {
+                if path.ends_with(suf) && armed.load(std::sync::atomic::Ordering::SeqCst) {
+                    let tx = started_tx.lock().unwrap().take();
+                    if let Some(tx) = tx {
+                        let _ = tx.send(());
+                    }
+                    let rx = release_rx.lock().unwrap().take();
+                    rx
+                } else {
+                    None
+                }
+            } else {
+                None
+            }
+        };
+        if let Some(rx) = maybe_gate {
+            let _ = rx.recv_timeout(Duration::from_secs(5));
+        }
         self.inner.read(path)
     }
 
@@ -6454,4 +6522,255 @@ async fn charging_quantized_readback_failure_restores_all_thresholds() {
     assert!(!backend.apply_profile(&serde_json::to_string(&p_end_first).unwrap()));
     assert_eq!(sysfs.get_file(&start_path).as_deref(), Some("40"));
     assert_eq!(sysfs.get_file(&end_path).as_deref(), Some("80"));
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn deep_01_charging_rpc_blocked_on_read_never_writes_after_shutdown_deadline() {
+    let root = tempfile::tempdir().unwrap();
+    let bat = root.path().join("sys/class/power_supply/BAT0");
+    let start_path = bat.join("charge_control_start_threshold");
+    let end_path = bat.join("charge_control_end_threshold");
+
+    let ctrl = Arc::new(SysfsGateControl::default());
+    let (started_tx, started_rx) = std::sync::mpsc::channel();
+    let (release_tx, release_rx) = std::sync::mpsc::channel();
+    let armed = Arc::new(std::sync::atomic::AtomicBool::new(true));
+    *ctrl.read_gate.lock().unwrap() = Some((
+        "charge_control_start_threshold".to_string(),
+        Arc::clone(&armed),
+        std::sync::Mutex::new(Some(started_tx)),
+        std::sync::Mutex::new(Some(release_rx)),
+    ));
+
+    let (backend, _, sysfs, _) = build_backend_with_sysfs_gate(
+        root.path(),
+        Arc::clone(&ctrl),
+        |sysfs| {
+            sysfs.set_file(bat.join("type"), "Battery");
+            sysfs.set_file(&start_path, "40");
+            sysfs.set_file(&end_path, "80");
+        },
+        |p| p,
+    );
+
+    let conn = zbus::Connection::session().await.unwrap();
+    let bus_name = format!(
+        "com.uniwill.uccd.Deep01.p{}.n{}",
+        std::process::id(),
+        DEEP_SEQ.fetch_add(1, std::sync::atomic::Ordering::SeqCst)
+    );
+    let runtime = DaemonRuntime::start_on_connection(
+        conn.clone(),
+        bus_name.clone(),
+        Arc::clone(&backend),
+        Arc::new(AllowAllAuthorizer),
+        false,
+    )
+    .await
+    .unwrap();
+
+    let proxy = UccdProxy::builder(&conn)
+        .destination(bus_name.clone())
+        .unwrap()
+        .path(DBUS_PATH)
+        .unwrap()
+        .build()
+        .await
+        .unwrap();
+
+    let call_task = tokio::spawn(async move { proxy.set_charge_end_threshold(85).await });
+    started_rx.recv_timeout(Duration::from_secs(2)).unwrap();
+
+    runtime.shutdown(Duration::from_millis(70)).await;
+    let _ = release_tx.send(());
+    armed.store(false, std::sync::atomic::Ordering::SeqCst);
+
+    let rpc_res = call_task.await.unwrap();
+    assert_ne!(rpc_res.ok(), Some(true));
+    assert_eq!(sysfs.get_file(&end_path).as_deref(), Some("80"));
+    let settings_json: serde_json::Value =
+        serde_json::from_str(&backend.get_settings_json()).unwrap();
+    assert_ne!(settings_json.get("chargeEndThreshold"), Some(&json!(85)));
+}
+
+#[tokio::test]
+async fn deep_02_saturated_charging_lane_does_not_block_lighting_or_replay_timed_out_requests() {
+    let root = tempfile::tempdir().unwrap();
+    let bat = root.path().join("sys/class/power_supply/BAT0");
+    let start_path = bat.join("charge_control_start_threshold");
+    let end_path = bat.join("charge_control_end_threshold");
+
+    let entered = Arc::new(std::sync::Mutex::new(0_usize));
+    let signal = Arc::new((std::sync::Mutex::new(false), std::sync::Condvar::new()));
+
+    let ctrl = Arc::new(SysfsGateControl::default());
+
+    let (backend, _, sysfs, _) = build_backend_with_sysfs_gate(
+        root.path(),
+        Arc::clone(&ctrl),
+        |sysfs| {
+            sysfs.set_file(bat.join("type"), "Battery");
+            sysfs.set_file(&start_path, "40");
+            sysfs.set_file(&end_path, "80");
+        },
+        |p| p,
+    );
+
+    let conn = zbus::Connection::session().await.unwrap();
+    let bus_name = format!(
+        "com.uniwill.uccd.Deep02.p{}.n{}",
+        std::process::id(),
+        DEEP_SEQ.fetch_add(1, std::sync::atomic::Ordering::SeqCst)
+    );
+    let runtime = DaemonRuntime::start_on_connection(
+        conn.clone(),
+        bus_name.clone(),
+        Arc::clone(&backend),
+        Arc::new(AllowAllAuthorizer),
+        false,
+    )
+    .await
+    .unwrap();
+
+    // Arm read gate AFTER startup so priming/activation reads do not occupy permits.
+    *ctrl.multi_read_gate.lock().unwrap() = Some((
+        "charge_control_start_threshold".to_string(),
+        Arc::clone(&entered),
+        Arc::clone(&signal),
+    ));
+
+    // Saturate Charging lane (4 permits).
+    let mut stuck = Vec::new();
+    for _ in 0..4 {
+        let p = UccdProxy::builder(&conn)
+            .destination(bus_name.clone())
+            .unwrap()
+            .path(DBUS_PATH)
+            .unwrap()
+            .build()
+            .await
+            .unwrap();
+        stuck.push(tokio::spawn(
+            async move { p.set_charge_end_threshold(82).await },
+        ));
+    }
+    let deadline = Instant::now() + Duration::from_secs(2);
+    while *entered.lock().unwrap() < 4 && Instant::now() < deadline {
+        tokio::time::sleep(Duration::from_millis(10)).await;
+    }
+    assert_eq!(*entered.lock().unwrap(), 4);
+
+    // Independent Lighting setter MUST succeed promptly while all Charging permits are saturated.
+    let light_proxy = UccdProxy::builder(&conn)
+        .destination(bus_name.as_str())
+        .unwrap()
+        .path(DBUS_PATH)
+        .unwrap()
+        .build()
+        .await
+        .unwrap();
+    let t0 = Instant::now();
+    let kbd_ok = tokio::time::timeout(
+        Duration::from_millis(350),
+        light_proxy.set_keyboard_backlight_states_json(
+            r#"[{"brightness":30,"red":12,"green":34,"blue":56}]"#,
+        ),
+    )
+    .await
+    .expect("Lighting lane must not stall behind saturated Charging lane")
+    .unwrap();
+    assert!(kbd_ok);
+    assert!(t0.elapsed() < Duration::from_millis(350));
+
+    // A queued 5th Charging request must reject at queue timeout instead of replaying after release.
+    let extra_proxy = UccdProxy::builder(&conn)
+        .destination(bus_name.as_str())
+        .unwrap()
+        .path(DBUS_PATH)
+        .unwrap()
+        .build()
+        .await
+        .unwrap();
+    let queued_res = extra_proxy.set_charge_end_threshold(91).await.unwrap();
+    assert!(
+        !queued_res,
+        "timed-out queued request must fail without late replay"
+    );
+
+    *signal.0.lock().unwrap() = true;
+    signal.1.notify_all();
+    for h in stuck {
+        let _ = h.await;
+    }
+    assert_ne!(sysfs.get_file(&end_path).as_deref(), Some("91"));
+    runtime.shutdown(Duration::from_secs(1)).await;
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn deep_03_stalled_cpu_freq_priming_publishes_dbus_in_degraded_mode_without_duplicate_polls()
+{
+    let root = tempfile::tempdir().unwrap();
+    let ctrl = Arc::new(SysfsGateControl::default());
+    let (started_tx, started_rx) = std::sync::mpsc::channel();
+    let (release_tx, release_rx) = std::sync::mpsc::channel();
+    let armed = Arc::new(std::sync::atomic::AtomicBool::new(true));
+    *ctrl.read_gate.lock().unwrap() = Some((
+        "scaling_cur_freq".to_string(),
+        Arc::clone(&armed),
+        std::sync::Mutex::new(Some(started_tx)),
+        std::sync::Mutex::new(Some(release_rx)),
+    ));
+
+    let (backend, _, _, _) =
+        build_backend_with_sysfs_gate(root.path(), Arc::clone(&ctrl), |_| {}, |p| p);
+
+    let conn = zbus::Connection::session().await.unwrap();
+    let bus_name = format!(
+        "com.uniwill.uccd.Deep03.p{}.n{}",
+        std::process::id(),
+        DEEP_SEQ.fetch_add(1, std::sync::atomic::Ordering::SeqCst)
+    );
+    let backend_for_start = Arc::clone(&backend);
+    let conn_for_start = conn.clone();
+    let bus_for_start = bus_name.clone();
+    let start_task = tokio::spawn(async move {
+        DaemonRuntime::start_on_connection(
+            conn_for_start,
+            bus_for_start,
+            backend_for_start,
+            Arc::new(AllowAllAuthorizer),
+            false,
+        )
+        .await
+    });
+
+    started_rx.recv_timeout(Duration::from_secs(2)).unwrap();
+    // startup_prime_timeout() defaults to 1500ms: service must come up in degraded mode even while scaling_cur_freq is blocked.
+    let runtime = tokio::time::timeout(Duration::from_millis(2500), start_task)
+        .await
+        .expect("start_on_connection must publish D-Bus despite hung scaling_cur_freq")
+        .unwrap()
+        .unwrap();
+
+    assert!(backend.is_prime_degraded());
+    let t0 = Instant::now();
+    let _snap = backend.poll_telemetry_once();
+    assert!(
+        t0.elapsed() < Duration::from_millis(100),
+        "single-flight poll guard must return cached telemetry immediately instead of queueing behind hung reader"
+    );
+
+    let proxy = UccdProxy::builder(&conn)
+        .destination(bus_name.as_str())
+        .unwrap()
+        .path(DBUS_PATH)
+        .unwrap()
+        .build()
+        .await
+        .unwrap();
+    assert!(!proxy.get_device_name().await.unwrap().is_empty());
+
+    armed.store(false, std::sync::atomic::Ordering::SeqCst);
+    let _ = release_tx.send(());
+    runtime.shutdown(Duration::from_secs(1)).await;
 }
