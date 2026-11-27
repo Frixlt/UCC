@@ -437,6 +437,7 @@ Pump code `0` — высокий режим 11V, `2` — 7V, `3` — 8V, `4` —
 - [ ] M5.6 Реализовать ordered writes с gap ≥80 мс, coalescing значений и cancellation поколения соединения.
 - [ ] M5.7 Сохранить manual/auto semantics, Fan/Pump/LED restore после reconnect; запрещённый pump code отвергается.
 - [ ] M5.8 Проверить настоящую водянку: initial connect, disconnect, disable/enable, power cycle, manual/auto, отсутствие скачка на неподдержанный режим.
+- [ ] M5.9 Исправить надёжное восстановление профиля/состояния СЖО в Rust `uccd` и `ucc-hardware` (`manual_fan_speed`/`manual_pump_voltage` из профиля, мгновенный пересчёт кривой и replay после `WC_CONNECT_DEBOUNCE`, `spawn_blocking` для `reconcile_power_state`, загрузка LED из `aquaris.json`, `PrepareForSleep` teardown/resume, авто-включение сканирования при настроенном `state_map["power_wc"]`).
 
 **Выход:** охлаждение работает автономно от GUI; BLE failures не задерживают fan loop, Polkit или shutdown.
 
@@ -475,6 +476,7 @@ Pump code `0` — высокий режим 11V, `2` — 7V, `3` — 8V, `4` —
 - [ ] M8.7 Проверить restart, corrupt config, unavailable device, D-Bus restart, slow auth, queue overload, sleep cancellation.
 - [ ] M8.8 Старый C++ GUI/CLI тестируется с новым Rust daemon на изолированной шине и затем в управляемом аппаратном переходе.
 - [ ] M8.9 Перенести `LidController` (ингибитор `handle-lid-switch`, debounce при отключении питания) и `WakeupPolicy` в `uccd` и `ucc-sleep prepare`.
+- [ ] M8.10 Гасить подсветку клавиатуры при закрытии крышки и восстанавливать при открытии или выходе из сна в `uccd` (подписка на `login1` `LidClosed` / `UPower` `LidIsClosed` в `run_logind_monitor_loop`, сохранение состояния только в RAM без изменения `settings.json`, unit/integration тесты).
 
 **Выход:** все backend-функции F01–F29/F40 работают без C++ daemon и без запущенного GUI.
 
@@ -501,6 +503,7 @@ Pump code `0` — высокий режим 11V, `2` — 7V, `3` — 8V, `4` —
 - [ ] M10.5 Исключить прототип `crates/ucc-gui` (`iced`/`wgpu`) из `Cargo.toml` и `Cargo.lock`, очистив Rust-workspace от графических зависимостей.
 - [ ] M10.6 Прогнать полный `test_gui_audit` (все 10 разделов, включая карточку `Lid close action & sleep wakeup` `F45`, обе темы, `UCC_READ_ONLY_PREVIEW` и отказ команд без fake success) в связке с новым Rust-демоном `uccd` на изолированной шине.
 - [ ] M10.7 Проверить на живой сессии Hyprland: масштабирование `1.25`/`2.0`, тему `qt6ct`/Kvantum, открытие из Rust-трея с фокусом и отсутствие пробуждения спящей RTX 5080 при открытии/закрытии `ucc-gui`.
+- [ ] M10.8 Дополировка GUI: добавить уникальные векторные иконки в `FluentTheme::icon()` для вкладок `Power & Devices`, `Lightbar` и `Battery & Processes` вместо fallback-иконки клавиатуры.
 
 **Выход:** все 10 разделов `ucc-gui` работают с Rust `uccd` без зависимостей `KF6`/`QML`/`libucc-dbus.so`, а в фоне нет ни одного Qt-процесса.
 
@@ -542,6 +545,8 @@ Pump code `0` — высокий режим 11V, `2` — 7V, `3` — 8V, `4` —
 - [ ] M13.7 Удалить C++/Qt runtime из active build/install; старый код остаётся в Git/tag/archive для истории.
 - [ ] M13.8 Удалить временные compatibility bridges, source-extraction tests и старые package dependencies после переноса проверок.
 - [ ] M13.9 Обновить README/BUILDING/TESTING/COMPARISON/origins и выпустить проверенный release.
+- [ ] M13.10 Переименовать проект из `Frixit Control Center` в выбранное Rust-ориентированное имя во всех пользовательских поверхностях (GUI, tray, CLI, desktop-файлы, PKGBUILD, документация) с сохранением совместимости D-Bus/миграции.
+- [ ] M13.11 Подготовить строгую техническую документацию без маркетинга и нейрослопа: `README.md` (EN), `README.ru.md` (RU), архитектуру, справочники D-Bus API и CLI, матрицу железа и объективное сравнение с `TUXEDO Control Center`, `Clevo Control Center`, `LCT`, `CoreCtrl` и `asusctl`.
 
 **Выход:** достигается определение готовности из раздела 16. Наличие незавершённого hardware test или несогласованной потери embedded shell UI оставляет соответствующий пункт открытым.
 

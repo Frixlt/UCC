@@ -1410,6 +1410,33 @@
       "blockers": []
     },
     {
+      "id": "M5.9",
+      "milestone": "M5",
+      "wave": "V5",
+      "title": "Исправить надёжное восстановление профиля/состояния СЖО в Rust uccd и ucc-hardware (manual_fan_speed/manual_pump_voltage из профиля, мгновенный пересчёт кривой и replay после WC_CONNECT_DEBOUNCE, offload reconcile_power_state через spawn_blocking + enter_worker_hw_op, загрузка LED из aquaris.json, PrepareForSleep teardown/resume, авто-включение сканирования при настроенном state_map[power_wc]).",
+      "status": "planned",
+      "status_basis": "Root causes diagnosed across crates/uccd/src/backend/{profile_tx.rs,cooling.rs} and crates/ucc-hardware/src/cooler.rs; fix and regression tests pending.",
+      "suggested_role": null,
+      "assigned_agent_id": null,
+      "depends_on": [
+        "M5.5"
+      ],
+      "dependency_refinement_required": false,
+      "owned_paths": [
+        "crates/uccd/src/backend/cooling.rs",
+        "crates/uccd/src/backend/profile_tx.rs",
+        "crates/ucc-hardware/src/cooler.rs"
+      ],
+      "feature_ids": [],
+      "test_ids": [],
+      "implementation_sha": null,
+      "r1_review": null,
+      "r2_evidence": [],
+      "integration_sha": null,
+      "children": [],
+      "blockers": []
+    },
+    {
       "id": "M6.1",
       "milestone": "M6",
       "wave": "V6",
@@ -2090,6 +2117,32 @@
       ]
     },
     {
+      "id": "M8.10",
+      "milestone": "M8",
+      "wave": "V8",
+      "title": "Гасить подсветку клавиатуры при закрытии крышки и восстанавливать при открытии или выходе из сна в uccd (подписка на login1 LidClosed / UPower LidIsClosed в run_logind_monitor_loop, сохранение состояния только в RAM без изменения settings.json, unit/integration тесты).",
+      "status": "planned",
+      "status_basis": "run_logind_monitor_loop currently handles PrepareForSleep only without LidClosed/LidIsClosed keyboard backlight blank/restore; implementation pending.",
+      "suggested_role": null,
+      "assigned_agent_id": null,
+      "depends_on": [
+        "M8.9"
+      ],
+      "dependency_refinement_required": false,
+      "owned_paths": [
+        "crates/uccd/src/orchestrator.rs",
+        "crates/uccd/src/backend/lighting_power.rs"
+      ],
+      "feature_ids": [],
+      "test_ids": [],
+      "implementation_sha": null,
+      "r1_review": null,
+      "r2_evidence": [],
+      "integration_sha": null,
+      "children": [],
+      "blockers": []
+    },
+    {
       "id": "M9.1",
       "milestone": "M9",
       "wave": "V9",
@@ -2178,8 +2231,8 @@
       "milestone": "M9",
       "wave": "V9",
       "title": "Обеспечить X11 backend в пользовательской сессии и совместимый маршрут SetDisplayRefreshRate.",
-      "status": "planned",
-      "status_basis": "No Rust implementation or test result is claimed.",
+      "status": "deferred_to_community",
+      "status_basis": "Primary host target is Wayland/Hyprland; X11 user-session backend is deferred to community contributors on X11 systems.",
       "suggested_role": null,
       "assigned_agent_id": null,
       "depends_on": [],
@@ -2295,23 +2348,29 @@
       "milestone": "M10",
       "wave": "V10",
       "title": "Отвязать CMake-сборку ucc-gui от удаляемых C++-компонентов (uccd, ucc-session, ucc-desktop-tray, ucc-tray) и лишних зависимостей (Qml, Quick, QuickControls2, Qt6::Bluetooth, KF6WindowSystem, KF6StatusNotifierItem), оставив только Qt6::{Core,Gui,Widgets,DBus,Charts}.",
-      "status": "partial",
-      "status_basis": "Packaged GUI builds with the Qt Widgets client and no KF6, QML or Bluetooth targets. Separate legacy C++ targets remain for interoperability tests.",
+      "status": "done",
+      "status_basis": "Standalone ucc-gui builds under UCC_PACKAGE_RUST_RUNTIME=ON with zero KF6, Qt6Qml, Qt6Quick, Qt6Bluetooth, or libucc-dbus.so linkage verified via ldd (913d1ef).",
       "suggested_role": null,
       "assigned_agent_id": null,
       "depends_on": [
         "M8.8"
       ],
-      "dependency_refinement_required": true,
-      "owned_paths": [],
+      "dependency_refinement_required": false,
+      "owned_paths": [
+        "CMakeLists.txt",
+        "ucc-gui/CMakeLists.txt",
+        "libucc-dbus/CMakeLists.txt"
+      ],
       "feature_ids": [
         "F37"
       ],
       "test_ids": [],
       "implementation_sha": "610f8a8",
       "r1_review": null,
-      "r2_evidence": [],
-      "integration_sha": null,
+      "r2_evidence": [
+        "ldd ucc-gui clean under UCC_PACKAGE_RUST_RUNTIME=ON (913d1ef)"
+      ],
+      "integration_sha": "913d1ef",
       "children": [],
       "blockers": []
     },
@@ -2320,23 +2379,32 @@
       "milestone": "M10",
       "wave": "V10",
       "title": "Заменить активацию окна через KF6WindowSystem на нативный путь Qt6 Wayland (XDG_ACTIVATION_TOKEN + QWindow::requestActivate()) и статически встроить клиент D-Bus (без установки внешней libucc-dbus.so).",
-      "status": "planned",
-      "status_basis": "No Rust implementation or test result is claimed.",
+      "status": "partial",
+      "status_basis": "libucc-dbus is statically linked (libucc-dbus/CMakeLists.txt:19) and GuiInstance implements ActivateWithToken without KF6WindowSystem (913d1ef); live Hyprland focus verification remains open.",
       "suggested_role": null,
       "assigned_agent_id": null,
       "depends_on": [
         "M10.1",
         "M9.7"
       ],
-      "dependency_refinement_required": true,
-      "owned_paths": [],
+      "dependency_refinement_required": false,
+      "owned_paths": [
+        "libucc-dbus/CMakeLists.txt",
+        "ucc-gui/src/GuiInstance.cpp",
+        "ucc-gui/inc/WindowActivation.hpp"
+      ],
       "feature_ids": [
         "F36"
       ],
-      "test_ids": [],
-      "implementation_sha": null,
+      "test_ids": [
+        "test_gui_instance"
+      ],
+      "implementation_sha": "913d1ef",
       "r1_review": null,
-      "r2_evidence": [],
+      "r2_evidence": [
+        "test_gui_instance",
+        "desk01_and_activation"
+      ],
       "integration_sha": null,
       "children": [],
       "blockers": []
@@ -2432,8 +2500,8 @@
       "milestone": "M10",
       "wave": "V10",
       "title": "Прогнать полный test_gui_audit (все 10 разделов, включая карточку Lid close action & sleep wakeup F45, обе темы, UCC_READ_ONLY_PREVIEW и отказ команд без fake success) в связке с новым Rust-демоном uccd на изолированной шине.",
-      "status": "planned",
-      "status_basis": "No Rust implementation or test result is claimed.",
+      "status": "done",
+      "status_basis": "Full test_gui_audit (all 10 sections, themes, preview) and test_rust_uccd_interop (against live Rust LiveUccdBackend on private bus) passed in CTest (42/42, 913d1ef).",
       "suggested_role": null,
       "assigned_agent_id": null,
       "depends_on": [
@@ -2441,18 +2509,27 @@
         "M10.3",
         "M10.4"
       ],
-      "dependency_refinement_required": true,
-      "owned_paths": [],
+      "dependency_refinement_required": false,
+      "owned_paths": [
+        "tests/test_gui_audit.cpp",
+        "tests/test_rust_uccd_interop.cpp"
+      ],
       "feature_ids": [
         "F37",
         "F39",
         "F45"
       ],
-      "test_ids": [],
-      "implementation_sha": null,
+      "test_ids": [
+        "test_gui_audit",
+        "test_rust_uccd_interop"
+      ],
+      "implementation_sha": "913d1ef",
       "r1_review": null,
-      "r2_evidence": [],
-      "integration_sha": null,
+      "r2_evidence": [
+        "tests/test_gui_audit.cpp",
+        "tests/test_rust_uccd_interop.cpp"
+      ],
+      "integration_sha": "913d1ef",
       "children": [],
       "blockers": []
     },
@@ -2476,6 +2553,33 @@
         "F37"
       ],
       "test_ids": [],
+      "implementation_sha": null,
+      "r1_review": null,
+      "r2_evidence": [],
+      "integration_sha": null,
+      "children": [],
+      "blockers": []
+    },
+    {
+      "id": "M10.8",
+      "milestone": "M10",
+      "wave": "V10",
+      "title": "Дополировка GUI: добавить уникальные векторные иконки в FluentTheme::icon() для вкладок Power & Devices, Lightbar и Battery & Processes вместо fallback-иконки клавиатуры.",
+      "status": "planned",
+      "status_basis": "FluentTheme::icon() falls through to the keyboard glyph for Power & Devices, Lightbar, and Battery & Processes; custom QPainter icons pending.",
+      "suggested_role": null,
+      "assigned_agent_id": null,
+      "depends_on": [
+        "M10.1"
+      ],
+      "dependency_refinement_required": false,
+      "owned_paths": [
+        "ucc-gui/src/FluentTheme.cpp"
+      ],
+      "feature_ids": [],
+      "test_ids": [
+        "test_gui_audit"
+      ],
       "implementation_sha": null,
       "r1_review": null,
       "r2_evidence": [],
@@ -2698,8 +2802,8 @@
       "milestone": "M12",
       "wave": "V12",
       "title": "Обновить DEB/RPM/Nix recipes, services/dbus/polkit/autostart/icons/man/completions; проверить Nix-store helper paths.",
-      "status": "partial",
-      "status_basis": "DEB, RPM and Nix use the shared Rust runtime installer. The source archive supports an empty, offline Cargo home, and staged package paths were checked. Native package builds remain open.",
+      "status": "deferred_to_community",
+      "status_basis": "DEB, RPM and Nix recipes use the shared Rust runtime installer (610f8a8); native package builds and verification outside Arch/CachyOS are deferred to community contributors on those distributions.",
       "suggested_role": null,
       "assigned_agent_id": null,
       "depends_on": [],
@@ -2741,7 +2845,7 @@
       "wave": "V12",
       "title": "Настроить fmt/clippy/tests/contract tests/fuzz smoke/build/packaging/UI jobs под непривилегированным пользователем.",
       "status": "partial",
-      "status_basis": "Rust Clippy and workspace tests run in CI, and the Arch release checks packaged binaries and autostarts. Remaining CI matrix items stay open.",
+      "status_basis": "Locked CI MSRV matrix [\"1.89.0\", \"1.99.1\"], Clippy, and workspace tests are active (.github/workflows/build.yml, d81a9f3); fuzz smoke and distro packaging CI jobs remain open.",
       "suggested_role": null,
       "assigned_agent_id": null,
       "depends_on": [],
@@ -2782,8 +2886,8 @@
       "milestone": "M12",
       "wave": "V12",
       "title": "Проверить dependencies/runtime links: основным binaries не нужны Qt/libucc-dbus; ожидаемые системные/FFI библиотеки перечислены.",
-      "status": "partial",
-      "status_basis": "The seven staged Rust executables were matched to Cargo build outputs and checked for legacy dynamic links. Native DEB/RPM/Nix links remain open.",
+      "status": "done",
+      "status_basis": "All 7 Arch-packaged Rust executables and standalone ucc-gui passed ldd link verification (913d1ef); non-Arch distro verification deferred to community.",
       "suggested_role": null,
       "assigned_agent_id": null,
       "depends_on": [],
@@ -3019,6 +3123,52 @@
       "assigned_agent_id": null,
       "depends_on": [],
       "dependency_refinement_required": true,
+      "owned_paths": [],
+      "feature_ids": [],
+      "test_ids": [],
+      "implementation_sha": null,
+      "r1_review": null,
+      "r2_evidence": [],
+      "integration_sha": null,
+      "children": [],
+      "blockers": []
+    },
+    {
+      "id": "M13.10",
+      "milestone": "M13",
+      "wave": "V13",
+      "title": "Переименовать проект из Frixit Control Center в выбранное Rust-ориентированное имя во всех пользовательских поверхностях (GUI, tray, CLI, desktop-файлы, PKGBUILD, документация) с сохранением совместимости D-Bus/миграции.",
+      "status": "planned",
+      "status_basis": "Naming candidates prepared; awaiting user selection.",
+      "suggested_role": null,
+      "assigned_agent_id": null,
+      "depends_on": [],
+      "dependency_refinement_required": false,
+      "owned_paths": [],
+      "feature_ids": [],
+      "test_ids": [],
+      "implementation_sha": null,
+      "r1_review": null,
+      "r2_evidence": [],
+      "integration_sha": null,
+      "children": [],
+      "blockers": [
+        "Awaiting user selection of new project name"
+      ]
+    },
+    {
+      "id": "M13.11",
+      "milestone": "M13",
+      "wave": "V13",
+      "title": "Подготовить строгую техническую документацию без маркетинга и нейрослопа: README.md (EN), README.ru.md (RU), архитектуру, справочники D-Bus API и CLI, матрицу железа и объективное сравнение с TUXEDO Control Center, Clevo Control Center, LCT, CoreCtrl и asusctl.",
+      "status": "planned",
+      "status_basis": "Documentation overhaul planned after project rename decision.",
+      "suggested_role": null,
+      "assigned_agent_id": null,
+      "depends_on": [
+        "M13.10"
+      ],
+      "dependency_refinement_required": false,
       "owned_paths": [],
       "feature_ids": [],
       "test_ids": [],
