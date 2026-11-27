@@ -13,6 +13,18 @@ fn extract_json_field_string(v: &Value) -> Option<String> {
     }
 }
 
+fn is_empty_fan_profile_payload(raw: Option<&str>) -> bool {
+    let Some(trimmed) = raw.map(str::trim).filter(|s| !s.is_empty()) else {
+        return true;
+    };
+    if trimmed == "{}" {
+        return true;
+    }
+    serde_json::from_str::<Value>(trimmed)
+        .ok()
+        .is_some_and(|v| v.as_object().is_some_and(|m| m.is_empty()))
+}
+
 pub async fn run_fan(client: &CliClient, action: &FanAction, json_mode: bool) -> Result<(), i32> {
     match action {
         FanAction::List => {
@@ -89,7 +101,7 @@ pub async fn run_fan(client: &CliClient, action: &FanAction, json_mode: bool) ->
                 .ok();
             let mut display_name = id.clone();
 
-            if prof_json.as_deref() == Some("{}") || prof_json.is_none() {
+            if is_empty_fan_profile_payload(prof_json.as_deref()) {
                 // Check custom profiles
                 if let Ok(cust_raw) =
                     with_rpc_timeout(client.proxy().get_custom_fan_profiles_json()).await
@@ -111,14 +123,12 @@ pub async fn run_fan(client: &CliClient, action: &FanAction, json_mode: bool) ->
                 }
             }
 
-            let json_str = match prof_json {
-                Some(s) if !s.is_empty() => s,
-                _ => {
-                    eprintln!("Error: Could not retrieve fan profile");
-                    return Err(1);
-                }
-            };
+            if is_empty_fan_profile_payload(prof_json.as_deref()) {
+                eprintln!("Error: Fan profile '{id}' not found");
+                return Err(1);
+            }
 
+            let json_str = prof_json.unwrap_or_default();
             let val: Value = match serde_json::from_str(&json_str) {
                 Ok(v) => v,
                 Err(_) => {
@@ -126,6 +136,10 @@ pub async fn run_fan(client: &CliClient, action: &FanAction, json_mode: bool) ->
                     return Err(1);
                 }
             };
+            if val.as_object().is_some_and(|m| m.is_empty()) {
+                eprintln!("Error: Fan profile '{id}' not found");
+                return Err(1);
+            }
 
             if json_mode {
                 print_json(&val);

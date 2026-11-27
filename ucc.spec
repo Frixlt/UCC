@@ -128,6 +128,7 @@ systemctl daemon-reload > /dev/null 2>&1 || true
 %{_datadir}/icons/hicolor/64x64/apps/ucc-tray.png
 %{_datadir}/icons/hicolor/128x128/apps/ucc-tray.png
 %{_mandir}/man1/ucc-cli.1*
+%{_mandir}/man8/uccd.8*
 %{_datadir}/bash-completion/completions/ucc-cli
 %{_datadir}/zsh/site-functions/_ucc-cli
 %{_datadir}/fish/vendor_completions.d/ucc-cli.fish

@@ -1,0 +1,62 @@
+.\" SPDX-License-Identifier: GPL-3.0-or-later
+.TH UCCD 8 "2026-11-27" "ucc-rusted 0.0.1" "System Administration Manual"
+.SH NAME
+uccd \- Uniwill Control Center system control daemon
+.SH SYNOPSIS
+.B uccd
+.RB [ \-\-start ]
+.RB [ \-\-version ]
+.RB [ \-\-help ]
+.SH DESCRIPTION
+.B uccd
+is the privileged system daemon of
+.B ucc-rusted
+for Uniwill, Clevo, Mechrevo, and TUXEDO laptops.
+It manages fan curves, power and TDP profiles, CPU/GPU telemetry,
+charging thresholds, keyboard and lightbar illumination, display refresh
+rate coordination, and Bluetooth water cooler control, exposing the
+.B com.uniwill.uccd
+interface on the system D-Bus at object path
+.IR /com/uniwill/uccd .
+.SH OPTIONS
+.TP
+.B \-\-start
+Start the D-Bus service loop and apply hardware initialization, power-state
+profile selection, and periodic telemetry/fan control workers.
+.TP
+.B \-\-version
+Print the daemon version and exit.
+.TP
+.B \-\-help
+Display command-line usage information and exit.
+.SH SYSTEMD UNITS
+.TP
+.B uccd.service
+Runs
+.B /usr/bin/uccd \-\-start
+under systemd hardening constraints and restores automatic firmware cooling via
+.B /usr/lib/ucc/ucc-hardware \-\-fan-auto
+on exit.
+.TP
+.B uccd-sleep.service
+Executes
+.B /usr/lib/ucc/ucc-sleep prepare
+before system sleep and
+.B /usr/lib/ucc/ucc-sleep resume
+after wake-up to save and restore active hardware lighting and cooling state.
+.SH FILES
+.TP
+.I /etc/ucc/settings
+Persistent configuration and custom profile store managed by
+.BR uccd .
+.TP
+.I /usr/share/dbus-1/system.d/com.uniwill.uccd.conf
+System D-Bus policy configuration for
+.BR com.uniwill.uccd .
+.TP
+.I /usr/share/polkit-1/actions/com.uniwill.uccd.policy
+Polkit action definitions authorizing desktop read/control operations.
+.SH SEE ALSO
+.BR ucc-cli (1),
+.BR systemctl (1),
+.BR systemd-analyze (1)

@@ -34,34 +34,68 @@ pre_upgrade() {
 }
 
 # Optional root prefix lets packaging tests inspect a staged unit tree.
-ucc_sleep_hook_enabled() {
-  local sleep_state sleep_root sleep_target
+ucc_sleep_hook_state() {
+  local sleep_state sleep_target root_prefix="${1:-}"
   sleep_state=$(systemctl is-enabled uccd-sleep.service 2>/dev/null || true)
   case "$sleep_state" in
-    enabled|enabled-runtime) return 0 ;;
-    masked|masked-runtime) return 1 ;;
+    masked|masked-runtime)
+      printf '%s\n' "masked"
+      return 0
+      ;;
+    enabled)
+      printf '%s\n' "enabled"
+      return 0
+      ;;
+    enabled-runtime)
+      printf '%s\n' "enabled-runtime"
+      return 0
+      ;;
     *)
       # is-enabled on an alias succeeds even when its target is disabled.
-      for sleep_root in "${1:-}/etc/systemd/system" "${1:-}/run/systemd/system"; do
-        for sleep_target in suspend hibernate hybrid-sleep suspend-then-hibernate; do
-          if [ -L "$sleep_root/$sleep_target.target.wants/uccd-pre-sleep.service" ]; then
-            return 0
-          fi
-        done
+      for sleep_target in suspend hibernate hybrid-sleep suspend-then-hibernate; do
+        if [ -L "$root_prefix/etc/systemd/system/$sleep_target.target.wants/uccd-pre-sleep.service" ]; then
+          printf '%s\n' "enabled"
+          return 0
+        fi
+      done
+      for sleep_target in suspend hibernate hybrid-sleep suspend-then-hibernate; do
+        if [ -L "$root_prefix/run/systemd/system/$sleep_target.target.wants/uccd-pre-sleep.service" ]; then
+          printf '%s\n' "enabled-runtime"
+          return 0
+        fi
       done
       ;;
   esac
-  return 1
+  printf '%s\n' "disabled"
+}
+
+ucc_sleep_hook_enabled() {
+  case "$(ucc_sleep_hook_state "${1:-}")" in
+    enabled|enabled-runtime) return 0 ;;
+    *) return 1 ;;
+  esac
+}
+
+ucc_migrate_sleep_hook() {
+  local state
+  state=$(ucc_sleep_hook_state "${1:-}")
+  case "$state" in
+    enabled)
+      systemctl disable uccd-pre-sleep.service uccd-sleep.service 2>/dev/null || true
+      systemctl enable uccd-sleep.service
+      ;;
+    enabled-runtime)
+      systemctl disable --runtime uccd-pre-sleep.service uccd-sleep.service 2>/dev/null || true
+      systemctl enable --runtime uccd-sleep.service
+      ;;
+  esac
 }
 
 post_upgrade() {
   ucc_restore_settings
   systemctl daemon-reload
-  # Replace old suspend-target links while preserving an explicitly disabled hook.
-  if ucc_sleep_hook_enabled; then
-    systemctl disable uccd-pre-sleep.service uccd-sleep.service 2>/dev/null || true
-    systemctl enable uccd-sleep.service
-  fi
+  # Replace old suspend-target links while preserving disabled or runtime-only hooks.
+  ucc_migrate_sleep_hook
 
   echo ":: Restart uccd and desktop clients when ready to use the upgraded version."
 

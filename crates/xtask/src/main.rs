@@ -207,6 +207,10 @@ fn stage_cli_assets(dest: &Path) -> Result<(), Box<dyn std::error::Error>> {
     let mut man_file = fs::File::create(man_dir.join("ucc-cli.1"))?;
     ucc_cli::cli::generate_manpage(&mut man_file)?;
 
+    let man8_dir = dest.join("share/man/man8");
+    fs::create_dir_all(&man8_dir)?;
+    fs::copy(repo_root().join("uccd/uccd.8"), man8_dir.join("uccd.8"))?;
+
     for (shell, rel) in [
         (Shell::Bash, "share/bash-completion/completions/ucc-cli"),
         (Shell::Zsh, "share/zsh/site-functions/_ucc-cli"),
@@ -712,6 +716,10 @@ fn generate_all_manpages(out_dir: &Path) -> Result<(), Box<dyn std::error::Error
     let mut file = fs::File::create(&path)?;
     ucc_cli::cli::generate_manpage(&mut file)?;
     println!("Generated man page: {}", path.display());
+
+    let daemon_man = out_dir.join("uccd.8");
+    fs::copy(repo_root().join("uccd/uccd.8"), &daemon_man)?;
+    println!("Staged man page: {}", daemon_man.display());
 
     Ok(())
 }

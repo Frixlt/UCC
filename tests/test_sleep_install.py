@@ -38,24 +38,71 @@ ucc_sleep_hook_enabled "$UCC_SLEEP_TEST_ROOT"
         self.assertIn(result.returncode, (0, 1), result.stderr)
         return result.returncode == 0
 
+    def hook_state(self):
+        script = '''
+source "$1"
+systemctl() { command systemctl --root "$UCC_SLEEP_TEST_ROOT" "$@"; }
+ucc_sleep_hook_state "$UCC_SLEEP_TEST_ROOT"
+'''
+        result = subprocess.run(['bash', '-c', script, 'test', str(SOURCE / 'ucc.install')],
+                                env={**os.environ, 'UCC_SLEEP_TEST_ROOT': str(self.root)},
+                                capture_output=True, text=True, check=True)
+        return result.stdout.strip()
+
+    def migrate_hook(self):
+        script = '''
+source "$1"
+systemctl() { command systemctl --root "$UCC_SLEEP_TEST_ROOT" "$@"; }
+ucc_migrate_sleep_hook "$UCC_SLEEP_TEST_ROOT"
+'''
+        subprocess.run(['bash', '-c', script, 'test', str(SOURCE / 'ucc.install')],
+                       env={**os.environ, 'UCC_SLEEP_TEST_ROOT': str(self.root)},
+                       check=True)
+
     def test_disabled_stays_disabled_despite_compatibility_alias(self):
         self.assertFalse(self.enabled())
+        self.assertEqual(self.hook_state(), 'disabled')
 
     def test_existing_canonical_hook_is_migrated(self):
         self.unit_link('etc/systemd/system/suspend.target.wants/uccd-sleep.service',
                        '/usr/lib/systemd/system/uccd-sleep.service')
         self.assertTrue(self.enabled())
+        self.assertEqual(self.hook_state(), 'enabled')
+        self.migrate_hook()
+        self.assertEqual(self.hook_state(), 'enabled')
+        self.assertTrue((self.root / 'etc/systemd/system/sleep.target.requires/uccd-sleep.service').is_symlink())
 
     def test_legacy_pre_sleep_only_is_migrated(self):
         self.unit_link('etc/systemd/system/hibernate.target.wants/uccd-pre-sleep.service',
                        '/usr/lib/systemd/system/uccd-pre-sleep.service')
         self.assertTrue(self.enabled())
+        self.assertEqual(self.hook_state(), 'enabled')
 
     def test_mask_is_preserved_even_with_legacy_links(self):
         self.unit_link('etc/systemd/system/uccd-sleep.service', '/dev/null')
         self.unit_link('etc/systemd/system/suspend.target.wants/uccd-pre-sleep.service',
                        '/usr/lib/systemd/system/uccd-pre-sleep.service')
         self.assertFalse(self.enabled())
+        self.assertEqual(self.hook_state(), 'masked')
+
+    def test_runtime_enabled_hook_stays_runtime_without_persistent_enable(self):
+        self.unit_link('run/systemd/system/sleep.target.requires/uccd-sleep.service',
+                       '/usr/lib/systemd/system/uccd-sleep.service')
+        self.assertTrue(self.enabled())
+        self.assertEqual(self.hook_state(), 'enabled-runtime')
+        self.migrate_hook()
+        self.assertEqual(self.hook_state(), 'enabled-runtime')
+        self.assertTrue((self.root / 'run/systemd/system/sleep.target.requires/uccd-sleep.service').is_symlink())
+        self.assertFalse((self.root / 'etc/systemd/system/sleep.target.requires/uccd-sleep.service').exists())
+
+    def test_runtime_legacy_pre_sleep_migrates_as_runtime_only(self):
+        self.unit_link('run/systemd/system/suspend.target.wants/uccd-pre-sleep.service',
+                       '/usr/lib/systemd/system/uccd-pre-sleep.service')
+        self.assertEqual(self.hook_state(), 'enabled-runtime')
+        self.migrate_hook()
+        self.assertEqual(self.hook_state(), 'enabled-runtime')
+        self.assertTrue((self.root / 'run/systemd/system/sleep.target.requires/uccd-sleep.service').is_symlink())
+        self.assertFalse((self.root / 'etc/systemd/system/sleep.target.requires/uccd-sleep.service').exists())
 
 
 class PackageSettingsUpgradeTest(unittest.TestCase):

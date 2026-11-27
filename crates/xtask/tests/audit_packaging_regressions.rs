@@ -240,6 +240,12 @@ fn dist_stages_all_runtime_binaries_from_cargo_target_dir() {
         assert_ne!(file.metadata().unwrap().permissions().mode() & 0o111, 0);
     }
     assert!(dest.join("share/man/man1/ucc-cli.1").is_file());
+    assert!(
+        fs::metadata(dest.join("share/man/man8/uccd.8"))
+            .map(|m| m.is_file() && m.len() > 0)
+            .unwrap_or(false),
+        "dist must stage non-empty share/man/man8/uccd.8"
+    );
     assert!(dest.join("lib/systemd/system/uccd.service").is_file());
     assert_eq!(
         fs::read_link(dest.join("lib/systemd/system/uccd-pre-sleep.service")).unwrap(),

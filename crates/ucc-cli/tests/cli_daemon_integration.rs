@@ -47,9 +47,12 @@ impl UccdBackend for CliTestBackend {
     }
 
     fn get_fan_profile(&self, name: &str) -> String {
-        format!(
-            r#"{{"name":"{name}","curve":[{{"temp":40,"speed":25}},{{"temp":80,"speed":95}}]}}"#
-        )
+        match name {
+            "office" | "balanced" | "turbo" => format!(
+                r#"{{"name":"{name}","curve":[{{"temp":40,"speed":25}},{{"temp":80,"speed":95}}]}}"#
+            ),
+            _ => "{}".to_string(),
+        }
     }
 }
 
@@ -318,4 +321,42 @@ async fn test_cli_exit_codes_on_errors() {
         !offline_output.status.success(),
         "Exit code must be non-zero when daemon is unreachable"
     );
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn ta_18_fan_get_missing_profile_fails_in_text_and_json_modes() {
+    let (bus_name, _server) = start_test_daemon().await;
+    let cli_bin = env!("CARGO_BIN_EXE_ucc-cli");
+
+    for extra_args in [&[][..], &["--json"][..]] {
+        let mut cmd = Command::new(cli_bin);
+        cmd.args(["fan", "get", "nonexistent-profile"]);
+        cmd.args(extra_args);
+        let out = cmd
+            .env("UCCD_DBUS_SERVICE", &bus_name)
+            .output()
+            .expect("run ucc-cli fan get missing");
+
+        assert!(
+            !out.status.success(),
+            "missing fan profile must fail with args {extra_args:?}"
+        );
+        let stdout = String::from_utf8_lossy(&out.stdout);
+        let stderr = String::from_utf8_lossy(&out.stderr);
+        assert!(
+            stdout.trim().is_empty(),
+            "missing fan profile must not emit stdout, got: {stdout}"
+        );
+        assert!(
+            stderr.contains("nonexistent-profile") && stderr.contains("not found"),
+            "stderr must explain missing fan profile, got: {stderr}"
+        );
+    }
+
+    let valid = Command::new(cli_bin)
+        .args(["fan", "get", "balanced", "--json"])
+        .env("UCCD_DBUS_SERVICE", &bus_name)
+        .output()
+        .expect("run ucc-cli fan get balanced --json");
+    assert!(valid.status.success());
 }
