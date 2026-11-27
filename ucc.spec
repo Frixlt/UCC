@@ -1,7 +1,7 @@
 %global _hardened_build 1
 
 Name:           ucc
-Version:        0.3.0
+Version:        0.0.1
 Release:        1%{?dist}
 Summary:        ucc-rusted - System control application suite for Uniwill/Clevo/TUXEDO laptops
 License:        GPL-3.0-or-later

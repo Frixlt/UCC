@@ -20,7 +20,7 @@
   makeWrapper,
   tuxedo-drivers ? null,
   src ? ./., # default to the source tree containing this file
-  version ? "0.3.0",
+  version ? "0.0.1",
 }:
 
 stdenv.mkDerivation {

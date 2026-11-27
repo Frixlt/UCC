@@ -1,6 +1,6 @@
 # ucc-rusted release; no private settings or kernel driver bundled.
 pkgname=ucc-rusted
-pkgver=0.3.0
+pkgver=0.0.1
 pkgrel=1
 pkgdesc='ucc-rusted: Rust system control daemon, CLI, tray, and Qt6 GUI for Uniwill/Clevo/TUXEDO laptops'
 arch=('x86_64')
