@@ -2008,6 +2008,8 @@ impl LiveUccdBackend {
                 hw_ctgp,
                 hw_kb,
             });
+            self.record_committed_charging_for_profile(&committed_profile);
+            self.charging_op_seq.fetch_add(1, Ordering::SeqCst);
         }
 
         let decision = self.current_decision();

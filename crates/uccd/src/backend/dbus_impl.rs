@@ -784,28 +784,15 @@ impl UccdBackend for LiveUccdBackend {
         if !avail.iter().any(|p| p == desc) {
             return false;
         }
-        if self.write_aborted_by_shutdown() {
-            return false;
-        }
-        let Some(prev) = self.update_settings(|s| {
-            let p = s.charging_profile.clone();
-            s.charging_profile = Some(desc.to_string());
-            Some(p)
-        }) else {
+        let Some(prev_hw) = self.active_bracket_token(&current_path) else {
             return false;
         };
-        if self.write_aborted_by_shutdown() || self.sysfs.write(&current_path, desc).is_err() {
-            let _ = self.update_settings(|s| {
-                if s.charging_profile.as_deref() == Some(desc) {
-                    s.charging_profile = prev;
-                    Some(())
-                } else {
-                    None
-                }
-            });
-            return false;
-        }
-        true
+        self.commit_direct_charging_token(
+            &current_path,
+            super::display_gpu::ChargingTokenKind::ChargingProfile,
+            desc,
+            &prev_hw,
+        )
     }
 
     fn get_charging_priorities_available(&self) -> String {
@@ -841,28 +828,15 @@ impl UccdBackend for LiveUccdBackend {
         if !avail.iter().any(|p| p == desc) {
             return false;
         }
-        if self.write_aborted_by_shutdown() {
-            return false;
-        }
-        let Some(prev) = self.update_settings(|s| {
-            let p = s.charging_priority.clone();
-            s.charging_priority = Some(desc.to_string());
-            Some(p)
-        }) else {
+        let Some(prev_hw) = self.active_bracket_token(&current_path) else {
             return false;
         };
-        if self.write_aborted_by_shutdown() || self.sysfs.write(&current_path, desc).is_err() {
-            let _ = self.update_settings(|s| {
-                if s.charging_priority.as_deref() == Some(desc) {
-                    s.charging_priority = prev;
-                    Some(())
-                } else {
-                    None
-                }
-            });
-            return false;
-        }
-        true
+        self.commit_direct_charging_token(
+            &current_path,
+            super::display_gpu::ChargingTokenKind::ChargingPriority,
+            desc,
+            &prev_hw,
+        )
     }
 
     fn get_charge_start_available_thresholds(&self) -> String {
@@ -913,29 +887,15 @@ impl UccdBackend for LiveUccdBackend {
         if end >= 0 && value >= end {
             return false;
         }
-        if self.write_aborted_by_shutdown() {
-            return false;
-        }
-        let Some(prev) = self.update_settings(|s| {
-            let p = s.charge_start_threshold;
-            s.charge_start_threshold = Some(value as u8);
-            Some(p)
-        }) else {
+        let Some(prev_hw) = self
+            .sysfs
+            .read(&path)
+            .ok()
+            .and_then(|s| s.trim().parse::<u8>().ok())
+        else {
             return false;
         };
-        if self.write_aborted_by_shutdown() || self.sysfs.write(&path, &value.to_string()).is_err()
-        {
-            let _ = self.update_settings(|s| {
-                if s.charge_start_threshold == Some(value as u8) {
-                    s.charge_start_threshold = prev;
-                    Some(())
-                } else {
-                    None
-                }
-            });
-            return false;
-        }
-        true
+        self.commit_direct_charging_u8(&path, true, value as u8, prev_hw)
     }
 
     fn set_charge_end_threshold(&self, value: i32) -> bool {
@@ -956,29 +916,15 @@ impl UccdBackend for LiveUccdBackend {
         if start >= 0 && value <= start {
             return false;
         }
-        if self.write_aborted_by_shutdown() {
-            return false;
-        }
-        let Some(prev) = self.update_settings(|s| {
-            let p = s.charge_end_threshold;
-            s.charge_end_threshold = Some(value as u8);
-            Some(p)
-        }) else {
+        let Some(prev_hw) = self
+            .sysfs
+            .read(&path)
+            .ok()
+            .and_then(|s| s.trim().parse::<u8>().ok())
+        else {
             return false;
         };
-        if self.write_aborted_by_shutdown() || self.sysfs.write(&path, &value.to_string()).is_err()
-        {
-            let _ = self.update_settings(|s| {
-                if s.charge_end_threshold == Some(value as u8) {
-                    s.charge_end_threshold = prev;
-                    Some(())
-                } else {
-                    None
-                }
-            });
-            return false;
-        }
-        true
+        self.commit_direct_charging_u8(&path, false, value as u8, prev_hw)
     }
 
     fn get_charge_type(&self) -> String {
@@ -1003,28 +949,18 @@ impl UccdBackend for LiveUccdBackend {
             return false;
         };
         let path = bat.join("charge_type");
-        if !self.sysfs.exists(&path) || self.write_aborted_by_shutdown() {
+        if !self.sysfs.exists(&path) {
             return false;
         }
-        let Some(prev) = self.update_settings(|s| {
-            let p = s.charge_type.clone();
-            s.charge_type = Some(trimmed.to_string());
-            Some(p)
-        }) else {
+        let Some(prev_hw) = self.active_bracket_token(&path) else {
             return false;
         };
-        if self.write_aborted_by_shutdown() || self.sysfs.write(&path, trimmed).is_err() {
-            let _ = self.update_settings(|s| {
-                if s.charge_type.as_deref() == Some(trimmed) {
-                    s.charge_type = prev;
-                    Some(())
-                } else {
-                    None
-                }
-            });
-            return false;
-        }
-        true
+        self.commit_direct_charging_token(
+            &path,
+            super::display_gpu::ChargingTokenKind::ChargeType,
+            trimmed,
+            &prev_hw,
+        )
     }
 
     fn get_fn_lock_supported(&self) -> bool {

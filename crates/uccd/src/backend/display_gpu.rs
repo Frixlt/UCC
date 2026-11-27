@@ -15,6 +15,13 @@ const BACKLIGHT_RAMP_MAX_WAIT_MS: usize = 250;
 const BACKLIGHT_RAMP_POLL_STEP: Duration = Duration::from_millis(5);
 const PRIME_SELECT_TIMEOUT: Duration = Duration::from_secs(2);
 
+#[derive(Debug, Clone, Copy)]
+pub(super) enum ChargingTokenKind {
+    ChargeType,
+    ChargingProfile,
+    ChargingPriority,
+}
+
 #[derive(Debug, Clone, Default)]
 pub(crate) struct ChargingRollback {
     bat_dir: Option<PathBuf>,
@@ -809,6 +816,7 @@ impl LiveUccdBackend {
         if self.is_vendor_unsupported() || ucc_config::is_read_only_preview() {
             return Ok(rb);
         }
+        self.charging_op_seq.fetch_add(1, Ordering::SeqCst);
         let (cfg_start, cfg_end, cfg_type, cfg_prof, cfg_prio) = {
             let s = self.read_rw(&self.settings);
             if self.has_persisted_config {
@@ -838,6 +846,13 @@ impl LiveUccdBackend {
             }
         }
 
+        let target_ct = profile
+            .charging
+            .charge_type
+            .as_ref()
+            .map(|c| c.as_str().to_string())
+            .or(cfg_type);
+
         if let Some(bat) = self.discover_battery_dir() {
             let start_path = bat.join("charge_control_start_threshold");
             let end_path = bat.join("charge_control_end_threshold");
@@ -862,11 +877,25 @@ impl LiveUccdBackend {
                 .then(|| self.active_bracket_token(&ct_path))
                 .flatten();
 
-            let current_end = rb
+            let prev_start_u8 = rb
+                .prev_start
+                .as_deref()
+                .and_then(|s| s.trim().parse::<u8>().ok());
+            let prev_end_u8 = rb
                 .prev_end
                 .as_deref()
                 .and_then(|s| s.trim().parse::<u8>().ok());
-            let write_end_first = matches!((start, current_end), (Some(s), Some(ce)) if s >= ce);
+
+            // Refuse to write any node whose rollback baseline cannot be read (`DEEP-08`).
+            if (start.is_some() && has_start && prev_start_u8.is_none())
+                || (end.is_some() && has_end && prev_end_u8.is_none())
+                || (start.is_some() && has_end && prev_end_u8.is_none())
+                || (target_ct.is_some() && has_ct && rb.prev_type.is_none())
+            {
+                return Err(());
+            }
+
+            let write_end_first = matches!((start, prev_end_u8), (Some(s), Some(ce)) if s >= ce);
 
             let write_end_step = |rb: &mut ChargingRollback| -> Result<(), ()> {
                 if let Some(e) = end {
@@ -901,13 +930,7 @@ impl LiveUccdBackend {
                 write_end_step(&mut rb)?;
             }
 
-            if let Some(ct) = profile
-                .charging
-                .charge_type
-                .as_ref()
-                .map(|c| c.as_str().to_string())
-                .or(cfg_type)
-            {
+            if let Some(ct) = target_ct {
                 if has_ct {
                     rb.wrote_type = true;
                     if !self.write_charging_token_checked(&ct_path, &ct, false) {
@@ -929,6 +952,10 @@ impl LiveUccdBackend {
                 if avail.iter().any(|p| p == prof_desc.trim()) {
                     rb.profile_path = Some(cur_path.clone());
                     rb.prev_profile = self.active_bracket_token(&cur_path);
+                    if rb.prev_profile.is_none() {
+                        let _ = self.restore_charging_rollback(&rb, start_epoch);
+                        return Err(());
+                    }
                     rb.wrote_profile = true;
                     if !self.write_charging_token_checked(&cur_path, prof_desc, false) {
                         let _ = self.restore_charging_rollback(&rb, start_epoch);
@@ -954,6 +981,10 @@ impl LiveUccdBackend {
                 if avail.iter().any(|p| p == prio_desc.trim()) {
                     rb.priority_path = Some(cur_path.clone());
                     rb.prev_priority = self.active_bracket_token(&cur_path);
+                    if rb.prev_priority.is_none() {
+                        let _ = self.restore_charging_rollback(&rb, start_epoch);
+                        return Err(());
+                    }
                     rb.wrote_priority = true;
                     if !self.write_charging_token_checked(&cur_path, prio_desc, false) {
                         let _ = self.restore_charging_rollback(&rb, start_epoch);
@@ -970,6 +1001,232 @@ impl LiveUccdBackend {
         }
 
         Ok(rb)
+    }
+
+    pub(super) fn record_committed_charging_for_profile(&self, profile: &UccProfile) {
+        let (cfg_start, cfg_end, cfg_type, cfg_prof, cfg_prio) = {
+            let s = self.read_rw(&self.settings);
+            if self.has_persisted_config {
+                (
+                    s.charge_start_threshold,
+                    s.charge_end_threshold,
+                    s.charge_type.clone(),
+                    s.charging_profile.clone(),
+                    s.charging_priority.clone(),
+                )
+            } else {
+                (None, None, None, None, None)
+            }
+        };
+        let mut committed = self.lock_mutex(&self.charging_commit_state);
+        if let Some(v) = profile.charging.start_threshold.or(cfg_start) {
+            committed.start_threshold = Some(v);
+        }
+        if let Some(v) = profile.charging.end_threshold.or(cfg_end) {
+            committed.end_threshold = Some(v);
+        }
+        if let Some(v) = profile
+            .charging
+            .charge_type
+            .as_ref()
+            .map(|c| c.as_str().to_string())
+            .or(cfg_type)
+        {
+            committed.charge_type = Some(v);
+        }
+        if let Some(v) = profile.charging.charging_profile.clone().or(cfg_prof) {
+            committed.charging_profile = Some(v);
+        }
+        if let Some(v) = profile.charging.charging_priority.clone().or(cfg_prio) {
+            committed.charging_priority = Some(v);
+        }
+    }
+
+    pub(super) fn reconcile_charging_u8_to_committed(
+        &self,
+        path: &Path,
+        is_start: bool,
+        fallback_prev: u8,
+    ) {
+        for _ in 0..3 {
+            if self.shutdown_wait_expired.load(Ordering::SeqCst) {
+                return;
+            }
+            let observed_seq = self.charging_op_seq.load(Ordering::SeqCst);
+            let committed = self.lock_mutex(&self.charging_commit_state).clone();
+            let target = if is_start {
+                committed.start_threshold
+            } else {
+                committed.end_threshold
+            };
+            let desired = target.unwrap_or_else(|| {
+                let s = self.read_rw(&self.settings);
+                if is_start {
+                    s.charge_start_threshold
+                } else {
+                    s.charge_end_threshold
+                }
+                .unwrap_or(fallback_prev)
+            });
+            let _ = self.write_charging_u8_checked(path, desired, true);
+            if self.charging_op_seq.load(Ordering::SeqCst) == observed_seq {
+                return;
+            }
+        }
+    }
+
+    pub(super) fn reconcile_charging_token_to_committed(
+        &self,
+        path: &Path,
+        kind: ChargingTokenKind,
+        fallback_prev: &str,
+    ) {
+        for _ in 0..3 {
+            if self.shutdown_wait_expired.load(Ordering::SeqCst) {
+                return;
+            }
+            let observed_seq = self.charging_op_seq.load(Ordering::SeqCst);
+            let committed = self.lock_mutex(&self.charging_commit_state).clone();
+            let target = match kind {
+                ChargingTokenKind::ChargeType => committed.charge_type,
+                ChargingTokenKind::ChargingProfile => committed.charging_profile,
+                ChargingTokenKind::ChargingPriority => committed.charging_priority,
+            };
+            let desired = target.unwrap_or_else(|| {
+                let s = self.read_rw(&self.settings);
+                match kind {
+                    ChargingTokenKind::ChargeType => s.charge_type.clone(),
+                    ChargingTokenKind::ChargingProfile => s.charging_profile.clone(),
+                    ChargingTokenKind::ChargingPriority => s.charging_priority.clone(),
+                }
+                .unwrap_or_else(|| fallback_prev.to_string())
+            });
+            let _ = self.write_charging_token_checked(path, &desired, true);
+            if self.charging_op_seq.load(Ordering::SeqCst) == observed_seq {
+                return;
+            }
+        }
+    }
+
+    pub(super) fn commit_direct_charging_u8(
+        &self,
+        path: &Path,
+        is_start: bool,
+        target: u8,
+        prev_hw: u8,
+    ) -> bool {
+        let my_seq = self.charging_op_seq.fetch_add(1, Ordering::SeqCst) + 1;
+        if self.write_aborted_by_shutdown() {
+            return false;
+        }
+        if !self.write_charging_u8_checked(path, target, false) {
+            if self.charging_op_seq.load(Ordering::SeqCst) == my_seq {
+                let _ = self.write_charging_u8_checked(path, prev_hw, true);
+            } else {
+                self.reconcile_charging_u8_to_committed(path, is_start, prev_hw);
+            }
+            return false;
+        }
+        if self.charging_op_seq.load(Ordering::SeqCst) != my_seq {
+            self.reconcile_charging_u8_to_committed(path, is_start, prev_hw);
+            return false;
+        }
+        if self
+            .update_settings(|s| {
+                if self.charging_op_seq.load(Ordering::SeqCst) != my_seq {
+                    return None;
+                }
+                if is_start {
+                    s.charge_start_threshold = Some(target);
+                } else {
+                    s.charge_end_threshold = Some(target);
+                }
+                Some(())
+            })
+            .is_none()
+        {
+            if self.charging_op_seq.load(Ordering::SeqCst) == my_seq {
+                let _ = self.write_charging_u8_checked(path, prev_hw, true);
+            } else {
+                self.reconcile_charging_u8_to_committed(path, is_start, prev_hw);
+            }
+            return false;
+        }
+        let mut committed = self.lock_mutex(&self.charging_commit_state);
+        if self.charging_op_seq.load(Ordering::SeqCst) == my_seq {
+            if is_start {
+                committed.start_threshold = Some(target);
+            } else {
+                committed.end_threshold = Some(target);
+            }
+            true
+        } else {
+            drop(committed);
+            self.reconcile_charging_u8_to_committed(path, is_start, prev_hw);
+            false
+        }
+    }
+
+    pub(super) fn commit_direct_charging_token(
+        &self,
+        path: &Path,
+        kind: ChargingTokenKind,
+        target: &str,
+        prev_hw: &str,
+    ) -> bool {
+        let my_seq = self.charging_op_seq.fetch_add(1, Ordering::SeqCst) + 1;
+        if self.write_aborted_by_shutdown() {
+            return false;
+        }
+        if !self.write_charging_token_checked(path, target, false) {
+            if self.charging_op_seq.load(Ordering::SeqCst) == my_seq {
+                let _ = self.write_charging_token_checked(path, prev_hw, true);
+            } else {
+                self.reconcile_charging_token_to_committed(path, kind, prev_hw);
+            }
+            return false;
+        }
+        if self.charging_op_seq.load(Ordering::SeqCst) != my_seq {
+            self.reconcile_charging_token_to_committed(path, kind, prev_hw);
+            return false;
+        }
+        let owned = target.to_string();
+        if self
+            .update_settings(|s| {
+                if self.charging_op_seq.load(Ordering::SeqCst) != my_seq {
+                    return None;
+                }
+                match kind {
+                    ChargingTokenKind::ChargeType => s.charge_type = Some(owned.clone()),
+                    ChargingTokenKind::ChargingProfile => s.charging_profile = Some(owned.clone()),
+                    ChargingTokenKind::ChargingPriority => {
+                        s.charging_priority = Some(owned.clone())
+                    }
+                }
+                Some(())
+            })
+            .is_none()
+        {
+            if self.charging_op_seq.load(Ordering::SeqCst) == my_seq {
+                let _ = self.write_charging_token_checked(path, prev_hw, true);
+            } else {
+                self.reconcile_charging_token_to_committed(path, kind, prev_hw);
+            }
+            return false;
+        }
+        let mut committed = self.lock_mutex(&self.charging_commit_state);
+        if self.charging_op_seq.load(Ordering::SeqCst) == my_seq {
+            match kind {
+                ChargingTokenKind::ChargeType => committed.charge_type = Some(owned),
+                ChargingTokenKind::ChargingProfile => committed.charging_profile = Some(owned),
+                ChargingTokenKind::ChargingPriority => committed.charging_priority = Some(owned),
+            }
+            true
+        } else {
+            drop(committed);
+            self.reconcile_charging_token_to_committed(path, kind, prev_hw);
+            false
+        }
     }
 
     /// Best-effort charging wrapper used by shutdown restore (`ISSUE-08`, `ISSUE-24`).

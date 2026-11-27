@@ -3,7 +3,7 @@
 use crate::auth::{AuthAction, Authorizer, PolkitAuthorizer};
 use crate::backend::{DefaultUccdBackend, UccdBackend};
 use std::collections::HashMap;
-use std::sync::{Arc, OnceLock};
+use std::sync::Arc;
 use std::time::{Duration, Instant};
 use tokio::sync::{OwnedSemaphorePermit, Semaphore};
 use zbus::object_server::SignalEmitter;
@@ -34,48 +34,65 @@ fn offload_queue_timeout() -> Duration {
     Duration::from_millis(500)
 }
 
-fn lane_semaphore(lane: OffloadLane) -> &'static Arc<Semaphore> {
-    static READ: OnceLock<Arc<Semaphore>> = OnceLock::new();
-    static PROFILE: OnceLock<Arc<Semaphore>> = OnceLock::new();
-    static CHARGING: OnceLock<Arc<Semaphore>> = OnceLock::new();
-    static LIGHTING: OnceLock<Arc<Semaphore>> = OnceLock::new();
-    static POWER_GPU: OnceLock<Arc<Semaphore>> = OnceLock::new();
-    static COOLER: OnceLock<Arc<Semaphore>> = OnceLock::new();
-    static DISPLAY: OnceLock<Arc<Semaphore>> = OnceLock::new();
-    static MISC: OnceLock<Arc<Semaphore>> = OnceLock::new();
+#[derive(Clone)]
+struct OffloadLanes {
+    read: Arc<Semaphore>,
+    profile: Arc<Semaphore>,
+    charging: Arc<Semaphore>,
+    lighting: Arc<Semaphore>,
+    power_gpu: Arc<Semaphore>,
+    cooler: Arc<Semaphore>,
+    display: Arc<Semaphore>,
+    misc: Arc<Semaphore>,
+}
 
-    match lane {
-        OffloadLane::Read => READ.get_or_init(|| Arc::new(Semaphore::new(16))),
-        OffloadLane::Profile => PROFILE.get_or_init(|| Arc::new(Semaphore::new(4))),
-        OffloadLane::Charging => CHARGING.get_or_init(|| Arc::new(Semaphore::new(4))),
-        OffloadLane::Lighting => LIGHTING.get_or_init(|| Arc::new(Semaphore::new(4))),
-        OffloadLane::PowerGpu => POWER_GPU.get_or_init(|| Arc::new(Semaphore::new(4))),
-        OffloadLane::Cooler => COOLER.get_or_init(|| Arc::new(Semaphore::new(4))),
-        OffloadLane::Display => DISPLAY.get_or_init(|| Arc::new(Semaphore::new(4))),
-        OffloadLane::Misc => MISC.get_or_init(|| Arc::new(Semaphore::new(8))),
+impl OffloadLanes {
+    fn new() -> Self {
+        Self {
+            read: Arc::new(Semaphore::new(16)),
+            profile: Arc::new(Semaphore::new(4)),
+            charging: Arc::new(Semaphore::new(4)),
+            lighting: Arc::new(Semaphore::new(4)),
+            power_gpu: Arc::new(Semaphore::new(4)),
+            cooler: Arc::new(Semaphore::new(4)),
+            display: Arc::new(Semaphore::new(4)),
+            misc: Arc::new(Semaphore::new(8)),
+        }
+    }
+
+    fn semaphore(&self, lane: OffloadLane) -> Arc<Semaphore> {
+        match lane {
+            OffloadLane::Read => Arc::clone(&self.read),
+            OffloadLane::Profile => Arc::clone(&self.profile),
+            OffloadLane::Charging => Arc::clone(&self.charging),
+            OffloadLane::Lighting => Arc::clone(&self.lighting),
+            OffloadLane::PowerGpu => Arc::clone(&self.power_gpu),
+            OffloadLane::Cooler => Arc::clone(&self.cooler),
+            OffloadLane::Display => Arc::clone(&self.display),
+            OffloadLane::Misc => Arc::clone(&self.misc),
+        }
     }
 }
 
 async fn acquire_lane_permit(
+    lanes: &OffloadLanes,
     lane: OffloadLane,
     label: &'static str,
     live_check: Option<(&zbus::Connection, Option<&str>)>,
 ) -> Result<OwnedSemaphorePermit, String> {
     let wait_start = Instant::now();
     let timeout = offload_queue_timeout();
-    let permit =
-        match tokio::time::timeout(timeout, Arc::clone(lane_semaphore(lane)).acquire_owned()).await
-        {
-            Ok(Ok(permit)) => permit,
-            Ok(Err(_)) => {
-                return Err(format!("{label} offload semaphore closed ({lane:?})"));
-            }
-            Err(_) => {
-                return Err(format!(
-                    "{label} offload lane {lane:?} busy after {timeout:?}"
-                ));
-            }
-        };
+    let permit = match tokio::time::timeout(timeout, lanes.semaphore(lane).acquire_owned()).await {
+        Ok(Ok(permit)) => permit,
+        Ok(Err(_)) => {
+            return Err(format!("{label} offload semaphore closed ({lane:?})"));
+        }
+        Err(_) => {
+            return Err(format!(
+                "{label} offload lane {lane:?} busy after {timeout:?}"
+            ));
+        }
+    };
     if let Some((conn, Some(sender))) = live_check {
         if wait_start.elapsed() > Duration::from_millis(25) && !sender_is_alive(conn, sender).await
         {
@@ -141,6 +158,7 @@ fn format_panic_payload(payload: Box<dyn std::any::Any + Send>) -> String {
 
 async fn offload_or_impl<B, F, R>(
     backend: &Arc<B>,
+    lanes: &OffloadLanes,
     lane: OffloadLane,
     label: &'static str,
     live_check: Option<(&zbus::Connection, Option<&str>)>,
@@ -152,7 +170,7 @@ where
     F: FnOnce(&B) -> R + Send + 'static,
     R: Send + 'static,
 {
-    let permit = match acquire_lane_permit(lane, label, live_check).await {
+    let permit = match acquire_lane_permit(lanes, lane, label, live_check).await {
         Ok(permit) => permit,
         Err(reason) => {
             tracing::warn!("{reason}");
@@ -189,6 +207,7 @@ where
 
 async fn offload_result_impl<B, F>(
     backend: &Arc<B>,
+    lanes: &OffloadLanes,
     lane: OffloadLane,
     label: &'static str,
     live_check: Option<(&zbus::Connection, Option<&str>)>,
@@ -198,7 +217,7 @@ where
     B: UccdBackend,
     F: FnOnce(&B) + Send + 'static,
 {
-    let permit = match acquire_lane_permit(lane, label, live_check).await {
+    let permit = match acquire_lane_permit(lanes, lane, label, live_check).await {
         Ok(permit) => permit,
         Err(reason) => {
             tracing::warn!("{reason}");
@@ -241,6 +260,7 @@ where
 
 async fn offload_fdo_result_impl<B, F>(
     backend: &Arc<B>,
+    lanes: &OffloadLanes,
     lane: OffloadLane,
     label: &'static str,
     live_check: Option<(&zbus::Connection, Option<&str>)>,
@@ -250,7 +270,7 @@ where
     B: UccdBackend,
     F: FnOnce(&B) -> Result<(), String> + Send + 'static,
 {
-    let permit = match acquire_lane_permit(lane, label, live_check).await {
+    let permit = match acquire_lane_permit(lanes, lane, label, live_check).await {
         Ok(permit) => permit,
         Err(reason) => {
             tracing::warn!("{reason}");
@@ -296,6 +316,7 @@ where
 pub struct UccdInterface<B: UccdBackend = DefaultUccdBackend> {
     backend: Arc<B>,
     authorizer: Arc<dyn Authorizer>,
+    lanes: OffloadLanes,
 }
 
 impl<B: UccdBackend> UccdInterface<B> {
@@ -307,6 +328,7 @@ impl<B: UccdBackend> UccdInterface<B> {
         Self {
             backend: Arc::new(backend),
             authorizer,
+            lanes: OffloadLanes::new(),
         }
     }
 
@@ -314,6 +336,7 @@ impl<B: UccdBackend> UccdInterface<B> {
         Self {
             backend,
             authorizer,
+            lanes: OffloadLanes::new(),
         }
     }
 
@@ -333,7 +356,16 @@ impl<B: UccdBackend> UccdInterface<B> {
         F: FnOnce(&B) -> R + Send + 'static,
         R: Send + 'static,
     {
-        offload_or_impl(&self.backend, lane, "UccdInterface", None, fallback, f).await
+        offload_or_impl(
+            &self.backend,
+            &self.lanes,
+            lane,
+            "UccdInterface",
+            None,
+            fallback,
+            f,
+        )
+        .await
     }
 
     async fn offload_or_checked<F, R>(
@@ -350,6 +382,7 @@ impl<B: UccdBackend> UccdInterface<B> {
     {
         offload_or_impl(
             &self.backend,
+            &self.lanes,
             lane,
             "UccdInterface",
             Some((conn, sender)),
@@ -363,7 +396,7 @@ impl<B: UccdBackend> UccdInterface<B> {
     where
         F: FnOnce(&B) + Send + 'static,
     {
-        offload_result_impl(&self.backend, lane, "UccdInterface", None, f).await
+        offload_result_impl(&self.backend, &self.lanes, lane, "UccdInterface", None, f).await
     }
 
     async fn offload_fdo_result<F>(
@@ -378,6 +411,7 @@ impl<B: UccdBackend> UccdInterface<B> {
     {
         offload_fdo_result_impl(
             &self.backend,
+            &self.lanes,
             lane,
             "UccdInterface",
             Some((conn, sender)),
@@ -397,6 +431,7 @@ impl Default for UccdInterface<DefaultUccdBackend> {
 pub struct UccdLegacyInterface<B: UccdBackend = DefaultUccdBackend> {
     backend: Arc<B>,
     authorizer: Arc<dyn Authorizer>,
+    lanes: OffloadLanes,
 }
 
 impl<B: UccdBackend> UccdLegacyInterface<B> {
@@ -408,6 +443,7 @@ impl<B: UccdBackend> UccdLegacyInterface<B> {
         Self {
             backend: Arc::new(backend),
             authorizer,
+            lanes: OffloadLanes::new(),
         }
     }
 
@@ -415,6 +451,7 @@ impl<B: UccdBackend> UccdLegacyInterface<B> {
         Self {
             backend,
             authorizer,
+            lanes: OffloadLanes::new(),
         }
     }
 
@@ -433,6 +470,7 @@ impl<B: UccdBackend> UccdLegacyInterface<B> {
     {
         offload_or_impl(
             &self.backend,
+            &self.lanes,
             lane,
             "UccdLegacyInterface",
             None,
@@ -456,6 +494,7 @@ impl<B: UccdBackend> UccdLegacyInterface<B> {
     {
         offload_or_impl(
             &self.backend,
+            &self.lanes,
             lane,
             "UccdLegacyInterface",
             Some((conn, sender)),
@@ -469,7 +508,15 @@ impl<B: UccdBackend> UccdLegacyInterface<B> {
     where
         F: FnOnce(&B) + Send + 'static,
     {
-        offload_result_impl(&self.backend, lane, "UccdLegacyInterface", None, f).await
+        offload_result_impl(
+            &self.backend,
+            &self.lanes,
+            lane,
+            "UccdLegacyInterface",
+            None,
+            f,
+        )
+        .await
     }
 
     async fn offload_fdo_result<F>(
@@ -484,6 +531,7 @@ impl<B: UccdBackend> UccdLegacyInterface<B> {
     {
         offload_fdo_result_impl(
             &self.backend,
+            &self.lanes,
             lane,
             "UccdLegacyInterface",
             Some((conn, sender)),

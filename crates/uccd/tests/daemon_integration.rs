@@ -6774,3 +6774,209 @@ async fn deep_03_stalled_cpu_freq_priming_publishes_dbus_in_degraded_mode_withou
     let _ = release_tx.send(());
     runtime.shutdown(Duration::from_secs(1)).await;
 }
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn deep_05_concurrent_charging_setters_and_apply_profile_stay_consistent_between_sysfs_and_settings(
+) {
+    let root = tempfile::tempdir().unwrap();
+    let bat = root.path().join("sys/class/power_supply/BAT0");
+    let start_path = bat.join("charge_control_start_threshold");
+    let end_path = bat.join("charge_control_end_threshold");
+
+    let ctrl = Arc::new(SysfsGateControl::default());
+    let (started_tx, started_rx) = std::sync::mpsc::channel();
+    let (release_tx, release_rx) = std::sync::mpsc::channel();
+    *ctrl.gate.lock().unwrap() = Some((
+        "charge_control_end_threshold".to_string(),
+        "70".to_string(),
+        started_tx,
+        release_rx,
+    ));
+
+    let (backend, _, sysfs, _) = build_backend_with_sysfs_gate(
+        root.path(),
+        Arc::clone(&ctrl),
+        |sysfs| {
+            sysfs.set_file(bat.join("type"), "Battery");
+            sysfs.set_file(&start_path, "40");
+            sysfs.set_file(&end_path, "80");
+        },
+        |p| p,
+    );
+
+    let b1 = Arc::clone(&backend);
+    let h1 = std::thread::spawn(move || b1.set_charge_end_threshold(70));
+    started_rx.recv_timeout(Duration::from_secs(2)).unwrap();
+
+    let b2 = Arc::clone(&backend);
+    let h2 = std::thread::spawn(move || b2.set_charge_end_threshold(85));
+    // Winning 85 finishes without waiting behind gated 70.
+    assert!(h2.join().unwrap());
+    let _ = release_tx.send(());
+
+    // Superseded 70 reconciles hardware back to 85 and rejects itself (`DEEP-05`).
+    assert!(!h1.join().unwrap());
+    let settings_val = serde_json::from_str::<serde_json::Value>(&backend.get_settings_json())
+        .unwrap()["chargeEndThreshold"]
+        .as_i64()
+        .unwrap();
+    let hw_val = sysfs
+        .get_file(&end_path)
+        .unwrap()
+        .trim()
+        .parse::<i64>()
+        .unwrap();
+    assert_eq!(settings_val, 85);
+    assert_eq!(hw_val, 85);
+
+    // Gated direct(70) superseded by ApplyProfile(90) never leaves stale 70 in hardware (`DEEP-05`).
+    let (s2_tx, s2_rx) = std::sync::mpsc::channel();
+    let (r2_tx, r2_rx) = std::sync::mpsc::channel();
+    *ctrl.gate.lock().unwrap() = Some((
+        "charge_control_end_threshold".to_string(),
+        "70".to_string(),
+        s2_tx,
+        r2_rx,
+    ));
+    let b_slow = Arc::clone(&backend);
+    let slow_direct = std::thread::spawn(move || b_slow.set_charge_end_threshold(70));
+    s2_rx.recv_timeout(Duration::from_secs(2)).unwrap();
+
+    let mut prof = default_quiet_profile();
+    prof.id = "charge-concurrent".into();
+    prof.charging.end_threshold = Some(90);
+    let p_json = serde_json::to_string(&prof).unwrap();
+    assert!(backend.apply_profile(&p_json));
+    let _ = r2_tx.send(());
+    assert!(!slow_direct.join().unwrap());
+    assert_eq!(sysfs.get_file(&end_path).as_deref(), Some("90"));
+
+    // Concurrent ungated ApplyProfile + direct setter also leave sysfs & active state consistent.
+    let b3 = Arc::clone(&backend);
+    let b4 = Arc::clone(&backend);
+    let t3 = std::thread::spawn(move || b3.apply_profile(&p_json));
+    let t4 = std::thread::spawn(move || b4.set_charge_end_threshold(88));
+    let r3 = t3.join().unwrap();
+    let r4 = t4.join().unwrap();
+    assert!(r3 || r4);
+    let final_hw = sysfs
+        .get_file(&end_path)
+        .unwrap()
+        .trim()
+        .parse::<i64>()
+        .unwrap();
+    assert!(final_hw == 88 || final_hw == 90);
+}
+
+#[test]
+fn deep_06_all_five_direct_charging_setters_reject_noop_writes_and_verify_bracketed_readback() {
+    let root = tempfile::tempdir().unwrap();
+    let bat = root.path().join("sys/class/power_supply/BAT0");
+    let start_path = bat.join("charge_control_start_threshold");
+    let end_path = bat.join("charge_control_end_threshold");
+    let ct_path = bat.join("charge_type");
+    let prof_avail = bat.join("charging_profile_available");
+    let prof_cur = bat.join("charging_profile");
+    let prio_avail = bat.join("charging_priority_available");
+    let prio_cur = bat.join("charging_priority");
+
+    let ctrl = Arc::new(SysfsGateControl::default());
+    let (backend, _, sysfs, _) = build_backend_with_sysfs_gate(
+        root.path(),
+        Arc::clone(&ctrl),
+        |sysfs| {
+            sysfs.set_file(bat.join("type"), "Battery");
+            sysfs.set_file(&start_path, "40");
+            sysfs.set_file(&end_path, "80");
+            sysfs.set_file(&ct_path, "[Standard] Fast");
+            sysfs.set_file(&prof_avail, "balanced stationary");
+            sysfs.set_file(&prof_cur, "[balanced] stationary");
+            sysfs.set_file(&prio_avail, "performance battery");
+            sysfs.set_file(&prio_cur, "[performance] battery");
+        },
+        |p| p,
+    );
+
+    *ctrl.silent_noop_suffix.lock().unwrap() = Some("charge_control_start_threshold".into());
+    assert!(!backend.set_charge_start_threshold(50));
+    *ctrl.silent_noop_suffix.lock().unwrap() = Some("charge_control_end_threshold".into());
+    assert!(!backend.set_charge_end_threshold(85));
+    *ctrl.silent_noop_suffix.lock().unwrap() = Some("charge_type".into());
+    assert!(!backend.set_charge_type("Fast"));
+    *ctrl.silent_noop_suffix.lock().unwrap() = Some("charging_profile".into());
+    assert!(!backend.set_charging_profile("stationary"));
+    *ctrl.silent_noop_suffix.lock().unwrap() = Some("charging_priority".into());
+    assert!(!backend.set_charging_priority("battery"));
+    *ctrl.silent_noop_suffix.lock().unwrap() = None;
+
+    let settings: serde_json::Value = serde_json::from_str(&backend.get_settings_json()).unwrap();
+    assert_ne!(settings.get("chargeStartThreshold"), Some(&json!(50)));
+    assert_ne!(settings.get("chargeEndThreshold"), Some(&json!(85)));
+    assert_ne!(settings.get("chargeType"), Some(&json!("Fast")));
+    assert_ne!(settings.get("chargingProfile"), Some(&json!("stationary")));
+    assert_ne!(settings.get("chargingPriority"), Some(&json!("battery")));
+    assert_eq!(sysfs.get_file(&ct_path).as_deref(), Some("[Standard] Fast"));
+
+    // Selecting already-active bracketed token succeeds cleanly.
+    assert!(backend.set_charge_type("Standard"));
+}
+
+#[test]
+fn deep_07_direct_charging_setter_restores_hardware_on_partial_quantized_write_error() {
+    let root = tempfile::tempdir().unwrap();
+    let bat = root.path().join("sys/class/power_supply/BAT0");
+    let start_path = bat.join("charge_control_start_threshold");
+    let end_path = bat.join("charge_control_end_threshold");
+
+    let ctrl = Arc::new(SysfsGateControl::default());
+    let (backend, _, sysfs, _) = build_backend_with_sysfs_gate(
+        root.path(),
+        Arc::clone(&ctrl),
+        |sysfs| {
+            sysfs.set_file(bat.join("type"), "Battery");
+            sysfs.set_file(&start_path, "40");
+            sysfs.set_file(&end_path, "80");
+        },
+        |p| p,
+    );
+
+    *ctrl.rewrite_value.lock().unwrap() = Some((
+        "charge_control_end_threshold".into(),
+        "85".into(),
+        "84".into(),
+    ));
+    assert!(!backend.set_charge_end_threshold(85));
+    assert_eq!(sysfs.get_file(&end_path).as_deref(), Some("80"));
+    let settings: serde_json::Value = serde_json::from_str(&backend.get_settings_json()).unwrap();
+    assert_ne!(settings.get("chargeEndThreshold"), Some(&json!(85)));
+}
+
+#[test]
+fn deep_08_apply_profile_refuses_charging_write_when_baseline_readback_is_unreadable() {
+    let root = tempfile::tempdir().unwrap();
+    let bat = root.path().join("sys/class/power_supply/BAT0");
+    let start_path = bat.join("charge_control_start_threshold");
+    let end_path = bat.join("charge_control_end_threshold");
+
+    let ctrl = Arc::new(SysfsGateControl::default());
+    *ctrl.deny_read_suffix.lock().unwrap() = Some("charge_control_end_threshold".to_string());
+
+    let (backend, _, sysfs, _) = build_backend_with_sysfs_gate(
+        root.path(),
+        Arc::clone(&ctrl),
+        |sysfs| {
+            sysfs.set_file(bat.join("type"), "Battery");
+            sysfs.set_file(&start_path, "40");
+            sysfs.set_file(&end_path, "80");
+        },
+        |p| p,
+    );
+
+    let mut p = default_quiet_profile();
+    p.id = "unreadable-end".into();
+    p.charging.start_threshold = Some(50);
+    p.charging.end_threshold = Some(85);
+    assert!(!backend.apply_profile(&serde_json::to_string(&p).unwrap()));
+    assert_eq!(sysfs.get_file(&start_path).as_deref(), Some("40"));
+    assert_eq!(sysfs.get_file(&end_path).as_deref(), Some("80"));
+}

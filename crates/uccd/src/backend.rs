@@ -104,6 +104,15 @@ impl Drop for HardwareOpGuard {
     }
 }
 
+#[derive(Debug, Clone, Default)]
+pub(super) struct ChargingCommittedState {
+    pub(super) start_threshold: Option<u8>,
+    pub(super) end_threshold: Option<u8>,
+    pub(super) charge_type: Option<String>,
+    pub(super) charging_profile: Option<String>,
+    pub(super) charging_priority: Option<String>,
+}
+
 #[derive(Debug, Clone)]
 pub(super) struct CommittedProfileRecord {
     pub(super) profile: UccProfile,
@@ -263,6 +272,7 @@ pub struct LiveUccdBackend {
     pub(super) tdp_write_seq: AtomicU64,
     pub(super) odm_write_seq: AtomicU64,
     pub(super) charging_write_seq: AtomicU64,
+    pub(super) charging_op_seq: AtomicU64,
     pub(super) ctgp_write_seq: AtomicU64,
     pub(super) kb_write_seq: AtomicU64,
     pub(super) sleep_state_pending_clear: AtomicBool,
@@ -273,6 +283,7 @@ pub struct LiveUccdBackend {
     pub(super) in_flight_kb_baselines: Mutex<Vec<(u64, lighting_power::KeyboardRollbackSnapshot)>>,
     pub(super) latest_committed_profile: Mutex<Option<CommittedProfileRecord>>,
     pub(super) hw_reconcile_lock: Mutex<()>,
+    pub(super) charging_commit_state: Mutex<ChargingCommittedState>,
     pub(super) disconnected_senders: Mutex<(HashSet<String>, VecDeque<String>)>,
     pub(super) cpu_policy_applied_rev: Mutex<Option<(u64, ProfileState)>>,
     pub(super) last_power_state: Mutex<Option<String>>,
@@ -432,6 +443,7 @@ impl LiveUccdBackend {
             tdp_write_seq: AtomicU64::new(0),
             odm_write_seq: AtomicU64::new(0),
             charging_write_seq: AtomicU64::new(0),
+            charging_op_seq: AtomicU64::new(0),
             ctgp_write_seq: AtomicU64::new(0),
             kb_write_seq: AtomicU64::new(0),
             sleep_state_pending_clear: AtomicBool::new(false),
@@ -442,6 +454,7 @@ impl LiveUccdBackend {
             in_flight_kb_baselines: Mutex::new(Vec::new()),
             latest_committed_profile: Mutex::new(None),
             hw_reconcile_lock: Mutex::new(()),
+            charging_commit_state: Mutex::new(ChargingCommittedState::default()),
             disconnected_senders: Mutex::new((HashSet::new(), VecDeque::new())),
             cpu_policy_applied_rev: Mutex::new(None),
             last_power_state: Mutex::new(None),
