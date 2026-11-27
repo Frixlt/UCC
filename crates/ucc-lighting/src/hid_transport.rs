@@ -34,8 +34,12 @@ pub trait HidDeviceTransport: Send + Sync {
     }
 
     /// Optional USB HID interface number for interface disambiguation (`P0-12`).
-    fn device_interface_number(&self, _path: &str) -> Option<i32> {
-        None
+    fn device_interface_number(&self, path: &str) -> Option<i32> {
+        let hidraw_name = path.strip_prefix("/dev/")?;
+        read_sysfs_hidraw_interface_number(
+            std::path::Path::new("/sys/class/hidraw"),
+            hidraw_name,
+        )
     }
 }
 
@@ -95,6 +99,10 @@ impl HidDeviceTransport for MockHidTransport {
         buf.resize(len, 0);
         Ok(buf)
     }
+
+    fn device_interface_number(&self, _path: &str) -> Option<i32> {
+        None
+    }
 }
 
 /// Reads the USB `bInterfaceNumber` for a Linux `hidraw` device from sysfs.
@@ -142,14 +150,6 @@ impl UniwillHidTransport {
         }
         if let Some(interface_number) = self.hid.device_interface_number(&dev.path) {
             return interface_number == 1;
-        }
-        if let Some(hidraw_name) = dev.path.strip_prefix("/dev/") {
-            if let Some(iface_num) = read_sysfs_hidraw_interface_number(
-                std::path::Path::new("/sys/class/hidraw"),
-                hidraw_name,
-            ) {
-                return iface_num == 1;
-            }
         }
         true
     }
