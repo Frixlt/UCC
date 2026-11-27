@@ -164,7 +164,10 @@ impl MetricsHistoryStore {
             timestamp_ms,
             value,
         };
-        if buf.back().is_none_or(|last| last.timestamp_ms <= timestamp_ms) {
+        if buf
+            .back()
+            .is_none_or(|last| last.timestamp_ms <= timestamp_ms)
+        {
             buf.push_back(pt);
         } else {
             let idx = buf.partition_point(|existing| existing.timestamp_ms <= timestamp_ms);

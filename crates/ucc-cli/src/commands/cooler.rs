@@ -1,11 +1,15 @@
 //! Cooler (liquid cooling / LCT) command implementation.
 
-use serde_json::json;
 use crate::cli::CoolerAction;
 use crate::client::{with_rpc_timeout, CliClient};
 use crate::format::*;
+use serde_json::json;
 
-pub async fn run_cooler(client: &CliClient, action: &CoolerAction, json_mode: bool) -> Result<(), i32> {
+pub async fn run_cooler(
+    client: &CliClient,
+    action: &CoolerAction,
+    json_mode: bool,
+) -> Result<(), i32> {
     match action {
         CoolerAction::Status => {
             let wc = client.get_water_cooler_metrics().await;
@@ -77,9 +81,10 @@ pub async fn run_cooler(client: &CliClient, action: &CoolerAction, json_mode: bo
             ok(res)
         }
         CoolerAction::Led { r, g, b, mode } => {
-            let res = with_rpc_timeout(client.proxy().set_water_cooler_led_color(*r, *g, *b, *mode))
-                .await
-                .unwrap_or(false);
+            let res =
+                with_rpc_timeout(client.proxy().set_water_cooler_led_color(*r, *g, *b, *mode))
+                    .await
+                    .unwrap_or(false);
             ok(res)
         }
         CoolerAction::LedOff => {

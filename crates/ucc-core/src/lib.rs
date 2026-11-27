@@ -32,6 +32,4 @@ pub use led::{KeyboardBacklightState, LedSettings};
 pub use power::{
     AppPowerRequest, ManualPowerMode, PolicyDecision, PowerMode, PowerPolicy, ProfileState,
 };
-pub use profile::{
-    ProfileDisplay, ProfileFanControl, ProfileKeyboard, ProfileWebcam, UccProfile,
-};
+pub use profile::{ProfileDisplay, ProfileFanControl, ProfileKeyboard, ProfileWebcam, UccProfile};

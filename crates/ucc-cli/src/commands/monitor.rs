@@ -1,11 +1,15 @@
 //! Monitor command implementation.
 
-use std::time::Duration;
-use serde_json::json;
 use crate::cli::MonitorArgs;
 use crate::client::CliClient;
+use serde_json::json;
+use std::time::Duration;
 
-pub async fn run_monitor(client: &CliClient, args: &MonitorArgs, json_mode: bool) -> Result<(), i32> {
+pub async fn run_monitor(
+    client: &CliClient,
+    args: &MonitorArgs,
+    json_mode: bool,
+) -> Result<(), i32> {
     if args.count < 0 {
         eprintln!("Error: --count must be >= 0 (0 = continuous)");
         return Err(1);
@@ -20,10 +24,7 @@ pub async fn run_monitor(client: &CliClient, args: &MonitorArgs, json_mode: bool
         }
         first = false;
 
-        let (cpu, gpu) = tokio::join!(
-            client.get_cpu_metrics(),
-            client.get_gpu_metrics(),
-        );
+        let (cpu, gpu) = tokio::join!(client.get_cpu_metrics(), client.get_gpu_metrics(),);
 
         if json_mode {
             let row = json!({

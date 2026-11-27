@@ -28,13 +28,7 @@ pub const VALID_EPP: &[&str] = &[
 ];
 
 /// Allowed PCIe ASPM policies.
-pub const VALID_ASPM: &[&str] = &[
-    "",
-    "default",
-    "performance",
-    "powersave",
-    "powersupersave",
-];
+pub const VALID_ASPM: &[&str] = &["", "default", "performance", "powersave", "powersupersave"];
 
 /// Whitelisted system tunables.
 pub const WHITELISTED_SYS_PATHS: &[&str] = &[
@@ -139,13 +133,17 @@ pub fn is_valid_path(device_type: &str, path: &str) -> bool {
                 return false;
             };
             !id.is_empty()
-                && id.chars().all(|c| c.is_ascii_alphanumeric() || matches!(c, '_' | '.' | ':' | '-'))
+                && id
+                    .chars()
+                    .all(|c| c.is_ascii_alphanumeric() || matches!(c, '_' | '.' | ':' | '-'))
         }
         "wifi" => {
             // Interface name: 1..=32 chars in [A-Za-z0-9_.:-]
             !path.is_empty()
                 && path.len() <= 32
-                && path.chars().all(|c| c.is_ascii_alphanumeric() || matches!(c, '_' | '.' | ':' | '-'))
+                && path
+                    .chars()
+                    .all(|c| c.is_ascii_alphanumeric() || matches!(c, '_' | '.' | ':' | '-'))
         }
         "service" => path == "nvidia-powerd" || path == "nvidia-powerd.service",
         "sys" => WHITELISTED_SYS_PATHS.contains(&path),
@@ -234,8 +232,14 @@ pub fn validate_settings_json(settings: &Value) -> Result<(), String> {
 
     if let Some(lid_val) = obj.get("lid") {
         let lid_obj = lid_val.as_object().ok_or("Invalid lid policy")?;
-        const VALID_LID_ACTIONS: &[&str] =
-            &["screen_off", "ignore", "suspend", "hibernate", "poweroff", "lock"];
+        const VALID_LID_ACTIONS: &[&str] = &[
+            "screen_off",
+            "ignore",
+            "suspend",
+            "hibernate",
+            "poweroff",
+            "lock",
+        ];
         for (k, v) in lid_obj {
             match k.as_str() {
                 "ac" | "type_c" | "bat" => {
@@ -276,21 +280,33 @@ pub fn validate_settings_json(settings: &Value) -> Result<(), String> {
 
         for dev in devices {
             let dev_obj = dev.as_object().ok_or("Invalid device entry")?;
-            let dev_type = dev_obj.get("type").and_then(|v| v.as_str()).ok_or("Missing device type")?;
-            let path = dev_obj.get("path").and_then(|v| v.as_str()).ok_or("Missing device path")?;
+            let dev_type = dev_obj
+                .get("type")
+                .and_then(|v| v.as_str())
+                .ok_or("Missing device type")?;
+            let path = dev_obj
+                .get("path")
+                .and_then(|v| v.as_str())
+                .ok_or("Missing device path")?;
 
             if !is_valid_path(dev_type, path) || !paths.insert(path.to_string()) {
                 return Err(format!("Invalid or duplicate device: {}", path));
             }
 
-            let name = dev_obj.get("name").and_then(|v| v.as_str()).ok_or("Invalid device name")?;
+            let name = dev_obj
+                .get("name")
+                .and_then(|v| v.as_str())
+                .ok_or("Invalid device name")?;
             if name.len() > 512 {
                 return Err("Invalid device name".to_string());
             }
 
             for mode in VALID_MODES {
                 let key = format!("{}_val", mode);
-                let val = dev_obj.get(&key).and_then(|v| v.as_str()).ok_or_else(|| format!("Missing {}", key))?;
+                let val = dev_obj
+                    .get(&key)
+                    .and_then(|v| v.as_str())
+                    .ok_or_else(|| format!("Missing {}", key))?;
                 if !is_valid_value(dev_type, path, val) {
                     return Err(format!("Invalid value for {}", path));
                 }

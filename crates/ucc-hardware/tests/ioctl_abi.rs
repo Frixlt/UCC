@@ -99,7 +99,10 @@ fn test_version_buffer_len_and_utf8_conversion() {
     let buf_no_nul = b"1.2.3.4.5.6.7.8.9.0";
     let s = match CStr::from_bytes_until_nul(buf_no_nul) {
         Ok(c) => c.to_str().unwrap().to_string(),
-        Err(_) => std::str::from_utf8(buf_no_nul).unwrap().trim_end_matches('\0').to_string(),
+        Err(_) => std::str::from_utf8(buf_no_nul)
+            .unwrap()
+            .trim_end_matches('\0')
+            .to_string(),
     };
     assert_eq!(s, "1.2.3.4.5.6.7.8.9.0");
 }

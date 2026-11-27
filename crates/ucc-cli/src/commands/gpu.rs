@@ -1,8 +1,8 @@
 //! GPU command implementation.
 
-use serde_json::json;
 use crate::client::{with_rpc_timeout, CliClient};
 use crate::format::*;
+use serde_json::json;
 
 pub async fn run_gpu(client: &CliClient, json_mode: bool) -> Result<(), i32> {
     let (gpu, igpu, ctgp_avail_res, ctgp_max_res, ctgp_def_res, active_prof) = tokio::join!(
@@ -17,7 +17,11 @@ pub async fn run_gpu(client: &CliClient, json_mode: bool) -> Result<(), i32> {
     let ctgp_avail = ctgp_avail_res.ok();
     let ctgp_max = ctgp_max_res.ok().filter(|&v| v > 0);
     let ctgp_def = ctgp_def_res.ok().filter(|&v| v > 0);
-    let ctgp_off = active_prof.as_ref().and_then(|p| p.get("nvidiaCTGPOffset")).and_then(|v| v.as_i64()).map(|n| n as i32);
+    let ctgp_off = active_prof
+        .as_ref()
+        .and_then(|p| p.get("nvidiaCTGPOffset"))
+        .and_then(|v| v.as_i64())
+        .map(|n| n as i32);
 
     if json_mode {
         let out = json!({

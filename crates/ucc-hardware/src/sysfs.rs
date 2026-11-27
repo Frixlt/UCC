@@ -40,7 +40,10 @@ impl SysfsError {
         match err.kind() {
             io::ErrorKind::NotFound => SysfsError::NotFound(p),
             io::ErrorKind::PermissionDenied => SysfsError::PermissionDenied(p),
-            _ => SysfsError::Io { path: p, source: err },
+            _ => SysfsError::Io {
+                path: p,
+                source: err,
+            },
         }
     }
 }
@@ -166,9 +169,7 @@ impl SysfsRoot {
 
         // Otherwise strip leading slash and join with custom root
         let relative = if target.has_root() {
-            target
-                .strip_prefix("/")
-                .unwrap_or(target)
+            target.strip_prefix("/").unwrap_or(target)
         } else {
             target
         };
@@ -265,7 +266,11 @@ impl SysfsValue for bool {
     }
 
     fn format_sysfs(&self) -> String {
-        if *self { "1".to_string() } else { "0".to_string() }
+        if *self {
+            "1".to_string()
+        } else {
+            "0".to_string()
+        }
     }
 }
 
@@ -401,10 +406,7 @@ impl SysfsValue for Vec<String> {
         if trimmed.is_empty() {
             return Ok(Vec::new());
         }
-        Ok(trimmed
-            .split_whitespace()
-            .map(|s| s.to_string())
-            .collect())
+        Ok(trimmed.split_whitespace().map(|s| s.to_string()).collect())
     }
 
     fn format_sysfs(&self) -> String {

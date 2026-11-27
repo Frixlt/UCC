@@ -1,8 +1,8 @@
 //! Power limits command implementation.
 
-use serde_json::Value;
 use crate::client::{with_rpc_timeout, CliClient};
 use crate::format::*;
+use serde_json::Value;
 
 pub async fn run_power_limits(client: &CliClient, json_mode: bool) -> Result<(), i32> {
     let raw = with_rpc_timeout(client.proxy().odm_power_limits_json())
@@ -52,7 +52,9 @@ pub async fn run_power_limits(client: &CliClient, json_mode: bool) -> Result<(),
     println!("ODM Power Limits:");
     for (idx, current, min, max) in entries {
         match (min, max) {
-            (Some(mn), Some(mx)) => println!("  {:<24} {} W ({}-{} W)", tdp_label(idx), current, mn, mx),
+            (Some(mn), Some(mx)) => {
+                println!("  {:<24} {} W ({}-{} W)", tdp_label(idx), current, mn, mx)
+            }
             _ => println!("  {:<24} {} W", tdp_label(idx), current),
         }
     }

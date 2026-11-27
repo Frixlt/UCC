@@ -5,11 +5,11 @@ pub mod client;
 pub mod commands;
 pub mod format;
 
-use std::ffi::OsString;
-use clap::error::ErrorKind;
-use clap::{CommandFactory, Parser};
 use crate::cli::{Cli, Commands};
 use crate::client::CliClient;
+use clap::error::ErrorKind;
+use clap::{CommandFactory, Parser};
+use std::ffi::OsString;
 
 /// Execute the CLI with provided arguments, returning an exit code.
 /// 0 = success
@@ -96,17 +96,27 @@ where
             let act = action.as_ref().unwrap_or(&cli::ChargingAction::Status);
             commands::charging::run_charging(&client, act, cli.json).await
         }
-        Commands::Cpu { ref action } => {
-            commands::cpu::run_cpu(&client, action, cli.json).await
-        }
+        Commands::Cpu { ref action } => commands::cpu::run_cpu(&client, action, cli.json).await,
         Commands::Gpu => commands::gpu::run_gpu(&client, cli.json).await,
         Commands::PowerLimits => commands::power_limits::run_power_limits(&client, cli.json).await,
-        Commands::Brightness { ref action } => commands::hardware::run_brightness(&client, action, cli.json).await,
-        Commands::Webcam { ref action } => commands::hardware::run_webcam(&client, action, cli.json).await,
-        Commands::Fnlock { ref action } => commands::hardware::run_fnlock(&client, action, cli.json).await,
-        Commands::Lightbar { ref action } => commands::lightbar::run_lightbar(&client, action, cli.json).await,
-        Commands::Devices { ref action } => commands::devices::run_devices(&client, action, cli.json).await,
-        Commands::Power { ref action } => commands::power::run_power(&client, action, cli.json).await,
+        Commands::Brightness { ref action } => {
+            commands::hardware::run_brightness(&client, action, cli.json).await
+        }
+        Commands::Webcam { ref action } => {
+            commands::hardware::run_webcam(&client, action, cli.json).await
+        }
+        Commands::Fnlock { ref action } => {
+            commands::hardware::run_fnlock(&client, action, cli.json).await
+        }
+        Commands::Lightbar { ref action } => {
+            commands::lightbar::run_lightbar(&client, action, cli.json).await
+        }
+        Commands::Devices { ref action } => {
+            commands::devices::run_devices(&client, action, cli.json).await
+        }
+        Commands::Power { ref action } => {
+            commands::power::run_power(&client, action, cli.json).await
+        }
         Commands::Completions { .. } | Commands::Man | Commands::Version => unreachable!(),
     };
 

@@ -20,11 +20,15 @@ fn contained_write_survives_symlink_swap_after_validation() {
         let _ = std::fs::OpenOptions::new().write(true).open(&probe);
         std::env::remove_var("UCC_AUDIT_SWAP_TARGET");
         std::env::remove_var("UCC_AUDIT_SWAP_DESTINATION");
-        fs::symlink_metadata(&probe).map(|m| m.is_symlink()).unwrap_or(false)
+        fs::symlink_metadata(&probe)
+            .map(|m| m.is_symlink())
+            .unwrap_or(false)
     };
 
     if !shim_active {
-        eprintln!("Notice: open-swap.so LD_PRELOAD shim not active; skipping symlink swap race probe");
+        eprintln!(
+            "Notice: open-swap.so LD_PRELOAD shim not active; skipping symlink swap race probe"
+        );
         return;
     }
 

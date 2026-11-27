@@ -95,7 +95,12 @@ impl LidDisplayHandler {
                     let dpms = if enable { "on" } else { "off" };
                     cmds.push((
                         "hyprctl",
-                        vec!["dispatch".to_string(), "dpms".to_string(), dpms.to_string(), mon.clone()],
+                        vec![
+                            "dispatch".to_string(),
+                            "dpms".to_string(),
+                            dpms.to_string(),
+                            mon.clone(),
+                        ],
                     ));
                 }
                 RefreshBackend::Kde => {

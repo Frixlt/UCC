@@ -155,10 +155,7 @@ impl SleepStateStore {
             .open(&tmp_path)
             .map_err(|_| "Cannot create private sleep snapshot".to_string())?;
 
-        if let Err(err) = tmp
-            .write_all(&bytes)
-            .and_then(|_| tmp.sync_all())
-        {
+        if let Err(err) = tmp.write_all(&bytes).and_then(|_| tmp.sync_all()) {
             let _ = fs::remove_file(&tmp_path);
             return Err(format!("Cannot save sleep snapshot: {err}"));
         }
@@ -196,8 +193,8 @@ impl SleepStateStore {
                 }
             }
         }
-        let meta = fs::symlink_metadata(dir)
-            .map_err(|_| "Unsafe sleep snapshot directory".to_string())?;
+        let meta =
+            fs::symlink_metadata(dir).map_err(|_| "Unsafe sleep snapshot directory".to_string())?;
         let bad_perms = (meta.mode() & 0o022) != 0;
         if !meta.file_type().is_dir() || meta.uid() != self.owner_uid || bad_perms {
             return Err("Unsafe sleep snapshot directory".to_string());

@@ -454,7 +454,10 @@ pub fn is_device_supported(dmi: &DmiInfo) -> bool {
 }
 
 /// Identifies the specific Uniwill device ID from DMI and hardware descriptors.
-pub fn identify_device(dmi: &DmiInfo, hardware: Option<&dyn HardwareIo>) -> Option<UniwillDeviceID> {
+pub fn identify_device(
+    dmi: &DmiInfo,
+    hardware: Option<&dyn HardwareIo>,
+) -> Option<UniwillDeviceID> {
     // 1. Exact Mechrevo four-field alias
     if dmi.sys_vendor == "MECHREVO"
         && dmi.board_name == "YAOSHI Series-X6AR55xY"
@@ -538,7 +541,9 @@ pub fn is_ctgp_supported(device_id: Option<UniwillDeviceID>, sysfs: Option<&dyn 
     if let Some(id) = device_id {
         !CTGP_HIDDEN_DEVICES.contains(&id)
     } else if let Some(s) = sysfs {
-        s.exists(Path::new("/sys/devices/platform/tuxedo_nvidia_power_ctrl/ctgp_offset"))
+        s.exists(Path::new(
+            "/sys/devices/platform/tuxedo_nvidia_power_ctrl/ctgp_offset",
+        ))
     } else {
         false
     }
@@ -546,7 +551,9 @@ pub fn is_ctgp_supported(device_id: Option<UniwillDeviceID>, sysfs: Option<&dyn 
 
 /// Checks if Intel HWP dynamic boost is supported.
 pub fn is_hwp_dynamic_boost_supported(sysfs: &dyn Sysfs) -> bool {
-    sysfs.exists(Path::new("/sys/devices/system/cpu/intel_pstate/hwp_dynamic_boost"))
+    sysfs.exists(Path::new(
+        "/sys/devices/system/cpu/intel_pstate/hwp_dynamic_boost",
+    ))
 }
 
 /// Detect device capabilities from hardware interface, DMI data, and sysfs.

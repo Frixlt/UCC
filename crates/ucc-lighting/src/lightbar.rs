@@ -278,9 +278,10 @@ impl LightbarSettings {
                         }
                         let mut channels = [0u8; 3];
                         for (idx, ch) in arr.iter().enumerate() {
-                            let val = ch.as_i64().filter(|_| !ch.is_boolean()).ok_or_else(|| {
-                                LightingError::InvalidConfig("Invalid RGB channel".into())
-                            })?;
+                            let val =
+                                ch.as_i64().filter(|_| !ch.is_boolean()).ok_or_else(|| {
+                                    LightingError::InvalidConfig("Invalid RGB channel".into())
+                                })?;
                             if !(0..=255).contains(&val) {
                                 return Err(LightingError::InvalidConfig(
                                     "Invalid RGB channel".into(),
@@ -650,7 +651,8 @@ impl LightbarController {
             self.last_error = "Lightbar hardware unavailable".into();
             return Err(LightingError::Unavailable);
         };
-        let scaled = ((brightness_val as f64) * (caps.max_brightness as f64) / 255.0).round() as u32;
+        let scaled =
+            ((brightness_val as f64) * (caps.max_brightness as f64) / 255.0).round() as u32;
         match self.transport.write_lightbar_brightness(scaled) {
             Ok(()) => Ok(()),
             Err(e) => {

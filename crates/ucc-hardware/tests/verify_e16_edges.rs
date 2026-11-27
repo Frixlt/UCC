@@ -115,7 +115,8 @@ fn root_replacement_cannot_authorize_an_external_file() {
     let _lock = E16_TEST_MUTEX.lock().unwrap();
     if std::env::var_os("UCC_PRELOAD_CHILD").is_none() {
         let preload_dir = tempfile::tempdir().unwrap();
-        let src = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../extra-fixtures/open-ancestor.c");
+        let src =
+            Path::new(env!("CARGO_MANIFEST_DIR")).join("../../extra-fixtures/open-ancestor.c");
         let so_path = preload_dir.path().join("open-ancestor.so");
         let cc_status = Command::new("cc")
             .args(["-shared", "-fPIC"])
@@ -169,7 +170,10 @@ fn root_replacement_cannot_authorize_an_external_file() {
             .unwrap_or(false),
         "LD_PRELOAD open-ancestor fixture must swap root to a symlink"
     );
-    assert!(result.is_err(), "swapped symlink write must be rejected: {result:?}");
+    assert!(
+        result.is_err(),
+        "swapped symlink write must be rejected: {result:?}"
+    );
     assert_eq!(
         fs::read_to_string(external).unwrap(),
         "outside original",

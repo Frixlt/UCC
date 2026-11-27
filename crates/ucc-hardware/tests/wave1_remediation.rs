@@ -218,7 +218,9 @@ fn explicit_fan_and_led_off_are_restored_after_reconnect() {
     assert_eq!(controller.desired_rgb_target(), RgbTarget::Off);
     let t = Instant::now();
     controller.flush_ready(&transport, t).unwrap();
-    controller.flush_ready(&transport, t + BLE_WRITE_GAP).unwrap();
+    controller
+        .flush_ready(&transport, t + BLE_WRITE_GAP)
+        .unwrap();
     let expected = transport.packets();
     assert_eq!(expected.len(), 2);
     transport.clear();
@@ -255,7 +257,9 @@ fn failed_ble_packet_is_retried_on_the_same_connection() {
     assert!(controller.flush_ready(&transport, t).is_err());
     assert_eq!(controller.pending_len(), 1);
     assert_eq!(
-        controller.flush_ready(&transport, t + BLE_WRITE_GAP).unwrap(),
+        controller
+            .flush_ready(&transport, t + BLE_WRITE_GAP)
+            .unwrap(),
         1
     );
     assert_eq!(controller.pending_len(), 0);
@@ -304,7 +308,10 @@ fn cooler_auto_and_manual_modes_keep_separate_targets_and_follow_curves_in_auto(
             [0xfe, 0x1c, 0x01, 60, 0x02, 0x00, 0x00, 0xef],
         ]
     );
-    assert_eq!(ctrl.desired_pump_target(), PumpTarget::Voltage(PumpVoltage::V7));
+    assert_eq!(
+        ctrl.desired_pump_target(),
+        PumpTarget::Voltage(PumpVoltage::V7)
+    );
 
     // 3. Re-switching to Auto enqueues latest Auto curve target (40C => fan 30%, pump V7)
     transport.clear();
@@ -362,24 +369,48 @@ fn partial_missing_curve_does_not_command_zero_from_another_channel() {
 fn repeated_fan_write_failure_triggers_firmware_auto_failsafe() {
     struct FailSecondFan(Arc<MockPlatformBackend>);
     impl PlatformBackend for FailSecondFan {
-        fn kind(&self) -> PlatformBackendKind { self.0.kind() }
-        fn is_available(&self) -> bool { self.0.is_available() }
-        fn capabilities(&self) -> PlatformCapabilities { self.0.capabilities() }
-        fn read_fan_temp(&self, fan_idx: usize) -> Result<i32, PlatformError> { self.0.read_fan_temp(fan_idx) }
-        fn read_fan_speed_percent(&self, fan_idx: usize) -> Result<u8, PlatformError> { self.0.read_fan_speed_percent(fan_idx) }
+        fn kind(&self) -> PlatformBackendKind {
+            self.0.kind()
+        }
+        fn is_available(&self) -> bool {
+            self.0.is_available()
+        }
+        fn capabilities(&self) -> PlatformCapabilities {
+            self.0.capabilities()
+        }
+        fn read_fan_temp(&self, fan_idx: usize) -> Result<i32, PlatformError> {
+            self.0.read_fan_temp(fan_idx)
+        }
+        fn read_fan_speed_percent(&self, fan_idx: usize) -> Result<u8, PlatformError> {
+            self.0.read_fan_speed_percent(fan_idx)
+        }
         fn set_fan_speed_percent(&self, fan_idx: usize, percent: u8) -> Result<(), PlatformError> {
             if fan_idx == 1 {
                 return Err(PlatformError::Unavailable);
             }
             self.0.set_fan_speed_percent(fan_idx, percent)
         }
-        fn set_fans_auto(&self) -> Result<(), PlatformError> { self.0.set_fans_auto() }
-        fn read_tdp(&self, index: usize) -> Result<i32, PlatformError> { self.0.read_tdp(index) }
-        fn read_tdp_limits(&self, index: usize) -> Result<(i32, i32), PlatformError> { self.0.read_tdp_limits(index) }
-        fn set_tdp(&self, index: usize, watts: i32) -> Result<(), PlatformError> { self.0.set_tdp(index, watts) }
-        fn set_perf_profile(&self, profile_code: i32) -> Result<(), PlatformError> { self.0.set_perf_profile(profile_code) }
-        fn set_mode_enable(&self, enable: bool) -> Result<(), PlatformError> { self.0.set_mode_enable(enable) }
-        fn set_mode(&self, mode: i32) -> Result<(), PlatformError> { self.0.set_mode(mode) }
+        fn set_fans_auto(&self) -> Result<(), PlatformError> {
+            self.0.set_fans_auto()
+        }
+        fn read_tdp(&self, index: usize) -> Result<i32, PlatformError> {
+            self.0.read_tdp(index)
+        }
+        fn read_tdp_limits(&self, index: usize) -> Result<(i32, i32), PlatformError> {
+            self.0.read_tdp_limits(index)
+        }
+        fn set_tdp(&self, index: usize, watts: i32) -> Result<(), PlatformError> {
+            self.0.set_tdp(index, watts)
+        }
+        fn set_perf_profile(&self, profile_code: i32) -> Result<(), PlatformError> {
+            self.0.set_perf_profile(profile_code)
+        }
+        fn set_mode_enable(&self, enable: bool) -> Result<(), PlatformError> {
+            self.0.set_mode_enable(enable)
+        }
+        fn set_mode(&self, mode: i32) -> Result<(), PlatformError> {
+            self.0.set_mode(mode)
+        }
     }
 
     let inner = Arc::new(MockPlatformBackend::uniwill_default());

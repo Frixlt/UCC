@@ -129,16 +129,23 @@ impl SettingsManager {
         }
 
         // customKeyboardProfiles
-        if let Some(kbps) = parsed.get("customKeyboardProfiles").and_then(|v| v.as_object()) {
+        if let Some(kbps) = parsed
+            .get("customKeyboardProfiles")
+            .and_then(|v| v.as_object())
+        {
             for (k, v) in kbps {
-                settings.custom_keyboard_profiles.insert(k.clone(), v.to_string());
+                settings
+                    .custom_keyboard_profiles
+                    .insert(k.clone(), v.to_string());
             }
         }
 
         // customFanProfiles
         if let Some(fps) = parsed.get("customFanProfiles").and_then(|v| v.as_object()) {
             for (k, v) in fps {
-                settings.custom_fan_profiles.insert(k.clone(), v.to_string());
+                settings
+                    .custom_fan_profiles
+                    .insert(k.clone(), v.to_string());
             }
         }
 
@@ -152,7 +159,10 @@ impl SettingsManager {
         if let Some(b) = parsed.get("fanControlEnabled").and_then(|v| v.as_bool()) {
             settings.fan_control_enabled = b;
         }
-        if let Some(b) = parsed.get("keyboardBacklightControlSupported").and_then(|v| v.as_bool()) {
+        if let Some(b) = parsed
+            .get("keyboardBacklightControlSupported")
+            .and_then(|v| v.as_bool())
+        {
             settings.keyboard_backlight_control_supported = b;
         }
 
@@ -219,53 +229,88 @@ impl SettingsManager {
     pub fn settings_to_json(&self, settings: &TccSettings) -> Result<String, ConfigError> {
         let mut map = serde_json::Map::new();
 
-        map.insert("keyboardLayout".to_string(), serde_json::json!(settings.keyboard_layout));
+        map.insert(
+            "keyboardLayout".to_string(),
+            serde_json::json!(settings.keyboard_layout),
+        );
 
         let lightbar: serde_json::Value = serde_json::from_str(&settings.lightbar_settings)
             .unwrap_or_else(|_| serde_json::json!({}));
         map.insert("lightbar".to_string(), lightbar);
 
-        let power_devices: serde_json::Value = serde_json::from_str(&settings.power_device_settings)
-            .unwrap_or_else(|_| serde_json::json!({}));
+        let power_devices: serde_json::Value =
+            serde_json::from_str(&settings.power_device_settings)
+                .unwrap_or_else(|_| serde_json::json!({}));
         map.insert("powerDevices".to_string(), power_devices);
 
-        let kb_states: serde_json::Value = serde_json::from_str(&settings.keyboard_backlight_states)
-            .unwrap_or_else(|_| serde_json::json!([]));
+        let kb_states: serde_json::Value =
+            serde_json::from_str(&settings.keyboard_backlight_states)
+                .unwrap_or_else(|_| serde_json::json!([]));
         map.insert("keyboardBacklightStates".to_string(), kb_states);
 
-        map.insert("fahrenheit".to_string(), serde_json::json!(settings.fahrenheit));
+        map.insert(
+            "fahrenheit".to_string(),
+            serde_json::json!(settings.fahrenheit),
+        );
 
         let mut state_map_json = serde_json::Map::new();
         for (k, v) in &settings.state_map {
             state_map_json.insert(k.clone(), serde_json::json!(v));
         }
-        map.insert("stateMap".to_string(), serde_json::Value::Object(state_map_json));
+        map.insert(
+            "stateMap".to_string(),
+            serde_json::Value::Object(state_map_json),
+        );
 
         let mut profiles_json = serde_json::Map::new();
         for (k, v) in &settings.profiles {
-            let val: serde_json::Value = serde_json::from_str(v).unwrap_or_else(|_| serde_json::json!({}));
+            let val: serde_json::Value =
+                serde_json::from_str(v).unwrap_or_else(|_| serde_json::json!({}));
             profiles_json.insert(k.clone(), val);
         }
-        map.insert("profiles".to_string(), serde_json::Value::Object(profiles_json));
+        map.insert(
+            "profiles".to_string(),
+            serde_json::Value::Object(profiles_json),
+        );
 
         let mut kbp_json = serde_json::Map::new();
         for (k, v) in &settings.custom_keyboard_profiles {
-            let val: serde_json::Value = serde_json::from_str(v).unwrap_or_else(|_| serde_json::json!({}));
+            let val: serde_json::Value =
+                serde_json::from_str(v).unwrap_or_else(|_| serde_json::json!({}));
             kbp_json.insert(k.clone(), val);
         }
-        map.insert("customKeyboardProfiles".to_string(), serde_json::Value::Object(kbp_json));
+        map.insert(
+            "customKeyboardProfiles".to_string(),
+            serde_json::Value::Object(kbp_json),
+        );
 
         let mut fanp_json = serde_json::Map::new();
         for (k, v) in &settings.custom_fan_profiles {
-            let val: serde_json::Value = serde_json::from_str(v).unwrap_or_else(|_| serde_json::json!({}));
+            let val: serde_json::Value =
+                serde_json::from_str(v).unwrap_or_else(|_| serde_json::json!({}));
             fanp_json.insert(k.clone(), val);
         }
-        map.insert("customFanProfiles".to_string(), serde_json::Value::Object(fanp_json));
+        map.insert(
+            "customFanProfiles".to_string(),
+            serde_json::Value::Object(fanp_json),
+        );
 
-        map.insert("shutdownTime".to_string(), serde_json::json!(settings.shutdown_time));
-        map.insert("cpuSettingsEnabled".to_string(), serde_json::json!(settings.cpu_settings_enabled));
-        map.insert("fanControlEnabled".to_string(), serde_json::json!(settings.fan_control_enabled));
-        map.insert("keyboardBacklightControlSupported".to_string(), serde_json::json!(settings.keyboard_backlight_control_supported));
+        map.insert(
+            "shutdownTime".to_string(),
+            serde_json::json!(settings.shutdown_time),
+        );
+        map.insert(
+            "cpuSettingsEnabled".to_string(),
+            serde_json::json!(settings.cpu_settings_enabled),
+        );
+        map.insert(
+            "fanControlEnabled".to_string(),
+            serde_json::json!(settings.fan_control_enabled),
+        );
+        map.insert(
+            "keyboardBacklightControlSupported".to_string(),
+            serde_json::json!(settings.keyboard_backlight_control_supported),
+        );
 
         // Serialize ycbcr420Workaround array matching C++ format
         let mut ycbcr_arr = Vec::new();
@@ -276,9 +321,18 @@ impl SettingsManager {
             }
             ycbcr_arr.push(serde_json::Value::Object(card_obj));
         }
-        map.insert("ycbcr420Workaround".to_string(), serde_json::Value::Array(ycbcr_arr));
-        map.insert("chargingProfile".to_string(), serde_json::json!(settings.charging_profile));
-        map.insert("chargingPriority".to_string(), serde_json::json!(settings.charging_priority));
+        map.insert(
+            "ycbcr420Workaround".to_string(),
+            serde_json::Value::Array(ycbcr_arr),
+        );
+        map.insert(
+            "chargingProfile".to_string(),
+            serde_json::json!(settings.charging_profile),
+        );
+        map.insert(
+            "chargingPriority".to_string(),
+            serde_json::json!(settings.charging_priority),
+        );
 
         if let Some(ref ct) = settings.charge_type {
             map.insert("chargeType".to_string(), serde_json::json!(ct));

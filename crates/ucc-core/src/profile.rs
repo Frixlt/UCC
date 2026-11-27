@@ -211,7 +211,11 @@ pub struct ProfileKeyboard {
     pub keyboard_profile_id: String,
     #[serde(default)]
     pub keyboard_profile_data: String,
-    #[serde(flatten, default, skip_serializing_if = "std::collections::BTreeMap::is_empty")]
+    #[serde(
+        flatten,
+        default,
+        skip_serializing_if = "std::collections::BTreeMap::is_empty"
+    )]
     pub extra: std::collections::BTreeMap<String, serde_json::Value>,
 }
 
@@ -250,9 +254,7 @@ where
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(untagged)]
 enum OdmProfileSerde {
-    Object {
-        name: String,
-    },
+    Object { name: String },
     String(String),
 }
 
@@ -335,9 +337,17 @@ struct UccProfileWire {
         serialize_with = "serialize_odm_power_limits"
     )]
     odm_power_limits: Vec<u32>,
-    #[serde(default, rename = "nvidiaCTGPOffset", skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        rename = "nvidiaCTGPOffset",
+        skip_serializing_if = "Option::is_none"
+    )]
     nvidia_ctgp_offset: Option<i32>,
-    #[serde(default, rename = "selectedKeyboardProfile", skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        rename = "selectedKeyboardProfile",
+        skip_serializing_if = "Option::is_none"
+    )]
     selected_keyboard_profile: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     charging: Option<ChargingPolicy>,
@@ -351,7 +361,11 @@ struct UccProfileWire {
     charge_start_threshold: Option<u8>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     charge_end_threshold: Option<u8>,
-    #[serde(flatten, default, skip_serializing_if = "std::collections::BTreeMap::is_empty")]
+    #[serde(
+        flatten,
+        default,
+        skip_serializing_if = "std::collections::BTreeMap::is_empty"
+    )]
     extra: std::collections::BTreeMap<String, serde_json::Value>,
 }
 

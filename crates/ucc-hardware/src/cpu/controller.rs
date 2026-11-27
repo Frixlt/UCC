@@ -97,7 +97,8 @@ impl LogicalCpu {
     }
 
     pub fn read_scaling_available_frequencies(&self) -> Option<Vec<u32>> {
-        let content = fs::read_to_string(self.cpufreq_path.join("scaling_available_frequencies")).ok()?;
+        let content =
+            fs::read_to_string(self.cpufreq_path.join("scaling_available_frequencies")).ok()?;
         let freqs: Vec<u32> = content
             .split_whitespace()
             .filter_map(|w| w.parse::<u32>().ok())
@@ -116,7 +117,11 @@ impl LogicalCpu {
     }
 
     pub fn read_energy_performance_available_preferences(&self) -> Option<Vec<String>> {
-        let content = fs::read_to_string(self.cpufreq_path.join("energy_performance_available_preferences")).ok()?;
+        let content = fs::read_to_string(
+            self.cpufreq_path
+                .join("energy_performance_available_preferences"),
+        )
+        .ok()?;
         let prefs: Vec<String> = content.split_whitespace().map(|s| s.to_string()).collect();
         if prefs.is_empty() {
             None
@@ -136,7 +141,8 @@ impl LogicalCpu {
     }
 
     pub fn read_scaling_available_governors(&self) -> Option<Vec<String>> {
-        let content = fs::read_to_string(self.cpufreq_path.join("scaling_available_governors")).ok()?;
+        let content =
+            fs::read_to_string(self.cpufreq_path.join("scaling_available_governors")).ok()?;
         let govs: Vec<String> = content.split_whitespace().map(|s| s.to_string()).collect();
         if govs.is_empty() {
             None
@@ -368,7 +374,10 @@ impl CpuController {
 
         // Snap to closest available frequency >= scaling_min and <= core_max
         if let Some(avail) = core.read_scaling_available_frequencies() {
-            let filtered: Vec<u32> = avail.into_iter().filter(|&f| f >= scaling_min && f <= core_max).collect();
+            let filtered: Vec<u32> = avail
+                .into_iter()
+                .filter(|&f| f >= scaling_min && f <= core_max)
+                .collect();
             if !filtered.is_empty() {
                 freq = find_closest_value(freq, &filtered);
             }
@@ -410,7 +419,10 @@ impl CpuController {
 
         // Snap to closest available frequency between core_min and scaling_max
         if let Some(avail) = core.read_scaling_available_frequencies() {
-            let filtered: Vec<u32> = avail.into_iter().filter(|&f| f >= core_min && f <= scaling_max).collect();
+            let filtered: Vec<u32> = avail
+                .into_iter()
+                .filter(|&f| f >= core_min && f <= scaling_max)
+                .collect();
             if !filtered.is_empty() {
                 freq = find_closest_value(freq, &filtered);
             }
@@ -422,7 +434,10 @@ impl CpuController {
     }
 
     /// Set maximum scaling frequency for all online cores.
-    pub fn set_governor_scaling_max_frequency(&self, set_max_frequency: Option<i64>) -> Result<(), std::io::Error> {
+    pub fn set_governor_scaling_max_frequency(
+        &self,
+        set_max_frequency: Option<i64>,
+    ) -> Result<(), std::io::Error> {
         let mut scaling_driver_str: Option<String> = None;
         let mut acpi_fallback = false;
         let mut applied_count = 0;
@@ -442,11 +457,13 @@ impl CpuController {
 
             if scaling_driver_str.is_none() {
                 scaling_driver_str = core.read_scaling_driver();
-                acpi_fallback = self.has_boost()
-                    && scaling_driver_str.as_deref() == Some("acpi-cpufreq");
+                acpi_fallback =
+                    self.has_boost() && scaling_driver_str.as_deref() == Some("acpi-cpufreq");
             }
 
-            if let Some(effective) = self.compute_effective_max_freq(core, set_max_frequency, acpi_fallback) {
+            if let Some(effective) =
+                self.compute_effective_max_freq(core, set_max_frequency, acpi_fallback)
+            {
                 core.write_scaling_max_freq(effective)?;
                 applied_count += 1;
             }
@@ -480,7 +497,10 @@ impl CpuController {
     }
 
     /// Set minimum scaling frequency for all online cores.
-    pub fn set_governor_scaling_min_frequency(&self, set_min_frequency: Option<i64>) -> Result<(), std::io::Error> {
+    pub fn set_governor_scaling_min_frequency(
+        &self,
+        set_min_frequency: Option<i64>,
+    ) -> Result<(), std::io::Error> {
         let mut applied_count = 0;
         for core in &self.cores {
             if !core.cpufreq_path.join("scaling_min_freq").exists()
@@ -528,8 +548,13 @@ impl CpuController {
     }
 
     /// Set energy performance preference on all online cores.
-    pub fn set_energy_performance_preference(&self, preference: Option<&str>) -> Result<(), std::io::Error> {
-        let Some(pref) = preference else { return Ok(()) };
+    pub fn set_energy_performance_preference(
+        &self,
+        preference: Option<&str>,
+    ) -> Result<(), std::io::Error> {
+        let Some(pref) = preference else {
+            return Ok(());
+        };
         for core in &self.cores {
             if core.core_index != 0 && !core.read_online().unwrap_or(false) {
                 continue;
@@ -554,7 +579,10 @@ impl CpuController {
     }
 
     pub fn write_intel_pstate_no_turbo(&self, val: bool) -> Result<(), std::io::Error> {
-        fs::write(self.root_path.join("intel_pstate/no_turbo"), if val { "1" } else { "0" })
+        fs::write(
+            self.root_path.join("intel_pstate/no_turbo"),
+            if val { "1" } else { "0" },
+        )
     }
 
     pub fn read_intel_hwp_dynamic_boost(&self) -> Option<bool> {
@@ -568,7 +596,10 @@ impl CpuController {
     }
 
     pub fn write_intel_hwp_dynamic_boost(&self, val: bool) -> Result<(), std::io::Error> {
-        fs::write(self.root_path.join("intel_pstate/hwp_dynamic_boost"), if val { "1" } else { "0" })
+        fs::write(
+            self.root_path.join("intel_pstate/hwp_dynamic_boost"),
+            if val { "1" } else { "0" },
+        )
     }
 
     pub fn has_boost(&self) -> bool {
@@ -576,7 +607,10 @@ impl CpuController {
     }
 
     pub fn write_boost(&self, val: bool) -> Result<(), std::io::Error> {
-        fs::write(self.root_path.join("cpufreq/boost"), if val { "1" } else { "0" })
+        fs::write(
+            self.root_path.join("cpufreq/boost"),
+            if val { "1" } else { "0" },
+        )
     }
 }
 

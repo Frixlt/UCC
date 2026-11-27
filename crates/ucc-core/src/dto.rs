@@ -3,7 +3,9 @@ use crate::cpu::ProfileCpu;
 use crate::error::{CoreError, ValidationError};
 use crate::fan::{FanPoint, PumpPoint, PumpVoltage};
 use crate::power::PolicyDecision;
-use crate::profile::{ProfileDisplay, ProfileFanControl, ProfileKeyboard, ProfileWebcam, UccProfile};
+use crate::profile::{
+    ProfileDisplay, ProfileFanControl, ProfileKeyboard, ProfileWebcam, UccProfile,
+};
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 
@@ -106,7 +108,11 @@ pub struct LegacyFanDto {
     pub table_gpu: Vec<LegacyFanPointDto>,
     #[serde(rename = "tablePump", default, skip_serializing_if = "Vec::is_empty")]
     pub table_pump: Vec<LegacyFanPointDto>,
-    #[serde(rename = "tableWaterCoolerFan", default, skip_serializing_if = "Vec::is_empty")]
+    #[serde(
+        rename = "tableWaterCoolerFan",
+        default,
+        skip_serializing_if = "Vec::is_empty"
+    )]
     pub table_water_cooler_fan: Vec<LegacyFanPointDto>,
 }
 
@@ -151,15 +157,31 @@ pub struct LegacyProfileDto {
     pub webcam: Option<LegacyWebcamDto>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub fan: Option<LegacyFanDto>,
-    #[serde(default, rename = "odmProfile", skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        rename = "odmProfile",
+        skip_serializing_if = "Option::is_none"
+    )]
     pub odm_profile: Option<LegacyOdmProfileDto>,
-    #[serde(default, rename = "odmPowerLimits", skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        rename = "odmPowerLimits",
+        skip_serializing_if = "Option::is_none"
+    )]
     pub odm_power_limits: Option<LegacyOdmPowerLimitsDto>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub keyboard: Option<LegacyKeyboardDto>,
-    #[serde(default, rename = "selectedKeyboardProfile", skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        rename = "selectedKeyboardProfile",
+        skip_serializing_if = "Option::is_none"
+    )]
     pub selected_keyboard_profile: Option<String>,
-    #[serde(default, rename = "nvidiaCTGPOffset", skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        rename = "nvidiaCTGPOffset",
+        skip_serializing_if = "Option::is_none"
+    )]
     pub nvidia_ctgp_offset: Option<i32>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub charging_profile: Option<String>,
@@ -199,12 +221,26 @@ impl LegacyProfileDto {
                 }
             }
             ProfileCpu {
-                online_cores: c.online_cores.and_then(|v| if v > 0 { Some(v as u32) } else { None }),
-                enabled_cores: c.enabled_cores.map(|cores| {
-                    cores.into_iter().map(|x| x as u32).collect()
+                online_cores: c
+                    .online_cores
+                    .and_then(|v| if v > 0 { Some(v as u32) } else { None }),
+                enabled_cores: c
+                    .enabled_cores
+                    .map(|cores| cores.into_iter().map(|x| x as u32).collect()),
+                min_freq_khz: c.scaling_min_frequency.and_then(|v| {
+                    if v > 0 {
+                        Some(v as u32)
+                    } else {
+                        None
+                    }
                 }),
-                min_freq_khz: c.scaling_min_frequency.and_then(|v| if v > 0 { Some(v as u32) } else { None }),
-                max_freq_khz: c.scaling_max_frequency.and_then(|v| if v > 0 { Some(v as u32) } else { None }),
+                max_freq_khz: c.scaling_max_frequency.and_then(|v| {
+                    if v > 0 {
+                        Some(v as u32)
+                    } else {
+                        None
+                    }
+                }),
                 min_freq_sentinel: c.scaling_min_frequency.filter(|&v| v < 0),
                 max_freq_sentinel: c.scaling_max_frequency.filter(|&v| v < 0),
                 governor: c.governor.unwrap_or_default(),
@@ -238,16 +274,24 @@ impl LegacyProfileDto {
                 None
             };
 
-            let table_cpu = f.table_cpu.into_iter()
+            let table_cpu = f
+                .table_cpu
+                .into_iter()
                 .map(|p| FanPoint::new(p.temp, p.speed.clamp(0, 100) as u8))
                 .collect();
-            let table_gpu = f.table_gpu.into_iter()
+            let table_gpu = f
+                .table_gpu
+                .into_iter()
                 .map(|p| FanPoint::new(p.temp, p.speed.clamp(0, 100) as u8))
                 .collect();
-            let table_water_cooler_fan = f.table_water_cooler_fan.into_iter()
+            let table_water_cooler_fan = f
+                .table_water_cooler_fan
+                .into_iter()
                 .map(|p| FanPoint::new(p.temp, p.speed.clamp(0, 100) as u8))
                 .collect();
-            let table_pump = f.table_pump.into_iter()
+            let table_pump = f
+                .table_pump
+                .into_iter()
                 .map(|p| PumpPoint::new(p.temp, p.speed.clamp(0, 4) as u8))
                 .collect();
 
@@ -269,20 +313,41 @@ impl LegacyProfileDto {
         };
 
         let keyboard = ProfileKeyboard {
-            keyboard_profile_name: self.keyboard.as_ref().and_then(|k| k.keyboard_profile_name.clone()).unwrap_or_default(),
+            keyboard_profile_name: self
+                .keyboard
+                .as_ref()
+                .and_then(|k| k.keyboard_profile_name.clone())
+                .unwrap_or_default(),
             keyboard_profile_id: self.selected_keyboard_profile.clone().unwrap_or_default(),
-            keyboard_profile_data: self.keyboard.as_ref().and_then(|k| k.keyboard_profile_data.clone()).unwrap_or_default(),
+            keyboard_profile_data: self
+                .keyboard
+                .as_ref()
+                .and_then(|k| k.keyboard_profile_data.clone())
+                .unwrap_or_default(),
             extra: std::collections::BTreeMap::new(),
         };
 
-        let odm_power_limits = self.odm_power_limits
+        let odm_power_limits = self
+            .odm_power_limits
             .map(|l| l.tdp_values.into_iter().map(|x| x.max(0) as u32).collect())
             .unwrap_or_default();
 
         let charge_type = self.charge_type.as_deref().and_then(ChargeType::parse);
 
-        let start_threshold = self.charge_start_threshold.and_then(|t| if (0..=100).contains(&t) { Some(t as u8) } else { None });
-        let end_threshold = self.charge_end_threshold.and_then(|t| if (0..=100).contains(&t) { Some(t as u8) } else { None });
+        let start_threshold = self.charge_start_threshold.and_then(|t| {
+            if (0..=100).contains(&t) {
+                Some(t as u8)
+            } else {
+                None
+            }
+        });
+        let end_threshold = self.charge_end_threshold.and_then(|t| {
+            if (0..=100).contains(&t) {
+                Some(t as u8)
+            } else {
+                None
+            }
+        });
 
         let charging = ChargingPolicy {
             charging_profile: self.charging_profile,
@@ -327,7 +392,11 @@ impl LegacyProfileDto {
 
         let cpu = Some(LegacyCpuDto {
             online_cores: profile.cpu.online_cores.map(|v| v as i32),
-            enabled_cores: profile.cpu.enabled_cores.as_ref().map(|cores| cores.iter().map(|&x| x as i32).collect()),
+            enabled_cores: profile
+                .cpu
+                .enabled_cores
+                .as_ref()
+                .map(|cores| cores.iter().map(|&x| x as i32).collect()),
             scaling_min_frequency: profile
                 .cpu
                 .min_freq_khz
@@ -338,8 +407,16 @@ impl LegacyProfileDto {
                 .max_freq_khz
                 .map(|v| v as i32)
                 .or(profile.cpu.max_freq_sentinel),
-            governor: if profile.cpu.governor.is_empty() { None } else { Some(profile.cpu.governor.clone()) },
-            energy_performance_preference: if profile.cpu.energy_performance_preference.is_empty() { None } else { Some(profile.cpu.energy_performance_preference.clone()) },
+            governor: if profile.cpu.governor.is_empty() {
+                None
+            } else {
+                Some(profile.cpu.governor.clone())
+            },
+            energy_performance_preference: if profile.cpu.energy_performance_preference.is_empty() {
+                None
+            } else {
+                Some(profile.cpu.energy_performance_preference.clone())
+            },
             no_turbo: Some(profile.cpu.no_turbo),
             hwp_dynamic_boost: Some(profile.cpu.hwp_dynamic_boost),
         });
@@ -357,20 +434,63 @@ impl LegacyProfileDto {
             manual_fan_speed: profile.fan.manual_fan_speed.map(|s| s as i32).unwrap_or(-1),
             manual_pump_voltage: profile.fan.manual_pump_voltage.unwrap_or(-1),
             enable_water_cooler: profile.fan.enable_water_cooler,
-            table_cpu: profile.fan.table_cpu.iter().map(|p| LegacyFanPointDto { temp: p.temp, speed: p.speed as i32 }).collect(),
-            table_gpu: profile.fan.table_gpu.iter().map(|p| LegacyFanPointDto { temp: p.temp, speed: p.speed as i32 }).collect(),
-            table_pump: profile.fan.table_pump.iter().map(|p| LegacyFanPointDto { temp: p.temp, speed: p.speed as i32 }).collect(),
-            table_water_cooler_fan: profile.fan.table_water_cooler_fan.iter().map(|p| LegacyFanPointDto { temp: p.temp, speed: p.speed as i32 }).collect(),
+            table_cpu: profile
+                .fan
+                .table_cpu
+                .iter()
+                .map(|p| LegacyFanPointDto {
+                    temp: p.temp,
+                    speed: p.speed as i32,
+                })
+                .collect(),
+            table_gpu: profile
+                .fan
+                .table_gpu
+                .iter()
+                .map(|p| LegacyFanPointDto {
+                    temp: p.temp,
+                    speed: p.speed as i32,
+                })
+                .collect(),
+            table_pump: profile
+                .fan
+                .table_pump
+                .iter()
+                .map(|p| LegacyFanPointDto {
+                    temp: p.temp,
+                    speed: p.speed as i32,
+                })
+                .collect(),
+            table_water_cooler_fan: profile
+                .fan
+                .table_water_cooler_fan
+                .iter()
+                .map(|p| LegacyFanPointDto {
+                    temp: p.temp,
+                    speed: p.speed as i32,
+                })
+                .collect(),
         });
 
         let keyboard = Some(LegacyKeyboardDto {
-            keyboard_profile_data: if profile.keyboard.keyboard_profile_data.is_empty() { None } else { Some(profile.keyboard.keyboard_profile_data.clone()) },
-            keyboard_profile_name: if profile.keyboard.keyboard_profile_name.is_empty() { None } else { Some(profile.keyboard.keyboard_profile_name.clone()) },
+            keyboard_profile_data: if profile.keyboard.keyboard_profile_data.is_empty() {
+                None
+            } else {
+                Some(profile.keyboard.keyboard_profile_data.clone())
+            },
+            keyboard_profile_name: if profile.keyboard.keyboard_profile_name.is_empty() {
+                None
+            } else {
+                Some(profile.keyboard.keyboard_profile_name.clone())
+            },
         });
 
-        let odm_profile = profile.odm_profile_name.as_ref().map(|name| LegacyOdmProfileDto {
-            name: Some(name.clone()),
-        });
+        let odm_profile = profile
+            .odm_profile_name
+            .as_ref()
+            .map(|name| LegacyOdmProfileDto {
+                name: Some(name.clone()),
+            });
 
         let odm_power_limits = if profile.odm_power_limits.is_empty() {
             None
@@ -385,7 +505,11 @@ impl LegacyProfileDto {
         Self {
             id: profile.id.clone(),
             name: profile.name.clone(),
-            description: if profile.description.is_empty() { None } else { Some(profile.description.clone()) },
+            description: if profile.description.is_empty() {
+                None
+            } else {
+                Some(profile.description.clone())
+            },
             display,
             cpu,
             webcam,
@@ -448,11 +572,19 @@ pub struct LegacySettingsDto {
     pub keyboard_layout: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub keyboard_backlight_states: Option<serde_json::Value>,
-    #[serde(default, rename = "powerDevices", skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        rename = "powerDevices",
+        skip_serializing_if = "Option::is_none"
+    )]
     pub power_devices: Option<serde_json::Value>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub lightbar: Option<serde_json::Value>,
-    #[serde(default, rename = "ycbcr420Workaround", skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        rename = "ycbcr420Workaround",
+        skip_serializing_if = "Option::is_none"
+    )]
     pub ycbcr420_workaround: Option<Vec<serde_json::Value>>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub charging_profile: Option<String>,
@@ -509,9 +641,14 @@ impl From<&PolicyDecision> for LegacyPowerPolicyStatusDto {
         Self {
             real_power_source: d.source.mode_name().to_string(),
             current_mode: d.effective.mode_name().to_string(),
-            manual_mode: d.status["manual_mode"].as_str().unwrap_or("auto").to_string(),
+            manual_mode: d.status["manual_mode"]
+                .as_str()
+                .unwrap_or("auto")
+                .to_string(),
             profile_state: d.profile_state.as_str().to_string(),
-            water_cooler_connected: d.status["water_cooler_connected"].as_bool().unwrap_or(false),
+            water_cooler_connected: d.status["water_cooler_connected"]
+                .as_bool()
+                .unwrap_or(false),
             registered_apps: apps,
             revision: d.status["revision"].as_u64().unwrap_or(0),
         }

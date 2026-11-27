@@ -106,87 +106,309 @@ pub(super) fn builtin_fan_profiles() -> Vec<FanProfile> {
             id: "fan-silent".to_string(),
             name: "Silent [Built-in]".to_string(),
             table_cpu: pts(&[
-                (20, 0), (25, 0), (30, 0), (35, 0), (40, 0), (45, 0), (50, 0), (55, 0), (60, 0),
-                (65, 20), (70, 28), (75, 40), (80, 53), (85, 65), (90, 83), (95, 96), (100, 100),
+                (20, 0),
+                (25, 0),
+                (30, 0),
+                (35, 0),
+                (40, 0),
+                (45, 0),
+                (50, 0),
+                (55, 0),
+                (60, 0),
+                (65, 20),
+                (70, 28),
+                (75, 40),
+                (80, 53),
+                (85, 65),
+                (90, 83),
+                (95, 96),
+                (100, 100),
             ]),
             table_gpu: pts(&[
-                (20, 0), (25, 0), (30, 0), (35, 0), (40, 0), (45, 0), (50, 0), (55, 0), (60, 10),
-                (65, 24), (70, 34), (75, 46), (80, 58), (85, 70), (90, 91), (95, 95), (100, 100),
+                (20, 0),
+                (25, 0),
+                (30, 0),
+                (35, 0),
+                (40, 0),
+                (45, 0),
+                (50, 0),
+                (55, 0),
+                (60, 10),
+                (65, 24),
+                (70, 34),
+                (75, 46),
+                (80, 58),
+                (85, 70),
+                (90, 91),
+                (95, 95),
+                (100, 100),
             ]),
             table_pump: default_pump(),
             table_water_cooler_fan: pts(&[
-                (20, 0), (25, 0), (30, 0), (35, 0), (40, 0), (45, 0), (50, 0), (55, 0), (60, 5),
-                (65, 22), (70, 31), (75, 43), (80, 56), (85, 68), (90, 87), (95, 96), (100, 100),
+                (20, 0),
+                (25, 0),
+                (30, 0),
+                (35, 0),
+                (40, 0),
+                (45, 0),
+                (50, 0),
+                (55, 0),
+                (60, 5),
+                (65, 22),
+                (70, 31),
+                (75, 43),
+                (80, 56),
+                (85, 68),
+                (90, 87),
+                (95, 96),
+                (100, 100),
             ]),
         },
         FanProfile {
             id: "fan-quiet".to_string(),
             name: "Quiet [Built-in]".to_string(),
             table_cpu: pts(&[
-                (20, 0), (25, 0), (30, 0), (35, 0), (40, 0), (45, 0), (50, 0), (55, 10), (60, 20),
-                (65, 24), (70, 33), (75, 46), (80, 55), (85, 68), (90, 85), (95, 96), (100, 100),
+                (20, 0),
+                (25, 0),
+                (30, 0),
+                (35, 0),
+                (40, 0),
+                (45, 0),
+                (50, 0),
+                (55, 10),
+                (60, 20),
+                (65, 24),
+                (70, 33),
+                (75, 46),
+                (80, 55),
+                (85, 68),
+                (90, 85),
+                (95, 96),
+                (100, 100),
             ]),
             table_gpu: pts(&[
-                (20, 0), (25, 0), (30, 0), (35, 0), (40, 0), (45, 0), (50, 0), (55, 10), (60, 20),
-                (65, 26), (70, 35), (75, 46), (80, 55), (85, 68), (90, 90), (95, 95), (100, 100),
+                (20, 0),
+                (25, 0),
+                (30, 0),
+                (35, 0),
+                (40, 0),
+                (45, 0),
+                (50, 0),
+                (55, 10),
+                (60, 20),
+                (65, 26),
+                (70, 35),
+                (75, 46),
+                (80, 55),
+                (85, 68),
+                (90, 90),
+                (95, 95),
+                (100, 100),
             ]),
             table_pump: default_pump(),
             table_water_cooler_fan: pts(&[
-                (20, 0), (25, 0), (30, 0), (35, 0), (40, 0), (45, 0), (50, 0), (55, 10), (60, 20),
-                (65, 25), (70, 34), (75, 46), (80, 55), (85, 68), (90, 88), (95, 96), (100, 100),
+                (20, 0),
+                (25, 0),
+                (30, 0),
+                (35, 0),
+                (40, 0),
+                (45, 0),
+                (50, 0),
+                (55, 10),
+                (60, 20),
+                (65, 25),
+                (70, 34),
+                (75, 46),
+                (80, 55),
+                (85, 68),
+                (90, 88),
+                (95, 96),
+                (100, 100),
             ]),
         },
         FanProfile {
             id: "fan-balanced".to_string(),
             name: "Balanced [Built-in]".to_string(),
             table_cpu: pts(&[
-                (20, 0), (25, 0), (30, 0), (35, 0), (40, 0), (45, 0), (50, 17), (55, 25), (60, 31),
-                (65, 38), (70, 50), (75, 55), (80, 65), (85, 78), (90, 88), (95, 96), (100, 100),
+                (20, 0),
+                (25, 0),
+                (30, 0),
+                (35, 0),
+                (40, 0),
+                (45, 0),
+                (50, 17),
+                (55, 25),
+                (60, 31),
+                (65, 38),
+                (70, 50),
+                (75, 55),
+                (80, 65),
+                (85, 78),
+                (90, 88),
+                (95, 96),
+                (100, 100),
             ]),
             table_gpu: pts(&[
-                (20, 0), (25, 0), (30, 0), (35, 0), (40, 0), (45, 0), (50, 17), (55, 25), (60, 31),
-                (65, 38), (70, 50), (75, 55), (80, 65), (85, 78), (90, 90), (95, 95), (100, 100),
+                (20, 0),
+                (25, 0),
+                (30, 0),
+                (35, 0),
+                (40, 0),
+                (45, 0),
+                (50, 17),
+                (55, 25),
+                (60, 31),
+                (65, 38),
+                (70, 50),
+                (75, 55),
+                (80, 65),
+                (85, 78),
+                (90, 90),
+                (95, 95),
+                (100, 100),
             ]),
             table_pump: default_pump(),
             table_water_cooler_fan: pts(&[
-                (20, 0), (25, 0), (30, 0), (35, 0), (40, 0), (45, 0), (50, 17), (55, 25), (60, 31),
-                (65, 38), (70, 50), (75, 55), (80, 65), (85, 78), (90, 89), (95, 96), (100, 100),
+                (20, 0),
+                (25, 0),
+                (30, 0),
+                (35, 0),
+                (40, 0),
+                (45, 0),
+                (50, 17),
+                (55, 25),
+                (60, 31),
+                (65, 38),
+                (70, 50),
+                (75, 55),
+                (80, 65),
+                (85, 78),
+                (90, 89),
+                (95, 96),
+                (100, 100),
             ]),
         },
         FanProfile {
             id: "fan-cool".to_string(),
             name: "Cool [Built-in]".to_string(),
             table_cpu: pts(&[
-                (20, 0), (25, 0), (30, 0), (35, 0), (40, 3), (45, 20), (50, 25), (55, 29), (60, 35),
-                (65, 43), (70, 50), (75, 58), (80, 72), (85, 85), (90, 93), (95, 96), (100, 100),
+                (20, 0),
+                (25, 0),
+                (30, 0),
+                (35, 0),
+                (40, 3),
+                (45, 20),
+                (50, 25),
+                (55, 29),
+                (60, 35),
+                (65, 43),
+                (70, 50),
+                (75, 58),
+                (80, 72),
+                (85, 85),
+                (90, 93),
+                (95, 96),
+                (100, 100),
             ]),
             table_gpu: pts(&[
-                (20, 0), (25, 0), (30, 0), (35, 0), (40, 5), (45, 26), (50, 31), (55, 36), (60, 41),
-                (65, 46), (70, 52), (75, 62), (80, 71), (85, 79), (90, 97), (95, 100), (100, 100),
+                (20, 0),
+                (25, 0),
+                (30, 0),
+                (35, 0),
+                (40, 5),
+                (45, 26),
+                (50, 31),
+                (55, 36),
+                (60, 41),
+                (65, 46),
+                (70, 52),
+                (75, 62),
+                (80, 71),
+                (85, 79),
+                (90, 97),
+                (95, 100),
+                (100, 100),
             ]),
             table_pump: default_pump(),
             table_water_cooler_fan: pts(&[
-                (20, 0), (25, 0), (30, 0), (35, 0), (40, 4), (45, 23), (50, 28), (55, 33), (60, 38),
-                (65, 45), (70, 51), (75, 60), (80, 72), (85, 82), (90, 95), (95, 98), (100, 100),
+                (20, 0),
+                (25, 0),
+                (30, 0),
+                (35, 0),
+                (40, 4),
+                (45, 23),
+                (50, 28),
+                (55, 33),
+                (60, 38),
+                (65, 45),
+                (70, 51),
+                (75, 60),
+                (80, 72),
+                (85, 82),
+                (90, 95),
+                (95, 98),
+                (100, 100),
             ]),
         },
         FanProfile {
             id: "fan-freezy".to_string(),
             name: "Freezy [Built-in]".to_string(),
             table_cpu: pts(&[
-                (20, 20), (25, 20), (30, 21), (35, 23), (40, 26), (45, 30), (50, 40), (55, 40),
-                (60, 45), (65, 50), (70, 55), (75, 60), (80, 73), (85, 85), (90, 91), (95, 96),
+                (20, 20),
+                (25, 20),
+                (30, 21),
+                (35, 23),
+                (40, 26),
+                (45, 30),
+                (50, 40),
+                (55, 40),
+                (60, 45),
+                (65, 50),
+                (70, 55),
+                (75, 60),
+                (80, 73),
+                (85, 85),
+                (90, 91),
+                (95, 96),
                 (100, 100),
             ]),
             table_gpu: pts(&[
-                (20, 25), (25, 25), (30, 25), (35, 25), (40, 30), (45, 35), (50, 40), (55, 45),
-                (60, 50), (65, 60), (70, 65), (75, 70), (80, 75), (85, 85), (90, 95), (95, 98),
+                (20, 25),
+                (25, 25),
+                (30, 25),
+                (35, 25),
+                (40, 30),
+                (45, 35),
+                (50, 40),
+                (55, 45),
+                (60, 50),
+                (65, 60),
+                (70, 65),
+                (75, 70),
+                (80, 75),
+                (85, 85),
+                (90, 95),
+                (95, 98),
                 (100, 100),
             ]),
             table_pump: default_pump(),
             table_water_cooler_fan: pts(&[
-                (20, 23), (25, 23), (30, 23), (35, 24), (40, 28), (45, 33), (50, 40), (55, 43),
-                (60, 48), (65, 55), (70, 60), (75, 65), (80, 74), (85, 85), (90, 93), (95, 97),
+                (20, 23),
+                (25, 23),
+                (30, 23),
+                (35, 24),
+                (40, 28),
+                (45, 33),
+                (50, 40),
+                (55, 43),
+                (60, 48),
+                (65, 55),
+                (70, 60),
+                (75, 65),
+                (80, 74),
+                (85, 85),
+                (90, 93),
+                (95, 97),
                 (100, 100),
             ]),
         },
@@ -291,21 +513,19 @@ impl LiveUccdBackend {
             _ => trimmed,
         };
         let builtins = builtin_fan_profiles();
-        if let Some(fp) = builtins
-            .iter()
-            .find(|fp| {
-                fp.id.eq_ignore_ascii_case(normalized_id)
-                    || fp.name.eq_ignore_ascii_case(trimmed)
-                    || fp.id.eq_ignore_ascii_case(trimmed)
-            })
-        {
+        if let Some(fp) = builtins.iter().find(|fp| {
+            fp.id.eq_ignore_ascii_case(normalized_id)
+                || fp.name.eq_ignore_ascii_case(trimmed)
+                || fp.id.eq_ignore_ascii_case(trimmed)
+        }) {
             return Some(fp.clone());
         }
         let custom = self.read_rw(&self.custom_fan_profiles);
-        if let Some(fp) = custom
-            .get(trimmed)
-            .or_else(|| custom.values().find(|fp| fp.name.eq_ignore_ascii_case(trimmed)))
-        {
+        if let Some(fp) = custom.get(trimmed).or_else(|| {
+            custom
+                .values()
+                .find(|fp| fp.name.eq_ignore_ascii_case(trimmed))
+        }) {
             return Some(fp.clone());
         }
         drop(custom);
@@ -480,7 +700,10 @@ impl LiveUccdBackend {
     }
 
     pub(super) fn get_water_cooler_fan_speed_impl(&self) -> i32 {
-        match self.lock_mutex(&self.cooler_controller).desired_fan_target() {
+        match self
+            .lock_mutex(&self.cooler_controller)
+            .desired_fan_target()
+        {
             FanTarget::Speed(pct) => i32::from(pct),
             FanTarget::Off | FanTarget::Unset => -1,
         }
@@ -488,7 +711,10 @@ impl LiveUccdBackend {
 
     /// Returns exact UCC D-Bus pump discrete codes (`0=11V, 2=7V, 3=8V, 4=Off, -1=Unset`) (`ISSUE-01`).
     pub(super) fn get_water_cooler_pump_level_impl(&self) -> i32 {
-        match self.lock_mutex(&self.cooler_controller).desired_pump_target() {
+        match self
+            .lock_mutex(&self.cooler_controller)
+            .desired_pump_target()
+        {
             PumpTarget::Unset => -1,
             PumpTarget::Voltage(PumpVoltage::V11) => 0,
             PumpTarget::Voltage(PumpVoltage::V12) => 1,
@@ -656,7 +882,10 @@ impl LiveUccdBackend {
         let Some(points) = Self::parse_fan_points_json(points_json) else {
             return false;
         };
-        if FanCurve::new(points.clone()).and_then(|c| c.validate()).is_err() {
+        if FanCurve::new(points.clone())
+            .and_then(|c| c.validate())
+            .is_err()
+        {
             return false;
         }
         let mut temp_curves = self.lock_mutex(&self.temporary_fan_curves);
@@ -685,7 +914,10 @@ impl LiveUccdBackend {
         let Some(points) = Self::parse_fan_points_json(points_json) else {
             return false;
         };
-        if FanCurve::new(points.clone()).and_then(|c| c.validate()).is_err() {
+        if FanCurve::new(points.clone())
+            .and_then(|c| c.validate())
+            .is_err()
+        {
             return false;
         }
         let mut temp_curves = self.lock_mutex(&self.temporary_fan_curves);
@@ -721,7 +953,10 @@ impl LiveUccdBackend {
             .flatten()
         {
             if !pts.is_empty() {
-                if FanCurve::new(pts.clone()).and_then(|c| c.validate()).is_err() {
+                if FanCurve::new(pts.clone())
+                    .and_then(|c| c.validate())
+                    .is_err()
+                {
                     return false;
                 }
                 any_curve = true;
@@ -800,7 +1035,12 @@ impl LiveUccdBackend {
         true
     }
 
-    pub(super) fn save_custom_fan_profile_impl(&self, id: &str, name: &str, json_str: &str) -> bool {
+    pub(super) fn save_custom_fan_profile_impl(
+        &self,
+        id: &str,
+        name: &str,
+        json_str: &str,
+    ) -> bool {
         if ucc_config::is_read_only_preview()
             || self.shutting_down.load(Ordering::SeqCst)
             || json_str.len() > 1024 * 1024
@@ -862,7 +1102,8 @@ impl LiveUccdBackend {
     }
 
     pub fn set_cooler_connected_state(&self, connected: bool) {
-        self.water_cooler_connected.store(connected, Ordering::SeqCst);
+        self.water_cooler_connected
+            .store(connected, Ordering::SeqCst);
         let mut cooler = self.lock_mutex(&self.cooler_controller);
         if connected {
             cooler.on_connected();
@@ -872,7 +1113,8 @@ impl LiveUccdBackend {
     }
 
     pub fn cooler_desired_rgb(&self) -> ucc_hardware::RgbTarget {
-        self.lock_mutex(&self.cooler_controller).desired_rgb_target()
+        self.lock_mutex(&self.cooler_controller)
+            .desired_rgb_target()
     }
 
     pub fn drain_cooler_commands(&self) -> Vec<[u8; 8]> {
@@ -932,7 +1174,9 @@ pub async fn run_water_cooler_ble_loop(
             connect_since = None;
             disconnect_since = None;
             if backend.water_cooler_connected.swap(false, Ordering::SeqCst) {
-                backend.lock_mutex(&backend.cooler_controller).on_disconnected();
+                backend
+                    .lock_mutex(&backend.cooler_controller)
+                    .on_disconnected();
                 backend.emit_signal(DbusSignalEvent::WaterCoolerStatusChanged {
                     status: "disconnected".to_string(),
                 });
@@ -948,7 +1192,9 @@ pub async fn run_water_cooler_ble_loop(
                                 active_session = Some(sess);
                                 disconnect_since = None;
                                 connect_since.get_or_insert_with(Instant::now);
-                                backend.lock_mutex(&backend.cooler_controller).on_connected();
+                                backend
+                                    .lock_mutex(&backend.cooler_controller)
+                                    .on_connected();
                                 debug!("Connected to BLE water cooler {}", chosen.name);
                             }
                             Err(e) => warn!("BLE water cooler connect failed: {e}"),
@@ -985,7 +1231,9 @@ pub async fn run_water_cooler_ble_loop(
                 active_session = None;
                 connect_since = None;
                 disconnect_since.get_or_insert_with(Instant::now);
-                backend.lock_mutex(&backend.cooler_controller).on_disconnected();
+                backend
+                    .lock_mutex(&backend.cooler_controller)
+                    .on_disconnected();
             } else {
                 disconnect_since = None;
             }

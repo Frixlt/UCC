@@ -395,7 +395,11 @@ pub fn spawn_fan_worker(
     let snapshot_ref = Arc::clone(&latest_snapshot);
 
     let join_handle = tokio::spawn(async move {
-        let mut controller = FanController::new(backend.as_ref(), initial.profile.clone(), initial.same_speed);
+        let mut controller = FanController::new(
+            backend.as_ref(),
+            initial.profile.clone(),
+            initial.same_speed,
+        );
         if let Some(ref curves) = initial.temporary_curves {
             controller.apply_temporary_curves(curves.clone());
         }

@@ -70,8 +70,16 @@ fn fan_logic_applies_hysteresis_ewma_hw_limits_and_critical_override() {
     let off_curve = FanProfile {
         id: "zero".into(),
         name: "Zero".into(),
-        table_cpu: vec![FanPoint::new(40, 5), FanPoint::new(50, 15), FanPoint::new(80, 80)],
-        table_gpu: vec![FanPoint::new(40, 5), FanPoint::new(50, 15), FanPoint::new(80, 80)],
+        table_cpu: vec![
+            FanPoint::new(40, 5),
+            FanPoint::new(50, 15),
+            FanPoint::new(80, 80),
+        ],
+        table_gpu: vec![
+            FanPoint::new(40, 5),
+            FanPoint::new(50, 15),
+            FanPoint::new(80, 80),
+        ],
         ..Default::default()
     };
     let mut off_logic = FanControlLogic::new(off_curve.clone(), FanLogicType::Cpu);

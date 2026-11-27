@@ -12,10 +12,7 @@ fn test_dbus_constants() {
 #[test]
 fn test_default_backend_methods() {
     let interface = UccdInterface::default();
-    assert_eq!(
-        interface.backend().get_device_name(),
-        "ucc-rusted Laptop"
-    );
+    assert_eq!(interface.backend().get_device_name(), "ucc-rusted Laptop");
     assert!(interface.backend().is_device_supported());
     assert_eq!(interface.backend().get_power_state(), "power_ac");
     assert_eq!(interface.backend().get_display_brightness(), 100);

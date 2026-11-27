@@ -63,7 +63,9 @@ impl ProcessTerminator {
         let Ok(raw_pid) = nix::libc::pid_t::try_from(pid) else {
             return Err(format!("PID {pid}: invalid PID"));
         };
-        let raw = unsafe { nix::libc::syscall(nix::libc::SYS_pidfd_open, raw_pid, 0 as nix::libc::c_uint) };
+        let raw = unsafe {
+            nix::libc::syscall(nix::libc::SYS_pidfd_open, raw_pid, 0 as nix::libc::c_uint)
+        };
         if raw < 0 {
             let err = std::io::Error::last_os_error();
             return Err(format!("PID {pid}: {err}"));
@@ -131,7 +133,8 @@ impl ProcessTerminator {
                 ));
                 continue;
             };
-            if before.start_time != target.start_time || !self.reader.holds_nvidia_device(target.pid)
+            if before.start_time != target.start_time
+                || !self.reader.holds_nvidia_device(target.pid)
             {
                 report.errors.push(format!(
                     "PID {} ended or no longer matches the selected GPU process",
@@ -155,7 +158,8 @@ impl ProcessTerminator {
                     .push(format!("PID {} changed before termination", target.pid));
                 continue;
             };
-            if after.start_time != before.start_time || !self.reader.holds_nvidia_device(target.pid) {
+            if after.start_time != before.start_time || !self.reader.holds_nvidia_device(target.pid)
+            {
                 report
                     .errors
                     .push(format!("PID {} changed before termination", target.pid));

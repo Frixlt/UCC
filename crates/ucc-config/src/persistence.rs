@@ -181,42 +181,43 @@ pub fn write_atomic(target_path: impl AsRef<Path>, content: &[u8]) -> Result<(),
 
     // Helper for safe atomic backup rotation: writes to a temporary file and renames it over the destination,
     // which replaces existing files/symlinks without traversing symlinks.
-    let rotate_backup = |src_content: &[u8], dest_path: &Path, mode: u32| -> Result<(), std::io::Error> {
-        let parent = dest_path.parent().unwrap_or_else(|| Path::new("."));
-        let bak_temp = parent.join(format!(
-            ".{}.bak.tmp.{}",
-            dest_path.file_name().unwrap_or_default().to_string_lossy(),
-            std::process::id()
-        ));
-        if let Ok(meta) = fs::symlink_metadata(&bak_temp) {
-            if meta.file_type().is_symlink() || meta.is_file() {
-                let _ = fs::remove_file(&bak_temp);
+    let rotate_backup =
+        |src_content: &[u8], dest_path: &Path, mode: u32| -> Result<(), std::io::Error> {
+            let parent = dest_path.parent().unwrap_or_else(|| Path::new("."));
+            let bak_temp = parent.join(format!(
+                ".{}.bak.tmp.{}",
+                dest_path.file_name().unwrap_or_default().to_string_lossy(),
+                std::process::id()
+            ));
+            if let Ok(meta) = fs::symlink_metadata(&bak_temp) {
+                if meta.file_type().is_symlink() || meta.is_file() {
+                    let _ = fs::remove_file(&bak_temp);
+                }
             }
-        }
-        {
-            use std::io::Write;
-            let mut opts = fs::OpenOptions::new();
-            opts.write(true).create_new(true);
-            #[cfg(unix)]
             {
-                use std::os::unix::fs::OpenOptionsExt;
-                opts.mode(mode);
-                // 0o400000 is O_NOFOLLOW on Linux
-                opts.custom_flags(0o400000);
+                use std::io::Write;
+                let mut opts = fs::OpenOptions::new();
+                opts.write(true).create_new(true);
+                #[cfg(unix)]
+                {
+                    use std::os::unix::fs::OpenOptionsExt;
+                    opts.mode(mode);
+                    // 0o400000 is O_NOFOLLOW on Linux
+                    opts.custom_flags(0o400000);
+                }
+                let mut f = opts.open(&bak_temp)?;
+                #[cfg(unix)]
+                {
+                    use std::os::unix::fs::PermissionsExt;
+                    fs::set_permissions(&bak_temp, fs::Permissions::from_mode(mode))?;
+                }
+                f.write_all(src_content)?;
+                f.flush()?;
+                f.sync_all()?;
             }
-            let mut f = opts.open(&bak_temp)?;
-            #[cfg(unix)]
-            {
-                use std::os::unix::fs::PermissionsExt;
-                fs::set_permissions(&bak_temp, fs::Permissions::from_mode(mode))?;
-            }
-            f.write_all(src_content)?;
-            f.flush()?;
-            f.sync_all()?;
-        }
-        fs::rename(&bak_temp, dest_path)?;
-        Ok(())
-    };
+            fs::rename(&bak_temp, dest_path)?;
+            Ok(())
+        };
 
     // 5. Create backup of the existing target file (both canonical .bak and legacy .backup)
     if target_path.exists() {
@@ -240,9 +241,12 @@ pub fn write_atomic(target_path: impl AsRef<Path>, content: &[u8]) -> Result<(),
             let _ = rotate_backup(&target_bytes, &backup_path, mode);
         } else {
             // Target is corrupted or domain-invalid! Do NOT overwrite valid existing backup files with a broken file!
-            let has_valid_backup = [&bak_path, &backup_path]
-                .iter()
-                .any(|p| p.exists() && fs::read_to_string(p).map(|s| crate::manager::is_valid_settings_content(&s)).unwrap_or(false));
+            let has_valid_backup = [&bak_path, &backup_path].iter().any(|p| {
+                p.exists()
+                    && fs::read_to_string(p)
+                        .map(|s| crate::manager::is_valid_settings_content(&s))
+                        .unwrap_or(false)
+            });
             if !has_valid_backup {
                 let _ = rotate_backup(&target_bytes, &bak_path, mode);
             }
@@ -312,13 +316,19 @@ mod tests {
         write_atomic(&target_file, b"{\"version\": 1}").expect("first write");
         assert!(target_file.exists());
         assert!(!bak_file.exists());
-        assert_eq!(fs::read_to_string(&target_file).unwrap(), "{\"version\": 1}");
+        assert_eq!(
+            fs::read_to_string(&target_file).unwrap(),
+            "{\"version\": 1}"
+        );
 
         // Second write - updates file, creates backup of version 1
         write_atomic(&target_file, b"{\"version\": 2}").expect("second write");
         assert!(target_file.exists());
         assert!(bak_file.exists());
-        assert_eq!(fs::read_to_string(&target_file).unwrap(), "{\"version\": 2}");
+        assert_eq!(
+            fs::read_to_string(&target_file).unwrap(),
+            "{\"version\": 2}"
+        );
         assert_eq!(fs::read_to_string(&bak_file).unwrap(), "{\"version\": 1}");
 
         // Clean up
@@ -337,11 +347,13 @@ mod tests {
 
         let res = write_atomic(&target_file, b"forbidden write");
         assert!(matches!(res, Err(ConfigError::ReadOnlyPreview)));
-        assert!(!target_file.exists(), "Target file must not be created in preview mode");
+        assert!(
+            !target_file.exists(),
+            "Target file must not be created in preview mode"
+        );
 
         // Clean up env
         std::env::remove_var(ENV_READ_ONLY_PREVIEW);
         assert!(!is_read_only_preview());
     }
 }
-

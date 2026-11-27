@@ -282,7 +282,10 @@ async fn full_27_05_driver_alert_and_power_source_notifications() {
         .unwrap()
         .name("org.freedesktop.Notifications")
         .unwrap()
-        .serve_at("/org/freedesktop/Notifications", FakeNotifications(Arc::clone(&notif_state)))
+        .serve_at(
+            "/org/freedesktop/Notifications",
+            FakeNotifications(Arc::clone(&notif_state)),
+        )
         .unwrap()
         .build()
         .await
@@ -322,16 +325,11 @@ async fn full_27_05_driver_alert_and_power_source_notifications() {
     // 1. Driver fault triggers Notify.
     assert!(
         poll_until(Duration::from_secs(4), || {
-            notif_state
-                .notifies
-                .lock()
-                .unwrap()
-                .iter()
-                .any(|n| {
-                    n.app_name == "ucc-rusted"
-                        && n.summary == "UCC Driver Alert"
-                        && n.body.contains("tuxedo_io missing")
-                })
+            notif_state.notifies.lock().unwrap().iter().any(|n| {
+                n.app_name == "ucc-rusted"
+                    && n.summary == "UCC Driver Alert"
+                    && n.body.contains("tuxedo_io missing")
+            })
         })
         .await,
         "expected driver fault desktop notification"
@@ -349,14 +347,20 @@ async fn full_27_05_driver_alert_and_power_source_notifications() {
     uccd_state.healthy.store(true, Ordering::SeqCst);
     assert!(
         poll_until(Duration::from_secs(4), || {
-            notif_state.closed.lock().unwrap().contains(&driver_notif_id)
+            notif_state
+                .closed
+                .lock()
+                .unwrap()
+                .contains(&driver_notif_id)
         })
         .await,
         "expected CloseNotification once driver recovers"
     );
 
     // 3. Power source transition ac -> bat triggers debounced Notify (800ms).
-    let bat_policy = json!({"real_power_source": "bat", "current_mode": "bat", "effective_source": "bat"}).to_string();
+    let bat_policy =
+        json!({"real_power_source": "bat", "current_mode": "bat", "effective_source": "bat"})
+            .to_string();
     *uccd_state.policy_json.lock().unwrap() = bat_policy.clone();
     let iface_ref = uccd_conn
         .object_server()
@@ -400,7 +404,10 @@ async fn full_27_06_refresh_advisor_and_lid_dpms_dispatch() {
         .unwrap()
         .name("org.freedesktop.Notifications")
         .unwrap()
-        .serve_at("/org/freedesktop/Notifications", FakeNotifications(Arc::clone(&notif_state)))
+        .serve_at(
+            "/org/freedesktop/Notifications",
+            FakeNotifications(Arc::clone(&notif_state)),
+        )
         .unwrap()
         .build()
         .await
@@ -498,7 +505,10 @@ async fn full_27_06_refresh_advisor_and_lid_dpms_dispatch() {
     {
         let iface = login_iface.get().await;
         iface.lid_closed.store(true, Ordering::SeqCst);
-        iface.lid_closed_changed(login_iface.signal_emitter()).await.unwrap();
+        iface
+            .lid_closed_changed(login_iface.signal_emitter())
+            .await
+            .unwrap();
     }
     assert!(
         poll_until(Duration::from_secs(4), || {
@@ -512,7 +522,10 @@ async fn full_27_06_refresh_advisor_and_lid_dpms_dispatch() {
     {
         let iface = login_iface.get().await;
         iface.lid_closed.store(false, Ordering::SeqCst);
-        iface.lid_closed_changed(login_iface.signal_emitter()).await.unwrap();
+        iface
+            .lid_closed_changed(login_iface.signal_emitter())
+            .await
+            .unwrap();
     }
     assert!(
         poll_until(Duration::from_secs(4), || {

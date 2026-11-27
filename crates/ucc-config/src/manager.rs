@@ -44,11 +44,15 @@ pub fn user_config_path() -> Option<PathBuf> {
 
     if let Ok(home) = std::env::var("HOME") {
         if !home.trim().is_empty() {
-            let path = PathBuf::from(&home).join(".config").join(USER_CONFIG_REL_PATH);
+            let path = PathBuf::from(&home)
+                .join(".config")
+                .join(USER_CONFIG_REL_PATH);
             if path.exists() {
                 return Some(path);
             }
-            let json_path = PathBuf::from(home).join(".config").join(USER_CONFIG_JSON_REL_PATH);
+            let json_path = PathBuf::from(home)
+                .join(".config")
+                .join(USER_CONFIG_JSON_REL_PATH);
             if json_path.exists() {
                 return Some(json_path);
             }
@@ -197,7 +201,10 @@ impl ConfigManager {
                 )));
             }
         }
-        if let (Some(start), Some(end)) = (settings.charge_start_threshold, settings.charge_end_threshold) {
+        if let (Some(start), Some(end)) = (
+            settings.charge_start_threshold,
+            settings.charge_end_threshold,
+        ) {
             if start >= end {
                 return Err(ConfigError::Validation(format!(
                     "Invalid global charge thresholds: start ({start}) >= end ({end})"
@@ -338,7 +345,10 @@ impl ConfigManager {
         }
         Err(ConfigError::Io(std::io::Error::new(
             std::io::ErrorKind::NotFound,
-            format!("No valid backup file found (.bak or .backup) for {}", path.display()),
+            format!(
+                "No valid backup file found (.bak or .backup) for {}",
+                path.display()
+            ),
         )))
     }
 

@@ -171,8 +171,8 @@ impl SessionReader {
                 {
                     continue;
                 }
-                let capacity = Self::read_number(&path.join("capacity"))
-                    .filter(|c| (0.0..=100.0).contains(c));
+                let capacity =
+                    Self::read_number(&path.join("capacity")).filter(|c| (0.0..=100.0).contains(c));
                 let mut watts = Self::read_number(&path.join("power_now")).map(|w| w.abs() / 1e6);
                 if watts.is_none() {
                     if let (Some(amps), Some(volts)) = (
@@ -325,7 +325,11 @@ mod tests {
             .duration_since(UNIX_EPOCH)
             .unwrap()
             .as_nanos();
-        let dir = std::env::temp_dir().join(format!("ucc_desk_telem_{tag}_{}_{}", std::process::id(), nanos));
+        let dir = std::env::temp_dir().join(format!(
+            "ucc_desk_telem_{tag}_{}_{}",
+            std::process::id(),
+            nanos
+        ));
         fs::create_dir_all(&dir).unwrap();
         dir
     }
@@ -383,7 +387,10 @@ mod tests {
         // 19 fields after ')' -> fields[0] = 'S', fields[19] (18th numeric) = starttime
         let stat_line = format!(
             "424242 (vulkan-app) S {}",
-            (0..22).map(|i| if i == 18 { "123456" } else { "0" }).collect::<Vec<_>>().join(" ")
+            (0..22)
+                .map(|i| if i == 18 { "123456" } else { "0" })
+                .collect::<Vec<_>>()
+                .join(" ")
         );
         fs::write(pid_dir.join("stat"), stat_line).unwrap();
         fs::write(pid_dir.join("comm"), "vulkan-app\n").unwrap();

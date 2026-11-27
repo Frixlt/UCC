@@ -80,12 +80,18 @@ fn test_clevo_fan_speed_preconditions_and_fail_closed() {
     // 2. Precondition failure: fan_idx out of bounds (>= 3)
     let res = set_clevo_fan_speed(&mock, 3, 50);
     assert!(matches!(res, Err(IoctlError::PreconditionFailed(_))));
-    assert!(mock.journal().is_empty(), "Fail-closed: no write on invalid fan_idx");
+    assert!(
+        mock.journal().is_empty(),
+        "Fail-closed: no write on invalid fan_idx"
+    );
 
     // 3. Precondition failure: percent out of bounds (> 100)
     let res = set_clevo_fan_speed(&mock, 0, 101);
     assert!(matches!(res, Err(IoctlError::PreconditionFailed(_))));
-    assert!(mock.journal().is_empty(), "Fail-closed: no write on invalid percent");
+    assert!(
+        mock.journal().is_empty(),
+        "Fail-closed: no write on invalid percent"
+    );
 }
 
 #[test]

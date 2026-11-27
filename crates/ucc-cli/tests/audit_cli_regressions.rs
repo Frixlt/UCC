@@ -176,7 +176,10 @@ impl UccdBackend for AuditCliMockBackend {
     }
 }
 
-async fn start_mock_service(tag: &str, backend: Arc<AuditCliMockBackend>) -> (zbus::Connection, String) {
+async fn start_mock_service(
+    tag: &str,
+    backend: Arc<AuditCliMockBackend>,
+) -> (zbus::Connection, String) {
     let bus_name = unique_service_name(tag);
     let conn = Builder::session()
         .unwrap()
@@ -230,24 +233,33 @@ async fn t_cli_02_lightbar_and_devices_status_vs_get() {
     let backend = Arc::new(AuditCliMockBackend::default());
     let (_conn, bus_name) = start_mock_service("status_get", backend).await;
 
-    let lb_status: Value = serde_json::from_slice(
-        &run_cli(&bus_name, &["lightbar", "status", "--json"]).stdout,
-    )
-    .unwrap();
-    let lb_get: Value =
-        serde_json::from_slice(&run_cli(&bus_name, &["lightbar", "get", "--json"]).stdout)
+    let lb_status: Value =
+        serde_json::from_slice(&run_cli(&bus_name, &["lightbar", "status", "--json"]).stdout)
             .unwrap();
-    assert_eq!(lb_status["kind"], "status", "lightbar status must call GetLightbarStatusJSON");
-    assert_eq!(lb_get["kind"], "settings", "lightbar get must call GetLightbarSettingsJSON");
+    let lb_get: Value =
+        serde_json::from_slice(&run_cli(&bus_name, &["lightbar", "get", "--json"]).stdout).unwrap();
+    assert_eq!(
+        lb_status["kind"], "status",
+        "lightbar status must call GetLightbarStatusJSON"
+    );
+    assert_eq!(
+        lb_get["kind"], "settings",
+        "lightbar get must call GetLightbarSettingsJSON"
+    );
 
-    let dev_status: Value = serde_json::from_slice(
-        &run_cli(&bus_name, &["devices", "status", "--json"]).stdout,
-    )
-    .unwrap();
+    let dev_status: Value =
+        serde_json::from_slice(&run_cli(&bus_name, &["devices", "status", "--json"]).stdout)
+            .unwrap();
     let dev_get: Value =
         serde_json::from_slice(&run_cli(&bus_name, &["devices", "get", "--json"]).stdout).unwrap();
-    assert_eq!(dev_status["kind"], "status", "devices status must call GetPowerDeviceStatusJSON");
-    assert_eq!(dev_get["kind"], "settings", "devices get must call GetPowerDeviceSettingsJSON");
+    assert_eq!(
+        dev_status["kind"], "status",
+        "devices status must call GetPowerDeviceStatusJSON"
+    );
+    assert_eq!(
+        dev_get["kind"], "settings",
+        "devices get must call GetPowerDeviceSettingsJSON"
+    );
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]

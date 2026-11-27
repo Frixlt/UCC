@@ -1,20 +1,26 @@
 //! Charging command implementation.
 
-use serde_json::{json, Value};
 use crate::cli::ChargingAction;
 use crate::client::CliClient;
 use crate::format::*;
+use serde_json::{json, Value};
 
-pub async fn run_charging(client: &CliClient, action: &ChargingAction, json_mode: bool) -> Result<(), i32> {
+pub async fn run_charging(
+    client: &CliClient,
+    action: &ChargingAction,
+    json_mode: bool,
+) -> Result<(), i32> {
     match action {
         ChargingAction::Status => {
             let ch = client.get_charging_metrics().await;
-            let profiles_avail_raw = crate::client::with_rpc_timeout(client.proxy().get_charging_profiles_available())
-                .await
-                .unwrap_or_else(|_| "[]".to_string());
-            let priorities_avail_raw = crate::client::with_rpc_timeout(client.proxy().get_charging_priorities_available())
-                .await
-                .unwrap_or_else(|_| "[]".to_string());
+            let profiles_avail_raw =
+                crate::client::with_rpc_timeout(client.proxy().get_charging_profiles_available())
+                    .await
+                    .unwrap_or_else(|_| "[]".to_string());
+            let priorities_avail_raw =
+                crate::client::with_rpc_timeout(client.proxy().get_charging_priorities_available())
+                    .await
+                    .unwrap_or_else(|_| "[]".to_string());
 
             let profiles_list = parse_json_array_to_list(&profiles_avail_raw);
             let priorities_list = parse_json_array_to_list(&priorities_avail_raw);
@@ -72,9 +78,10 @@ pub async fn run_charging(client: &CliClient, action: &ChargingAction, json_mode
             ok(res)
         }
         ChargingAction::SetPriority { priority } => {
-            let res = crate::client::with_rpc_timeout(client.proxy().set_charging_priority(priority))
-                .await
-                .unwrap_or(false);
+            let res =
+                crate::client::with_rpc_timeout(client.proxy().set_charging_priority(priority))
+                    .await
+                    .unwrap_or(false);
             ok(res)
         }
         ChargingAction::SetThresholds { start, end } => {
@@ -94,18 +101,23 @@ pub async fn run_charging(client: &CliClient, action: &ChargingAction, json_mode
                     .ok();
 
             if *end >= prev_end.unwrap_or(0) {
-                let e = crate::client::with_rpc_timeout(client.proxy().set_charge_end_threshold(*end))
-                    .await
-                    .unwrap_or(false);
+                let e =
+                    crate::client::with_rpc_timeout(client.proxy().set_charge_end_threshold(*end))
+                        .await
+                        .unwrap_or(false);
                 if !e {
                     eprintln!("Error: failed to set charge end threshold");
                     return Err(1);
                 }
-                let s = crate::client::with_rpc_timeout(client.proxy().set_charge_start_threshold(*start))
-                    .await
-                    .unwrap_or(false);
+                let s = crate::client::with_rpc_timeout(
+                    client.proxy().set_charge_start_threshold(*start),
+                )
+                .await
+                .unwrap_or(false);
                 if !s {
-                    eprintln!("Error: failed to set charge start threshold, rolling back end threshold");
+                    eprintln!(
+                        "Error: failed to set charge start threshold, rolling back end threshold"
+                    );
                     if let Some(prev) = prev_end {
                         let _ = crate::client::with_rpc_timeout(
                             client.proxy().set_charge_end_threshold(prev),
@@ -115,18 +127,23 @@ pub async fn run_charging(client: &CliClient, action: &ChargingAction, json_mode
                     return Err(1);
                 }
             } else {
-                let s = crate::client::with_rpc_timeout(client.proxy().set_charge_start_threshold(*start))
-                    .await
-                    .unwrap_or(false);
+                let s = crate::client::with_rpc_timeout(
+                    client.proxy().set_charge_start_threshold(*start),
+                )
+                .await
+                .unwrap_or(false);
                 if !s {
                     eprintln!("Error: failed to set charge start threshold");
                     return Err(1);
                 }
-                let e = crate::client::with_rpc_timeout(client.proxy().set_charge_end_threshold(*end))
-                    .await
-                    .unwrap_or(false);
+                let e =
+                    crate::client::with_rpc_timeout(client.proxy().set_charge_end_threshold(*end))
+                        .await
+                        .unwrap_or(false);
                 if !e {
-                    eprintln!("Error: failed to set charge end threshold, rolling back start threshold");
+                    eprintln!(
+                        "Error: failed to set charge end threshold, rolling back start threshold"
+                    );
                     if let Some(prev) = prev_start {
                         let _ = crate::client::with_rpc_timeout(
                             client.proxy().set_charge_start_threshold(prev),
@@ -145,7 +162,10 @@ pub async fn run_charging(client: &CliClient, action: &ChargingAction, json_mode
 fn parse_json_array_to_list(raw: &str) -> String {
     if let Ok(val) = serde_json::from_str::<Value>(raw) {
         if let Some(arr) = val.as_array() {
-            let items: Vec<String> = arr.iter().filter_map(|v| v.as_str().map(|s| s.to_string())).collect();
+            let items: Vec<String> = arr
+                .iter()
+                .filter_map(|v| v.as_str().map(|s| s.to_string()))
+                .collect();
             return items.join(", ");
         }
     }

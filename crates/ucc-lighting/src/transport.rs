@@ -6,7 +6,9 @@ use std::sync::{Arc, Mutex};
 use thiserror::Error;
 use ucc_hardware::{RealSysfs, Sysfs};
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Default, Serialize, Deserialize)]
+#[derive(
+    Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Default, Serialize, Deserialize,
+)]
 pub struct RgbColor {
     pub r: u8,
     pub g: u8,
@@ -124,7 +126,10 @@ impl SysfsLedTransport {
         self.read_trimmed(path)?.parse::<u32>().ok()
     }
 
-    fn check_white_backlight(&self, rel_base: &str) -> Option<(Vec<PathBuf>, KeyboardCapabilities)> {
+    fn check_white_backlight(
+        &self,
+        rel_base: &str,
+    ) -> Option<(Vec<PathBuf>, KeyboardCapabilities)> {
         let base = self.path_under_root(rel_base);
         let max_b = self.read_u32(&base.join("max_brightness"))?;
         let caps = KeyboardCapabilities {

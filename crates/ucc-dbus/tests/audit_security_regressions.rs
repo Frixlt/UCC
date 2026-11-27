@@ -9,8 +9,8 @@ use std::sync::{Arc, Mutex};
 use std::time::Duration;
 use ucc_dbus::{
     register_uccd_service, AllowAllAuthorizer, AuthAction, Authorizer, DefaultUccdBackend,
-    DenyAllAuthorizer, PolkitAuthorizer, TrackingAuthorizer, UccdBackend, UccdInterface,
-    UccdProxy, DBUS_PATH,
+    DenyAllAuthorizer, PolkitAuthorizer, TrackingAuthorizer, UccdBackend, UccdInterface, UccdProxy,
+    DBUS_PATH,
 };
 use zbus::connection::Builder;
 use zbus::zvariant::OwnedValue;
@@ -178,14 +178,21 @@ async fn t_sec_05_polkit_uses_system_bus_name_subject_and_non_interactive_read()
         .to_string();
 
     let auth = PolkitAuthorizer::new();
-    assert!(auth.check_auth(&caller_conn, Some(&unique), AuthAction::Read).await);
+    assert!(
+        auth.check_auth(&caller_conn, Some(&unique), AuthAction::Read)
+            .await
+    );
     assert!(
         auth.check_auth(&caller_conn, Some(&unique), AuthAction::Control)
             .await
     );
 
     let recorded = calls.lock().unwrap();
-    assert_eq!(recorded.len(), 2, "expected 2 Polkit checks, got {recorded:?}");
+    assert_eq!(
+        recorded.len(),
+        2,
+        "expected 2 Polkit checks, got {recorded:?}"
+    );
 
     let (read_kind, read_details, read_action, read_flags) = &recorded[0];
     assert_eq!(read_action, "com.uniwill.uccd.read");
@@ -303,7 +310,11 @@ async fn t_sec_07_auth_action_matrix_for_privileged_and_wc_methods() {
         .unwrap();
 
     let recorded = tracker.recorded_actions();
-    assert_eq!(recorded.len(), 5, "unexpected auth call count: {recorded:?}");
+    assert_eq!(
+        recorded.len(),
+        5,
+        "unexpected auth call count: {recorded:?}"
+    );
     assert_eq!(
         recorded[0].1,
         AuthAction::Control,
@@ -390,7 +401,8 @@ impl MockScopedPolkitAuthority {
             .is_some_and(|v| format!("{v:?}").contains(&self.gated_sender));
         if is_gated {
             let cur = self.in_flight_for_gated.fetch_add(1, Ordering::SeqCst) + 1;
-            self.max_in_flight_for_gated.fetch_max(cur, Ordering::SeqCst);
+            self.max_in_flight_for_gated
+                .fetch_max(cur, Ordering::SeqCst);
             let _ = tokio::time::timeout(Duration::from_secs(2), self.gate.notified()).await;
             self.in_flight_for_gated.fetch_sub(1, Ordering::SeqCst);
         } else {
@@ -510,7 +522,10 @@ async fn t_sec_ipc03_per_sender_read_load_bounded_without_starving_other_clients
             rejected += 1;
         }
     }
-    assert!(allowed <= 8, "allowed abusive calls={allowed}, expected <= 8");
+    assert!(
+        allowed <= 8,
+        "allowed abusive calls={allowed}, expected <= 8"
+    );
     assert!(
         rejected >= 8,
         "expected excess abusive calls rejected (>= 8), got rejected={rejected}"
@@ -559,7 +574,10 @@ async fn t_sec_ipc03_oversized_json_payloads_rejected_before_auth_and_backend() 
         "oversized SaveCustomProfile must return false"
     );
     assert!(
-        !proxy.set_power_device_settings_json(&oversized).await.unwrap(),
+        !proxy
+            .set_power_device_settings_json(&oversized)
+            .await
+            .unwrap(),
         "oversized SetPowerDeviceSettingsJSON must return false"
     );
     assert!(

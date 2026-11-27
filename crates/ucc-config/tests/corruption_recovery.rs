@@ -40,11 +40,23 @@ fn test_corrupted_json_syntax_errors() {
     let test_file = temp_dir.join("corrupted.json");
 
     let malformed_payloads = [
-        ("unclosed_brace", r#"{"stateMap": {"power_ac": "performance""#),
-        ("trailing_comma", r#"{"stateMap": {"power_ac": "performance",,}}"#),
-        ("unquoted_token", r#"{"stateMap": {"power_ac": performance}}"#),
+        (
+            "unclosed_brace",
+            r#"{"stateMap": {"power_ac": "performance""#,
+        ),
+        (
+            "trailing_comma",
+            r#"{"stateMap": {"power_ac": "performance",,}}"#,
+        ),
+        (
+            "unquoted_token",
+            r#"{"stateMap": {"power_ac": performance}}"#,
+        ),
         ("colon_without_value", r#"{"stateMap": {"power_ac": }}"#),
-        ("single_quote", r#"{'stateMap': {'power_ac': 'performance'}}"#),
+        (
+            "single_quote",
+            r#"{'stateMap': {'power_ac': 'performance'}}"#,
+        ),
         ("plain_text", "This is completely invalid non-JSON content!"),
         ("empty_string", ""),
     ];
@@ -124,9 +136,18 @@ fn test_corrupted_json_invalid_types() {
     let test_file = temp_dir.join("invalid_types.json");
 
     let invalid_type_cases = [
-        ("string_where_array_expected", r#"{"keyboardBacklightStates": "not_an_array"}"#),
-        ("object_where_int_expected", r#"{"chargeStartThreshold": {"val": 40}}"#),
-        ("array_where_map_expected", r#"{"stateMap": ["power_ac", "performance"]}"#),
+        (
+            "string_where_array_expected",
+            r#"{"keyboardBacklightStates": "not_an_array"}"#,
+        ),
+        (
+            "object_where_int_expected",
+            r#"{"chargeStartThreshold": {"val": 40}}"#,
+        ),
+        (
+            "array_where_map_expected",
+            r#"{"stateMap": ["power_ac", "performance"]}"#,
+        ),
         ("int_where_map_expected", r#"{"profiles": 42}"#),
         ("null_where_string_expected", r#"{"keyboardLayout": 12345}"#),
     ];
@@ -161,9 +182,9 @@ fn test_corrupted_json_binary_garbage() {
 
     // Random non-UTF8 bytes and control characters
     let garbage: [u8; 32] = [
-        0xFF, 0xFE, 0x00, 0x00, 0xDE, 0xAD, 0xBE, 0xEF, 0x00, 0x01, 0x02, 0x03, 0x80, 0x81,
-        0x82, 0x83, 0x00, 0x00, 0xFF, 0xAA, 0x55, 0xCC, 0x33, 0x00, 0x1B, 0x5B, 0x32, 0x4A,
-        0x00, 0x00, 0x00, 0x00,
+        0xFF, 0xFE, 0x00, 0x00, 0xDE, 0xAD, 0xBE, 0xEF, 0x00, 0x01, 0x02, 0x03, 0x80, 0x81, 0x82,
+        0x83, 0x00, 0x00, 0xFF, 0xAA, 0x55, 0xCC, 0x33, 0x00, 0x1B, 0x5B, 0x32, 0x4A, 0x00, 0x00,
+        0x00, 0x00,
     ];
 
     fs::write(&test_file, garbage).expect("write binary garbage");
@@ -213,12 +234,18 @@ fn test_recovery_from_backup_when_main_file_is_corrupted() {
         ConfigManager::load_with_recovery(&config_file).expect("recovery from backup");
     assert!(was_recovered, "was_recovered must be true");
     // Revision in backup was revision 1 ("stationary", 80%)
-    assert_eq!(recovered_settings.charging_profile.as_deref(), Some("stationary"));
+    assert_eq!(
+        recovered_settings.charging_profile.as_deref(),
+        Some("stationary")
+    );
     assert_eq!(recovered_settings.charge_end_threshold, Some(80));
 
     // 5. ConfigManager::load() using custom path must also recover automatically
     let auto_recovered = mgr.load().expect("auto load with recovery");
-    assert_eq!(auto_recovered.charging_profile.as_deref(), Some("stationary"));
+    assert_eq!(
+        auto_recovered.charging_profile.as_deref(),
+        Some("stationary")
+    );
 
     // 6. Explicitly restore from backup to replace the corrupted main file
     let restored = ConfigManager::restore_from_backup(&config_file).expect("restore from backup");
@@ -272,7 +299,10 @@ fn test_failure_when_both_main_and_backup_are_corrupted() {
     fs::write(&bak_file, "{corrupted backup").expect("write bad bak");
 
     let res = ConfigManager::load_with_recovery(&config_file);
-    assert!(res.is_err(), "Must return error when backup is also corrupted");
+    assert!(
+        res.is_err(),
+        "Must return error when backup is also corrupted"
+    );
 
     let restore_res = ConfigManager::restore_from_backup(&config_file);
     assert!(restore_res.is_err());
@@ -322,8 +352,7 @@ fn test_atomic_write_preserves_target_on_failure() {
     #[cfg(unix)]
     {
         use std::os::unix::fs::PermissionsExt;
-        fs::set_permissions(&config_file, fs::Permissions::from_mode(0o444))
-            .expect("set readonly");
+        fs::set_permissions(&config_file, fs::Permissions::from_mode(0o444)).expect("set readonly");
 
         let mut modified = initial_settings.clone();
         modified.charging_profile = Some("should_not_be_saved".to_string());
@@ -386,8 +415,14 @@ fn test_cleanup_stale_temp_files() {
     assert!(!stale_tmp1.exists());
     assert!(!stale_tmp2.exists());
     assert!(!stale_tmp3.exists());
-    assert!(legit_file.exists(), "Legitimate settings file must NOT be removed");
-    assert!(legit_bak.exists(), "Legitimate bak file must NOT be removed");
+    assert!(
+        legit_file.exists(),
+        "Legitimate settings file must NOT be removed"
+    );
+    assert!(
+        legit_bak.exists(),
+        "Legitimate bak file must NOT be removed"
+    );
 
     let _ = fs::remove_dir_all(&temp_dir);
 }
@@ -416,7 +451,11 @@ fn test_personal_import_settings_differential_and_roundtrip() {
         .keyboard_backlight_states
         .as_ref()
         .expect("keyboardBacklightStates present");
-    assert_eq!(backlight.len(), 3, "Must have exactly 3 keyboard backlight zones");
+    assert_eq!(
+        backlight.len(),
+        3,
+        "Must have exactly 3 keyboard backlight zones"
+    );
     for zone in backlight {
         assert_eq!(zone.red, 0);
         assert_eq!(zone.green, 120);
@@ -432,9 +471,18 @@ fn test_personal_import_settings_differential_and_roundtrip() {
     assert!(custom_kb.contains_key("frixit-keyboard"));
 
     // State map
-    assert_eq!(parsed.state_map.get("power_ac").map(String::as_str), Some("frixit-ac"));
-    assert_eq!(parsed.state_map.get("power_type_c").map(String::as_str), Some("frixit-type_c"));
-    assert_eq!(parsed.state_map.get("power_bat").map(String::as_str), Some("frixit-bat"));
+    assert_eq!(
+        parsed.state_map.get("power_ac").map(String::as_str),
+        Some("frixit-ac")
+    );
+    assert_eq!(
+        parsed.state_map.get("power_type_c").map(String::as_str),
+        Some("frixit-type_c")
+    );
+    assert_eq!(
+        parsed.state_map.get("power_bat").map(String::as_str),
+        Some("frixit-bat")
+    );
 
     // Profiles catalog
     assert_eq!(parsed.profiles.len(), 3);
@@ -527,7 +575,9 @@ fn test_legacy_profiles_fixture_roundtrip() {
     let mut settings = create_default_settings();
     // Insert enthusiast profile into settings catalog
     let enthusiast = catalog.profiles[2].clone();
-    settings.profiles.insert("enthusiast".to_string(), enthusiast);
+    settings
+        .profiles
+        .insert("enthusiast".to_string(), enthusiast);
 
     // Profile lookup with alias
     let looked_up = settings.get_profile("enthusiast");
@@ -575,7 +625,10 @@ fn m12_5_fuzz_smoke_malformed_settings_never_panics() {
     }
 
     // Deterministic Xorshift64 fuzz-smoke over byte mutations of a valid fixture
-    let base = create_default_settings().to_json_pretty().unwrap().into_bytes();
+    let base = create_default_settings()
+        .to_json_pretty()
+        .unwrap()
+        .into_bytes();
     let mut state: u64 = 0x5EED_F00D_CAFE_1234;
     for iter in 0..200usize {
         state ^= state << 13;

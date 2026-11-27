@@ -1,17 +1,23 @@
 //! Keyboard command implementation.
 
-use serde_json::{json, Value};
 use crate::cli::KeyboardAction;
 use crate::client::{with_rpc_timeout, CliClient};
 use crate::format::*;
+use serde_json::{json, Value};
 
-pub async fn run_keyboard(client: &CliClient, action: &KeyboardAction, json_mode: bool) -> Result<(), i32> {
+pub async fn run_keyboard(
+    client: &CliClient,
+    action: &KeyboardAction,
+    json_mode: bool,
+) -> Result<(), i32> {
     match action {
         KeyboardAction::Info => {
-            let info_raw = with_rpc_timeout(client.proxy().get_keyboard_backlight_capabilities_json())
-                .await
-                .map_err(|_| 1)?;
-            let val: Value = serde_json::from_str(&info_raw).unwrap_or(Value::Object(serde_json::Map::new()));
+            let info_raw =
+                with_rpc_timeout(client.proxy().get_keyboard_backlight_capabilities_json())
+                    .await
+                    .map_err(|_| 1)?;
+            let val: Value =
+                serde_json::from_str(&info_raw).unwrap_or(Value::Object(serde_json::Map::new()));
 
             if json_mode {
                 print_json(&val);
@@ -35,15 +41,16 @@ pub async fn run_keyboard(client: &CliClient, action: &KeyboardAction, json_mode
                 println!("  {:<24} {}", "Max blue:", mbl);
             }
             if let Some(modes) = val.get("modes").and_then(|v| v.as_array()) {
-                let mstrs: Vec<String> = modes.iter().map(|m| {
-                    match m.as_i64().unwrap_or(0) {
+                let mstrs: Vec<String> = modes
+                    .iter()
+                    .map(|m| match m.as_i64().unwrap_or(0) {
                         0 => "static".to_string(),
                         1 => "breathe".to_string(),
                         2 => "colorful".to_string(),
                         3 => "breathe-color".to_string(),
                         other => other.to_string(),
-                    }
-                }).collect();
+                    })
+                    .collect();
                 println!("  {:<24} {}", "Modes:", mstrs.join(", "));
             }
 
@@ -53,7 +60,8 @@ pub async fn run_keyboard(client: &CliClient, action: &KeyboardAction, json_mode
             let states_raw = with_rpc_timeout(client.proxy().get_keyboard_backlight_states_json())
                 .await
                 .map_err(|_| 1)?;
-            let val: Value = serde_json::from_str(&states_raw).unwrap_or(Value::Object(serde_json::Map::new()));
+            let val: Value =
+                serde_json::from_str(&states_raw).unwrap_or(Value::Object(serde_json::Map::new()));
 
             if json_mode {
                 print_json(&val);
@@ -98,7 +106,10 @@ pub async fn run_keyboard(client: &CliClient, action: &KeyboardAction, json_mode
                 let r = first.get("red").and_then(|v| v.as_i64()).unwrap_or(0);
                 let g = first.get("green").and_then(|v| v.as_i64()).unwrap_or(0);
                 let b = first.get("blue").and_then(|v| v.as_i64()).unwrap_or(0);
-                let zb = first.get("brightness").and_then(|v| v.as_i64()).unwrap_or(0);
+                let zb = first
+                    .get("brightness")
+                    .and_then(|v| v.as_i64())
+                    .unwrap_or(0);
                 let m = first.get("mode").and_then(|v| v.as_i64()).unwrap_or(0);
                 let mode_str = match m {
                     0 => "static",
@@ -114,8 +125,14 @@ pub async fn run_keyboard(client: &CliClient, action: &KeyboardAction, json_mode
                 println!("  {:<24} {}", "Mode:", mode_str);
             } else {
                 println!();
-                println!("  {:<6} {:<6} {:<14} {:<12}", "Zone", "Mode", "Color", "Brightness");
-                println!("  {:<6} {:<6} {:<14} {:<12}", "----", "----", "-----------", "----------");
+                println!(
+                    "  {:<6} {:<6} {:<14} {:<12}",
+                    "Zone", "Mode", "Color", "Brightness"
+                );
+                println!(
+                    "  {:<6} {:<6} {:<14} {:<12}",
+                    "----", "----", "-----------", "----------"
+                );
                 for (i, z) in arr.iter().enumerate() {
                     let r = z.get("red").and_then(|v| v.as_i64()).unwrap_or(0);
                     let g = z.get("green").and_then(|v| v.as_i64()).unwrap_or(0);
@@ -142,12 +159,22 @@ pub async fn run_keyboard(client: &CliClient, action: &KeyboardAction, json_mode
                 .unwrap_or(false);
             ok(res)
         }
-        KeyboardAction::Color { r, g, b, brightness } => {
-            let info_raw = with_rpc_timeout(client.proxy().get_keyboard_backlight_capabilities_json())
-                .await
-                .unwrap_or_else(|_| "{}".to_string());
+        KeyboardAction::Color {
+            r,
+            g,
+            b,
+            brightness,
+        } => {
+            let info_raw =
+                with_rpc_timeout(client.proxy().get_keyboard_backlight_capabilities_json())
+                    .await
+                    .unwrap_or_else(|_| "{}".to_string());
             let cap_val: Value = serde_json::from_str(&info_raw).unwrap_or(Value::Null);
-            let zones = cap_val.get("zones").and_then(|v| v.as_i64()).unwrap_or(1).max(1) as usize;
+            let zones = cap_val
+                .get("zones")
+                .and_then(|v| v.as_i64())
+                .unwrap_or(1)
+                .max(1) as usize;
             let br = brightness.unwrap_or(128);
 
             let mut states = Vec::new();
@@ -197,7 +224,13 @@ pub async fn run_keyboard(client: &CliClient, action: &KeyboardAction, json_mode
             for v in arr {
                 let id = v.get("id").and_then(|s| s.as_str()).unwrap_or("");
                 let name = v.get("name").and_then(|s| s.as_str()).unwrap_or("");
-                let tag = assignment_tag(assignments.kb_states.get(id).map(|v| v.as_slice()).unwrap_or(&[]));
+                let tag = assignment_tag(
+                    assignments
+                        .kb_states
+                        .get(id)
+                        .map(|v| v.as_slice())
+                        .unwrap_or(&[]),
+                );
                 println!("  {:<36}  {}{}", id, name, tag);
             }
 
@@ -216,12 +249,16 @@ pub async fn run_keyboard(client: &CliClient, action: &KeyboardAction, json_mode
                         if let Some(json_field) = item.get("json") {
                             let payload = match json_field {
                                 Value::String(s) => Some(s.clone()),
-                                Value::Object(_) | Value::Array(_) => serde_json::to_string(json_field).ok(),
+                                Value::Object(_) | Value::Array(_) => {
+                                    serde_json::to_string(json_field).ok()
+                                }
                                 _ => None,
                             };
                             if let Some(json_content) = payload {
                                 let res = with_rpc_timeout(
-                                    client.proxy().set_keyboard_backlight_states_json(&json_content),
+                                    client
+                                        .proxy()
+                                        .set_keyboard_backlight_states_json(&json_content),
                                 )
                                 .await
                                 .unwrap_or(false);

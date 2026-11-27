@@ -14,11 +14,17 @@ use ucc_dbus::UccdBackend;
 use ucc_hardware::{CoolerState, PowerDeviceController, RgbTarget, Sysfs};
 
 impl LiveUccdBackend {
-    pub(super) fn lock_mutex<'a, T>(&self, m: &'a std::sync::Mutex<T>) -> std::sync::MutexGuard<'a, T> {
+    pub(super) fn lock_mutex<'a, T>(
+        &self,
+        m: &'a std::sync::Mutex<T>,
+    ) -> std::sync::MutexGuard<'a, T> {
         m.lock().unwrap_or_else(|e| e.into_inner())
     }
 
-    pub(super) fn read_rw<'a, T>(&self, rw: &'a std::sync::RwLock<T>) -> std::sync::RwLockReadGuard<'a, T> {
+    pub(super) fn read_rw<'a, T>(
+        &self,
+        rw: &'a std::sync::RwLock<T>,
+    ) -> std::sync::RwLockReadGuard<'a, T> {
         rw.read().unwrap_or_else(|e| e.into_inner())
     }
 

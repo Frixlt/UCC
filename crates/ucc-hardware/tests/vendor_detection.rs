@@ -1,3 +1,4 @@
+use std::path::Path;
 use ucc_hardware::detection::{
     build_laptop_model, classify_manufacturer, detect_device_capabilities, detect_vendor,
     identify_device, is_ctgp_supported, is_device_supported, is_hwp_dynamic_boost_supported,
@@ -6,7 +7,6 @@ use ucc_hardware::detection::{
 };
 use ucc_hardware::ioctl::requests;
 use ucc_hardware::traits::{MockHardwareIo, MockSysfs};
-use std::path::Path;
 
 #[test]
 fn test_ft_f01_01_exact_mechrevo_tuple_and_near_misses() {
@@ -123,7 +123,10 @@ fn test_ft_f01_02_vendor_selected_from_capabilities_not_marketing_name() {
         product_name: "Clevo PB50".to_string(),
         ..Default::default()
     };
-    assert_eq!(classify_manufacturer(&clevo_dmi.sys_vendor, ""), LaptopManufacturer::Unknown);
+    assert_eq!(
+        classify_manufacturer(&clevo_dmi.sys_vendor, ""),
+        LaptopManufacturer::Unknown
+    );
 
     // Inject Uniwill capability: R_HWCHECK_UW = 1, R_HWCHECK_CL = 0
     mock.set_i32_read(requests::R_HWCHECK_CL, 0);
@@ -189,13 +192,21 @@ fn test_ft_f01_03_missing_driver_and_disappearing_device_produce_unsupported_sta
 #[test]
 fn test_dmi_quirks_gating() {
     // 1. ACPI platform profile quirk on IBPG10AMD
-    assert!(DmiQuirks::has_acpi_platform_profile_quirk(Some(UniwillDeviceID::IBPG10AMD)));
-    assert!(!DmiQuirks::has_acpi_platform_profile_quirk(Some(UniwillDeviceID::STELLARIS16I07)));
+    assert!(DmiQuirks::has_acpi_platform_profile_quirk(Some(
+        UniwillDeviceID::IBPG10AMD
+    )));
+    assert!(!DmiQuirks::has_acpi_platform_profile_quirk(Some(
+        UniwillDeviceID::STELLARIS16I07
+    )));
     assert!(!DmiQuirks::has_acpi_platform_profile_quirk(None));
 
     // 2. Display MUX quirk on IBM15A10
-    assert!(DmiQuirks::has_display_mux_quirk(Some(UniwillDeviceID::IBM15A10)));
-    assert!(!DmiQuirks::has_display_mux_quirk(Some(UniwillDeviceID::PULSE1404)));
+    assert!(DmiQuirks::has_display_mux_quirk(Some(
+        UniwillDeviceID::IBM15A10
+    )));
+    assert!(!DmiQuirks::has_display_mux_quirk(Some(
+        UniwillDeviceID::PULSE1404
+    )));
     assert!(!DmiQuirks::has_display_mux_quirk(None));
 
     // 3. EPP write quirk on AMD with known buggy DMI
@@ -207,20 +218,47 @@ fn test_dmi_quirks_gating() {
         board_name: "STANDARD_BOARD".to_string(),
         ..Default::default()
     };
-    assert!(DmiQuirks::has_no_epp_write_quirk(&bug_dmi, "AMD Ryzen 7 7840HS"));
-    assert!(!DmiQuirks::has_no_epp_write_quirk(&ok_dmi, "AMD Ryzen 7 7840HS"));
-    assert!(!DmiQuirks::has_no_epp_write_quirk(&bug_dmi, "13th Gen Intel Core i7-13700H"));
+    assert!(DmiQuirks::has_no_epp_write_quirk(
+        &bug_dmi,
+        "AMD Ryzen 7 7840HS"
+    ));
+    assert!(!DmiQuirks::has_no_epp_write_quirk(
+        &ok_dmi,
+        "AMD Ryzen 7 7840HS"
+    ));
+    assert!(!DmiQuirks::has_no_epp_write_quirk(
+        &bug_dmi,
+        "13th Gen Intel Core i7-13700H"
+    ));
 }
 
 #[test]
 fn test_manufacturer_classification_and_mechrevo_naming_format() {
-    assert_eq!(classify_manufacturer("TUXEDO Computers", ""), LaptopManufacturer::Tuxedo);
-    assert_eq!(classify_manufacturer("", "Schenker Technologies"), LaptopManufacturer::Xmg);
+    assert_eq!(
+        classify_manufacturer("TUXEDO Computers", ""),
+        LaptopManufacturer::Tuxedo
+    );
+    assert_eq!(
+        classify_manufacturer("", "Schenker Technologies"),
+        LaptopManufacturer::Xmg
+    );
     assert_eq!(classify_manufacturer("XMG", ""), LaptopManufacturer::Xmg);
-    assert_eq!(classify_manufacturer("PCSpecialist", ""), LaptopManufacturer::PcSpecialist);
-    assert_eq!(classify_manufacturer("Uniwill", ""), LaptopManufacturer::Uniwill);
-    assert_eq!(classify_manufacturer("MECHREVO", ""), LaptopManufacturer::Mechrevo);
-    assert_eq!(classify_manufacturer("OtherBrand", ""), LaptopManufacturer::Unknown);
+    assert_eq!(
+        classify_manufacturer("PCSpecialist", ""),
+        LaptopManufacturer::PcSpecialist
+    );
+    assert_eq!(
+        classify_manufacturer("Uniwill", ""),
+        LaptopManufacturer::Uniwill
+    );
+    assert_eq!(
+        classify_manufacturer("MECHREVO", ""),
+        LaptopManufacturer::Mechrevo
+    );
+    assert_eq!(
+        classify_manufacturer("OtherBrand", ""),
+        LaptopManufacturer::Unknown
+    );
 
     // Exact Mechrevo naming quirk: "MECHREVO " + board_name
     let mechrevo_dmi = DmiInfo {
@@ -253,9 +291,13 @@ fn test_manufacturer_classification_and_mechrevo_naming_format() {
 #[test]
 fn test_water_cooler_and_ctgp_capabilities() {
     // Stellaris 16 Gen7 supports water cooler
-    assert!(is_water_cooler_supported(Some(UniwillDeviceID::STELLARIS16I07)));
+    assert!(is_water_cooler_supported(Some(
+        UniwillDeviceID::STELLARIS16I07
+    )));
     assert!(is_water_cooler_supported(Some(UniwillDeviceID::XNE16A25)));
-    assert!(is_water_cooler_supported(Some(UniwillDeviceID::PCS_X6FR559Y)));
+    assert!(is_water_cooler_supported(Some(
+        UniwillDeviceID::PCS_X6FR559Y
+    )));
     // Pulse 14 does not
     assert!(!is_water_cooler_supported(Some(UniwillDeviceID::PULSE1404)));
     assert!(!is_water_cooler_supported(None));
@@ -264,7 +306,10 @@ fn test_water_cooler_and_ctgp_capabilities() {
     assert!(!is_ctgp_supported(Some(UniwillDeviceID::IBPG8), None));
     assert!(!is_ctgp_supported(Some(UniwillDeviceID::IBPG10AMD), None));
     // cTGP is supported for Stellaris
-    assert!(is_ctgp_supported(Some(UniwillDeviceID::STELLARIS16I07), None));
+    assert!(is_ctgp_supported(
+        Some(UniwillDeviceID::STELLARIS16I07),
+        None
+    ));
 
     // Dynamic boost detection via sysfs
     let sysfs = MockSysfs::new();

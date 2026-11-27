@@ -1,11 +1,15 @@
 //! Power command implementation.
 
-use serde_json::Value;
 use crate::cli::PowerAction;
 use crate::client::{with_rpc_timeout, CliClient};
 use crate::format::*;
+use serde_json::Value;
 
-pub async fn run_power(client: &CliClient, action: &PowerAction, json_mode: bool) -> Result<(), i32> {
+pub async fn run_power(
+    client: &CliClient,
+    action: &PowerAction,
+    json_mode: bool,
+) -> Result<(), i32> {
     match action {
         PowerAction::Status => {
             let raw = match with_rpc_timeout(client.proxy().get_power_policy_json()).await {

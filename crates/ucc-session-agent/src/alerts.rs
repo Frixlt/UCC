@@ -68,7 +68,11 @@ impl DriverAlertState {
         (self.generation, act)
     }
 
-    pub fn on_notify_finished(&mut self, generation: u64, notification_id: Option<u32>) -> Option<u32> {
+    pub fn on_notify_finished(
+        &mut self,
+        generation: u64,
+        notification_id: Option<u32>,
+    ) -> Option<u32> {
         if generation != self.generation {
             return notification_id;
         }

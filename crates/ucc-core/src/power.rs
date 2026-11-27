@@ -295,13 +295,7 @@ impl PowerPolicy {
     /// Validates owner non-empty, name length 1..=128, reason length <= 512,
     /// and mode is either empty or one of {"ac", "type_c", "bat"}.
     /// Enforces max 256 total requests and max 32 requests per owner.
-    pub fn register_request(
-        &mut self,
-        owner: &str,
-        name: &str,
-        reason: &str,
-        mode: &str,
-    ) -> bool {
+    pub fn register_request(&mut self, owner: &str, name: &str, reason: &str, mode: &str) -> bool {
         if owner.is_empty() || name.is_empty() || name.len() > 128 || reason.len() > 512 {
             return false;
         }
@@ -333,7 +327,9 @@ impl PowerPolicy {
 
     /// Unregisters an existing application request.
     pub fn unregister_request(&mut self, owner: &str, name: &str) -> bool {
-        self.requests.remove(&(owner.to_string(), name.to_string())).is_some()
+        self.requests
+            .remove(&(owner.to_string(), name.to_string()))
+            .is_some()
     }
 
     /// Removes all requests belonging to the given owner (e.g. when D-Bus client disconnects).

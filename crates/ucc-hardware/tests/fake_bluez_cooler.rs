@@ -225,8 +225,10 @@ struct MockObjectManager {
 impl MockObjectManager {
     async fn get_managed_objects(
         &self,
-    ) -> HashMap<zbus::zvariant::OwnedObjectPath, HashMap<String, HashMap<String, zbus::zvariant::OwnedValue>>>
-    {
+    ) -> HashMap<
+        zbus::zvariant::OwnedObjectPath,
+        HashMap<String, HashMap<String, zbus::zvariant::OwnedValue>>,
+    > {
         if self.hang_when_connected && self.connected.load(Ordering::SeqCst) {
             std::future::pending::<()>().await;
         }
@@ -274,10 +276,8 @@ impl MockObjectManager {
         let mut tx_ifaces = HashMap::new();
         tx_ifaces.insert("org.bluez.GattCharacteristic1".into(), tx_props);
         root.insert(
-            OwnedObjectPath::try_from(
-                "/org/bluez/hci0/dev_DE_C9_A0_A9_FC_84/service001/char002",
-            )
-            .unwrap(),
+            OwnedObjectPath::try_from("/org/bluez/hci0/dev_DE_C9_A0_A9_FC_84/service001/char002")
+                .unwrap(),
             tx_ifaces,
         );
 
@@ -291,10 +291,8 @@ impl MockObjectManager {
         let mut rx_ifaces = HashMap::new();
         rx_ifaces.insert("org.bluez.GattCharacteristic1".into(), rx_props);
         root.insert(
-            OwnedObjectPath::try_from(
-                "/org/bluez/hci0/dev_DE_C9_A0_A9_FC_84/service001/char003",
-            )
-            .unwrap(),
+            OwnedObjectPath::try_from("/org/bluez/hci0/dev_DE_C9_A0_A9_FC_84/service001/char003")
+                .unwrap(),
             rx_ifaces,
         );
 
@@ -318,7 +316,11 @@ async fn production_bluez_client_discovers_connects_and_drives_cooler_controller
         .await
         .unwrap();
 
-    let client_conn = connection::Builder::session().unwrap().build().await.unwrap();
+    let client_conn = connection::Builder::session()
+        .unwrap()
+        .build()
+        .await
+        .unwrap();
 
     server_conn
         .object_server()
@@ -388,7 +390,10 @@ async fn production_bluez_client_discovers_connects_and_drives_cooler_controller
     controller.set_pump_voltage(PumpVoltage::V8).unwrap();
 
     let t0 = std::time::Instant::now();
-    assert_eq!(session.flush_controller(&mut controller, t0).await.unwrap(), 1);
+    assert_eq!(
+        session.flush_controller(&mut controller, t0).await.unwrap(),
+        1
+    );
     assert_eq!(
         session
             .flush_controller(&mut controller, t0 + BLE_WRITE_GAP)
@@ -422,7 +427,11 @@ async fn connects_to_a_cooler_whose_gatt_appears_after_connect() {
         .await
         .unwrap();
 
-    let client_conn = connection::Builder::session().unwrap().build().await.unwrap();
+    let client_conn = connection::Builder::session()
+        .unwrap()
+        .build()
+        .await
+        .unwrap();
 
     server_conn
         .object_server()
@@ -494,7 +503,10 @@ async fn connects_to_a_cooler_whose_gatt_appears_after_connect() {
         1
     );
     let pkts = written_packets.lock().await;
-    assert_eq!(pkts.as_slice(), &[[0xfe, 0x1b, 0x01, 70, 0x00, 0x00, 0x00, 0xef]]);
+    assert_eq!(
+        pkts.as_slice(),
+        &[[0xfe, 0x1b, 0x01, 70, 0x00, 0x00, 0x00, 0xef]]
+    );
 }
 
 #[tokio::test]
@@ -510,7 +522,11 @@ async fn gatt_resolution_timeout_includes_the_dbus_rpc() {
         .build()
         .await
         .unwrap();
-    let client_conn = connection::Builder::session().unwrap().build().await.unwrap();
+    let client_conn = connection::Builder::session()
+        .unwrap()
+        .build()
+        .await
+        .unwrap();
 
     server_conn
         .object_server()
@@ -569,7 +585,11 @@ async fn start_notify_timeout_obeys_gatt_deadline() {
         .build()
         .await
         .unwrap();
-    let client_conn = connection::Builder::session().unwrap().build().await.unwrap();
+    let client_conn = connection::Builder::session()
+        .unwrap()
+        .build()
+        .await
+        .unwrap();
 
     server_conn
         .object_server()

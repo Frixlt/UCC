@@ -123,7 +123,13 @@ pub trait UccdBackend: Send + Sync + 'static {
     fn register_power_request(&self, _name: &str, _reason: &str, _mode_val: &str) -> bool {
         true
     }
-    fn register_power_request_with_sender(&self, _sender: &str, name: &str, reason: &str, mode_val: &str) -> bool {
+    fn register_power_request_with_sender(
+        &self,
+        _sender: &str,
+        name: &str,
+        reason: &str,
+        mode_val: &str,
+    ) -> bool {
         self.register_power_request(name, reason, mode_val)
     }
     fn unregister_power_request(&self, _name: &str) -> bool {
@@ -292,15 +298,11 @@ pub trait UccdBackend: Send + Sync + 'static {
     fn set_fn_lock_status(&self, _status: bool) -> Result<(), String> {
         Ok(())
     }
-    fn set_sensor_data_collection_status(&self, _status: bool) {
-        
-    }
+    fn set_sensor_data_collection_status(&self, _status: bool) {}
     fn get_sensor_data_collection_status(&self) -> bool {
         false
     }
-    fn set_dgpu_d0_metrics(&self, _status: bool) {
-        
-    }
+    fn set_dgpu_d0_metrics(&self, _status: bool) {}
     fn get_nvidia_power_ctrl_default_power_limit(&self) -> i32 {
         0
     }
@@ -349,7 +351,13 @@ pub trait UccdBackend: Send + Sync + 'static {
     fn set_water_cooler_pump_voltage(&self, _voltage: i32) -> bool {
         true
     }
-    fn set_water_cooler_led_color(&self, _red: i32, _green: i32, _blue: i32, _mode_val: i32) -> bool {
+    fn set_water_cooler_led_color(
+        &self,
+        _red: i32,
+        _green: i32,
+        _blue: i32,
+        _mode_val: i32,
+    ) -> bool {
         true
     }
     fn turn_off_water_cooler_led(&self) -> bool {
@@ -379,9 +387,7 @@ pub trait UccdBackend: Send + Sync + 'static {
     fn get_monitor_data_since(&self, _since_timestamp_ms: i64) -> Vec<u8> {
         Vec::new()
     }
-    fn set_monitor_history_horizon(&self, _seconds: i32) {
-        
-    }
+    fn set_monitor_history_horizon(&self, _seconds: i32) {}
     fn get_monitor_history_horizon(&self) -> i32 {
         60
     }
@@ -408,7 +414,8 @@ impl UccdBackend for DefaultUccdBackend {
     }
 
     fn apply_profile(&self, profile_json: &str) -> bool {
-        let Ok(profile) = serde_json::from_str::<ucc_core::profile::UccProfile>(profile_json) else {
+        let Ok(profile) = serde_json::from_str::<ucc_core::profile::UccProfile>(profile_json)
+        else {
             return false;
         };
         if profile.validate().is_err() {

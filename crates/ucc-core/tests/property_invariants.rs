@@ -10,8 +10,7 @@
 
 use std::collections::BTreeSet;
 use ucc_core::{
-    get_pump_speed_for_temp, CpuLimits, FanCurve, FanPoint, PumpPoint, PumpVoltage,
-    ValidationError,
+    get_pump_speed_for_temp, CpuLimits, FanCurve, FanPoint, PumpPoint, PumpVoltage, ValidationError,
 };
 
 /// Deterministic, zero-dependency linear congruential pseudo-random generator
@@ -26,7 +25,10 @@ impl FuzzRng {
     }
 
     fn next_u32(&mut self) -> u32 {
-        self.state = self.state.wrapping_mul(6364136223846793005).wrapping_add(1442695040888963407);
+        self.state = self
+            .state
+            .wrapping_mul(6364136223846793005)
+            .wrapping_add(1442695040888963407);
         (self.state >> 32) as u32
     }
 
@@ -60,7 +62,10 @@ fn test_cpu_frequency_boundary_values() {
     // Exact min boundary: 100_000 kHz
     limits.min_freq_khz = Some(100_000);
     limits.max_freq_khz = Some(100_000);
-    assert!(limits.validate().is_ok(), "100_000 kHz is valid exact lower bound");
+    assert!(
+        limits.validate().is_ok(),
+        "100_000 kHz is valid exact lower bound"
+    );
 
     // Off-by-one below minimum: 99_999 kHz
     limits.min_freq_khz = Some(99_999);
@@ -73,7 +78,10 @@ fn test_cpu_frequency_boundary_values() {
     // Exact max boundary: 10_000_000 kHz (10 GHz)
     limits.min_freq_khz = Some(100_000);
     limits.max_freq_khz = Some(10_000_000);
-    assert!(limits.validate().is_ok(), "10_000_000 kHz is valid exact upper bound");
+    assert!(
+        limits.validate().is_ok(),
+        "10_000_000 kHz is valid exact upper bound"
+    );
 
     // Off-by-one above maximum: 10_000_001 kHz
     limits.max_freq_khz = Some(10_000_001);
@@ -86,10 +94,7 @@ fn test_cpu_frequency_boundary_values() {
     // Extreme zero frequency
     limits.min_freq_khz = Some(0);
     limits.max_freq_khz = Some(3_000_000);
-    assert_eq!(
-        limits.validate(),
-        Err(ValidationError::InvalidFrequency(0))
-    );
+    assert_eq!(limits.validate(), Err(ValidationError::InvalidFrequency(0)));
 
     // Extreme u32::MAX
     limits.min_freq_khz = Some(100_000);
@@ -167,7 +172,10 @@ fn test_tdp_boundary_values() {
 
     // Extreme u32::MAX
     limits.tdp_values_w = vec![u32::MAX];
-    assert_eq!(limits.validate(), Err(ValidationError::InvalidTdp(u32::MAX)));
+    assert_eq!(
+        limits.validate(),
+        Err(ValidationError::InvalidTdp(u32::MAX))
+    );
 }
 
 #[test]
@@ -412,10 +420,7 @@ fn test_fan_curve_temperature_monotonicity() {
     assert!(valid.is_ok());
 
     // Duplicate temperature at index 1: rejected
-    let dup_temp = FanCurve::new(vec![
-        FanPoint::new(30, 20),
-        FanPoint::new(30, 35),
-    ]);
+    let dup_temp = FanCurve::new(vec![FanPoint::new(30, 20), FanPoint::new(30, 35)]);
     assert_eq!(
         dup_temp,
         Err(ValidationError::NonMonotonicTemperature {
@@ -449,7 +454,10 @@ fn test_fan_curve_speed_monotonicity() {
         FanPoint::new(45, 25),
         FanPoint::new(60, 50),
     ]);
-    assert!(flat_plateau.is_ok(), "Flat fan speed plateau must be accepted");
+    assert!(
+        flat_plateau.is_ok(),
+        "Flat fan speed plateau must be accepted"
+    );
 
     // Strictly increasing speeds: valid
     let increasing = FanCurve::new(vec![
@@ -461,10 +469,7 @@ fn test_fan_curve_speed_monotonicity() {
     assert!(increasing.is_ok());
 
     // Decreasing speed at index 1: rejected
-    let dec_speed = FanCurve::new(vec![
-        FanPoint::new(30, 40),
-        FanPoint::new(50, 30),
-    ]);
+    let dec_speed = FanCurve::new(vec![FanPoint::new(30, 40), FanPoint::new(50, 30)]);
     assert_eq!(
         dec_speed,
         Err(ValidationError::NonMonotonicSpeed {
@@ -522,10 +527,7 @@ fn test_fan_curve_fuzzing_and_invariants() {
 
         // Verify interpolation invariants:
         // 1. Below lowest temp -> clamps to first point speed
-        assert_eq!(
-            curve.get_speed_for_temp(temp_vec[0] - 15),
-            speeds[0] as i32
-        );
+        assert_eq!(curve.get_speed_for_temp(temp_vec[0] - 15), speeds[0] as i32);
 
         // 2. Above highest temp -> clamps to last point speed
         assert_eq!(
@@ -569,7 +571,10 @@ fn test_fan_curve_fuzzing_and_invariants() {
         dup_temp_points[perturb_idx].temp = dup_temp_points[perturb_idx - 1].temp;
         let dup_res = FanCurve::new(dup_temp_points);
         assert!(
-            matches!(dup_res, Err(ValidationError::NonMonotonicTemperature { .. })),
+            matches!(
+                dup_res,
+                Err(ValidationError::NonMonotonicTemperature { .. })
+            ),
             "Injected duplicate temperature must be rejected"
         );
     }

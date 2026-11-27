@@ -15,10 +15,7 @@ fn test_fan_curve_monotonicity_valid() {
 #[test]
 fn test_fan_curve_temperature_non_monotonic_fails() {
     // Decreasing temperature
-    let curve = FanCurve::new(vec![
-        FanPoint::new(50, 20),
-        FanPoint::new(40, 40),
-    ]);
+    let curve = FanCurve::new(vec![FanPoint::new(50, 20), FanPoint::new(40, 40)]);
     assert_eq!(
         curve.unwrap_err(),
         ValidationError::NonMonotonicTemperature {
@@ -29,10 +26,7 @@ fn test_fan_curve_temperature_non_monotonic_fails() {
     );
 
     // Duplicate temperature
-    let curve = FanCurve::new(vec![
-        FanPoint::new(50, 20),
-        FanPoint::new(50, 40),
-    ]);
+    let curve = FanCurve::new(vec![FanPoint::new(50, 20), FanPoint::new(50, 40)]);
     assert_eq!(
         curve.unwrap_err(),
         ValidationError::NonMonotonicTemperature {
@@ -46,10 +40,7 @@ fn test_fan_curve_temperature_non_monotonic_fails() {
 #[test]
 fn test_fan_curve_speed_non_monotonic_fails() {
     // Fan speed decreasing when temperature increases
-    let curve = FanCurve::new(vec![
-        FanPoint::new(40, 50),
-        FanPoint::new(60, 30),
-    ]);
+    let curve = FanCurve::new(vec![FanPoint::new(40, 50), FanPoint::new(60, 30)]);
     assert_eq!(
         curve.unwrap_err(),
         ValidationError::NonMonotonicSpeed {
@@ -294,10 +285,7 @@ fn test_charging_policy_thresholds() {
     };
     assert_eq!(
         inverted.validate().unwrap_err(),
-        ValidationError::InvalidChargingThresholds {
-            start: 80,
-            end: 40,
-        }
+        ValidationError::InvalidChargingThresholds { start: 80, end: 40 }
     );
 
     let equal = ChargingPolicy {
@@ -307,10 +295,7 @@ fn test_charging_policy_thresholds() {
     };
     assert_eq!(
         equal.validate().unwrap_err(),
-        ValidationError::InvalidChargingThresholds {
-            start: 60,
-            end: 60,
-        }
+        ValidationError::InvalidChargingThresholds { start: 60, end: 60 }
     );
 
     // Out of range (>100)
@@ -355,10 +340,22 @@ fn test_profile_state_wire_representations() {
     assert_eq!(ProfileState::Wc.as_str(), "power_wc");
     assert_eq!(ProfileState::TypeC.as_str(), "power_type_c");
 
-    assert_eq!("power_ac".parse::<ProfileState>().unwrap(), ProfileState::Ac);
-    assert_eq!("power_bat".parse::<ProfileState>().unwrap(), ProfileState::Bat);
-    assert_eq!("power_wc".parse::<ProfileState>().unwrap(), ProfileState::Wc);
-    assert_eq!("power_type_c".parse::<ProfileState>().unwrap(), ProfileState::TypeC);
+    assert_eq!(
+        "power_ac".parse::<ProfileState>().unwrap(),
+        ProfileState::Ac
+    );
+    assert_eq!(
+        "power_bat".parse::<ProfileState>().unwrap(),
+        ProfileState::Bat
+    );
+    assert_eq!(
+        "power_wc".parse::<ProfileState>().unwrap(),
+        ProfileState::Wc
+    );
+    assert_eq!(
+        "power_type_c".parse::<ProfileState>().unwrap(),
+        ProfileState::TypeC
+    );
 
     // Serialization round-trip
     let serialized = serde_json::to_string(&ProfileState::TypeC).unwrap();
@@ -395,7 +392,8 @@ fn test_power_policy_matrix_exhaustive() {
                     };
 
                     let forced = manual != "auto";
-                    let elevated = !forced && !request.is_empty() && rank(to_state(request)) > rank(source);
+                    let elevated =
+                        !forced && !request.is_empty() && rank(to_state(request)) > rank(source);
                     let expected_effective = if forced {
                         to_state(manual)
                     } else if elevated {

@@ -7,8 +7,7 @@ use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 
 fn is_executable_file(path: &Path) -> bool {
-    std::fs::metadata(path)
-        .is_ok_and(|m| m.is_file() && (m.permissions().mode() & 0o111) != 0)
+    std::fs::metadata(path).is_ok_and(|m| m.is_file() && (m.permissions().mode() & 0o111) != 0)
 }
 
 pub fn find_gui_binary() -> Option<PathBuf> {
@@ -95,10 +94,7 @@ pub async fn activate_gui_dbus_on(
     proxy.call::<_, _, ()>("Activate", &()).await
 }
 
-pub async fn activate_gui_dbus(
-    activation_token: Option<&str>,
-    preview: bool,
-) -> zbus::Result<()> {
+pub async fn activate_gui_dbus(activation_token: Option<&str>, preview: bool) -> zbus::Result<()> {
     let conn = zbus::Connection::session().await?;
     let service = if preview {
         GUI_DBUS_PREVIEW_SERVICE

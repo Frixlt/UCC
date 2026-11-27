@@ -1,11 +1,15 @@
 //! Hardware toggle commands (brightness, webcam, fnlock).
 
-use serde_json::json;
 use crate::cli::{BrightnessAction, ToggleAction};
 use crate::client::{with_rpc_timeout, CliClient};
 use crate::format::*;
+use serde_json::json;
 
-pub async fn run_brightness(client: &CliClient, action: &BrightnessAction, json_mode: bool) -> Result<(), i32> {
+pub async fn run_brightness(
+    client: &CliClient,
+    action: &BrightnessAction,
+    json_mode: bool,
+) -> Result<(), i32> {
     match action {
         BrightnessAction::Get => {
             let b = match with_rpc_timeout(client.proxy().get_display_brightness()).await {
@@ -31,7 +35,11 @@ pub async fn run_brightness(client: &CliClient, action: &BrightnessAction, json_
     }
 }
 
-pub async fn run_webcam(client: &CliClient, action: &ToggleAction, json_mode: bool) -> Result<(), i32> {
+pub async fn run_webcam(
+    client: &CliClient,
+    action: &ToggleAction,
+    json_mode: bool,
+) -> Result<(), i32> {
     match action {
         ToggleAction::Get => {
             let status = match with_rpc_timeout(client.proxy().get_webcam_sw_status()).await {
@@ -64,7 +72,11 @@ pub async fn run_webcam(client: &CliClient, action: &ToggleAction, json_mode: bo
     }
 }
 
-pub async fn run_fnlock(client: &CliClient, action: &ToggleAction, json_mode: bool) -> Result<(), i32> {
+pub async fn run_fnlock(
+    client: &CliClient,
+    action: &ToggleAction,
+    json_mode: bool,
+) -> Result<(), i32> {
     match action {
         ToggleAction::Get => {
             let status = match with_rpc_timeout(client.proxy().get_fn_lock_status()).await {

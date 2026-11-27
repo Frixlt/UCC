@@ -384,7 +384,11 @@ impl TuxedoIoDevice {
     ///
     /// # Safety
     /// Caller must guarantee `arg` points to valid memory corresponding to `request` ABI requirements.
-    pub unsafe fn raw_ioctl(&self, request: u64, arg: *mut libc::c_void) -> Result<i32, IoctlError> {
+    pub unsafe fn raw_ioctl(
+        &self,
+        request: u64,
+        arg: *mut libc::c_void,
+    ) -> Result<i32, IoctlError> {
         let ret = libc::ioctl(self.file.as_raw_fd(), request, arg);
         if ret < 0 {
             return Err(IoctlError::IoctlFailed {
@@ -430,7 +434,12 @@ impl TuxedoIoDevice {
     }
 
     /// Sets Uniwill TDP limit with hardware boundary validation.
-    pub fn set_uniwill_tdp(&self, index: usize, watts: i32, limits: Option<(i32, i32)>) -> Result<(), IoctlError> {
+    pub fn set_uniwill_tdp(
+        &self,
+        index: usize,
+        watts: i32,
+        limits: Option<(i32, i32)>,
+    ) -> Result<(), IoctlError> {
         set_uniwill_tdp(self, index, watts, limits)
     }
 
@@ -445,7 +454,11 @@ impl TuxedoIoDevice {
     }
 
     /// Sets performance profile code depending on hardware vendor.
-    pub fn set_perf_profile(&self, vendor: crate::detection::DeviceVendor, profile_code: i32) -> Result<(), IoctlError> {
+    pub fn set_perf_profile(
+        &self,
+        vendor: crate::detection::DeviceVendor,
+        profile_code: i32,
+    ) -> Result<(), IoctlError> {
         set_perf_profile(self, vendor, profile_code)
     }
 }
@@ -479,15 +492,23 @@ impl crate::traits::HardwareIo for TuxedoIoDevice {
 use crate::traits::HardwareIo;
 
 /// Sets Clevo fan speed with fail-closed bounds checking and 3-fan payload packing per C++ clevo.h:72-101.
-pub fn set_clevo_fan_speed(hw: &dyn HardwareIo, fan_idx: usize, percent: u8) -> Result<(), IoctlError> {
+pub fn set_clevo_fan_speed(
+    hw: &dyn HardwareIo,
+    fan_idx: usize,
+    percent: u8,
+) -> Result<(), IoctlError> {
     if !hw.is_available() {
         return Err(IoctlError::DeviceUnavailable);
     }
     if fan_idx >= 3 {
-        return Err(IoctlError::PreconditionFailed("Clevo fan index must be 0..=2"));
+        return Err(IoctlError::PreconditionFailed(
+            "Clevo fan index must be 0..=2",
+        ));
     }
     if percent > 100 {
-        return Err(IoctlError::PreconditionFailed("Fan speed percentage cannot exceed 100"));
+        return Err(IoctlError::PreconditionFailed(
+            "Fan speed percentage cannot exceed 100",
+        ));
     }
 
     let mut fan_speeds_raw = [0i32; 3];
@@ -519,7 +540,9 @@ pub fn read_clevo_fan_speed_percent(hw: &dyn HardwareIo, fan_idx: usize) -> Resu
         return Err(IoctlError::DeviceUnavailable);
     }
     if fan_idx >= 3 {
-        return Err(IoctlError::PreconditionFailed("Clevo fan index must be 0..=2"));
+        return Err(IoctlError::PreconditionFailed(
+            "Clevo fan index must be 0..=2",
+        ));
     }
     let req = match fan_idx {
         0 => requests::R_CL_FANINFO1,
@@ -547,15 +570,23 @@ pub fn set_clevo_fans_auto(hw: &dyn HardwareIo) -> Result<(), IoctlError> {
 }
 
 /// Sets Uniwill fan speed with fail-closed bounds checking and 200 raw scaling per C++ uniwill.h:95-117.
-pub fn set_uniwill_fan_speed(hw: &dyn HardwareIo, fan_idx: usize, percent: u8) -> Result<(), IoctlError> {
+pub fn set_uniwill_fan_speed(
+    hw: &dyn HardwareIo,
+    fan_idx: usize,
+    percent: u8,
+) -> Result<(), IoctlError> {
     if !hw.is_available() {
         return Err(IoctlError::DeviceUnavailable);
     }
     if fan_idx >= 2 {
-        return Err(IoctlError::PreconditionFailed("Uniwill fan index must be 0 (CPU) or 1 (GPU)"));
+        return Err(IoctlError::PreconditionFailed(
+            "Uniwill fan index must be 0 (CPU) or 1 (GPU)",
+        ));
     }
     if percent > 100 {
-        return Err(IoctlError::PreconditionFailed("Fan speed percentage cannot exceed 100"));
+        return Err(IoctlError::PreconditionFailed(
+            "Fan speed percentage cannot exceed 100",
+        ));
     }
     let raw = (200.0 * percent as f64 / 100.0).round() as i32;
     let req = if fan_idx == 0 {
@@ -567,7 +598,10 @@ pub fn set_uniwill_fan_speed(hw: &dyn HardwareIo, fan_idx: usize, percent: u8) -
 }
 
 /// Reads Uniwill fan speed as a percentage (0..=100) per C++ uniwill.h:119-149.
-pub fn read_uniwill_fan_speed_percent(hw: &dyn HardwareIo, fan_idx: usize) -> Result<u8, IoctlError> {
+pub fn read_uniwill_fan_speed_percent(
+    hw: &dyn HardwareIo,
+    fan_idx: usize,
+) -> Result<u8, IoctlError> {
     let raw = read_uniwill_fan_speed(hw, fan_idx)?;
     if raw <= 0 {
         Ok(0)
@@ -596,7 +630,9 @@ pub fn set_uniwill_tdp(
         return Err(IoctlError::DeviceUnavailable);
     }
     if index > 2 {
-        return Err(IoctlError::PreconditionFailed("Uniwill TDP index must be 0..=2 (PL1, PL2, PL4)"));
+        return Err(IoctlError::PreconditionFailed(
+            "Uniwill TDP index must be 0..=2 (PL1, PL2, PL4)",
+        ));
     }
     let d_lim = read_uniwill_tdp_limits(hw, index)?;
     if d_lim.0 <= 0 || d_lim.1 <= 0 || d_lim.0 > d_lim.1 {
@@ -637,7 +673,9 @@ pub fn set_uniwill_mode(hw: &dyn HardwareIo, mode: i32) -> Result<(), IoctlError
         return Err(IoctlError::DeviceUnavailable);
     }
     if mode < 0 {
-        return Err(IoctlError::PreconditionFailed("Uniwill mode index cannot be negative"));
+        return Err(IoctlError::PreconditionFailed(
+            "Uniwill mode index cannot be negative",
+        ));
     }
     hw.write_i32(requests::W_UW_MODE, mode)
 }
@@ -658,9 +696,9 @@ pub fn set_perf_profile(
         crate::detection::DeviceVendor::Uniwill => {
             hw.write_i32(requests::W_UW_PERF_PROF, profile_code)
         }
-        crate::detection::DeviceVendor::Unsupported => {
-            Err(IoctlError::PreconditionFailed("Cannot set performance profile on unsupported hardware"))
-        }
+        crate::detection::DeviceVendor::Unsupported => Err(IoctlError::PreconditionFailed(
+            "Cannot set performance profile on unsupported hardware",
+        )),
     }
 }
 
@@ -672,7 +710,9 @@ pub fn read_uniwill_fan_speed(hw: &dyn HardwareIo, fan_idx: usize) -> Result<i32
     match fan_idx {
         0 => hw.read_i32(requests::R_UW_FANSPEED),
         1 => hw.read_i32(requests::R_UW_FANSPEED2),
-        _ => Err(IoctlError::PreconditionFailed("Uniwill fan index must be 0 (CPU) or 1 (GPU)")),
+        _ => Err(IoctlError::PreconditionFailed(
+            "Uniwill fan index must be 0 (CPU) or 1 (GPU)",
+        )),
     }
 }
 
@@ -684,12 +724,17 @@ pub fn read_uniwill_fan_temp(hw: &dyn HardwareIo, fan_idx: usize) -> Result<i32,
     match fan_idx {
         0 => hw.read_i32(requests::R_UW_FAN_TEMP),
         1 => hw.read_i32(requests::R_UW_FAN_TEMP2),
-        _ => Err(IoctlError::PreconditionFailed("Uniwill fan index must be 0 (CPU) or 1 (GPU)")),
+        _ => Err(IoctlError::PreconditionFailed(
+            "Uniwill fan index must be 0 (CPU) or 1 (GPU)",
+        )),
     }
 }
 
 /// Reads Uniwill TDP limits (min, max) for given index.
-pub fn read_uniwill_tdp_limits(hw: &dyn HardwareIo, index: usize) -> Result<(i32, i32), IoctlError> {
+pub fn read_uniwill_tdp_limits(
+    hw: &dyn HardwareIo,
+    index: usize,
+) -> Result<(i32, i32), IoctlError> {
     if !hw.is_available() {
         return Err(IoctlError::DeviceUnavailable);
     }
@@ -697,7 +742,11 @@ pub fn read_uniwill_tdp_limits(hw: &dyn HardwareIo, index: usize) -> Result<(i32
         0 => (requests::R_UW_TDP0_MIN, requests::R_UW_TDP0_MAX),
         1 => (requests::R_UW_TDP1_MIN, requests::R_UW_TDP1_MAX),
         2 => (requests::R_UW_TDP2_MIN, requests::R_UW_TDP2_MAX),
-        _ => return Err(IoctlError::PreconditionFailed("Uniwill TDP index must be 0..=2")),
+        _ => {
+            return Err(IoctlError::PreconditionFailed(
+                "Uniwill TDP index must be 0..=2",
+            ))
+        }
     };
     let min = hw.read_i32(req_min)?;
     let max = hw.read_i32(req_max)?;

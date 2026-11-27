@@ -102,7 +102,11 @@ pub fn parse_lid_policy_from_json(power_devices: &serde_json::Value) -> LidSourc
     let Some(lid) = power_devices.get("lid").and_then(|v| v.as_object()) else {
         return policy;
     };
-    if let Some(act) = lid.get("ac").and_then(|v| v.as_str()).and_then(LidSourceAction::parse) {
+    if let Some(act) = lid
+        .get("ac")
+        .and_then(|v| v.as_str())
+        .and_then(LidSourceAction::parse)
+    {
         policy.ac = act;
     }
     if let Some(act) = lid
@@ -119,10 +123,7 @@ pub fn parse_lid_policy_from_json(power_devices: &serde_json::Value) -> LidSourc
     {
         policy.bat = act;
     }
-    if let Some(w) = lid
-        .get("wakeOnlyLidAndKeyboard")
-        .and_then(|v| v.as_bool())
-    {
+    if let Some(w) = lid.get("wakeOnlyLidAndKeyboard").and_then(|v| v.as_bool()) {
         policy.wake_only_lid_and_keyboard = w;
     }
     if let Some(v) = lid
@@ -186,9 +187,9 @@ impl LidController {
         };
         if !ac_online
             && configured == LidSourceAction::Suspend
-            && self
-                .last_ac_unplug
-                .is_some_and(|at| now.saturating_duration_since(at) < self.config.ac_unplug_debounce)
+            && self.last_ac_unplug.is_some_and(|at| {
+                now.saturating_duration_since(at) < self.config.ac_unplug_debounce
+            })
         {
             LidSourceAction::Ignore
         } else {
@@ -229,8 +230,9 @@ impl LidController {
         if self.ac_online {
             return true;
         }
-        self.last_ac_unplug
-            .is_some_and(|unplugged_at| now.saturating_duration_since(unplugged_at) < self.config.ac_unplug_debounce)
+        self.last_ac_unplug.is_some_and(|unplugged_at| {
+            now.saturating_duration_since(unplugged_at) < self.config.ac_unplug_debounce
+        })
     }
 }
 
@@ -313,11 +315,7 @@ impl WakeupPolicy {
 
 /// Checks whether `device_dir` (relative to `devices_root`, e.g. `/sys/devices`) is allowed to wake
 /// the system under the lid+keyboard policy (matches `WakeupPolicy::isAllowedWakeupDevice`).
-pub fn is_allowed_wakeup_device(
-    device_dir: &Path,
-    devices_root: &Path,
-    sysfs: &dyn Sysfs,
-) -> bool {
+pub fn is_allowed_wakeup_device(device_dir: &Path, devices_root: &Path, sysfs: &dyn Sysfs) -> bool {
     if device_dir
         .components()
         .any(|c| matches!(c, Component::ParentDir))

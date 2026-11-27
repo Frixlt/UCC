@@ -73,14 +73,22 @@ fn test_matrix_missing_nodes() {
     for path in key_paths {
         // String node
         let str_node = SysfsNode::<String>::new(&harness.root, path);
-        assert!(!str_node.is_available(), "Missing node {path} must not be available");
+        assert!(
+            !str_node.is_available(),
+            "Missing node {path} must not be available"
+        );
         match str_node.read() {
-            Err(SysfsError::NotFound(p)) => assert!(p.to_string_lossy().contains(path.trim_start_matches('/'))),
+            Err(SysfsError::NotFound(p)) => {
+                assert!(p.to_string_lossy().contains(path.trim_start_matches('/')))
+            }
             other => panic!("Expected NotFound on missing node {path}, got {:?}", other),
         }
         match str_node.write(&"test".to_string()) {
             Err(SysfsError::NotFound(_)) => (),
-            other => panic!("Expected NotFound on write to missing node {path}, got {:?}", other),
+            other => panic!(
+                "Expected NotFound on write to missing node {path}, got {:?}",
+                other
+            ),
         }
 
         // Integer node
@@ -93,7 +101,10 @@ fn test_matrix_missing_nodes() {
         let bool_node = SysfsNode::<bool>::new(&harness.root, path);
         assert!(!bool_node.is_available());
         assert!(matches!(bool_node.read(), Err(SysfsError::NotFound(_))));
-        assert!(matches!(bool_node.write(&true), Err(SysfsError::NotFound(_))));
+        assert!(matches!(
+            bool_node.write(&true),
+            Err(SysfsError::NotFound(_))
+        ));
     }
 }
 
@@ -107,10 +118,22 @@ fn test_matrix_readonly_nodes() {
 
     let test_matrix = [
         ("sys/devices/system/cpu/cpu1/online", "1", 0),
-        ("sys/devices/system/cpu/cpu0/cpufreq/scaling_governor", "powersave", 0),
-        ("sys/devices/system/cpu/cpu0/cpufreq/scaling_min_freq", "800000", 1200000),
+        (
+            "sys/devices/system/cpu/cpu0/cpufreq/scaling_governor",
+            "powersave",
+            0,
+        ),
+        (
+            "sys/devices/system/cpu/cpu0/cpufreq/scaling_min_freq",
+            "800000",
+            1200000,
+        ),
         ("sys/class/backlight/intel_backlight/brightness", "75", 90),
-        ("sys/class/power_supply/BAT0/charge_control_end_threshold", "80", 60),
+        (
+            "sys/class/power_supply/BAT0/charge_control_end_threshold",
+            "80",
+            60,
+        ),
         ("sys/devices/platform/tuxedo_keyboard/fn_lock", "0", 1),
     ];
 
@@ -122,14 +145,19 @@ fn test_matrix_readonly_nodes() {
         assert!(node_str.is_available());
 
         // Read must succeed even if read-only
-        let read_val = node_str.read().expect("read from read-only node must succeed");
+        let read_val = node_str
+            .read()
+            .expect("read from read-only node must succeed");
         assert_eq!(read_val, initial_val);
 
         // Write must fail gracefully with PermissionDenied
         let write_res = node_str.write(&"modified".to_string());
         match write_res {
             Err(SysfsError::PermissionDenied(_)) => (),
-            other => panic!("Expected PermissionDenied on read-only {rel_path}, got {:?}", other),
+            other => panic!(
+                "Expected PermissionDenied on read-only {rel_path}, got {:?}",
+                other
+            ),
         }
 
         // Verify write journal recorded the failed attempt
@@ -200,7 +228,14 @@ fn test_matrix_corrupted_and_invalid_values() {
 
     // 4.2 Integer Node Corruption
     let int_path = "sys/class/backlight/intel_backlight/brightness";
-    let invalid_ints = ["abc", "NaN", "12.34", "9999999999999999999999999999999999", "0xG1", ""];
+    let invalid_ints = [
+        "abc",
+        "NaN",
+        "12.34",
+        "9999999999999999999999999999999999",
+        "0xG1",
+        "",
+    ];
 
     for invalid in invalid_ints {
         harness.create_file(int_path, invalid);
@@ -214,13 +249,13 @@ fn test_matrix_corrupted_and_invalid_values() {
     // 4.3 CPU Range Node Corruption
     let range_path = "sys/devices/system/cpu/online";
     let invalid_ranges = [
-        "7-2",        // Inverted range
-        "abc-def",    // Non-numeric
-        "0-999999",   // Exceeds max boundary (4096)
-        "-1-7",       // Negative
-        "0-3,foo",    // Corrupted middle element
-        "0--3",       // Double dash
-        "0, ,3",      // Empty segment
+        "7-2",      // Inverted range
+        "abc-def",  // Non-numeric
+        "0-999999", // Exceeds max boundary (4096)
+        "-1-7",     // Negative
+        "0-3,foo",  // Corrupted middle element
+        "0--3",     // Double dash
+        "0, ,3",    // Empty segment
     ];
 
     for invalid in invalid_ranges {
@@ -246,7 +281,10 @@ fn test_matrix_zero_length_and_whitespace() {
     harness.create_file(empty_path, "");
 
     let int_node = SysfsNode::<i32>::new(&harness.root, empty_path);
-    assert!(matches!(int_node.read(), Err(SysfsError::ParseError { .. })));
+    assert!(matches!(
+        int_node.read(),
+        Err(SysfsError::ParseError { .. })
+    ));
 
     let str_node = SysfsNode::<String>::new(&harness.root, empty_path);
     assert_eq!(str_node.read().unwrap(), "");
@@ -366,7 +404,10 @@ fn test_cpu_range_bidirectional_property() {
         (vec![0, 1, 2, 3], "0-3"),
         (vec![0, 2, 4, 6], "0,2,4,6"),
         (vec![0, 1, 2, 5, 6, 7, 10], "0-2,5-7,10"),
-        (vec![0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15], "0-15"),
+        (
+            vec![0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15],
+            "0-15",
+        ),
         (vec![1, 3, 5, 7, 9, 11], "1,3,5,7,9,11"),
         (vec![4, 5, 6, 8, 12, 13, 14], "4-6,8,12-14"),
     ];

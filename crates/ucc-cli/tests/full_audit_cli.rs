@@ -82,16 +82,22 @@ async fn serve(backend: Arc<Backend>, auth: Arc<dyn Authorizer>) -> Connection {
 
 fn cpp(args: &[&str]) -> Option<Output> {
     let address = std::env::var("DBUS_SESSION_BUS_ADDRESS").expect("Use dbus-run-session");
-    let bin = std::env::var("UCC_AUDIT_CPP_CLI").ok().map(PathBuf::from).or_else(|| {
-        let manifest_dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
-        let root = manifest_dir.parent().and_then(|p| p.parent()).unwrap_or(manifest_dir);
-        let candidate = root.join("audit-cpp-build/bin/ucc-cli");
-        if candidate.exists() {
-            Some(candidate)
-        } else {
-            None
-        }
-    });
+    let bin = std::env::var("UCC_AUDIT_CPP_CLI")
+        .ok()
+        .map(PathBuf::from)
+        .or_else(|| {
+            let manifest_dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
+            let root = manifest_dir
+                .parent()
+                .and_then(|p| p.parent())
+                .unwrap_or(manifest_dir);
+            let candidate = root.join("audit-cpp-build/bin/ucc-cli");
+            if candidate.exists() {
+                Some(candidate)
+            } else {
+                None
+            }
+        });
 
     let bin = match bin {
         Some(b) => b,

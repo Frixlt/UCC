@@ -96,8 +96,7 @@ fn t_client_10_session_notification_monitor_self_filter_and_hyprctl_fallback() {
         "NotificationMonitor must filter out self-emitted UCC alerts to prevent lightbar loops (ISSUE-38)"
     );
 
-    let lid_hpp =
-        std::fs::read_to_string(root.join("ucc-session/LidDisplayHandler.hpp")).unwrap();
+    let lid_hpp = std::fs::read_to_string(root.join("ucc-session/LidDisplayHandler.hpp")).unwrap();
     assert!(
         !lid_hpp.contains("{QStringLiteral(\"eval\"), script}")
             || lid_hpp.contains("dispatch"),

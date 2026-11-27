@@ -47,7 +47,9 @@ impl UccdBackend for CliTestBackend {
     }
 
     fn get_fan_profile(&self, name: &str) -> String {
-        format!(r#"{{"name":"{name}","curve":[{{"temp":40,"speed":25}},{{"temp":80,"speed":95}}]}}"#)
+        format!(
+            r#"{{"name":"{name}","curve":[{{"temp":40,"speed":25}},{{"temp":80,"speed":95}}]}}"#
+        )
     }
 }
 
@@ -107,7 +109,10 @@ async fn test_cli_status_human_and_json() {
         .output()
         .expect("run ucc-cli status --json");
 
-    assert!(json_output.status.success(), "Exit code must be 0 for status --json");
+    assert!(
+        json_output.status.success(),
+        "Exit code must be 0 for status --json"
+    );
     let json_str = String::from_utf8_lossy(&json_output.stdout);
     let json_val: serde_json::Value =
         serde_json::from_str(&json_str).expect("stdout must be valid JSON");
@@ -115,7 +120,10 @@ async fn test_cli_status_human_and_json() {
     assert_eq!(json_val["connected"].as_bool(), Some(true));
     assert_eq!(json_val["powerState"].as_str(), Some("power_ac"));
     assert_eq!(json_val["activeProfile"]["id"].as_str(), Some("office"));
-    assert_eq!(json_val["activeProfile"]["name"].as_str(), Some("Office Mode"));
+    assert_eq!(
+        json_val["activeProfile"]["name"].as_str(),
+        Some("Office Mode")
+    );
     assert_eq!(json_val["hardware"]["displayBrightness"].as_i64(), Some(85));
     assert_eq!(json_val["waterCooler"]["connected"].as_bool(), Some(false));
     assert_eq!(json_val["charging"]["profile"].as_str(), Some("balanced"));
@@ -134,7 +142,10 @@ async fn test_cli_profile_list_human_and_json() {
         .output()
         .expect("run ucc-cli profile list");
 
-    assert!(output.status.success(), "Exit code must be 0 for profile list");
+    assert!(
+        output.status.success(),
+        "Exit code must be 0 for profile list"
+    );
     let stdout = String::from_utf8_lossy(&output.stdout);
     assert!(stdout.contains("Built-in profiles:"));
     assert!(stdout.contains("Office"));
@@ -150,12 +161,17 @@ async fn test_cli_profile_list_human_and_json() {
         .output()
         .expect("run ucc-cli profile list --json");
 
-    assert!(json_output.status.success(), "Exit code must be 0 for profile list --json");
+    assert!(
+        json_output.status.success(),
+        "Exit code must be 0 for profile list --json"
+    );
     let json_str = String::from_utf8_lossy(&json_output.stdout);
     let json_val: serde_json::Value =
         serde_json::from_str(&json_str).expect("stdout must be valid JSON");
 
-    let arr = json_val["builtin"].as_array().expect("must be a JSON array of builtin profiles");
+    let arr = json_val["builtin"]
+        .as_array()
+        .expect("must be a JSON array of builtin profiles");
     assert_eq!(arr.len(), 3);
     assert_eq!(arr[0]["id"].as_str(), Some("office"));
     assert_eq!(arr[1]["id"].as_str(), Some("balanced"));
@@ -175,7 +191,10 @@ async fn test_cli_profile_get_human_and_json() {
         .output()
         .expect("run ucc-cli profile get");
 
-    assert!(output.status.success(), "Exit code must be 0 for profile get");
+    assert!(
+        output.status.success(),
+        "Exit code must be 0 for profile get"
+    );
     let stdout = String::from_utf8_lossy(&output.stdout);
     assert!(stdout.contains("Profile:") || stdout.contains("Active Profile:"));
     assert!(stdout.contains("office") || stdout.contains("Office"));
@@ -189,7 +208,10 @@ async fn test_cli_profile_get_human_and_json() {
         .output()
         .expect("run ucc-cli profile get --json");
 
-    assert!(json_output.status.success(), "Exit code must be 0 for profile get --json");
+    assert!(
+        json_output.status.success(),
+        "Exit code must be 0 for profile get --json"
+    );
     let json_str = String::from_utf8_lossy(&json_output.stdout);
     let json_val: serde_json::Value =
         serde_json::from_str(&json_str).expect("stdout must be valid JSON");
@@ -224,7 +246,10 @@ async fn test_cli_fan_human_and_json() {
         .output()
         .expect("run ucc-cli fan --json");
 
-    assert!(json_output.status.success(), "Exit code must be 0 for fan --json");
+    assert!(
+        json_output.status.success(),
+        "Exit code must be 0 for fan --json"
+    );
     let json_str = String::from_utf8_lossy(&json_output.stdout);
     let json_val: serde_json::Value =
         serde_json::from_str(&json_str).expect("stdout must be valid JSON");
@@ -241,7 +266,10 @@ async fn test_cli_fan_human_and_json() {
         .output()
         .expect("run ucc-cli fan get office --json");
 
-    assert!(get_output.status.success(), "Exit code must be 0 for fan get --json");
+    assert!(
+        get_output.status.success(),
+        "Exit code must be 0 for fan get --json"
+    );
     let get_json_str = String::from_utf8_lossy(&get_output.stdout);
     let get_json: serde_json::Value =
         serde_json::from_str(&get_json_str).expect("stdout must be valid JSON");
@@ -261,7 +289,10 @@ async fn test_cli_exit_codes_on_errors() {
         .output()
         .expect("run unknown command");
 
-    assert!(!unknown_cmd.status.success(), "Exit code must be non-zero for unknown command");
+    assert!(
+        !unknown_cmd.status.success(),
+        "Exit code must be non-zero for unknown command"
+    );
 
     // 2. Unknown subcommand -> non-zero exit code
     let unknown_sub = Command::new(cli_bin)
@@ -271,7 +302,10 @@ async fn test_cli_exit_codes_on_errors() {
         .output()
         .expect("run unknown subcommand");
 
-    assert!(!unknown_sub.status.success(), "Exit code must be non-zero for unknown subcommand");
+    assert!(
+        !unknown_sub.status.success(),
+        "Exit code must be non-zero for unknown subcommand"
+    );
 
     // 3. Daemon unavailable / unreachable service -> non-zero exit code
     let offline_output = Command::new(cli_bin)
@@ -280,5 +314,8 @@ async fn test_cli_exit_codes_on_errors() {
         .output()
         .expect("run with offline daemon");
 
-    assert!(!offline_output.status.success(), "Exit code must be non-zero when daemon is unreachable");
+    assert!(
+        !offline_output.status.success(),
+        "Exit code must be non-zero when daemon is unreachable"
+    );
 }

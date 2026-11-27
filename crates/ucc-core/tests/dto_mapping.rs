@@ -73,7 +73,10 @@ fn test_legacy_profile_dto_roundtrip_and_camel_case_wire_parity() {
     assert_eq!(profile.cpu.min_freq_khz, Some(800_000));
     assert_eq!(profile.cpu.max_freq_khz, Some(4_500_000));
     assert_eq!(profile.cpu.governor, "powersave");
-    assert_eq!(profile.cpu.energy_performance_preference, "balance_performance");
+    assert_eq!(
+        profile.cpu.energy_performance_preference,
+        "balance_performance"
+    );
     assert!(!profile.cpu.no_turbo);
 
     assert!(profile.webcam.status);
@@ -95,21 +98,45 @@ fn test_legacy_profile_dto_roundtrip_and_camel_case_wire_parity() {
     assert_eq!(profile.odm_power_limits, vec![45, 80]);
     assert_eq!(profile.nvidia_ctgp_offset, Some(15));
     assert_eq!(profile.keyboard.keyboard_profile_name, "Rainbow");
-    assert_eq!(profile.selected_keyboard_profile, Some("kb-uuid-001".to_string()));
+    assert_eq!(
+        profile.selected_keyboard_profile,
+        Some("kb-uuid-001".to_string())
+    );
 
-    assert_eq!(profile.charging.charging_profile, Some("balanced".to_string()));
-    assert_eq!(profile.charging.charging_priority, Some("performance".to_string()));
+    assert_eq!(
+        profile.charging.charging_profile,
+        Some("balanced".to_string())
+    );
+    assert_eq!(
+        profile.charging.charging_priority,
+        Some("performance".to_string())
+    );
     assert_eq!(profile.charging.charge_type, Some(ChargeType::Standard));
     assert_eq!(profile.charging.start_threshold, Some(40));
     assert_eq!(profile.charging.end_threshold, Some(80));
 
     // Serialize back to JSON and verify exact camelCase keys are preserved
     let serialized = LegacyProfileDto::to_json(&profile).expect("should serialize to JSON");
-    assert!(serialized.contains("\"tableCPU\""), "Must contain exact tableCPU key for C++ wire parity");
-    assert!(serialized.contains("\"tableGPU\""), "Must contain exact tableGPU key for C++ wire parity");
-    assert!(serialized.contains("\"autoControlWC\""), "Must contain exact autoControlWC key for C++ wire parity");
-    assert!(serialized.contains("\"selectedKeyboardProfile\""), "Must contain exact selectedKeyboardProfile key");
-    assert!(serialized.contains("\"nvidiaCTGPOffset\""), "Must contain exact nvidiaCTGPOffset key");
+    assert!(
+        serialized.contains("\"tableCPU\""),
+        "Must contain exact tableCPU key for C++ wire parity"
+    );
+    assert!(
+        serialized.contains("\"tableGPU\""),
+        "Must contain exact tableGPU key for C++ wire parity"
+    );
+    assert!(
+        serialized.contains("\"autoControlWC\""),
+        "Must contain exact autoControlWC key for C++ wire parity"
+    );
+    assert!(
+        serialized.contains("\"selectedKeyboardProfile\""),
+        "Must contain exact selectedKeyboardProfile key"
+    );
+    assert!(
+        serialized.contains("\"nvidiaCTGPOffset\""),
+        "Must contain exact nvidiaCTGPOffset key"
+    );
 
     // Re-parse the serialized JSON to ensure round-trip equality
     let roundtripped = LegacyProfileDto::parse_json(&serialized).expect("re-parse must succeed");
@@ -141,8 +168,8 @@ fn test_pump_speed_to_voltage_translator_finding_v2_04() {
     // In tablePump, speed is step index (0..4).
     // In hardware/driver, discrete code is PumpVoltage (0, 2, 3, 4).
     assert_eq!(pump_speed_to_voltage(0), Ok(PumpVoltage::Off)); // code 4
-    assert_eq!(pump_speed_to_voltage(1), Ok(PumpVoltage::V7));  // code 2
-    assert_eq!(pump_speed_to_voltage(2), Ok(PumpVoltage::V8));  // code 3
+    assert_eq!(pump_speed_to_voltage(1), Ok(PumpVoltage::V7)); // code 2
+    assert_eq!(pump_speed_to_voltage(2), Ok(PumpVoltage::V8)); // code 3
     assert_eq!(pump_speed_to_voltage(3), Ok(PumpVoltage::V11)); // code 0
     assert_eq!(pump_speed_to_voltage(4), Ok(PumpVoltage::V12)); // code 1
 

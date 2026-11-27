@@ -67,13 +67,7 @@ fn t_cfg_02_profile_accepts_all_kernel_charge_types() {
     let base = serde_json::to_value(UccProfile::new("charge-types", "Charge Types")).unwrap();
 
     for ct in [
-        "Standard",
-        "Custom",
-        "Trickle",
-        "Fast",
-        "Adaptive",
-        "LongLife",
-        "Bypass",
+        "Standard", "Custom", "Trickle", "Fast", "Adaptive", "LongLife", "Bypass",
     ] {
         let mut payload = base.clone();
         payload["chargeType"] = json!(ct);

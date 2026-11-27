@@ -7,8 +7,8 @@ mod notifications;
 
 use notifications::{
     close_notify, drm_root_from_env, format_refresh_prompt, internal_monitors_from_config,
-    next_optional, parse_policy_source, parse_requested_hz, query_compositor_config,
-    run_commands, send_notify, LoginManagerProxy, NotificationsProxy, UPowerProxy,
+    next_optional, parse_policy_source, parse_requested_hz, query_compositor_config, run_commands,
+    send_notify, LoginManagerProxy, NotificationsProxy, UPowerProxy,
 };
 use serde_json::Value;
 use std::fs::OpenOptions;
@@ -70,7 +70,10 @@ async fn connect_uccd() -> Result<(Connection, UccdProxy<'static>), String> {
 }
 
 fn lightbar_notify_enabled(settings: &Value, policy: &Value) -> bool {
-    let managed = settings.get("managed").and_then(|v| v.as_bool()).unwrap_or(false);
+    let managed = settings
+        .get("managed")
+        .and_then(|v| v.as_bool())
+        .unwrap_or(false);
     let silent = settings
         .get("silent_mode")
         .and_then(|v| v.as_bool())

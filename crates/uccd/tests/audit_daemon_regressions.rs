@@ -10,8 +10,8 @@ use ucc_core::{FanPoint, UccProfile};
 use ucc_dbus::UccdBackend;
 use ucc_hardware::{
     default_process_runner, DeviceCapabilities, DeviceVendor, MockPlatformBackend, MockSysfs,
-    PlatformBackend, PlatformBackendKind, PlatformCapabilities, PlatformWrite, PowerDeviceController,
-    TelemetryConfig,
+    PlatformBackend, PlatformBackendKind, PlatformCapabilities, PlatformWrite,
+    PowerDeviceController, TelemetryConfig,
 };
 use ucc_lighting::{KeyboardCapabilities, LightbarCapabilities, MockLightingTransport};
 use uccd::{DbusSignalEvent, LidPolicyConfig, LiveUccdBackend, UccdDependencies, WakeupPolicy};
@@ -183,7 +183,11 @@ fn t_daemon_05_wakeup_policy_no_double_sys_proc_join_and_wired_to_power_devices(
     let dev_pw = sys_dir.join("devices/pci0000:00/0000:00:14.0/power/wakeup");
     std::fs::create_dir_all(acpi_wakeup.parent().unwrap()).unwrap();
     std::fs::create_dir_all(dev_pw.parent().unwrap()).unwrap();
-    std::fs::write(&acpi_wakeup, "Device\tS-state\tStatus\tSysfs node\nXHC\tS3\t*enabled\tpci:0000:00:14.0\n").unwrap();
+    std::fs::write(
+        &acpi_wakeup,
+        "Device\tS-state\tStatus\tSysfs node\nXHC\tS3\t*enabled\tpci:0000:00:14.0\n",
+    )
+    .unwrap();
     std::fs::write(&dev_pw, "enabled\n").unwrap();
 
     let policy = WakeupPolicy::with_sys_proc(&sys_dir, &proc_dir);
@@ -204,12 +208,24 @@ fn t_daemon_08_named_fan_profile_preset_resolution_and_temp_curve_isolation() {
         build_backend_with_caps(tmp.path(), default_uniwill_caps(), |_| {}, |_| {});
 
     let cpu_pts = vec![
-        FanPoint { temp: 40, speed: 30 },
-        FanPoint { temp: 80, speed: 70 },
+        FanPoint {
+            temp: 40,
+            speed: 30,
+        },
+        FanPoint {
+            temp: 80,
+            speed: 70,
+        },
     ];
     let gpu_pts = vec![
-        FanPoint { temp: 40, speed: 25 },
-        FanPoint { temp: 80, speed: 65 },
+        FanPoint {
+            temp: 40,
+            speed: 25,
+        },
+        FanPoint {
+            temp: 80,
+            speed: 65,
+        },
     ];
     assert!(backend.set_fan_profile_dgpu(&serde_json::to_string(&gpu_pts).unwrap()));
     assert!(backend.set_fan_profile_cpu(&serde_json::to_string(&cpu_pts).unwrap()));
@@ -240,7 +256,9 @@ fn t_daemon_09_startup_charging_settings_and_sysfs_thresholds() {
         p.charging.end_threshold = Some(80);
     });
     let config_path = tmp.path().join("settings.json");
-    ConfigManager::with_custom_path(&config_path).save(&cfg).unwrap();
+    ConfigManager::with_custom_path(&config_path)
+        .save(&cfg)
+        .unwrap();
 
     let (backend, _, sysfs, _) = build_backend_with_caps(
         tmp.path(),
@@ -255,12 +273,18 @@ fn t_daemon_09_startup_charging_settings_and_sysfs_thresholds() {
 
     backend.activate_hardware();
     assert_eq!(
-        sysfs.get_file(bat_dir.join("charge_control_start_threshold")).as_deref().map(str::trim),
+        sysfs
+            .get_file(bat_dir.join("charge_control_start_threshold"))
+            .as_deref()
+            .map(str::trim),
         Some("40"),
         "activate_hardware must apply saved global charging start threshold"
     );
     assert_eq!(
-        sysfs.get_file(bat_dir.join("charge_control_end_threshold")).as_deref().map(str::trim),
+        sysfs
+            .get_file(bat_dir.join("charge_control_end_threshold"))
+            .as_deref()
+            .map(str::trim),
         Some("80"),
         "activate_hardware must apply saved global charging end threshold"
     );
@@ -290,10 +314,9 @@ fn t_daemon_10_unsupported_vendor_runs_passive_mode_zero_writes() {
 
 #[test]
 fn t_daemon_11_read_rpcs_avoid_unwrap_lock_poison_panics() {
-    let backend_src = std::fs::read_to_string(
-        PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("src/backend.rs"),
-    )
-    .unwrap();
+    let backend_src =
+        std::fs::read_to_string(PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("src/backend.rs"))
+            .unwrap();
     let unwrap_count = backend_src.matches(".unwrap()").count();
     assert!(
         unwrap_count <= 5,
@@ -311,7 +334,10 @@ fn t_daemon_13_signals_emitted_for_mode_reapply_and_power_source_change() {
 
     // Switch AC offline -> BAT without changing pd_rev
     sysfs.set_file(tmp.path().join("sys/class/power_supply/AC/online"), "0");
-    sysfs.set_file(tmp.path().join("sys/class/power_supply/BAT0/type"), "Battery");
+    sysfs.set_file(
+        tmp.path().join("sys/class/power_supply/BAT0/type"),
+        "Battery",
+    );
     backend.reconcile_power_state(false);
 
     let mut saw_pd = false;
@@ -356,7 +382,8 @@ fn t_daemon_15_custom_profile_crud_empty_id_builtin_collision_and_delete_reconci
     assert_eq!(platform.read_tdp(0).unwrap(), 33);
 
     assert!(backend.delete_custom_profile("del_reconcile"));
-    let active_after: UccProfile = serde_json::from_str(&backend.get_active_profile_json()).unwrap();
+    let active_after: UccProfile =
+        serde_json::from_str(&backend.get_active_profile_json()).unwrap();
     assert_ne!(active_after.id, "del_reconcile");
     assert_ne!(
         platform.read_tdp(0).unwrap(),
@@ -452,12 +479,16 @@ fn t_daemon_17_backlight_pwm_ramp_lag_does_not_rollback_profile_switch() {
     let bl = tmp.path().join("sys/class/backlight/intel_backlight");
     let raw_sysfs = Arc::new(MockSysfs::new());
     raw_sysfs.set_file(
-        tmp.path().join("sys/devices/system/cpu/cpu0/cpufreq/scaling_cur_freq"),
+        tmp.path()
+            .join("sys/devices/system/cpu/cpu0/cpufreq/scaling_cur_freq"),
         "3200000",
     );
     raw_sysfs.set_file(tmp.path().join("sys/devices/system/cpu/present"), "0-1");
     raw_sysfs.set_file(tmp.path().join("sys/class/hwmon/hwmon0/name"), "coretemp");
-    raw_sysfs.set_file(tmp.path().join("sys/class/hwmon/hwmon0/temp1_input"), "55000");
+    raw_sysfs.set_file(
+        tmp.path().join("sys/class/hwmon/hwmon0/temp1_input"),
+        "55000",
+    );
     raw_sysfs.set_file(tmp.path().join("sys/class/power_supply/AC/type"), "Mains");
     raw_sysfs.set_file(tmp.path().join("sys/class/power_supply/AC/online"), "1");
     raw_sysfs.set_file(bl.join("max_brightness"), "100\n");
@@ -543,13 +574,20 @@ fn t_hw_01_cpu_freq_ordering_reset_amd_boost_and_present_core_count() {
             s.set_file(tmp.path().join("sys/devices/system/cpu/present"), "0-7");
             for c in 0..8 {
                 let on = if c < 4 { "1" } else { "0" };
-                s.set_file(tmp.path().join(format!("sys/devices/system/cpu/cpu{c}/online")), on);
+                s.set_file(
+                    tmp.path()
+                        .join(format!("sys/devices/system/cpu/cpu{c}/online")),
+                    on,
+                );
             }
             s.set_file(cpu0.join("cpuinfo_min_freq"), "400000");
             s.set_file(cpu0.join("cpuinfo_max_freq"), "4500000");
             s.set_file(cpu0.join("scaling_min_freq"), "2500000");
             s.set_file(cpu0.join("scaling_max_freq"), "4000000");
-            s.set_file(cpu0.join("scaling_available_governors"), "powersave performance");
+            s.set_file(
+                cpu0.join("scaling_available_governors"),
+                "powersave performance",
+            );
             s.set_file(cpu0.join("scaling_governor"), "powersave");
             s.set_file(tmp.path().join("sys/devices/system/cpu/cpufreq/boost"), "1");
         },
@@ -584,7 +622,10 @@ fn t_hw_01_cpu_freq_ordering_reset_amd_boost_and_present_core_count() {
         sysfs.journal()
     );
     assert_eq!(
-        sysfs.get_file(tmp.path().join("sys/devices/system/cpu/cpufreq/boost")).as_deref().map(str::trim),
+        sysfs
+            .get_file(tmp.path().join("sys/devices/system/cpu/cpufreq/boost"))
+            .as_deref()
+            .map(str::trim),
         Some("0"),
         "AMD cpufreq/boost must be updated when noTurbo=true"
     );
@@ -595,11 +636,17 @@ fn t_hw_01_cpu_freq_ordering_reset_amd_boost_and_present_core_count() {
     prof_reset.cpu.max_freq_khz = None;
     assert!(backend.apply_profile(&serde_json::to_string(&prof_reset).unwrap()));
     assert_eq!(
-        sysfs.get_file(cpu0.join("scaling_min_freq")).as_deref().map(str::trim),
+        sysfs
+            .get_file(cpu0.join("scaling_min_freq"))
+            .as_deref()
+            .map(str::trim),
         Some("400000")
     );
     assert_eq!(
-        sysfs.get_file(cpu0.join("scaling_max_freq")).as_deref().map(str::trim),
+        sysfs
+            .get_file(cpu0.join("scaling_max_freq"))
+            .as_deref()
+            .map(str::trim),
         Some("4500000")
     );
 }
@@ -619,10 +666,9 @@ fn t_hw_07_no_dgpu_returns_neutral_unknown_vendor() {
 
 #[test]
 fn t_sec_01_uccd_main_refuses_silent_session_bus_and_tmp_pid() {
-    let main_src = std::fs::read_to_string(
-        PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("src/main.rs"),
-    )
-    .unwrap();
+    let main_src =
+        std::fs::read_to_string(PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("src/main.rs"))
+            .unwrap();
     assert!(
         !main_src.contains("\"/tmp/uccd.pid\""),
         "uccd must use $XDG_RUNTIME_DIR/uccd.pid fallback instead of world-writable /tmp/uccd.pid"
@@ -635,7 +681,10 @@ fn t_sec_01_uccd_main_refuses_silent_session_bus_and_tmp_pid() {
     // Spawn compiled uccd with unreachable system bus and verify it does NOT fall back to session bus
     let out = Command::new("timeout")
         .args(["3s", env!("CARGO_BIN_EXE_uccd"), "--start"])
-        .env("DBUS_SYSTEM_BUS_ADDRESS", "unix:path=/nonexistent/uccd_audit_test.sock")
+        .env(
+            "DBUS_SYSTEM_BUS_ADDRESS",
+            "unix:path=/nonexistent/uccd_audit_test.sock",
+        )
         .env_remove("UCC_ALLOW_SESSION_BUS")
         .output()
         .expect("spawn uccd");
@@ -666,7 +715,9 @@ fn t_daemon_19_get_settings_json_includes_hwp_dynamic_boost_supported() {
         build_backend_with_caps(tmp.path(), default_uniwill_caps(), |_| {}, |_| {});
     let settings: Value = serde_json::from_str(&backend.get_settings_json()).unwrap();
     assert_eq!(
-        settings.get("hwpDynamicBoostSupported").and_then(|v| v.as_bool()),
+        settings
+            .get("hwpDynamicBoostSupported")
+            .and_then(|v| v.as_bool()),
         Some(true),
         "GetSettingsJSON must include live hwpDynamicBoostSupported flag"
     );
@@ -689,9 +740,7 @@ fn t_daemon_20_lightbar_reconfigure_resets_animation_timer() {
         .to_string()
     ));
     assert!(backend.trigger_lightbar_animation(true));
-    assert!(backend.set_lightbar_settings_json(
-        &json!({ "managed": false }).to_string()
-    ));
+    assert!(backend.set_lightbar_settings_json(&json!({ "managed": false }).to_string()));
     let status: Value = serde_json::from_str(&backend.get_lightbar_status_json()).unwrap();
     assert_eq!(
         status["animating"], false,

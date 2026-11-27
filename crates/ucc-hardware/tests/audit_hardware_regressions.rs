@@ -11,10 +11,9 @@ use ucc_hardware::cooler::NORDIC_UART_SERVICE_UUID;
 use ucc_hardware::ioctl::requests;
 use ucc_hardware::traits::MockHardwareIo;
 use ucc_hardware::{
-    detect_lct_model, validate_settings_json, BluezCoolerClient, DmiInfo, FanController,
-    GpuVendor, MetricsHistoryStore, MockSysfs, PlatformBackend, PlatformCapabilities,
-    PlatformError, PowerDeviceController, RaplEnergyCounter, TelemetryCollector, TelemetryConfig,
-    TuxedoIoBackend,
+    detect_lct_model, validate_settings_json, BluezCoolerClient, DmiInfo, FanController, GpuVendor,
+    MetricsHistoryStore, MockSysfs, PlatformBackend, PlatformCapabilities, PlatformError,
+    PowerDeviceController, RaplEnergyCounter, TelemetryCollector, TelemetryConfig, TuxedoIoBackend,
 };
 use zbus::zvariant::{OwnedObjectPath, OwnedValue, Value};
 use zbus::{connection, interface};
@@ -102,7 +101,12 @@ fn t_hw_06_power_devices_skips_nvidia_smi_when_dgpu_suspended_in_d3cold() {
         true
     });
 
-    let ctrl = PowerDeviceController::new(&sys, tmp.path().join("proc"), runner, tmp.path().join("bin"));
+    let ctrl = PowerDeviceController::new(
+        &sys,
+        tmp.path().join("proc"),
+        runner,
+        tmp.path().join("bin"),
+    );
     assert!(ctrl
         .set_settings(json!({
             "enabled": true,
@@ -255,17 +259,24 @@ struct MockNonLctObjectManager {
 impl MockNonLctObjectManager {
     async fn get_managed_objects(
         &self,
-    ) -> zbus::fdo::Result<
-        HashMap<OwnedObjectPath, HashMap<String, HashMap<String, OwnedValue>>>,
-    > {
+    ) -> zbus::fdo::Result<HashMap<OwnedObjectPath, HashMap<String, HashMap<String, OwnedValue>>>>
+    {
         let mut root = HashMap::new();
         let mut ifaces = HashMap::new();
         let mut dev_props = HashMap::new();
-        dev_props.insert("Name".to_string(), Value::from(self.dev_name.clone()).try_into().unwrap());
-        dev_props.insert("Address".to_string(), Value::from(self.address.clone()).try_into().unwrap());
+        dev_props.insert(
+            "Name".to_string(),
+            Value::from(self.dev_name.clone()).try_into().unwrap(),
+        );
+        dev_props.insert(
+            "Address".to_string(),
+            Value::from(self.address.clone()).try_into().unwrap(),
+        );
         dev_props.insert(
             "Connected".to_string(),
-            Value::from(self.connected.load(Ordering::SeqCst)).try_into().unwrap(),
+            Value::from(self.connected.load(Ordering::SeqCst))
+                .try_into()
+                .unwrap(),
         );
         dev_props.insert(
             "UUIDs".to_string(),
@@ -295,7 +306,11 @@ async fn t_hw_13_bluez_cooler_does_not_match_generic_nus_device_without_lct_name
         .build()
         .await
         .unwrap();
-    let client_conn = connection::Builder::session().unwrap().build().await.unwrap();
+    let client_conn = connection::Builder::session()
+        .unwrap()
+        .build()
+        .await
+        .unwrap();
 
     server_conn
         .object_server()

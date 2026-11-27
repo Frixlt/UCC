@@ -34,15 +34,15 @@ pub use cooler::{
     KEEPALIVE_INTERVAL, KEEPALIVE_MISS_THRESHOLD, NORDIC_UART_CHAR_RX, NORDIC_UART_CHAR_TX,
     NORDIC_UART_SERVICE_UUID,
 };
-pub use fan_controller::{
-    spawn_fan_worker, FanController, FanTickSnapshot, FanWorkerConfig, FanWorkerHandle,
-};
 pub use detection::{
     build_laptop_model, classify_manufacturer, detect_device_capabilities, detect_vendor,
     identify_device, is_ctgp_supported, is_device_supported, is_hwp_dynamic_boost_supported,
     is_water_cooler_supported, DeviceCapabilities, DeviceVendor, DmiInfo, DmiQuirks, DmiTuple,
     LaptopManufacturer, UniwillDeviceID, CTGP_HIDDEN_DEVICES, SUPPORTED_DEVICE_SKUS,
     WATER_COOLER_DEVICES,
+};
+pub use fan_controller::{
+    spawn_fan_worker, FanController, FanTickSnapshot, FanWorkerConfig, FanWorkerHandle,
 };
 pub use ioctl::{
     magic, read_uniwill_fan_speed, read_uniwill_fan_temp, read_uniwill_tdp_limits, requests,
@@ -55,8 +55,8 @@ pub use nvml::{
     NvmlTelemetrySnapshot, NvmlUtilization, NvmlWrapper,
 };
 pub use platform::{
-    MockPlatformBackend, PlatformBackend, PlatformBackendKind, PlatformCapabilities,
-    PlatformError, PlatformWrite, TuxedoIoBackend,
+    MockPlatformBackend, PlatformBackend, PlatformBackendKind, PlatformCapabilities, PlatformError,
+    PlatformWrite, TuxedoIoBackend,
 };
 pub use sysfs::{
     format_cpu_range, parse_cpu_range, SysfsError, SysfsJournalEntry, SysfsNode, SysfsRoot,

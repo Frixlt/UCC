@@ -63,7 +63,8 @@ impl CpuWorker {
 
         // 1. Validate and configure online cores
         if let Some(ref enabled) = cpu.enabled_cores {
-            self.cpu_ctrl.set_enabled_cores(enabled, |core, val| core.write_online(val).is_ok())?;
+            self.cpu_ctrl
+                .set_enabled_cores(enabled, |core, val| core.write_online(val).is_ok())?;
         } else {
             self.cpu_ctrl.use_cores(cpu.online_cores)?;
         }
@@ -74,9 +75,14 @@ impl CpuWorker {
                 return Err(format!("Failed to write intel_pstate/no_turbo: {e}"));
             }
         }
-        if let Err(e) = self.cpu_ctrl.write_intel_hwp_dynamic_boost(cpu.hwp_dynamic_boost) {
+        if let Err(e) = self
+            .cpu_ctrl
+            .write_intel_hwp_dynamic_boost(cpu.hwp_dynamic_boost)
+        {
             if e.kind() != std::io::ErrorKind::NotFound {
-                return Err(format!("Failed to write intel_pstate/hwp_dynamic_boost: {e}"));
+                return Err(format!(
+                    "Failed to write intel_pstate/hwp_dynamic_boost: {e}"
+                ));
             }
         }
 
@@ -86,7 +92,9 @@ impl CpuWorker {
 
         if !self.no_epp_write_quirk {
             if let Some(ref default_epp) = self.system_default_epp {
-                let _ = self.cpu_ctrl.set_energy_performance_preference(Some(default_epp));
+                let _ = self
+                    .cpu_ctrl
+                    .set_energy_performance_preference(Some(default_epp));
             }
         }
 
@@ -103,7 +111,10 @@ impl CpuWorker {
                     .set_governor(Some(gov))
                     .map_err(|e| format!("Failed to apply CPU governor '{gov}': {e}"))?;
             } else if self.warned_governors.insert(gov.to_string()) {
-                warn!("CpuWorker: Governor '{}' is not available on this system", gov);
+                warn!(
+                    "CpuWorker: Governor '{}' is not available on this system",
+                    gov
+                );
             }
         }
 
@@ -124,13 +135,19 @@ impl CpuWorker {
                 if !self.cpu_ctrl.cores.is_empty() {
                     let first_core = &self.cpu_ctrl.cores[0];
                     if let Some(ref current_epp) = first_core.read_energy_performance_preference() {
-                        if current_epp != epp && !self.intel_pstate_performance_owns_epp(first_core, epp, current_epp) {
+                        if current_epp != epp
+                            && !self.intel_pstate_performance_owns_epp(first_core, epp, current_epp)
+                        {
                             self.no_epp_write_quirk = true;
                             warn!(
                                 "CpuWorker: EPP write to sysfs rejected (requested '{}', got '{}'). Disabling EPP management",
                                 epp, current_epp
                             );
-                        } else if self.intel_pstate_performance_owns_epp(first_core, epp, current_epp) {
+                        } else if self.intel_pstate_performance_owns_epp(
+                            first_core,
+                            epp,
+                            current_epp,
+                        ) {
                             info!("CpuWorker: intel_pstate performance governor owns EPP; sysfs reports 'default'");
                         }
                     }
@@ -150,7 +167,9 @@ impl CpuWorker {
 
         // 7. Ensure turbo settings remain applied after frequency bounds writes
         let _ = self.cpu_ctrl.write_intel_pstate_no_turbo(cpu.no_turbo);
-        let _ = self.cpu_ctrl.write_intel_hwp_dynamic_boost(cpu.hwp_dynamic_boost);
+        let _ = self
+            .cpu_ctrl
+            .write_intel_hwp_dynamic_boost(cpu.hwp_dynamic_boost);
 
         Ok(())
     }
@@ -169,7 +188,9 @@ impl CpuWorker {
 
         if !self.no_epp_write_quirk {
             if let Some(ref default_epp) = self.system_default_epp {
-                let _ = self.cpu_ctrl.set_energy_performance_preference(Some(default_epp));
+                let _ = self
+                    .cpu_ctrl
+                    .set_energy_performance_preference(Some(default_epp));
             }
         }
 
@@ -225,7 +246,9 @@ impl CpuWorker {
             for core in &self.cpu_ctrl.cores {
                 if core.core_index == 0 || core.read_online().unwrap_or(false) {
                     if let Some(ref current_epp) = core.read_energy_performance_preference() {
-                        if current_epp != epp && !self.intel_pstate_performance_owns_epp(core, epp, current_epp) {
+                        if current_epp != epp
+                            && !self.intel_pstate_performance_owns_epp(core, epp, current_epp)
+                        {
                             debug!(
                                 "CpuWorker: Core {} EPP '{}' != expected '{}'",
                                 core.core_index, current_epp, epp
@@ -245,11 +268,17 @@ impl CpuWorker {
         }
 
         let acpi_fallback = self.cpu_ctrl.has_boost()
-            && self.cpu_ctrl.cores.first()
+            && self
+                .cpu_ctrl
+                .cores
+                .first()
                 .and_then(|c| c.read_scaling_driver())
-                .as_deref() == Some("acpi-cpufreq");
+                .as_deref()
+                == Some("acpi-cpufreq");
 
-        if self.cpu_ctrl.cores.is_empty() && (cpu.min_freq_khz.is_some() || cpu.max_freq_khz.is_some()) {
+        if self.cpu_ctrl.cores.is_empty()
+            && (cpu.min_freq_khz.is_some() || cpu.max_freq_khz.is_some())
+        {
             return false;
         }
 
@@ -257,11 +286,16 @@ impl CpuWorker {
             if core.core_index == 0 || core.read_online().unwrap_or(false) {
                 if let Some(req_min) = cpu.min_freq_khz {
                     let current_min = core.read_scaling_min_freq();
-                    let expected_min = self.cpu_ctrl.compute_effective_min_freq(core, Some(req_min as i64));
+                    let expected_min = self
+                        .cpu_ctrl
+                        .compute_effective_min_freq(core, Some(req_min as i64));
                     match (current_min, expected_min) {
-                        (Some(cur), Some(exp)) if cur == exp => {},
+                        (Some(cur), Some(exp)) if cur == exp => {}
                         _ => {
-                            debug!("CpuWorker: Core {} min freq mismatch or missing nodes", core.core_index);
+                            debug!(
+                                "CpuWorker: Core {} min freq mismatch or missing nodes",
+                                core.core_index
+                            );
                             return false;
                         }
                     }
@@ -269,11 +303,18 @@ impl CpuWorker {
 
                 if let Some(req_max) = cpu.max_freq_khz {
                     let current_max = core.read_scaling_max_freq();
-                    let expected_max = self.cpu_ctrl.compute_effective_max_freq(core, Some(req_max as i64), acpi_fallback);
+                    let expected_max = self.cpu_ctrl.compute_effective_max_freq(
+                        core,
+                        Some(req_max as i64),
+                        acpi_fallback,
+                    );
                     match (current_max, expected_max) {
-                        (Some(cur), Some(exp)) if cur == exp => {},
+                        (Some(cur), Some(exp)) if cur == exp => {}
                         _ => {
-                            debug!("CpuWorker: Core {} max freq mismatch or missing nodes", core.core_index);
+                            debug!(
+                                "CpuWorker: Core {} max freq mismatch or missing nodes",
+                                core.core_index
+                            );
                             return false;
                         }
                     }
@@ -326,20 +367,29 @@ impl CpuWorker {
     }
 
     fn is_governor_available(&self, governor: &str) -> bool {
-        self.cpu_ctrl.cores.first()
+        self.cpu_ctrl
+            .cores
+            .first()
             .and_then(|c| c.read_scaling_available_governors())
             .map(|govs| govs.iter().any(|g| g == governor))
             .unwrap_or(false)
     }
 
     fn is_epp_available(&self, epp: &str) -> bool {
-        self.cpu_ctrl.cores.first()
+        self.cpu_ctrl
+            .cores
+            .first()
             .and_then(|c| c.read_energy_performance_available_preferences())
             .map(|prefs| prefs.iter().any(|p| p == epp))
             .unwrap_or(false)
     }
 
-    fn intel_pstate_performance_owns_epp(&self, core: &LogicalCpu, requested_epp: &str, current_epp: &str) -> bool {
+    fn intel_pstate_performance_owns_epp(
+        &self,
+        core: &LogicalCpu,
+        requested_epp: &str,
+        current_epp: &str,
+    ) -> bool {
         requested_epp == "performance"
             && current_epp == "default"
             && core.read_scaling_driver().as_deref() == Some("intel_pstate")

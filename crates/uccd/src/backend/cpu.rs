@@ -27,7 +27,10 @@ impl LiveUccdBackend {
             .and_then(|s| s.trim().parse::<u32>().ok())
     }
 
-    pub(super) fn discover_all_cpu_dirs_for(sysfs: &dyn Sysfs, sys_root: &Path) -> Vec<(u32, PathBuf)> {
+    pub(super) fn discover_all_cpu_dirs_for(
+        sysfs: &dyn Sysfs,
+        sys_root: &Path,
+    ) -> Vec<(u32, PathBuf)> {
         let cpu_dir = sys_root.join("sys/devices/system/cpu");
         let Ok(entries) = sysfs.read_dir(&cpu_dir) else {
             return Vec::new();
@@ -314,7 +317,10 @@ impl LiveUccdBackend {
         ok
     }
 
-    pub(super) fn apply_cpu_settings(&self, profile: &UccProfile) -> Result<CpuApplyResult, String> {
+    pub(super) fn apply_cpu_settings(
+        &self,
+        profile: &UccProfile,
+    ) -> Result<CpuApplyResult, String> {
         if self.is_vendor_unsupported() || ucc_config::is_read_only_preview() {
             return Ok(CpuApplyResult {
                 rollback: Vec::new(),
@@ -381,11 +387,7 @@ impl LiveUccdBackend {
             for (id, dir) in &all_cpus {
                 if *id > 0 && desired_online.contains(id) {
                     let online_path = dir.join("online");
-                    if self
-                        .sysfs
-                        .read(&online_path)
-                        .is_ok_and(|v| v.trim() != "1")
-                    {
+                    if self.sysfs.read(&online_path).is_ok_and(|v| v.trim() != "1") {
                         self.write_cpu_with_rollback(&online_path, "1", &mut rollback)?;
                     }
                 }
@@ -439,8 +441,9 @@ impl LiveUccdBackend {
                     let epp_path = cpufreq.join("energy_performance_preference");
                     match self.sysfs.read(&epp_path) {
                         Ok(prev_epp) => {
-                            if let Err(err) =
-                                self.sysfs.write(&epp_path, &cpu.energy_performance_preference)
+                            if let Err(err) = self
+                                .sysfs
+                                .write(&epp_path, &cpu.energy_performance_preference)
                             {
                                 if err.raw_os_error() == Some(nix::libc::EBUSY) {
                                     warn!(
@@ -450,14 +453,20 @@ impl LiveUccdBackend {
                                     );
                                     fully_applied = false;
                                 } else {
-                                    return Err(format!("Failed writing {}: {err}", epp_path.display()));
+                                    return Err(format!(
+                                        "Failed writing {}: {err}",
+                                        epp_path.display()
+                                    ));
                                 }
                             } else {
                                 rollback.push((epp_path, prev_epp.trim().to_string()));
                             }
                         }
                         Err(e) => {
-                            return Err(format!("Failed reading baseline {}: {e}", epp_path.display()));
+                            return Err(format!(
+                                "Failed reading baseline {}: {e}",
+                                epp_path.display()
+                            ));
                         }
                     }
                 }
@@ -548,7 +557,11 @@ impl LiveUccdBackend {
         if self.shutdown_wait_expired.load(Ordering::SeqCst) {
             return false;
         }
-        if self.sysfs.read(path).is_ok_and(|cur| cur.trim() == target.trim()) {
+        if self
+            .sysfs
+            .read(path)
+            .is_ok_and(|cur| cur.trim() == target.trim())
+        {
             return true;
         }
         if self.shutdown_wait_expired.load(Ordering::SeqCst) {
@@ -564,7 +577,10 @@ impl LiveUccdBackend {
         match self.sysfs.read(path) {
             Ok(cur) if cur.trim() == target.trim() => true,
             result => {
-                warn!("Could not verify restored CPU sysfs node {}: {result:?}", path.display());
+                warn!(
+                    "Could not verify restored CPU sysfs node {}: {result:?}",
+                    path.display()
+                );
                 false
             }
         }

@@ -76,7 +76,10 @@ async fn test_dbus_server_and_client_proxies_live() {
     let charge_type = primary_proxy.set_charge_type("Standard").await.unwrap();
     assert!(charge_type);
 
-    let pump_volt = primary_proxy.set_water_cooler_pump_voltage(3).await.unwrap();
+    let pump_volt = primary_proxy
+        .set_water_cooler_pump_voltage(3)
+        .await
+        .unwrap();
     assert!(pump_volt);
 
     let fan_spd = primary_proxy.set_water_cooler_fan_speed(60).await.unwrap();
@@ -157,7 +160,10 @@ async fn test_dbus_server_authorization_rejection() {
 
     // Rejection on Read JSON method -> returns default "{}"
     let prof_json = proxy.get_active_profile_json().await.unwrap();
-    assert_eq!(prof_json, "{}", "Denied Read JSON method must return empty json object");
+    assert_eq!(
+        prof_json, "{}",
+        "Denied Read JSON method must return empty json object"
+    );
 }
 
 #[tokio::test]
@@ -388,7 +394,11 @@ impl UccdBackend for MockContractBackend {
 
     fn set_active_profile(&self, profile_id: &str) -> bool {
         let known = ["office", "balanced", "performance"];
-        let is_custom = self.custom_profiles.lock().unwrap().contains_key(profile_id);
+        let is_custom = self
+            .custom_profiles
+            .lock()
+            .unwrap()
+            .contains_key(profile_id);
         if known.contains(&profile_id) || is_custom {
             *self.active_profile_id.lock().unwrap() = profile_id.to_string();
             *self.active_profile_json.lock().unwrap() = format!(r#"{{"id":"{profile_id}"}}"#);
@@ -488,7 +498,8 @@ impl UccdBackend for MockContractBackend {
         // Discrete pump codes allowed on LCT hardware: 0 (11V), 2 (7V), 3 (8V), 4 (Off)
         // Code 1 (12V) is forbidden on hardware.
         if [0, 2, 3, 4].contains(&voltage) {
-            self.water_cooler_pump_level.store(voltage, Ordering::SeqCst);
+            self.water_cooler_pump_level
+                .store(voltage, Ordering::SeqCst);
             true
         } else {
             false
@@ -571,7 +582,9 @@ impl UccdBackend for MockContractBackend {
     }
 
     fn get_fan_profile(&self, name: &str) -> String {
-        format!(r#"{{"name":"{name}","points":[{{"temp":40,"speed":30}},{{"temp":80,"speed":100}}]}}"#)
+        format!(
+            r#"{{"name":"{name}","points":[{{"temp":40,"speed":30}},{{"temp":80,"speed":100}}]}}"#
+        )
     }
 
     fn get_fan_profile_names(&self) -> String {
@@ -732,7 +745,10 @@ async fn test_contract_profiles_group() {
     assert!(ok);
     assert_eq!(*backend.active_profile_id.lock().unwrap(), "balanced");
 
-    let bad = proxy.set_active_profile("non_existent_profile").await.unwrap();
+    let bad = proxy
+        .set_active_profile("non_existent_profile")
+        .await
+        .unwrap();
     assert!(!bad);
 
     // 3. ApplyProfile valid & malformed
@@ -741,7 +757,11 @@ async fn test_contract_profiles_group() {
         .await
         .unwrap();
     assert!(apply_ok);
-    assert!(proxy.get_active_profile_json().await.unwrap().contains("Temp Gaming"));
+    assert!(proxy
+        .get_active_profile_json()
+        .await
+        .unwrap()
+        .contains("Temp Gaming"));
 
     let apply_bad = proxy.apply_profile("NOT_VALID_JSON{:::").await.unwrap();
     assert!(!apply_bad);
@@ -793,7 +813,11 @@ async fn test_contract_power_and_state_group() {
         .await
         .unwrap();
     assert!(req_ok);
-    assert!(backend.power_requests.lock().unwrap().contains_key("game.exe"));
+    assert!(backend
+        .power_requests
+        .lock()
+        .unwrap()
+        .contains_key("game.exe"));
 
     let unreq_ok = proxy.unregister_power_request("game.exe").await.unwrap();
     assert!(unreq_ok);
@@ -808,7 +832,12 @@ async fn test_contract_power_and_state_group() {
         .unwrap();
     assert!(batch_ok);
     assert_eq!(
-        backend.state_map.lock().unwrap().get("wc").map(String::as_str),
+        backend
+            .state_map
+            .lock()
+            .unwrap()
+            .get("wc")
+            .map(String::as_str),
         Some("performance")
     );
 
@@ -949,7 +978,11 @@ async fn test_contract_devices_and_charging_group() {
         proxy.get_device_name().await.unwrap(),
         "Frixit LAPTOP Test Stand"
     );
-    assert!(proxy.get_system_info_json().await.unwrap().contains("7840HS"));
+    assert!(proxy
+        .get_system_info_json()
+        .await
+        .unwrap()
+        .contains("7840HS"));
     assert!(proxy.is_device_supported().await.unwrap());
     assert_eq!(
         proxy.uccd_version().await.unwrap(),
@@ -997,8 +1030,7 @@ async fn test_contract_devices_and_charging_group() {
 #[tokio::test]
 async fn test_contract_signals_emission_and_delivery() {
     let backend = MockContractBackend::default();
-    let (_bus, server_conn, _client_conn, proxy) =
-        setup_contract_test_stand(backend).await;
+    let (_bus, server_conn, _client_conn, proxy) = setup_contract_test_stand(backend).await;
 
     let emitter = SignalEmitter::new(&server_conn, "/com/uniwill/uccd").unwrap();
 
@@ -1027,12 +1059,9 @@ async fn test_contract_signals_emission_and_delivery() {
         .await
         .unwrap();
 
-    UccdInterface::<MockContractBackend>::lightbar_settings_changed(
-        &emitter,
-        r#"{"mode":"wave"}"#,
-    )
-    .await
-    .unwrap();
+    UccdInterface::<MockContractBackend>::lightbar_settings_changed(&emitter, r#"{"mode":"wave"}"#)
+        .await
+        .unwrap();
 
     UccdInterface::<MockContractBackend>::power_device_status_changed(
         &emitter,
@@ -1064,8 +1093,14 @@ async fn test_contract_error_handling_and_fault_injection() {
     assert!(!proxy.set_power_device_settings_json("{").await.unwrap());
 
     // 2. Non-existent IDs
-    assert!(!proxy.set_active_profile("non_existent_12345").await.unwrap());
-    assert!(!proxy.delete_custom_profile("non_existent_12345").await.unwrap());
+    assert!(!proxy
+        .set_active_profile("non_existent_12345")
+        .await
+        .unwrap());
+    assert!(!proxy
+        .delete_custom_profile("non_existent_12345")
+        .await
+        .unwrap());
 
     // 3. Out-of-bounds parameters
     assert!(!proxy.set_display_brightness(-50).await.unwrap());
@@ -1079,4 +1114,3 @@ async fn test_contract_error_handling_and_fault_injection() {
     assert!(!proxy.set_charge_end_threshold(-1).await.unwrap());
     assert!(!proxy.set_charge_end_threshold(101).await.unwrap());
 }
-

@@ -53,7 +53,11 @@ fn t_sec_03_write_atomic_over_symlink_preserves_target_mode_and_never_sets_0777(
 
     let bak_path = dir.join("real-settings.json.bak");
     if bak_path.exists() {
-        let bak_mode = fs::symlink_metadata(&bak_path).unwrap().permissions().mode() & 0o777;
+        let bak_mode = fs::symlink_metadata(&bak_path)
+            .unwrap()
+            .permissions()
+            .mode()
+            & 0o777;
         assert_eq!(bak_mode, 0o600, "backup mode was {bak_mode:#o}");
     }
 

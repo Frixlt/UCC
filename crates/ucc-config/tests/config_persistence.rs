@@ -78,7 +78,10 @@ fn test_atomic_write_creates_bak_file_with_previous_state() {
     mgr.save(&v1).expect("save v1");
 
     assert!(config_file.exists());
-    assert!(!bak_file.exists(), "No backup should exist after first write");
+    assert!(
+        !bak_file.exists(),
+        "No backup should exist after first write"
+    );
 
     // Write revision 2
     let mut v2 = v1.clone();
@@ -286,7 +289,8 @@ fn m2_5_legacy_settings_path_autosave_roundtrip_and_aquaris() {
 
     // Modify and save atomically -> creates .bak and preserves updated state.
     loaded.charge_end_threshold = Some(75);
-    mgr.save(&loaded).expect("atomic save extensionless settings");
+    mgr.save(&loaded)
+        .expect("atomic save extensionless settings");
     assert!(ucc_dir.join("settings.bak").is_file());
     let reloaded = ConfigManager::load_from_path(&legacy_settings_path).expect("reload");
     assert_eq!(reloaded.charge_end_threshold, Some(75));

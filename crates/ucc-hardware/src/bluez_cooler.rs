@@ -293,7 +293,8 @@ impl BluezCoolerClient {
                     Ok(Ok(_)) => {}
                     _ => break,
                 }
-                let remaining_sleep = deadline.saturating_duration_since(tokio::time::Instant::now());
+                let remaining_sleep =
+                    deadline.saturating_duration_since(tokio::time::Instant::now());
                 if remaining_sleep.is_zero() {
                     break;
                 }
@@ -329,8 +330,11 @@ impl BluezCoolerClient {
             let remaining_notify = deadline.saturating_duration_since(tokio::time::Instant::now());
             let notify_ok = !remaining_notify.is_zero()
                 && matches!(
-                    tokio::time::timeout(remaining_notify, rx_proxy.call_method("StartNotify", &()))
-                        .await,
+                    tokio::time::timeout(
+                        remaining_notify,
+                        rx_proxy.call_method("StartNotify", &())
+                    )
+                    .await,
                     Ok(Ok(_))
                 );
             if !notify_ok {

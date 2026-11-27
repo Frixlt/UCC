@@ -275,7 +275,12 @@ impl UccdBackend for LiveUccdBackend {
             return false;
         };
         let owner = if sender.is_empty() { "local" } else { sender };
-        if owner.starts_with(':') && self.lock_mutex(&self.disconnected_senders).0.contains(owner) {
+        if owner.starts_with(':')
+            && self
+                .lock_mutex(&self.disconnected_senders)
+                .0
+                .contains(owner)
+        {
             return false;
         }
         let ok = self
@@ -610,9 +615,8 @@ impl UccdBackend for LiveUccdBackend {
                 }
             }
             let cur_state = self.get_power_state();
-            if let Some((_, active_prof)) = resolved_profiles
-                .into_iter()
-                .find(|(k, _)| k == &cur_state)
+            if let Some((_, active_prof)) =
+                resolved_profiles.into_iter().find(|(k, _)| k == &cur_state)
             {
                 match self.apply_profile_internal(
                     &active_prof,
@@ -1096,7 +1100,8 @@ impl UccdBackend for LiveUccdBackend {
         let Some(first) = self.discover_cpu_dirs().into_iter().next() else {
             return "[]".to_string();
         };
-        let tokens = self.read_whitespace_tokens(&first.join("cpufreq/scaling_available_governors"));
+        let tokens =
+            self.read_whitespace_tokens(&first.join("cpufreq/scaling_available_governors"));
         serde_json::to_string(&tokens).unwrap_or_else(|_| "[]".to_string())
     }
 

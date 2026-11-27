@@ -345,16 +345,20 @@ impl NvApiState {
             let fn_unload = (!unload_ptr.is_null()).then(|| {
                 std::mem::transmute::<*mut c_void, unsafe extern "C" fn() -> i32>(unload_ptr)
             });
-            let fn_get_bus_id = (!bus_ptr.is_null()).then(|| {
-                std::mem::transmute::<*mut c_void, unsafe extern "C" fn(*mut c_void, *mut u32) -> i32>(
-                    bus_ptr,
-                )
-            });
-            let fn_get_bus_slot_id = (!slot_ptr.is_null()).then(|| {
-                std::mem::transmute::<*mut c_void, unsafe extern "C" fn(*mut c_void, *mut u32) -> i32>(
-                    slot_ptr,
-                )
-            });
+            let fn_get_bus_id =
+                (!bus_ptr.is_null()).then(|| {
+                    std::mem::transmute::<
+                        *mut c_void,
+                        unsafe extern "C" fn(*mut c_void, *mut u32) -> i32,
+                    >(bus_ptr)
+                });
+            let fn_get_bus_slot_id =
+                (!slot_ptr.is_null()).then(|| {
+                    std::mem::transmute::<
+                        *mut c_void,
+                        unsafe extern "C" fn(*mut c_void, *mut u32) -> i32,
+                    >(slot_ptr)
+                });
             if fn_init() != 0 {
                 return;
             }
@@ -430,7 +434,11 @@ impl NvApiState {
         matched
     }
 
-    fn read_voltage_mv_for_bdf(&mut self, target_bdf: &str, current_bdfs: &[String]) -> Option<u32> {
+    fn read_voltage_mv_for_bdf(
+        &mut self,
+        target_bdf: &str,
+        current_bdfs: &[String],
+    ) -> Option<u32> {
         if current_bdfs.len() != 1 || current_bdfs[0] != target_bdf {
             self.unverified_fallback_disabled = true;
             self.unverified_bound_bdf = None;
@@ -555,7 +563,8 @@ pub struct NvmlWrapper {
         Option<unsafe extern "C" fn(*mut c_void, *mut NvmlMemoryV2) -> c_uint>,
 
     // Optional telemetry / OC function pointers
-    fn_device_get_clock_info: Option<unsafe extern "C" fn(*mut c_void, c_uint, *mut c_uint) -> c_uint>,
+    fn_device_get_clock_info:
+        Option<unsafe extern "C" fn(*mut c_void, c_uint, *mut c_uint) -> c_uint>,
     fn_device_get_max_clock_info:
         Option<unsafe extern "C" fn(*mut c_void, c_uint, *mut c_uint) -> c_uint>,
     fn_device_get_performance_state:
@@ -1031,7 +1040,8 @@ impl NvmlWrapper {
             };
 
             let mut temp: c_uint = 0;
-            let temp_ret = (self.fn_device_get_temperature)(handle, NVML_TEMPERATURE_GPU, &mut temp);
+            let temp_ret =
+                (self.fn_device_get_temperature)(handle, NVML_TEMPERATURE_GPU, &mut temp);
             let temperature_c = if temp_ret == NVML_SUCCESS {
                 Some(temp)
             } else {
@@ -1117,13 +1127,13 @@ impl NvmlWrapper {
                 (f(handle, NVML_CLOCK_MEM, &mut mhz) == NVML_SUCCESS).then_some(mhz)
             });
 
-            let perf_limit_reason = self
-                .fn_device_get_current_clocks_throttle_reasons
-                .and_then(|f| {
-                    let mut reasons: u64 = 0;
-                    (f(handle, &mut reasons) == NVML_SUCCESS)
-                        .then(|| format_perf_limit_reason(reasons))
-                });
+            let perf_limit_reason =
+                self.fn_device_get_current_clocks_throttle_reasons
+                    .and_then(|f| {
+                        let mut reasons: u64 = 0;
+                        (f(handle, &mut reasons) == NVML_SUCCESS)
+                            .then(|| format_perf_limit_reason(reasons))
+                    });
 
             let encoder_util_pct = self.fn_device_get_encoder_utilization.and_then(|f| {
                 let mut util: c_uint = 0;
@@ -1199,7 +1209,9 @@ impl NvmlWrapper {
                 && current_pstate.is_none()
                 && core_voltage_mv.is_none()
             {
-                return Err(NvmlError::NvmlCall(last_err.unwrap_or(NVML_ERROR_NOT_SUPPORTED)));
+                return Err(NvmlError::NvmlCall(
+                    last_err.unwrap_or(NVML_ERROR_NOT_SUPPORTED),
+                ));
             }
 
             Ok(NvmlTelemetrySnapshot {
@@ -1237,7 +1249,8 @@ impl NvmlWrapper {
                 .to_string();
 
             let mut temp: c_uint = 0;
-            let temp_ret = (self.fn_device_get_temperature)(handle, NVML_TEMPERATURE_GPU, &mut temp);
+            let temp_ret =
+                (self.fn_device_get_temperature)(handle, NVML_TEMPERATURE_GPU, &mut temp);
             if temp_ret != NVML_SUCCESS {
                 return Err(NvmlError::NvmlCall(temp_ret));
             }
@@ -1260,9 +1273,7 @@ impl NvmlWrapper {
                 return Err(NvmlError::NvmlCall(util_ret));
             }
 
-            let mem = self
-                .read_memory_info(handle)
-                .map_err(NvmlError::NvmlCall)?;
+            let mem = self.read_memory_info(handle).map_err(NvmlError::NvmlCall)?;
 
             Ok(NvmlTelemetry {
                 name,

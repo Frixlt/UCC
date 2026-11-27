@@ -66,7 +66,8 @@ impl CpuTopology {
         let mut result = Vec::new();
 
         // Read present cores (fallback to possible if present is unavailable)
-        let present_ids = self.read_id_list("present")
+        let present_ids = self
+            .read_id_list("present")
             .or_else(|| self.read_id_list("possible"))
             .unwrap_or_default();
 
@@ -90,7 +91,11 @@ impl CpuTopology {
                 (id, id.to_string())
             };
 
-            let cached_type = self.cache.get(&id).map(|c| c.core_type.clone()).unwrap_or_default();
+            let cached_type = self
+                .cache
+                .get(&id)
+                .map(|c| c.core_type.clone())
+                .unwrap_or_default();
             let probed_type = if online && (cached_type.is_empty() || cached_type == "unknown") {
                 Some(self.probe_core_type(id))
             } else {
@@ -167,7 +172,9 @@ pub fn parse_cpu_range_list(s: &str) -> Vec<u32> {
             continue;
         }
         if let Some((start_s, end_s)) = token.split_once('-') {
-            if let (Ok(start), Ok(end)) = (start_s.trim().parse::<u32>(), end_s.trim().parse::<u32>()) {
+            if let (Ok(start), Ok(end)) =
+                (start_s.trim().parse::<u32>(), end_s.trim().parse::<u32>())
+            {
                 if start <= end && end <= 4096 {
                     for i in start..=end {
                         ids.push(i);
@@ -229,7 +236,11 @@ fn probe_core_type_cpuid(id: u32) -> String {
         impl Drop for AffinityGuard {
             fn drop(&mut self) {
                 unsafe {
-                    let _ = libc::sched_setaffinity(0, std::mem::size_of::<libc::cpu_set_t>(), &self.original);
+                    let _ = libc::sched_setaffinity(
+                        0,
+                        std::mem::size_of::<libc::cpu_set_t>(),
+                        &self.original,
+                    );
                 }
             }
         }

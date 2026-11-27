@@ -50,7 +50,11 @@ fn run() -> i32 {
         };
         println!("fan={fan} EC-duty={speed} temp={temp}");
     }
-    if ok { 0 } else { 1 }
+    if ok {
+        0
+    } else {
+        1
+    }
 }
 
 fn main() {

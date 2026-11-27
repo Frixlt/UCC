@@ -1,11 +1,15 @@
 //! CPU command implementation.
 
-use serde_json::{json, Value};
 use crate::cli::CpuAction;
 use crate::client::{with_rpc_timeout, CliClient};
 use crate::format::*;
+use serde_json::{json, Value};
 
-pub async fn run_cpu(client: &CliClient, action: &Option<CpuAction>, json_mode: bool) -> Result<(), i32> {
+pub async fn run_cpu(
+    client: &CliClient,
+    action: &Option<CpuAction>,
+    json_mode: bool,
+) -> Result<(), i32> {
     match action {
         None | Some(CpuAction::Status) => {
             let (cores_res, cpu, govs_res, epps_res, limits_res) = tokio::join!(
@@ -22,10 +26,17 @@ pub async fn run_cpu(client: &CliClient, action: &Option<CpuAction>, json_mode: 
 
             let govs_val: Value = serde_json::from_str(&govs_raw).unwrap_or(Value::Array(vec![]));
             let epps_val: Value = serde_json::from_str(&epps_raw).unwrap_or(Value::Array(vec![]));
-            let limits_val: Value = serde_json::from_str(&limits_raw).unwrap_or(Value::Object(serde_json::Map::new()));
+            let limits_val: Value =
+                serde_json::from_str(&limits_raw).unwrap_or(Value::Object(serde_json::Map::new()));
 
-            let min_mhz = limits_val.get("min").and_then(|v| v.as_i64()).map(|k| (k / 1000) as i32);
-            let max_mhz = limits_val.get("max").and_then(|v| v.as_i64()).map(|k| (k / 1000) as i32);
+            let min_mhz = limits_val
+                .get("min")
+                .and_then(|v| v.as_i64())
+                .map(|k| (k / 1000) as i32);
+            let max_mhz = limits_val
+                .get("max")
+                .and_then(|v| v.as_i64())
+                .map(|k| (k / 1000) as i32);
 
             if json_mode {
                 let out = json!({

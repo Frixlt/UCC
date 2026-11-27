@@ -1,11 +1,15 @@
 //! Profile command implementation.
 
-use serde_json::Value;
 use crate::cli::ProfileAction;
 use crate::client::{with_rpc_timeout, CliClient};
 use crate::format::*;
+use serde_json::Value;
 
-pub async fn run_profile(client: &CliClient, action: &ProfileAction, json_mode: bool) -> Result<(), i32> {
+pub async fn run_profile(
+    client: &CliClient,
+    action: &ProfileAction,
+    json_mode: bool,
+) -> Result<(), i32> {
     match action {
         ProfileAction::List => {
             let (assignments, defaults_res, customs_res, all_res, active) = tokio::join!(
@@ -42,13 +46,21 @@ pub async fn run_profile(client: &CliClient, action: &ProfileAction, json_mode: 
                         .chain(customs_arr.iter())
                         .map(|p| {
                             let id = profile_id(p);
-                            if id.is_empty() { profile_name(p) } else { id }
+                            if id.is_empty() {
+                                profile_name(p)
+                            } else {
+                                id
+                            }
                         })
                         .collect();
                     for item in all_arr {
                         let key = {
                             let id = profile_id(&item);
-                            if id.is_empty() { profile_name(&item) } else { id }
+                            if id.is_empty() {
+                                profile_name(&item)
+                            } else {
+                                id
+                            }
                         };
                         if !key.is_empty() && seen.insert(key) {
                             customs_arr.push(item);
@@ -119,7 +131,8 @@ pub async fn run_profile(client: &CliClient, action: &ProfileAction, json_mode: 
                 let def_res = with_rpc_timeout(client.proxy().get_default_profiles_json()).await;
                 let mut found = find_in(def_res);
                 if found.is_none() {
-                    let cust_res = with_rpc_timeout(client.proxy().get_custom_profiles_json()).await;
+                    let cust_res =
+                        with_rpc_timeout(client.proxy().get_custom_profiles_json()).await;
                     found = find_in(cust_res);
                 }
                 if found.is_none() {
@@ -162,7 +175,9 @@ pub async fn run_profile(client: &CliClient, action: &ProfileAction, json_mode: 
             } else if let Some(arr) = val.as_array() {
                 println!("Built-in profiles ({}):", arr.len());
                 for (i, p) in arr.iter().enumerate() {
-                    if i > 0 { println!(); }
+                    if i > 0 {
+                        println!();
+                    }
                     print_profile_summary(p, false);
                     if i + 1 < arr.len() {
                         println!("  ────────────────────────────");
@@ -186,7 +201,9 @@ pub async fn run_profile(client: &CliClient, action: &ProfileAction, json_mode: 
                 } else {
                     println!("Custom profiles ({}):", arr.len());
                     for (i, p) in arr.iter().enumerate() {
-                        if i > 0 { println!(); }
+                        if i > 0 {
+                            println!();
+                        }
                         print_profile_summary(p, false);
                         if i + 1 < arr.len() {
                             println!("  ────────────────────────────");

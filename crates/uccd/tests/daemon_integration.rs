@@ -6,10 +6,11 @@ use std::path::Path;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 use ucc_config::{
-    create_default_settings, default_high_performance_profile, default_quiet_profile,
-    ConfigManager,
+    create_default_settings, default_high_performance_profile, default_quiet_profile, ConfigManager,
 };
-use ucc_dbus::{AllowAllAuthorizer, UccdBackend, UccdLegacyProxy, UccdProxy, DBUS_PATH, DBUS_PATH_ALT};
+use ucc_dbus::{
+    AllowAllAuthorizer, UccdBackend, UccdLegacyProxy, UccdProxy, DBUS_PATH, DBUS_PATH_ALT,
+};
 use ucc_hardware::{
     decode_history_binary, default_process_runner, DeviceCapabilities, DeviceVendor, MetricId,
     MockPlatformBackend, MockSysfs, NvidiaPowerGuard, NvmlWrapper, PlatformBackend,
@@ -37,7 +38,13 @@ fn build_custom_backend(
     prepare_sysfs: impl FnOnce(&MockSysfs),
     prepare_platform: impl FnOnce(Arc<MockPlatformBackend>) -> Arc<dyn PlatformBackend>,
 ) -> CustomBackendParts {
-    build_custom_backend_with_sysfs(tmp, explicit_intel_path, None, prepare_sysfs, prepare_platform)
+    build_custom_backend_with_sysfs(
+        tmp,
+        explicit_intel_path,
+        None,
+        prepare_sysfs,
+        prepare_platform,
+    )
 }
 
 fn build_custom_backend_with_sysfs(
@@ -171,11 +178,7 @@ async fn session_conn() -> zbus::Connection {
         .unwrap()
 }
 
-async fn start_runtime(
-    backend: Arc<LiveUccdBackend>,
-    name: &str,
-    workers: bool,
-) -> DaemonRuntime {
+async fn start_runtime(backend: Arc<LiveUccdBackend>, name: &str, workers: bool) -> DaemonRuntime {
     DaemonRuntime::start_on_connection(
         session_conn().await,
         name,
@@ -282,7 +285,8 @@ async fn daemon_exposes_live_telemetry_fans_lighting_and_restores_auto_on_shutdo
     }
 
     // Keyboard & lightbar controllers wired to MockLightingTransport
-    let kbd_states = json!([{ "brightness": 100, "red": 10, "green": 20, "blue": 255 }]).to_string();
+    let kbd_states =
+        json!([{ "brightness": 100, "red": 10, "green": 20, "blue": 255 }]).to_string();
     assert!(proxy
         .set_keyboard_backlight_states_json(&kbd_states)
         .await
@@ -375,10 +379,26 @@ fn backend_recovers_corrupt_config_and_enforces_lid_and_wakeup_policies() {
     sysfs.set_file(mouse_dir.join("power/wakeup"), "enabled");
     sysfs.set_file(usb_dir.join("power/wakeup"), "enabled");
 
-    assert!(is_allowed_wakeup_device(&lid_dir, &dev_root, sysfs.as_ref()));
-    assert!(is_allowed_wakeup_device(&kbd_dir, &dev_root, sysfs.as_ref()));
-    assert!(!is_allowed_wakeup_device(&mouse_dir, &dev_root, sysfs.as_ref()));
-    assert!(!is_allowed_wakeup_device(&usb_dir, &dev_root, sysfs.as_ref()));
+    assert!(is_allowed_wakeup_device(
+        &lid_dir,
+        &dev_root,
+        sysfs.as_ref()
+    ));
+    assert!(is_allowed_wakeup_device(
+        &kbd_dir,
+        &dev_root,
+        sysfs.as_ref()
+    ));
+    assert!(!is_allowed_wakeup_device(
+        &mouse_dir,
+        &dev_root,
+        sysfs.as_ref()
+    ));
+    assert!(!is_allowed_wakeup_device(
+        &usb_dir,
+        &dev_root,
+        sysfs.as_ref()
+    ));
 
     let acpi_wakeup = tmp.path().join("proc/acpi/wakeup");
     sysfs.set_file(
@@ -393,7 +413,14 @@ fn backend_recovers_corrupt_config_and_enforces_lid_and_wakeup_policies() {
         &tmp.path().join("proc"),
         sysfs.as_ref(),
     );
-    assert_eq!(res, WakeupApplyResult { enabled: 2, disabled: 4, failed: 0 });
+    assert_eq!(
+        res,
+        WakeupApplyResult {
+            enabled: 2,
+            disabled: 4,
+            failed: 0
+        }
+    );
     assert_eq!(
         sysfs.get_file(lid_dir.join("power/wakeup")).as_deref(),
         Some("enabled\n")
@@ -416,7 +443,10 @@ fn backend_recovers_corrupt_config_and_enforces_lid_and_wakeup_policies() {
         .filter(|w| w.path == acpi_wakeup)
         .map(|w| w.content)
         .collect();
-    assert_eq!(acpi_writes, vec!["LID0\n".to_string(), "XHCI\n".to_string()]);
+    assert_eq!(
+        acpi_writes,
+        vec!["LID0\n".to_string(), "XHCI\n".to_string()]
+    );
 }
 
 #[tokio::test]
@@ -506,9 +536,8 @@ impl PlatformBackend for SlowAutoPlatform {
 #[tokio::test]
 async fn m8_review_shutdown_budget_covers_slow_firmware_auto() {
     let root = tempfile::tempdir().unwrap();
-    let (backend, _, _, _) = build_custom_backend(root.path(), true, |_| {}, |p| {
-        Arc::new(SlowAutoPlatform(p))
-    });
+    let (backend, _, _, _) =
+        build_custom_backend(root.path(), true, |_| {}, |p| Arc::new(SlowAutoPlatform(p)));
     let runtime = start_runtime(backend, "org.test.uccd.integ.deadline", false).await;
     let started = Instant::now();
     runtime.shutdown(Duration::from_millis(20)).await;
@@ -553,8 +582,14 @@ async fn m8_review_power_state_profile_reconciliation_cpu_tdp_and_devices() {
         |s| {
             let cpufreq = root.path().join("sys/devices/system/cpu/cpu0/cpufreq");
             s.set_file(cpufreq.join("scaling_governor"), "powersave");
-            s.set_file(cpufreq.join("energy_performance_preference"), "balance_power");
-            s.set_file(cpufreq.join("scaling_available_governors"), "performance powersave");
+            s.set_file(
+                cpufreq.join("energy_performance_preference"),
+                "balance_power",
+            );
+            s.set_file(
+                cpufreq.join("scaling_available_governors"),
+                "performance powersave",
+            );
             s.set_file(
                 cpufreq.join("energy_performance_available_preferences"),
                 "performance balance_power",
@@ -591,7 +626,10 @@ async fn m8_review_power_state_profile_reconciliation_cpu_tdp_and_devices() {
         .await
         .unwrap());
     let cpufreq = root.path().join("sys/devices/system/cpu/cpu0/cpufreq");
-    assert_eq!(sysfs.get_file(cpufreq.join("scaling_governor")).as_deref(), Some("performance"));
+    assert_eq!(
+        sysfs.get_file(cpufreq.join("scaling_governor")).as_deref(),
+        Some("performance")
+    );
     assert_eq!(
         sysfs
             .get_file(cpufreq.join("energy_performance_preference"))
@@ -718,22 +756,23 @@ async fn m8_review_persistence_statemap_fan_profiles_signals_and_hardware_probin
         .unwrap());
 
     // Sensor collection off stops periodic CpuTemp history sampling
-    proxy.set_sensor_data_collection_status(false).await.unwrap();
-    let before_pts =
-        decode_history_binary(&proxy.get_monitor_data_since(0).await.unwrap())
-            .unwrap()
-            .into_iter()
-            .find(|(m, _)| *m == MetricId::CpuTemp)
-            .map(|(_, v)| v.len())
-            .unwrap_or(0);
+    proxy
+        .set_sensor_data_collection_status(false)
+        .await
+        .unwrap();
+    let before_pts = decode_history_binary(&proxy.get_monitor_data_since(0).await.unwrap())
+        .unwrap()
+        .into_iter()
+        .find(|(m, _)| *m == MetricId::CpuTemp)
+        .map(|(_, v)| v.len())
+        .unwrap_or(0);
     tokio::time::sleep(Duration::from_millis(1200)).await;
-    let after_pts =
-        decode_history_binary(&proxy.get_monitor_data_since(0).await.unwrap())
-            .unwrap()
-            .into_iter()
-            .find(|(m, _)| *m == MetricId::CpuTemp)
-            .map(|(_, v)| v.len())
-            .unwrap_or(0);
+    let after_pts = decode_history_binary(&proxy.get_monitor_data_since(0).await.unwrap())
+        .unwrap()
+        .into_iter()
+        .find(|(m, _)| *m == MetricId::CpuTemp)
+        .map(|(_, v)| v.len())
+        .unwrap_or(0);
     assert_eq!(before_pts, after_pts);
 
     // Lightbar with positive charging & backlight sysfs checks (`M8-REVIEW-11`, `M8-REVIEW-12`)
@@ -744,8 +783,13 @@ async fn m8_review_persistence_statemap_fan_profiles_signals_and_hardware_probin
     let bl = root.path().join("sys/class/backlight/intel_backlight");
     sysfs.set_file(bl.join("max_brightness"), "200");
     sysfs.set_file(bl.join("brightness"), "100");
-    let cp_dir = root.path().join("sys/devices/platform/tuxedo_keyboard/charging_profile");
-    sysfs.set_file(cp_dir.join("charging_profiles_available"), "high_capacity balanced stationary");
+    let cp_dir = root
+        .path()
+        .join("sys/devices/platform/tuxedo_keyboard/charging_profile");
+    sysfs.set_file(
+        cp_dir.join("charging_profiles_available"),
+        "high_capacity balanced stationary",
+    );
     sysfs.set_file(cp_dir.join("charging_profile"), "balanced");
 
     // Restart and confirm persisted customFanProfiles survived + positive backlight/charging sysfs writes
@@ -775,7 +819,10 @@ async fn m8_review_persistence_statemap_fan_profiles_signals_and_hardware_probin
     assert!(proxy2.set_display_brightness(50).await.unwrap());
     assert_eq!(proxy2.get_display_brightness().await.unwrap(), 50);
     assert!(proxy2.set_charging_profile("stationary").await.unwrap());
-    assert_eq!(proxy2.get_current_charging_profile().await.unwrap(), "stationary");
+    assert_eq!(
+        proxy2.get_current_charging_profile().await.unwrap(),
+        "stationary"
+    );
     rt2.shutdown(Duration::from_secs(1)).await;
     let _ = sysfs;
 }
@@ -955,8 +1002,7 @@ fn m8_recheck_runtime_shutdown_deadline_also_caps_tokio_runtime_exit() {
         .enable_all()
         .build()
         .unwrap();
-    let runtime =
-        tokio_runtime.block_on(start_runtime(backend, "org.test.uccd.edge.exit", false));
+    let runtime = tokio_runtime.block_on(start_runtime(backend, "org.test.uccd.edge.exit", false));
     let started = Instant::now();
     tokio_runtime.block_on(runtime.shutdown(Duration::from_millis(25)));
     let returned = started.elapsed();
@@ -1146,7 +1192,8 @@ async fn m8_recheck_battery_profile_is_retried_after_a_transient_apply_error() {
 }
 
 #[tokio::test]
-async fn m8_recheck_saving_active_profile_fails_without_changing_live_profile_if_disk_write_fails() {
+async fn m8_recheck_saving_active_profile_fails_without_changing_live_profile_if_disk_write_fails()
+{
     let root = tempfile::tempdir().unwrap();
     std::fs::create_dir(root.path().join("settings.json")).unwrap();
     let (backend, _, _, _) = build_test_backend(root.path());
@@ -1452,7 +1499,11 @@ fn m8_recheck_independent_concurrent_config_edits_survive_all_successful_saves()
         .filter(|k| k.starts_with("edge-saved-"))
         .count();
     let in_memory = (0..8)
-        .filter(|i| backend.get_profiles_json().contains(&format!("edge-saved-{i}")))
+        .filter(|i| {
+            backend
+                .get_profiles_json()
+                .contains(&format!("edge-saved-{i}"))
+        })
         .count();
     assert_eq!(
         (on_disk, in_memory),
@@ -1706,7 +1757,10 @@ async fn m8_prod_daemon_starts_under_the_packaged_system_bus_policy() {
         .unwrap();
     let name = ucc_dbus::DBUS_SERVICE;
     let flags = zbus::fdo::RequestNameFlags::DoNotQueue.into();
-    let reply = connection.request_name_with_flags(name, flags).await.unwrap();
+    let reply = connection
+        .request_name_with_flags(name, flags)
+        .await
+        .unwrap();
     assert_eq!(reply, zbus::fdo::RequestNameReply::PrimaryOwner);
     assert!(connection.release_name(name).await.unwrap());
 
@@ -2362,8 +2416,8 @@ async fn handoff_wait_name(conn: &zbus::Connection, name: &str) {
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 3)]
-async fn m8_handoff_two_successful_dbus_profile_switches_leave_latest_hardware_and_disk_in_agreement()
-{
+async fn m8_handoff_two_successful_dbus_profile_switches_leave_latest_hardware_and_disk_in_agreement(
+) {
     let root = tempfile::tempdir().unwrap();
     let older = handoff_profile_with_tdps("older", [41, 70, 90]);
     let newer = handoff_profile_with_tdps("newer", [55, 80, 95]);
@@ -2927,8 +2981,7 @@ fn m8_life_blocked_periodic_fan_reader_does_not_hold_tokio_runtime_open() {
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 3)]
-async fn m8_life_failed_cleanup_handoff_returns_explicit_error_and_allows_retry_without_spinning()
-{
+async fn m8_life_failed_cleanup_handoff_returns_explicit_error_and_allows_retry_without_spinning() {
     let root = tempfile::tempdir().unwrap();
     let (ctl, listen) = std::sync::mpsc::channel();
     let (old, _, _, _) = build_custom_backend(
@@ -3023,8 +3076,11 @@ async fn m8_life_failing_newer_request_does_not_cancel_older_request() {
     handoff_wait_gate(entered).await;
     let conn = session_conn().await;
     let proxy = uccd_proxy(&conn, name).await;
-    let second =
-        tokio::time::timeout(Duration::from_secs(2), proxy.set_active_profile(&invalid.id)).await;
+    let second = tokio::time::timeout(
+        Duration::from_secs(2),
+        proxy.set_active_profile(&invalid.id),
+    )
+    .await;
     let _ = release.send(());
     assert!(!second.unwrap().unwrap());
     let first_accepted = first.await.unwrap();
@@ -3087,7 +3143,9 @@ async fn m8_life_failed_hardware_reconciliation_reports_failure_and_reflects_rea
     let older_accepted = first.await.unwrap();
     let active_val: serde_json::Value =
         serde_json::from_str(&proxy.get_active_profile_json().await.unwrap()).unwrap();
-    let reported_pl1 = active_val["odmPowerLimits"]["tdpValues"][0].as_i64().unwrap();
+    let reported_pl1 = active_val["odmPowerLimits"]["tdpValues"][0]
+        .as_i64()
+        .unwrap();
     let hw_pl1 = platform.read_tdp(0).unwrap();
     runtime.shutdown(Duration::from_secs(1)).await;
     assert!(
@@ -3146,8 +3204,7 @@ async fn m8_life_failed_second_tdp_pass_after_odm_does_not_confirm_profile() {
 }
 
 #[tokio::test]
-async fn m8_life_extreme_nvidia_offset_returns_false_without_panicking_and_keeps_dbus_responsive()
-{
+async fn m8_life_extreme_nvidia_offset_returns_false_without_panicking_and_keeps_dbus_responsive() {
     let root = tempfile::tempdir().unwrap();
     let source = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../stand-fixtures/nvml.c");
     let compiled = std::process::Command::new("cc")
@@ -3586,13 +3643,27 @@ impl TxRegressionPlatform {
 }
 
 impl PlatformBackend for TxRegressionPlatform {
-    fn kind(&self) -> PlatformBackendKind { self.inner.kind() }
-    fn is_available(&self) -> bool { self.inner.is_available() }
-    fn capabilities(&self) -> PlatformCapabilities { self.inner.capabilities() }
-    fn read_fan_temp(&self, fan_idx: usize) -> Result<i32, PlatformError> { self.inner.read_fan_temp(fan_idx) }
-    fn read_fan_speed_percent(&self, fan_idx: usize) -> Result<u8, PlatformError> { self.inner.read_fan_speed_percent(fan_idx) }
-    fn set_fan_speed_percent(&self, fan_idx: usize, percent: u8) -> Result<(), PlatformError> { self.inner.set_fan_speed_percent(fan_idx, percent) }
-    fn set_fans_auto(&self) -> Result<(), PlatformError> { self.inner.set_fans_auto() }
+    fn kind(&self) -> PlatformBackendKind {
+        self.inner.kind()
+    }
+    fn is_available(&self) -> bool {
+        self.inner.is_available()
+    }
+    fn capabilities(&self) -> PlatformCapabilities {
+        self.inner.capabilities()
+    }
+    fn read_fan_temp(&self, fan_idx: usize) -> Result<i32, PlatformError> {
+        self.inner.read_fan_temp(fan_idx)
+    }
+    fn read_fan_speed_percent(&self, fan_idx: usize) -> Result<u8, PlatformError> {
+        self.inner.read_fan_speed_percent(fan_idx)
+    }
+    fn set_fan_speed_percent(&self, fan_idx: usize, percent: u8) -> Result<(), PlatformError> {
+        self.inner.set_fan_speed_percent(fan_idx, percent)
+    }
+    fn set_fans_auto(&self) -> Result<(), PlatformError> {
+        self.inner.set_fans_auto()
+    }
     fn read_tdp(&self, idx: usize) -> Result<i32, PlatformError> {
         if idx == 0 {
             let gate = self.read_tdp0_gate.lock().unwrap().take();
@@ -3601,12 +3672,18 @@ impl PlatformBackend for TxRegressionPlatform {
                 let _ = release.recv_timeout(Duration::from_secs(4));
             }
         }
-        if idx == 1 && self.omit_tdp1_read.swap(false, std::sync::atomic::Ordering::SeqCst) {
+        if idx == 1
+            && self
+                .omit_tdp1_read
+                .swap(false, std::sync::atomic::Ordering::SeqCst)
+        {
             return Err(PlatformError::Unavailable);
         }
         self.inner.read_tdp(idx)
     }
-    fn read_tdp_limits(&self, idx: usize) -> Result<(i32, i32), PlatformError> { self.inner.read_tdp_limits(idx) }
+    fn read_tdp_limits(&self, idx: usize) -> Result<(i32, i32), PlatformError> {
+        self.inner.read_tdp_limits(idx)
+    }
     fn set_tdp(&self, idx: usize, watts: i32) -> Result<(), PlatformError> {
         if idx == 2 && watts == 95 {
             let gate = self.stale_rollback_gate.lock().unwrap().take();
@@ -3639,7 +3716,11 @@ impl PlatformBackend for TxRegressionPlatform {
                 let _ = release.recv_timeout(Duration::from_secs(4));
             }
         }
-        if idx == 1 && self.reject_second_tdp.load(std::sync::atomic::Ordering::SeqCst) {
+        if idx == 1
+            && self
+                .reject_second_tdp
+                .load(std::sync::atomic::Ordering::SeqCst)
+        {
             if self.mutate_before_error {
                 self.inner.set_tdp(idx, watts)?;
             }
@@ -3650,10 +3731,10 @@ impl PlatformBackend for TxRegressionPlatform {
     fn read_perf_profile(&self) -> Result<i32, PlatformError> {
         use std::sync::atomic::Ordering::SeqCst;
         #[allow(deprecated)]
-        let error_now =
-            self.odm_read_error_at
-                .fetch_update(SeqCst, SeqCst, |n| n.checked_sub(1))
-                == Ok(1);
+        let error_now = self
+            .odm_read_error_at
+            .fetch_update(SeqCst, SeqCst, |n| n.checked_sub(1))
+            == Ok(1);
         if error_now {
             return Err(PlatformError::Unsupported(
                 "profile sysfs disappeared after preflight",
@@ -3667,7 +3748,10 @@ impl PlatformBackend for TxRegressionPlatform {
 
     fn set_perf_profile(&self, value: i32) -> Result<(), PlatformError> {
         self.inner.set_perf_profile(value)?;
-        if self.odm_fail.swap(false, std::sync::atomic::Ordering::SeqCst) {
+        if self
+            .odm_fail
+            .swap(false, std::sync::atomic::Ordering::SeqCst)
+        {
             for (i, w) in [45, 70, 105].into_iter().enumerate() {
                 self.inner.set_tdp(i, w)?;
             }
@@ -3675,8 +3759,12 @@ impl PlatformBackend for TxRegressionPlatform {
         }
         Ok(())
     }
-    fn set_mode_enable(&self, value: bool) -> Result<(), PlatformError> { self.inner.set_mode_enable(value) }
-    fn set_mode(&self, value: i32) -> Result<(), PlatformError> { self.inner.set_mode(value) }
+    fn set_mode_enable(&self, value: bool) -> Result<(), PlatformError> {
+        self.inner.set_mode_enable(value)
+    }
+    fn set_mode(&self, value: i32) -> Result<(), PlatformError> {
+        self.inner.set_mode(value)
+    }
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 3)]
@@ -3706,7 +3794,11 @@ async fn m8_tx_winning_profile_does_not_inherit_losing_uncommitted_tdp() {
     platform.set_tdp_value(0, 65);
     let older = tokio::spawn(async move {
         let c = session_conn().await;
-        uccd_proxy(&c, name).await.set_active_profile(&old.id).await.unwrap()
+        uccd_proxy(&c, name)
+            .await
+            .set_active_profile(&old.id)
+            .await
+            .unwrap()
     });
     handoff_wait_gate(entered).await;
     let conn = session_conn().await;
@@ -3720,7 +3812,10 @@ async fn m8_tx_winning_profile_does_not_inherit_losing_uncommitted_tdp() {
     let actual = platform.read_tdp(0).unwrap();
     let active = active_profile_id(&proxy.get_active_profile_json().await.unwrap());
     runtime.shutdown(Duration::from_secs(1)).await;
-    assert!(newer_ok && active == new.id && actual == 65, "actual PL1={actual}");
+    assert!(
+        newer_ok && active == new.id && actual == 65,
+        "actual PL1={actual}"
+    );
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 3)]
@@ -3745,7 +3840,11 @@ async fn m8_tx_deleted_profile_cannot_be_committed_by_concurrent_set_active() {
     let id = pending.id.clone();
     let set = tokio::spawn(async move {
         let c = session_conn().await;
-        uccd_proxy(&c, name).await.set_active_profile(&id).await.unwrap()
+        uccd_proxy(&c, name)
+            .await
+            .set_active_profile(&id)
+            .await
+            .unwrap()
     });
     handoff_wait_gate(entered).await;
     let conn = session_conn().await;
@@ -3782,9 +3881,16 @@ async fn m8_tx_failing_tdp_write_after_mutation_is_rolled_back() {
     let runtime = start_runtime(backend, name, false).await;
     let conn = session_conn().await;
     let proxy = uccd_proxy(&conn, name).await;
-    assert!(proxy.apply_profile(&serde_json::to_string(&initial).unwrap()).await.unwrap());
-    ctl.reject_second_tdp.store(true, std::sync::atomic::Ordering::SeqCst);
-    let ok = proxy.apply_profile(&serde_json::to_string(&target).unwrap()).await.unwrap();
+    assert!(proxy
+        .apply_profile(&serde_json::to_string(&initial).unwrap())
+        .await
+        .unwrap());
+    ctl.reject_second_tdp
+        .store(true, std::sync::atomic::Ordering::SeqCst);
+    let ok = proxy
+        .apply_profile(&serde_json::to_string(&target).unwrap())
+        .await
+        .unwrap();
     let active: ucc_core::UccProfile =
         serde_json::from_str(&proxy.get_active_profile_json().await.unwrap()).unwrap();
     let actual = platform.read_tdp(1).unwrap();
@@ -3814,10 +3920,16 @@ async fn m8_tx_drained_shutdown_rolls_back_cancelled_tdp_write() {
     let runtime = start_runtime(backend, name, false).await;
     let conn = session_conn().await;
     let proxy = uccd_proxy(&conn, name).await;
-    assert!(proxy.apply_profile(&serde_json::to_string(&initial).unwrap()).await.unwrap());
+    assert!(proxy
+        .apply_profile(&serde_json::to_string(&initial).unwrap())
+        .await
+        .unwrap());
     let pending_call = tokio::spawn(async move {
         let c = session_conn().await;
-        uccd_proxy(&c, name).await.apply_profile(&serde_json::to_string(&pending).unwrap()).await
+        uccd_proxy(&c, name)
+            .await
+            .apply_profile(&serde_json::to_string(&pending).unwrap())
+            .await
     });
     handoff_wait_gate(entered).await;
     let shutdown = tokio::spawn(runtime.shutdown(Duration::from_secs(2)));
@@ -3864,11 +3976,18 @@ async fn m8_tx_power_change_during_set_active_clears_applied_state_for_retry() {
     let runtime = start_runtime(backend.clone(), name, false).await;
     let task = tokio::spawn(async move {
         let c = session_conn().await;
-        uccd_proxy(&c, name).await.set_active_profile(&ac.id).await.unwrap()
+        uccd_proxy(&c, name)
+            .await
+            .set_active_profile(&ac.id)
+            .await
+            .unwrap()
     });
     handoff_wait_gate(entered).await;
     sysfs.set_file(root.path().join("sys/class/power_supply/AC/online"), "0");
-    sysfs.set_file(root.path().join("sys/class/power_supply/BAT0/type"), "Battery");
+    sysfs.set_file(
+        root.path().join("sys/class/power_supply/BAT0/type"),
+        "Battery",
+    );
     backend.reconcile_power_state(false);
     let _ = release.send(());
     let _ = task.await.unwrap();
@@ -3879,7 +3998,10 @@ async fn m8_tx_power_change_during_set_active_clears_applied_state_for_retry() {
     let active = active_profile_id(&proxy.get_active_profile_json().await.unwrap());
     let state = proxy.get_power_state().await.unwrap();
     runtime.shutdown(Duration::from_secs(1)).await;
-    assert_eq!((state.as_str(), active.as_str()), ("power_bat", bat.id.as_str()));
+    assert_eq!(
+        (state.as_str(), active.as_str()),
+        ("power_bat", bat.id.as_str())
+    );
 }
 
 #[tokio::test]
@@ -3907,10 +4029,16 @@ async fn m8_tx_display_brightness_failure_aborts_profile_apply() {
     p.display.brightness = 40;
     p.odm_profile_name = None;
     p.odm_power_limits.clear();
-    let ok = proxy.apply_profile(&serde_json::to_string(&p).unwrap()).await.unwrap();
+    let ok = proxy
+        .apply_profile(&serde_json::to_string(&p).unwrap())
+        .await
+        .unwrap();
     let actual = proxy.get_display_brightness().await.unwrap();
     runtime.shutdown(Duration::from_secs(1)).await;
-    assert!(!ok, "apply_profile unexpectedly succeeded (actual={actual})");
+    assert!(
+        !ok,
+        "apply_profile unexpectedly succeeded (actual={actual})"
+    );
     assert_eq!(actual, 55, "brightness mutated despite write error");
 }
 
@@ -3936,13 +4064,19 @@ async fn m8_tx_preview_mode_blocks_brightness_and_hardware_writes() {
     }
     assert!(ucc_config::is_read_only_preview());
     let root = tempfile::tempdir().unwrap();
-    let path = root.path().join("sys/class/backlight/intel_backlight/brightness");
+    let path = root
+        .path()
+        .join("sys/class/backlight/intel_backlight/brightness");
     let (backend, platform, sysfs, _) = build_custom_backend(
         root.path(),
         true,
         |sys| {
             sys.set_file(&path, "55");
-            sys.set_file(root.path().join("sys/class/backlight/intel_backlight/max_brightness"), "100");
+            sys.set_file(
+                root.path()
+                    .join("sys/class/backlight/intel_backlight/max_brightness"),
+                "100",
+            );
         },
         |p| p,
     );
@@ -3978,13 +4112,19 @@ async fn m8_tx_lightbar_worker_ticks_at_frame_cadence() {
             "bat": { "enabled": true, "brightness_val": 200, "mode": "Rainbow", "color_mode": [255, 0, 0] }
         }
     });
-    assert!(proxy.set_lightbar_settings_json(&cfg.to_string()).await.unwrap());
+    assert!(proxy
+        .set_lightbar_settings_json(&cfg.to_string())
+        .await
+        .unwrap());
     lighting.clear_ops();
     assert!(proxy.trigger_lightbar_animation(true).await.unwrap());
     tokio::time::sleep(Duration::from_millis(120)).await;
     let ops = lighting.ops().len();
     runtime.shutdown(Duration::from_secs(1)).await;
-    assert!(ops >= 3, "expected 20 ms frame cadence (>=3 writes in 120 ms), got {ops}");
+    assert!(
+        ops >= 3,
+        "expected 20 ms frame cadence (>=3 writes in 120 ms), got {ops}"
+    );
 }
 
 #[tokio::test]
@@ -3992,7 +4132,9 @@ async fn m8_tx_legacy_dbus_contracts_and_fan_catalog() {
     let root = tempfile::tempdir().unwrap();
     let custom = handoff_profile_with_tdps("one-custom", [45, 80, 95]);
     handoff_save_profiles(root.path(), &[&custom]);
-    let fn_lock = root.path().join("sys/devices/platform/tuxedo_keyboard/fn_lock");
+    let fn_lock = root
+        .path()
+        .join("sys/devices/platform/tuxedo_keyboard/fn_lock");
     let (backend, _, _, _) = build_custom_backend(
         root.path(),
         true,
@@ -4012,30 +4154,54 @@ async fn m8_tx_legacy_dbus_contracts_and_fan_catalog() {
 
     assert!(!proxy.set_display_refresh_rate("eDP-1", 120).await.unwrap());
     assert!(proxy.set_fn_lock_status(true).await.is_err());
-    let sys_info: serde_json::Value = serde_json::from_str(&proxy.get_system_info_json().await.unwrap()).unwrap();
+    let sys_info: serde_json::Value =
+        serde_json::from_str(&proxy.get_system_info_json().await.unwrap()).unwrap();
     assert_eq!(sys_info["laptopModel"], "Test Laptop");
-    assert!(sys_info["cpuModel"].is_string() && sys_info["dGpuModel"].is_string() && sys_info["iGpuModel"].is_string());
+    assert!(
+        sys_info["cpuModel"].is_string()
+            && sys_info["dGpuModel"].is_string()
+            && sys_info["iGpuModel"].is_string()
+    );
 
     let kb_data = serde_json::json!({"color": "#123456"});
-    assert!(proxy.save_custom_keyboard_profile("rgb-mine", "Mine", &kb_data.to_string()).await.unwrap());
-    let kb_list: serde_json::Value = serde_json::from_str(&proxy.get_custom_keyboard_profiles_json().await.unwrap()).unwrap();
-    assert_eq!(kb_list, serde_json::json!([{"id": "rgb-mine", "name": "Mine", "json": kb_data}]));
+    assert!(proxy
+        .save_custom_keyboard_profile("rgb-mine", "Mine", &kb_data.to_string())
+        .await
+        .unwrap());
+    let kb_list: serde_json::Value =
+        serde_json::from_str(&proxy.get_custom_keyboard_profiles_json().await.unwrap()).unwrap();
+    assert_eq!(
+        kb_list,
+        serde_json::json!([{"id": "rgb-mine", "name": "Mine", "json": kb_data}])
+    );
 
-    let freq_limits: serde_json::Value = serde_json::from_str(&proxy.get_cpu_frequency_limits_json().await.unwrap()).unwrap();
-    assert_eq!((freq_limits["min"].as_i64(), freq_limits["max"].as_i64()), (Some(800000), Some(4200000)));
+    let freq_limits: serde_json::Value =
+        serde_json::from_str(&proxy.get_cpu_frequency_limits_json().await.unwrap()).unwrap();
+    assert_eq!(
+        (freq_limits["min"].as_i64(), freq_limits["max"].as_i64()),
+        (Some(800000), Some(4200000))
+    );
 
-    let custom_list: Vec<serde_json::Value> = serde_json::from_str(&proxy.get_custom_profiles_json().await.unwrap()).unwrap();
-    let custom_ids: Vec<_> = custom_list.iter().filter_map(|p| p["id"].as_str()).collect();
+    let custom_list: Vec<serde_json::Value> =
+        serde_json::from_str(&proxy.get_custom_profiles_json().await.unwrap()).unwrap();
+    let custom_ids: Vec<_> = custom_list
+        .iter()
+        .filter_map(|p| p["id"].as_str())
+        .collect();
     assert_eq!(custom_ids, ["one-custom"]);
 
-    let fan_list: Vec<serde_json::Value> = serde_json::from_str(&proxy.get_fan_profile_names().await.unwrap()).unwrap();
-    let silent: serde_json::Value = serde_json::from_str(&proxy.get_fan_profile("Silent [Built-in]").await.unwrap()).unwrap();
+    let fan_list: Vec<serde_json::Value> =
+        serde_json::from_str(&proxy.get_fan_profile_names().await.unwrap()).unwrap();
+    let silent: serde_json::Value =
+        serde_json::from_str(&proxy.get_fan_profile("Silent [Built-in]").await.unwrap()).unwrap();
     assert_eq!(fan_list.len(), 5);
     assert!(fan_list.iter().any(|p| p["name"] == "Silent [Built-in]"));
     assert!(silent["tableCPU"].as_array().is_some_and(|a| !a.is_empty()));
 
-    let topo: Vec<serde_json::Value> = serde_json::from_str(&proxy.get_cpu_topology_json().await.unwrap()).unwrap();
-    let health: serde_json::Value = serde_json::from_str(&proxy.get_driver_health_json().await.unwrap()).unwrap();
+    let topo: Vec<serde_json::Value> =
+        serde_json::from_str(&proxy.get_cpu_topology_json().await.unwrap()).unwrap();
+    let health: serde_json::Value =
+        serde_json::from_str(&proxy.get_driver_health_json().await.unwrap()).unwrap();
     assert_eq!(topo.len(), 2);
     assert_eq!(health["healthy"], true);
 
@@ -4055,29 +4221,43 @@ async fn recheck_01_winning_profile_without_tdp_overrides_ignores_in_flight_lose
     let (writer_started, writer_entered) = std::sync::mpsc::channel();
     let (release_writer, writer_wait) = std::sync::mpsc::channel();
     let (tx, rx) = std::sync::mpsc::channel();
-    let (backend, platform, _, _) = build_custom_backend(root.path(), true, |_| {}, |p| {
-        let mut wrapper = TxRegressionPlatform::new(p);
-        wrapper.gated_channel = 1;
-        *wrapper.tdp_gate.lock().unwrap() = Some((writer_started, writer_wait));
-        let wrapper = Arc::new(wrapper);
-        tx.send(wrapper.clone()).unwrap();
-        wrapper
-    });
+    let (backend, platform, _, _) = build_custom_backend(
+        root.path(),
+        true,
+        |_| {},
+        |p| {
+            let mut wrapper = TxRegressionPlatform::new(p);
+            wrapper.gated_channel = 1;
+            *wrapper.tdp_gate.lock().unwrap() = Some((writer_started, writer_wait));
+            let wrapper = Arc::new(wrapper);
+            tx.send(wrapper.clone()).unwrap();
+            wrapper
+        },
+    );
     let ctl = rx.recv().unwrap();
     let name = "org.test.uccd.reg.recheck_01";
     let runtime = start_runtime(backend, name, false).await;
     let conn = session_conn().await;
     let proxy = uccd_proxy(&conn, name).await;
-    assert!(proxy.apply_profile(&serde_json::to_string(&initial).unwrap()).await.unwrap());
+    assert!(proxy
+        .apply_profile(&serde_json::to_string(&initial).unwrap())
+        .await
+        .unwrap());
     *ctl.read_tdp0_gate.lock().unwrap() = Some((sample_started, sample_wait));
     let winner_call = tokio::spawn(async move {
         let c = session_conn().await;
-        uccd_proxy(&c, name).await.apply_profile(&serde_json::to_string(&winner).unwrap()).await
+        uccd_proxy(&c, name)
+            .await
+            .apply_profile(&serde_json::to_string(&winner).unwrap())
+            .await
     });
     handoff_wait_gate(sample_entered).await;
     let old_call = tokio::spawn(async move {
         let c = session_conn().await;
-        uccd_proxy(&c, name).await.apply_profile(&serde_json::to_string(&pending).unwrap()).await
+        uccd_proxy(&c, name)
+            .await
+            .apply_profile(&serde_json::to_string(&pending).unwrap())
+            .await
     });
     handoff_wait_gate(writer_entered).await;
     assert_eq!(platform.read_tdp(0).unwrap(), 41);
@@ -4086,7 +4266,8 @@ async fn recheck_01_winning_profile_without_tdp_overrides_ignores_in_flight_lose
     release_writer.send(()).unwrap();
     let old_ok = old_call.await.unwrap().unwrap();
     let final_pl1 = platform.read_tdp(0).unwrap();
-    let active: serde_json::Value = serde_json::from_str(&proxy.get_active_profile_json().await.unwrap()).unwrap();
+    let active: serde_json::Value =
+        serde_json::from_str(&proxy.get_active_profile_json().await.unwrap()).unwrap();
     runtime.shutdown(Duration::from_secs(1)).await;
     assert!(winner_ok && old_ok);
     assert_eq!(active["id"], "winner-without-tdp");
@@ -4101,28 +4282,44 @@ async fn recheck_02_failed_odm_only_read_preserves_tdp_channel_identity() {
     target.odm_power_limits.clear();
     target.odm_profile_name = Some("performance".into());
     let (tx, rx) = std::sync::mpsc::channel();
-    let (backend, platform, _, _) = build_custom_backend(root.path(), true, |_| {}, |p| {
-        let wrapper = Arc::new(TxRegressionPlatform::new(p));
-        tx.send(wrapper.clone()).unwrap();
-        wrapper
-    });
+    let (backend, platform, _, _) = build_custom_backend(
+        root.path(),
+        true,
+        |_| {},
+        |p| {
+            let wrapper = Arc::new(TxRegressionPlatform::new(p));
+            tx.send(wrapper.clone()).unwrap();
+            wrapper
+        },
+    );
     let ctl = rx.recv().unwrap();
     let name = "org.test.uccd.reg.recheck_02";
     let runtime = start_runtime(backend, name, false).await;
     let conn = session_conn().await;
     let proxy = uccd_proxy(&conn, name).await;
-    assert!(proxy.apply_profile(&serde_json::to_string(&initial).unwrap()).await.unwrap());
+    assert!(proxy
+        .apply_profile(&serde_json::to_string(&initial).unwrap())
+        .await
+        .unwrap());
     platform.set_perf_profile(2).unwrap();
     platform.clear_journal();
-    ctl.omit_tdp1_read.store(true, std::sync::atomic::Ordering::SeqCst);
-    ctl.odm_fail.store(true, std::sync::atomic::Ordering::SeqCst);
-    let ok = proxy.apply_profile(&serde_json::to_string(&target).unwrap()).await.unwrap();
+    ctl.omit_tdp1_read
+        .store(true, std::sync::atomic::Ordering::SeqCst);
+    ctl.odm_fail
+        .store(true, std::sync::atomic::Ordering::SeqCst);
+    let ok = proxy
+        .apply_profile(&serde_json::to_string(&target).unwrap())
+        .await
+        .unwrap();
     let actual: Vec<_> = (0..3).map(|i| platform.read_tdp(i).unwrap()).collect();
     let writes = platform.journal();
     runtime.shutdown(Duration::from_secs(1)).await;
     assert!(!ok);
     assert_eq!(actual, vec![55, 80, 95]);
-    assert!(writes.is_empty(), "pre-validation should fail with zero hardware writes: {writes:?}");
+    assert!(
+        writes.is_empty(),
+        "pre-validation should fail with zero hardware writes: {writes:?}"
+    );
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 3)]
@@ -4135,24 +4332,35 @@ async fn recheck_03_shutdown_deadline_stops_unstarted_rollback_writes() {
     let (rollback_started, rollback_entered) = std::sync::mpsc::channel();
     let (release_rollback, rollback_wait) = std::sync::mpsc::channel();
     let (tx, rx) = std::sync::mpsc::channel();
-    let (backend, platform, _, _) = build_custom_backend(root.path(), true, |_| {}, |p| {
-        let mut wrapper = TxRegressionPlatform::new(p);
-        wrapper.gated_channel = 1;
-        *wrapper.tdp_gate.lock().unwrap() = Some((started, wait));
-        let wrapper = Arc::new(wrapper);
-        tx.send(wrapper.clone()).unwrap();
-        wrapper
-    });
+    let (backend, platform, _, _) = build_custom_backend(
+        root.path(),
+        true,
+        |_| {},
+        |p| {
+            let mut wrapper = TxRegressionPlatform::new(p);
+            wrapper.gated_channel = 1;
+            *wrapper.tdp_gate.lock().unwrap() = Some((started, wait));
+            let wrapper = Arc::new(wrapper);
+            tx.send(wrapper.clone()).unwrap();
+            wrapper
+        },
+    );
     let ctl = rx.recv().unwrap();
     let name = "org.test.uccd.reg.recheck_03";
     let runtime = start_runtime(backend, name, false).await;
     let conn = session_conn().await;
     let proxy = uccd_proxy(&conn, name).await;
-    assert!(proxy.apply_profile(&serde_json::to_string(&initial).unwrap()).await.unwrap());
+    assert!(proxy
+        .apply_profile(&serde_json::to_string(&initial).unwrap())
+        .await
+        .unwrap());
     *ctl.restore_gate.lock().unwrap() = Some((rollback_started, rollback_wait));
     let pending_call = tokio::spawn(async move {
         let c = session_conn().await;
-        uccd_proxy(&c, name).await.apply_profile(&serde_json::to_string(&pending).unwrap()).await
+        uccd_proxy(&c, name)
+            .await
+            .apply_profile(&serde_json::to_string(&pending).unwrap())
+            .await
     });
     handoff_wait_gate(entered).await;
     let bus = zbus::fdo::DBusProxy::new(&conn).await.unwrap();
@@ -4171,19 +4379,28 @@ async fn recheck_03_shutdown_deadline_stops_unstarted_rollback_writes() {
     release_rollback.send(()).unwrap();
     let _ = pending_call.await.unwrap();
     let late = platform.journal();
-    assert!(!late.iter().any(|w| matches!(w, ucc_hardware::PlatformWrite::SetTdp { index: 0, .. })),
-        "late writes after deadline: {late:?}");
+    assert!(
+        !late
+            .iter()
+            .any(|w| matches!(w, ucc_hardware::PlatformWrite::SetTdp { index: 0, .. })),
+        "late writes after deadline: {late:?}"
+    );
 }
 
 #[tokio::test]
 async fn recheck_04_brightness_apply_rejects_mismatched_actual_brightness_and_restores_request() {
     let root = tempfile::tempdir().unwrap();
     let panel = root.path().join("sys/class/backlight/panel0");
-    let (backend, _, sysfs, _) = build_custom_backend(root.path(), true, |s| {
-        s.set_file(panel.join("brightness"), "55");
-        s.set_file(panel.join("actual_brightness"), "55");
-        s.set_file(panel.join("max_brightness"), "100");
-    }, |p| p);
+    let (backend, _, sysfs, _) = build_custom_backend(
+        root.path(),
+        true,
+        |s| {
+            s.set_file(panel.join("brightness"), "55");
+            s.set_file(panel.join("actual_brightness"), "55");
+            s.set_file(panel.join("max_brightness"), "100");
+        },
+        |p| p,
+    );
     let name = "org.test.uccd.reg.recheck_04";
     let runtime = start_runtime(backend, name, false).await;
     let conn = session_conn().await;
@@ -4193,7 +4410,10 @@ async fn recheck_04_brightness_apply_rejects_mismatched_actual_brightness_and_re
     profile.display.brightness = 40;
     sysfs.set_file(panel.join("brightness"), "55");
     sysfs.set_file(panel.join("actual_brightness"), "55");
-    let ok = proxy.apply_profile(&serde_json::to_string(&profile).unwrap()).await.unwrap();
+    let ok = proxy
+        .apply_profile(&serde_json::to_string(&profile).unwrap())
+        .await
+        .unwrap();
     let actual = proxy.get_display_brightness().await.unwrap();
     let restored = sysfs.get_file(panel.join("brightness"));
     runtime.shutdown(Duration::from_secs(1)).await;
@@ -4217,20 +4437,36 @@ async fn recheck_05_editing_active_custom_profile_reapplies_hardware_and_inactiv
     assert!(proxy.set_active_profile(&active_custom.id).await.unwrap());
     let mut edited_inactive = inactive_custom.clone();
     edited_inactive.odm_power_limits[0] = 30;
-    assert!(proxy.update_custom_profile(&serde_json::to_string(&edited_inactive).unwrap()).await.unwrap());
-    assert_eq!(platform.read_tdp(0).unwrap(), 55, "editing inactive profile must not mutate hardware");
+    assert!(proxy
+        .update_custom_profile(&serde_json::to_string(&edited_inactive).unwrap())
+        .await
+        .unwrap());
+    assert_eq!(
+        platform.read_tdp(0).unwrap(),
+        55,
+        "editing inactive profile must not mutate hardware"
+    );
 
     let mut edited_active = active_custom.clone();
     edited_active.odm_power_limits[0] = 45;
-    assert!(proxy.update_custom_profile(&serde_json::to_string(&edited_active).unwrap()).await.unwrap());
+    assert!(proxy
+        .update_custom_profile(&serde_json::to_string(&edited_active).unwrap())
+        .await
+        .unwrap());
     let active: ucc_core::UccProfile =
         serde_json::from_str(&proxy.get_active_profile_json().await.unwrap()).unwrap();
-    assert_eq!((active.odm_power_limits[0], platform.read_tdp(0).unwrap()), (45, 45));
+    assert_eq!(
+        (active.odm_power_limits[0], platform.read_tdp(0).unwrap()),
+        (45, 45)
+    );
 
     // Failing hardware update (out-of-limits TDP) must NOT persist stale edit to disk or active RAM.
     let mut invalid_hw = edited_active.clone();
     invalid_hw.odm_power_limits[0] = 999;
-    assert!(!proxy.update_custom_profile(&serde_json::to_string(&invalid_hw).unwrap()).await.unwrap());
+    assert!(!proxy
+        .update_custom_profile(&serde_json::to_string(&invalid_hw).unwrap())
+        .await
+        .unwrap());
     let saved = ConfigManager::load_from_path(&root.path().join("settings.json")).unwrap();
     assert_eq!(saved.profiles[&active_custom.id].odm_power_limits[0], 45);
     assert_eq!(platform.read_tdp(0).unwrap(), 45);
@@ -4256,11 +4492,17 @@ async fn recheck_06_custom_profile_mutators_reject_builtin_ids() {
     assert!(!proxy.delete_custom_profile(&builtin.id).await.unwrap());
 
     let missing = handoff_profile_with_tdps("does-not-exist", [45, 75, 95]);
-    assert!(!proxy.update_custom_profile(&serde_json::to_string(&missing).unwrap()).await.unwrap());
+    assert!(!proxy
+        .update_custom_profile(&serde_json::to_string(&missing).unwrap())
+        .await
+        .unwrap());
 
     let all: Vec<ucc_core::UccProfile> =
         serde_json::from_str(&proxy.get_profiles_json().await.unwrap()).unwrap();
-    assert_eq!(all.iter().find(|p| p.id == builtin.id).unwrap().name, default_quiet_profile().name);
+    assert_eq!(
+        all.iter().find(|p| p.id == builtin.id).unwrap().name,
+        default_quiet_profile().name
+    );
     runtime.shutdown(Duration::from_secs(1)).await;
 }
 
@@ -4275,7 +4517,10 @@ async fn recheck_08_prime_display_modes_x11_and_yuv420_report_real_system_state(
         |s| {
             s.set_file(root.path().join("etc/prime-discrete"), "on\n");
             s.set_file(drm.join("status"), "connected\n");
-            s.set_file(drm.join("modes"), "2560x1600@240\n2560x1600@60\n1920x1200\n");
+            s.set_file(
+                drm.join("modes"),
+                "2560x1600@240\n2560x1600@60\n1920x1200\n",
+            );
             s.set_file(drm.join("mode"), "2560x1600@240\n");
             s.set_file(drm.join("force_yuv420_output"), "0\n");
             s.set_file(sess.clone(), "STATE=active\nACTIVE=1\nTYPE=wayland\n");
@@ -4296,17 +4541,26 @@ async fn recheck_08_prime_display_modes_x11_and_yuv420_report_real_system_state(
     assert!(!proxy.get_is_x11().await.unwrap());
     sysfs.set_file(sess, "STATE=active\nACTIVE=1\nTYPE=x11\n");
     assert!(proxy.get_is_x11().await.unwrap());
-    assert!(proxy.get_force_yuv420_output_switch_available().await.unwrap());
+    assert!(proxy
+        .get_force_yuv420_output_switch_available()
+        .await
+        .unwrap());
 
     let modes: serde_json::Value =
         serde_json::from_str(&proxy.get_display_modes_json().await.unwrap()).unwrap();
     assert_eq!(modes["displayName"], "eDP-1");
     assert_eq!(modes["activeMode"]["xResolution"], 2560);
     assert_eq!(modes["activeMode"]["yResolution"], 1600);
-    assert_eq!(modes["activeMode"]["refreshRates"], serde_json::json!([240]));
+    assert_eq!(
+        modes["activeMode"]["refreshRates"],
+        serde_json::json!([240])
+    );
     assert_eq!(modes["displayModes"].as_array().unwrap().len(), 2);
     assert_eq!(modes["displayModes"][1]["xResolution"], 1920);
-    assert_eq!(modes["displayModes"][1]["refreshRates"], serde_json::json!([]));
+    assert_eq!(
+        modes["displayModes"][1]["refreshRates"],
+        serde_json::json!([])
+    );
 
     runtime.shutdown(Duration::from_secs(1)).await;
 }
@@ -4330,7 +4584,10 @@ async fn recheck_09_system_info_detects_igpu_and_dgpu_from_pci_sysfs_without_tel
                 root.path().join("usr/share/hwdata/pci.ids"),
                 "10de  NVIDIA Corporation\n\t28e0  AD106M [GeForce RTX 4060 Max-Q / Mobile]\n8086  Intel Corporation\n\ta7a0  Raptor Lake-P [Iris Xe Graphics]\n",
             );
-            s.set_file(root.path().join("proc/cpuinfo"), "processor\t: 0\nmodel name\t: Fixture Core i7\n");
+            s.set_file(
+                root.path().join("proc/cpuinfo"),
+                "processor\t: 0\nmodel name\t: Fixture Core i7\n",
+            );
         },
         |p| p,
     );
@@ -4338,7 +4595,10 @@ async fn recheck_09_system_info_detects_igpu_and_dgpu_from_pci_sysfs_without_tel
     let runtime = start_runtime(backend, name, false).await;
     let conn = session_conn().await;
     let proxy = uccd_proxy(&conn, name).await;
-    proxy.set_sensor_data_collection_status(false).await.unwrap();
+    proxy
+        .set_sensor_data_collection_status(false)
+        .await
+        .unwrap();
 
     let info: serde_json::Value =
         serde_json::from_str(&proxy.get_system_info_json().await.unwrap()).unwrap();
@@ -4357,7 +4617,11 @@ struct StallingBacklightSysfs {
 impl ucc_hardware::Sysfs for StallingBacklightSysfs {
     fn read(&self, path: &Path) -> std::io::Result<String> {
         if path.ends_with("actual_brightness")
-            && self.inner.get_file(path.with_file_name("brightness")).as_deref() == Some("40")
+            && self
+                .inner
+                .get_file(path.with_file_name("brightness"))
+                .as_deref()
+                == Some("40")
         {
             let gate = self.gate.lock().unwrap().take();
             if let Some((start, release)) = gate {
@@ -4386,8 +4650,16 @@ async fn followup_01_brightness_verify_failure_does_not_start_rollback_after_dea
     sysfs.set_file(panel.join("brightness"), "55");
     sysfs.set_file(panel.join("actual_brightness"), "55");
     sysfs.set_file(panel.join("max_brightness"), "100");
-    sysfs.set_file(root.path().join("sys/devices/system/cpu/cpu0/cpufreq/scaling_cur_freq"), "3200000");
-    sysfs.set_file(root.path().join("sys/devices/system/cpu/cpu1/cpufreq/scaling_cur_freq"), "3200000");
+    sysfs.set_file(
+        root.path()
+            .join("sys/devices/system/cpu/cpu0/cpufreq/scaling_cur_freq"),
+        "3200000",
+    );
+    sysfs.set_file(
+        root.path()
+            .join("sys/devices/system/cpu/cpu1/cpufreq/scaling_cur_freq"),
+        "3200000",
+    );
     sysfs.set_file(root.path().join("sys/devices/system/cpu/cpu1/online"), "1");
     sysfs.set_file(root.path().join("sys/class/power_supply/AC/type"), "Mains");
     sysfs.set_file(root.path().join("sys/class/power_supply/AC/online"), "1");
@@ -4446,13 +4718,19 @@ async fn followup_01_brightness_verify_failure_does_not_start_rollback_after_dea
     let proxy = uccd_proxy(&conn, name).await;
     let mut initial = handoff_profile_with_tdps("initial", [55, 80, 95]);
     initial.display.use_brightness = false;
-    assert!(proxy.apply_profile(&serde_json::to_string(&initial).unwrap()).await.unwrap());
+    assert!(proxy
+        .apply_profile(&serde_json::to_string(&initial).unwrap())
+        .await
+        .unwrap());
     let mut pending = handoff_profile_with_tdps("pending", [41, 70, 90]);
     pending.display.use_brightness = true;
     pending.display.brightness = 40;
     let rpc = tokio::spawn(async move {
         let c = session_conn().await;
-        uccd_proxy(&c, name).await.apply_profile(&serde_json::to_string(&pending).unwrap()).await
+        uccd_proxy(&c, name)
+            .await
+            .apply_profile(&serde_json::to_string(&pending).unwrap())
+            .await
     });
     handoff_wait_gate(entered).await;
     runtime.shutdown(Duration::from_millis(100)).await;
@@ -4464,7 +4742,8 @@ async fn followup_01_brightness_verify_failure_does_not_start_rollback_after_dea
     let tdp = platform.journal();
     let late_sysfs = sysfs.journal();
     assert!(
-        !tdp.iter().any(|w| matches!(w, ucc_hardware::PlatformWrite::SetTdp { .. }))
+        !tdp.iter()
+            .any(|w| matches!(w, ucc_hardware::PlatformWrite::SetTdp { .. }))
             && late_sysfs.is_empty(),
         "late rollback writes after shutdown deadline: tdp={tdp:?}, sysfs={late_sysfs:?}"
     );
@@ -4480,13 +4759,18 @@ async fn followup_02_failed_odm_without_readback_does_not_leave_a_different_mode
     odm_plus_tdp.odm_profile_name = Some("performance".into());
 
     let (tx, rx) = std::sync::mpsc::channel();
-    let (backend, platform, _, _) = build_custom_backend(root.path(), true, |_| {}, |p| {
-        let mut w = TxRegressionPlatform::new(p);
-        w.no_odm_readback = true;
-        let w = Arc::new(w);
-        tx.send(w.clone()).unwrap();
-        w
-    });
+    let (backend, platform, _, _) = build_custom_backend(
+        root.path(),
+        true,
+        |_| {},
+        |p| {
+            let mut w = TxRegressionPlatform::new(p);
+            w.no_odm_readback = true;
+            let w = Arc::new(w);
+            tx.send(w.clone()).unwrap();
+            w
+        },
+    );
     let ctl = rx.recv().unwrap();
     let name = "org.test.uccd.reg.followup_02";
     let runtime = start_runtime(backend, name, false).await;
@@ -4494,13 +4778,20 @@ async fn followup_02_failed_odm_without_readback_does_not_leave_a_different_mode
     let proxy = uccd_proxy(&conn, name).await;
     platform.set_perf_profile(2).unwrap();
     platform.clear_journal();
-    ctl.odm_fail.store(true, std::sync::atomic::Ordering::SeqCst);
+    ctl.odm_fail
+        .store(true, std::sync::atomic::Ordering::SeqCst);
 
-    assert!(!proxy.apply_profile(&serde_json::to_string(&odm_only).unwrap()).await.unwrap());
+    assert!(!proxy
+        .apply_profile(&serde_json::to_string(&odm_only).unwrap())
+        .await
+        .unwrap());
     assert_eq!(platform.read_perf_profile().unwrap(), 2);
     assert!(platform.journal().is_empty());
 
-    assert!(!proxy.apply_profile(&serde_json::to_string(&odm_plus_tdp).unwrap()).await.unwrap());
+    assert!(!proxy
+        .apply_profile(&serde_json::to_string(&odm_plus_tdp).unwrap())
+        .await
+        .unwrap());
     assert_eq!(platform.read_perf_profile().unwrap(), 2);
     assert!(platform.journal().is_empty());
     runtime.shutdown(Duration::from_secs(1)).await;
@@ -4516,11 +4807,16 @@ async fn followup_03_successful_edit_is_persisted_if_an_activation_supersedes_it
     handoff_save_profiles(root.path(), &[&original, &next]);
     let (started, entered) = std::sync::mpsc::channel();
     let (release, wait) = std::sync::mpsc::channel();
-    let (backend, platform, _, _) = build_custom_backend(root.path(), true, |_| {}, |p| {
-        let w = TxRegressionPlatform::new(p);
-        *w.tdp_gate.lock().unwrap() = Some((started, wait));
-        Arc::new(w)
-    });
+    let (backend, platform, _, _) = build_custom_backend(
+        root.path(),
+        true,
+        |_| {},
+        |p| {
+            let w = TxRegressionPlatform::new(p);
+            *w.tdp_gate.lock().unwrap() = Some((started, wait));
+            Arc::new(w)
+        },
+    );
     let name = "org.test.uccd.reg.followup_03";
     let runtime = start_runtime(backend, name, false).await;
     let conn = session_conn().await;
@@ -4528,7 +4824,10 @@ async fn followup_03_successful_edit_is_persisted_if_an_activation_supersedes_it
     assert!(proxy.set_active_profile(&original.id).await.unwrap());
     let editing = tokio::spawn(async move {
         let c = session_conn().await;
-        uccd_proxy(&c, name).await.update_custom_profile(&serde_json::to_string(&edited).unwrap()).await
+        uccd_proxy(&c, name)
+            .await
+            .update_custom_profile(&serde_json::to_string(&edited).unwrap())
+            .await
     });
     handoff_wait_gate(entered).await;
     assert!(proxy.set_active_profile(&next.id).await.unwrap());
@@ -4552,21 +4851,32 @@ async fn followup_04_concurrent_edit_and_activation_agree_on_the_active_profile_
     handoff_save_profiles(root.path(), &[&pending]);
     let (started, entered) = std::sync::mpsc::channel();
     let (release, wait) = std::sync::mpsc::channel();
-    let (backend, platform, _, _) = build_custom_backend(root.path(), true, |_| {}, |p| {
-        let w = TxRegressionPlatform::new(p);
-        *w.tdp_gate.lock().unwrap() = Some((started, wait));
-        Arc::new(w)
-    });
+    let (backend, platform, _, _) = build_custom_backend(
+        root.path(),
+        true,
+        |_| {},
+        |p| {
+            let w = TxRegressionPlatform::new(p);
+            *w.tdp_gate.lock().unwrap() = Some((started, wait));
+            Arc::new(w)
+        },
+    );
     let name = "org.test.uccd.reg.followup_04";
     let runtime = start_runtime(backend, name, false).await;
     let conn = session_conn().await;
     let proxy = uccd_proxy(&conn, name).await;
     let setting = tokio::spawn(async move {
         let c = session_conn().await;
-        uccd_proxy(&c, name).await.set_active_profile(&pending.id).await
+        uccd_proxy(&c, name)
+            .await
+            .set_active_profile(&pending.id)
+            .await
     });
     handoff_wait_gate(entered).await;
-    assert!(proxy.update_custom_profile(&serde_json::to_string(&edited).unwrap()).await.unwrap());
+    assert!(proxy
+        .update_custom_profile(&serde_json::to_string(&edited).unwrap())
+        .await
+        .unwrap());
     release.send(()).unwrap();
     let ok = setting.await.unwrap().unwrap();
     let active: ucc_core::UccProfile =
@@ -4576,18 +4886,26 @@ async fn followup_04_concurrent_edit_and_activation_agree_on_the_active_profile_
     runtime.shutdown(Duration::from_secs(1)).await;
     assert_eq!(disk.profiles[&edited.id].odm_power_limits[0], 55);
     assert!(ok);
-    assert_eq!((active.id.as_str(), active.odm_power_limits[0], actual), (edited.id.as_str(), 55, 55));
+    assert_eq!(
+        (active.id.as_str(), active.odm_power_limits[0], actual),
+        (edited.id.as_str(), 55, 55)
+    );
 }
 
 #[tokio::test]
 async fn followup_05_drm_resolution_only_data_does_not_claim_refresh_rate_or_active_mode() {
     let root = tempfile::tempdir().unwrap();
     let connector = root.path().join("sys/class/drm/card0-eDP-1");
-    let (backend, _, _, _) = build_custom_backend(root.path(), true, |s| {
-        s.set_file(connector.join("status"), "connected\n");
-        s.set_file(connector.join("enabled"), "enabled\n");
-        s.set_file(connector.join("modes"), "2560x1600\n2560x1600\n1920x1200\n");
-    }, |p| p);
+    let (backend, _, _, _) = build_custom_backend(
+        root.path(),
+        true,
+        |s| {
+            s.set_file(connector.join("status"), "connected\n");
+            s.set_file(connector.join("enabled"), "enabled\n");
+            s.set_file(connector.join("modes"), "2560x1600\n2560x1600\n1920x1200\n");
+        },
+        |p| p,
+    );
     let name = "org.test.uccd.reg.followup_05";
     let runtime = start_runtime(backend, name, false).await;
     let conn = session_conn().await;
@@ -4599,7 +4917,11 @@ async fn followup_05_drm_resolution_only_data_does_not_claim_refresh_rate_or_act
     assert_eq!(modes["activeMode"]["xResolution"], 0);
     assert_eq!(modes["activeMode"]["refreshRates"], serde_json::json!([]));
     assert_eq!(modes["displayModes"].as_array().unwrap().len(), 2);
-    assert!(modes["displayModes"].as_array().unwrap().iter().all(|m| m["refreshRates"] == serde_json::json!([])));
+    assert!(modes["displayModes"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .all(|m| m["refreshRates"] == serde_json::json!([])));
 }
 
 #[tokio::test]
@@ -4608,19 +4930,40 @@ async fn followup_06_configured_ycbcr_workaround_uses_driver_debugfs_node() {
     let mut cfg = serde_json::to_value(create_default_settings()).unwrap();
     cfg["ycbcr420Workaround"] = serde_json::json!([{"HDMI-A-1": false}, {"DP-1": true}]);
     let cfg: ucc_config::UccSettings = serde_json::from_value(cfg).unwrap();
-    ConfigManager::with_custom_path(root.path().join("settings.json")).save(&cfg).unwrap();
-    let (backend, _, sysfs, _) = build_custom_backend(root.path(), true, |s| {
-        s.set_file(root.path().join("sys/kernel/debug/dri/0/eDP-1/force_yuv420_output"), "0\n");
-    }, |p| p);
+    ConfigManager::with_custom_path(root.path().join("settings.json"))
+        .save(&cfg)
+        .unwrap();
+    let (backend, _, sysfs, _) = build_custom_backend(
+        root.path(),
+        true,
+        |s| {
+            s.set_file(
+                root.path()
+                    .join("sys/kernel/debug/dri/0/eDP-1/force_yuv420_output"),
+                "0\n",
+            );
+        },
+        |p| p,
+    );
     let name = "org.test.uccd.reg.followup_06";
     let runtime = start_runtime(backend, name, false).await;
     let conn = session_conn().await;
     let proxy = uccd_proxy(&conn, name).await;
 
     // Neither configured HDMI-A-1 on card 0 nor DP-1 on card 1 exists yet, even though unconfigured eDP-1 does.
-    assert!(!proxy.get_force_yuv420_output_switch_available().await.unwrap());
-    sysfs.set_file(root.path().join("sys/kernel/debug/dri/1/DP-1/force_yuv420_output"), "0\n");
-    assert!(proxy.get_force_yuv420_output_switch_available().await.unwrap());
+    assert!(!proxy
+        .get_force_yuv420_output_switch_available()
+        .await
+        .unwrap());
+    sysfs.set_file(
+        root.path()
+            .join("sys/kernel/debug/dri/1/DP-1/force_yuv420_output"),
+        "0\n",
+    );
+    assert!(proxy
+        .get_force_yuv420_output_switch_available()
+        .await
+        .unwrap());
 
     runtime.shutdown(Duration::from_secs(1)).await;
 }
@@ -4629,14 +4972,22 @@ async fn followup_06_configured_ycbcr_workaround_uses_driver_debugfs_node() {
 async fn followup_07_second_integrated_pci_gpu_does_not_fill_discrete_slot() {
     let root = tempfile::tempdir().unwrap();
     let pci = root.path().join("sys/bus/pci/devices");
-    let (backend, _, _, _) = build_custom_backend(root.path(), true, |s| {
-        for (bdf, product) in [("0000:00:02.0", "Integrated One"), ("0001:00:02.0", "Integrated Two")] {
-            let dev = pci.join(bdf);
-            s.set_file(dev.join("class"), "0x030000");
-            s.set_file(dev.join("vendor"), "0x8086");
-            s.set_file(dev.join("product_name"), product);
-        }
-    }, |p| p);
+    let (backend, _, _, _) = build_custom_backend(
+        root.path(),
+        true,
+        |s| {
+            for (bdf, product) in [
+                ("0000:00:02.0", "Integrated One"),
+                ("0001:00:02.0", "Integrated Two"),
+            ] {
+                let dev = pci.join(bdf);
+                s.set_file(dev.join("class"), "0x030000");
+                s.set_file(dev.join("vendor"), "0x8086");
+                s.set_file(dev.join("product_name"), product);
+            }
+        },
+        |p| p,
+    );
     let name = "org.test.uccd.reg.followup_07";
     let runtime = start_runtime(backend, name, false).await;
     let conn = session_conn().await;
@@ -4739,7 +5090,10 @@ async fn m8_outcomes_failed_reapply_of_superseded_edit_does_not_persist() {
     assert_eq!(active_before.odm_power_limits[0], 62);
     assert_eq!(hardware_before, 62);
     assert_eq!(
-        (disk_before.profiles[&original.id].odm_power_limits[0], after),
+        (
+            disk_before.profiles[&original.id].odm_power_limits[0],
+            after
+        ),
         (62, 62)
     );
 }
@@ -4841,7 +5195,9 @@ impl ucc_hardware::Sysfs for CpuRestoreGateSysfs {
 #[tokio::test(flavor = "multi_thread", worker_threads = 3)]
 async fn m8_outcomes_no_new_cpu_restore_write_after_shutdown_deadline() {
     let root = tempfile::tempdir().unwrap();
-    let nt = root.path().join("sys/devices/system/cpu/intel_pstate/no_turbo");
+    let nt = root
+        .path()
+        .join("sys/devices/system/cpu/intel_pstate/no_turbo");
     let (started, entered) = std::sync::mpsc::channel();
     let (release, wait) = std::sync::mpsc::channel();
     let (tx, rx) = std::sync::mpsc::channel();
@@ -4852,10 +5208,7 @@ async fn m8_outcomes_no_new_cpu_restore_write_after_shutdown_deadline() {
             .join("sys/devices/system/cpu/cpu0/cpufreq/scaling_cur_freq"),
         "3200000",
     );
-    sysfs.set_file(
-        root.path().join("sys/class/power_supply/AC/type"),
-        "Mains",
-    );
+    sysfs.set_file(root.path().join("sys/class/power_supply/AC/type"), "Mains");
     sysfs.set_file(root.path().join("sys/class/power_supply/AC/online"), "1");
     sysfs.set_file(&nt, "0");
     let gated_sysfs: Arc<dyn ucc_hardware::Sysfs> = {
@@ -4985,22 +5338,19 @@ async fn m8_outcomes_power_worker_reapplies_edited_battery_profile() {
     assert_eq!((active.odm_power_limits[0], actual), (62, 62));
 }
 
-
 #[tokio::test]
 async fn failed_cpu_restore_is_carried_to_the_next_daemon() {
     let root = tempfile::tempdir().unwrap();
-    let no_turbo = root.path().join("sys/devices/system/cpu/intel_pstate/no_turbo");
+    let no_turbo = root
+        .path()
+        .join("sys/devices/system/cpu/intel_pstate/no_turbo");
     let mut config = create_default_settings();
     config.cpu_settings_enabled = Some(false);
     ConfigManager::with_custom_path(root.path().join("settings.json"))
         .save(&config)
         .unwrap();
-    let (first, _, sysfs, _) = build_custom_backend(
-        root.path(),
-        true,
-        |s| s.set_file(&no_turbo, "0"),
-        |p| p,
-    );
+    let (first, _, sysfs, _) =
+        build_custom_backend(root.path(), true, |s| s.set_file(&no_turbo, "0"), |p| p);
     let name = "org.test.uccd.reg.failed_cpu_cleanup_handoff";
     let runtime = start_runtime(first, name, false).await;
     sysfs.set_file(&no_turbo, "1");
@@ -5009,13 +5359,8 @@ async fn failed_cpu_restore_is_carried_to_the_next_daemon() {
     assert_eq!(sysfs.get_file(&no_turbo).as_deref(), Some("1"));
 
     sysfs.fail_writes.lock().unwrap().remove(&no_turbo);
-    let (second, _, _, _) = build_custom_backend_with_sysfs(
-        root.path(),
-        true,
-        Some(sysfs.clone()),
-        |_| {},
-        |p| p,
-    );
+    let (second, _, _, _) =
+        build_custom_backend_with_sysfs(root.path(), true, Some(sysfs.clone()), |_| {}, |p| p);
     let runtime = start_runtime(second, name, false).await;
     let restored = sysfs.get_file(&no_turbo);
     runtime.shutdown(Duration::from_secs(2)).await;
@@ -5170,8 +5515,12 @@ async fn m5_9_startup_auto_enables_wc_scan_when_power_wc_profile_requests_it() {
     wc_profile.fan.enable_water_cooler = true;
 
     let mut settings = create_default_settings();
-    settings.profiles.insert(ac_profile.id.clone(), ac_profile.clone());
-    settings.profiles.insert(wc_profile.id.clone(), wc_profile.clone());
+    settings
+        .profiles
+        .insert(ac_profile.id.clone(), ac_profile.clone());
+    settings
+        .profiles
+        .insert(wc_profile.id.clone(), wc_profile.clone());
     settings.set_active_profile_for_mode("power_ac", ac_profile.id);
     settings.set_active_profile_for_mode("power_wc", wc_profile.id);
     ConfigManager::with_custom_path(root.path().join("settings.json"))
@@ -5263,9 +5612,18 @@ async fn m5_9_auto_wc_curve_and_aquaris_led_restore_across_suspend_resume() {
     auto_profile.fan.enable_water_cooler = true;
     auto_profile.fan.auto_control_wc = true;
     auto_profile.fan.table_water_cooler_fan = vec![
-        FanPoint { temp: 40, speed: 35 },
-        FanPoint { temp: 60, speed: 75 },
-        FanPoint { temp: 80, speed: 95 },
+        FanPoint {
+            temp: 40,
+            speed: 35,
+        },
+        FanPoint {
+            temp: 60,
+            speed: 75,
+        },
+        FanPoint {
+            temp: 80,
+            speed: 95,
+        },
     ];
     auto_profile.fan.table_pump = vec![
         PumpPoint { temp: 40, speed: 1 }, // V7
@@ -5442,7 +5800,11 @@ impl ucc_hardware::Sysfs for AuditSysfsGate {
             let matches = guard
                 .as_ref()
                 .is_some_and(|(suf, val, _, _)| path.ends_with(suf) && content.trim() == val);
-            if matches { guard.take() } else { None }
+            if matches {
+                guard.take()
+            } else {
+                None
+            }
         };
         if let Some((_, _, started, release)) = maybe_gate {
             let _ = started.send(());
@@ -5471,25 +5833,54 @@ struct AuditFallbackFailPlatform {
 }
 
 impl PlatformBackend for AuditFallbackFailPlatform {
-    fn kind(&self) -> PlatformBackendKind { self.inner.kind() }
-    fn is_available(&self) -> bool { self.inner.is_available() }
-    fn capabilities(&self) -> PlatformCapabilities { self.inner.capabilities() }
-    fn read_fan_temp(&self, fan_idx: usize) -> Result<i32, PlatformError> { self.inner.read_fan_temp(fan_idx) }
-    fn read_fan_speed_percent(&self, fan_idx: usize) -> Result<u8, PlatformError> { self.inner.read_fan_speed_percent(fan_idx) }
-    fn set_fan_speed_percent(&self, fan_idx: usize, percent: u8) -> Result<(), PlatformError> { self.inner.set_fan_speed_percent(fan_idx, percent) }
-    fn set_fans_auto(&self) -> Result<(), PlatformError> { self.inner.set_fans_auto() }
-    fn read_tdp(&self, idx: usize) -> Result<i32, PlatformError> { self.inner.read_tdp(idx) }
-    fn read_tdp_limits(&self, idx: usize) -> Result<(i32, i32), PlatformError> { self.inner.read_tdp_limits(idx) }
-    fn set_tdp(&self, idx: usize, watts: i32) -> Result<(), PlatformError> { self.inner.set_tdp(idx, watts) }
-    fn read_perf_profile(&self) -> Result<i32, PlatformError> { self.inner.read_perf_profile() }
+    fn kind(&self) -> PlatformBackendKind {
+        self.inner.kind()
+    }
+    fn is_available(&self) -> bool {
+        self.inner.is_available()
+    }
+    fn capabilities(&self) -> PlatformCapabilities {
+        self.inner.capabilities()
+    }
+    fn read_fan_temp(&self, fan_idx: usize) -> Result<i32, PlatformError> {
+        self.inner.read_fan_temp(fan_idx)
+    }
+    fn read_fan_speed_percent(&self, fan_idx: usize) -> Result<u8, PlatformError> {
+        self.inner.read_fan_speed_percent(fan_idx)
+    }
+    fn set_fan_speed_percent(&self, fan_idx: usize, percent: u8) -> Result<(), PlatformError> {
+        self.inner.set_fan_speed_percent(fan_idx, percent)
+    }
+    fn set_fans_auto(&self) -> Result<(), PlatformError> {
+        self.inner.set_fans_auto()
+    }
+    fn read_tdp(&self, idx: usize) -> Result<i32, PlatformError> {
+        self.inner.read_tdp(idx)
+    }
+    fn read_tdp_limits(&self, idx: usize) -> Result<(i32, i32), PlatformError> {
+        self.inner.read_tdp_limits(idx)
+    }
+    fn set_tdp(&self, idx: usize, watts: i32) -> Result<(), PlatformError> {
+        self.inner.set_tdp(idx, watts)
+    }
+    fn read_perf_profile(&self) -> Result<i32, PlatformError> {
+        self.inner.read_perf_profile()
+    }
     fn set_perf_profile(&self, value: i32) -> Result<(), PlatformError> {
-        if self.fail_on_perf_profile.load(std::sync::atomic::Ordering::SeqCst) {
+        if self
+            .fail_on_perf_profile
+            .load(std::sync::atomic::Ordering::SeqCst)
+        {
             return Err(PlatformError::Unavailable);
         }
         self.inner.set_perf_profile(value)
     }
-    fn set_mode_enable(&self, value: bool) -> Result<(), PlatformError> { self.inner.set_mode_enable(value) }
-    fn set_mode(&self, value: i32) -> Result<(), PlatformError> { self.inner.set_mode(value) }
+    fn set_mode_enable(&self, value: bool) -> Result<(), PlatformError> {
+        self.inner.set_mode_enable(value)
+    }
+    fn set_mode(&self, value: i32) -> Result<(), PlatformError> {
+        self.inner.set_mode(value)
+    }
 }
 
 fn build_backend_with_sysfs_gate(
@@ -5668,11 +6059,13 @@ async fn full_27_02_superseded_charging_ctgp_and_rgb_never_overwrite_winner() {
     let _ = release_tx.send(());
     let _ = stale_handle.await.unwrap();
 
-    let active: serde_json::Value = serde_json::from_str(&backend.get_active_profile_json()).unwrap();
+    let active: serde_json::Value =
+        serde_json::from_str(&backend.get_active_profile_json()).unwrap();
     assert_eq!(active["id"], "winner-85");
     assert_eq!(sysfs.get_file(&end_path).as_deref(), Some("85"));
     assert_eq!(sysfs.get_file(&ctgp_path).as_deref(), Some("15"));
-    let kbd_colors = ucc_lighting::LightingTransport::read_keyboard_colors(lighting.as_ref()).unwrap();
+    let kbd_colors =
+        ucc_lighting::LightingTransport::read_keyboard_colors(lighting.as_ref()).unwrap();
     assert_eq!(kbd_colors.len(), 1);
     assert_eq!(kbd_colors[0].r, 0);
     assert_eq!(kbd_colors[0].g, 255);
@@ -5698,7 +6091,8 @@ fn full_27_03_apply_profile_fails_and_rolls_back_on_charging_write_error() {
         |p| p,
     );
 
-    let before: serde_json::Value = serde_json::from_str(&backend.get_active_profile_json()).unwrap();
+    let before: serde_json::Value =
+        serde_json::from_str(&backend.get_active_profile_json()).unwrap();
     let mut bad_prof = default_high_performance_profile();
     bad_prof.id = "charge-fail".into();
     bad_prof.name = "Charge Fail".into();
@@ -5709,7 +6103,8 @@ fn full_27_03_apply_profile_fails_and_rolls_back_on_charging_write_error() {
     // 1. PermissionDenied on charge_control_end_threshold -> fails & rolls back start threshold.
     *ctrl.deny_write_suffix.lock().unwrap() = Some("charge_control_end_threshold".to_string());
     assert!(!backend.apply_profile(&bad_json));
-    let after1: serde_json::Value = serde_json::from_str(&backend.get_active_profile_json()).unwrap();
+    let after1: serde_json::Value =
+        serde_json::from_str(&backend.get_active_profile_json()).unwrap();
     assert_eq!(after1["id"], before["id"]);
     assert_eq!(sysfs.get_file(&start_path).as_deref(), Some("40"));
     assert_eq!(sysfs.get_file(&end_path).as_deref(), Some("80"));
@@ -5718,7 +6113,8 @@ fn full_27_03_apply_profile_fails_and_rolls_back_on_charging_write_error() {
     // 2. Write-without-effect on charge_control_end_threshold -> readback detects mismatch -> fails & rolls back.
     *ctrl.silent_noop_suffix.lock().unwrap() = Some("charge_control_end_threshold".to_string());
     assert!(!backend.apply_profile(&bad_json));
-    let after2: serde_json::Value = serde_json::from_str(&backend.get_active_profile_json()).unwrap();
+    let after2: serde_json::Value =
+        serde_json::from_str(&backend.get_active_profile_json()).unwrap();
     assert_eq!(after2["id"], before["id"]);
     assert_eq!(sysfs.get_file(&start_path).as_deref(), Some("40"));
     assert_eq!(sysfs.get_file(&end_path).as_deref(), Some("80"));

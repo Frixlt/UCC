@@ -129,7 +129,10 @@ pub fn hyprland_configuration(raw_json: &[u8]) -> Option<Value> {
             }
         }
 
-        let dpms = m.get("dpmsStatus").and_then(|v| v.as_bool()).unwrap_or(true);
+        let dpms = m
+            .get("dpmsStatus")
+            .and_then(|v| v.as_bool())
+            .unwrap_or(true);
         outputs.push(json!({
             "name": m.get("name").cloned().unwrap_or(Value::Null),
             "connected": true,
@@ -168,8 +171,14 @@ impl RefreshAdvisor {
             let name = output.get("name")?.as_str()?;
             if !is_internal_panel(name)
                 || !valid_identifier(name)
-                || !output.get("connected").and_then(|v| v.as_bool()).unwrap_or(false)
-                || !output.get("enabled").and_then(|v| v.as_bool()).unwrap_or(false)
+                || !output
+                    .get("connected")
+                    .and_then(|v| v.as_bool())
+                    .unwrap_or(false)
+                || !output
+                    .get("enabled")
+                    .and_then(|v| v.as_bool())
+                    .unwrap_or(false)
             {
                 continue;
             }
@@ -201,7 +210,10 @@ impl RefreshAdvisor {
                 let mw = m_size.get("width").and_then(|v| v.as_i64()).unwrap_or(0) as i32;
                 let mh = m_size.get("height").and_then(|v| v.as_i64()).unwrap_or(0) as i32;
                 let m_id = mode.get("id").and_then(|v| v.as_str()).unwrap_or("");
-                let hz = mode.get("refreshRate").and_then(|v| v.as_f64()).unwrap_or(f64::NAN);
+                let hz = mode
+                    .get("refreshRate")
+                    .and_then(|v| v.as_f64())
+                    .unwrap_or(f64::NAN);
                 if mw != w || mh != h || !valid_identifier(m_id) || !hz.is_finite() {
                     continue;
                 }
@@ -253,8 +265,14 @@ impl RefreshAdvisor {
         };
         for output in outputs {
             if output.get("name").and_then(|v| v.as_str()) != Some(&plan.output)
-                || !output.get("connected").and_then(|v| v.as_bool()).unwrap_or(false)
-                || !output.get("enabled").and_then(|v| v.as_bool()).unwrap_or(false)
+                || !output
+                    .get("connected")
+                    .and_then(|v| v.as_bool())
+                    .unwrap_or(false)
+                || !output
+                    .get("enabled")
+                    .and_then(|v| v.as_bool())
+                    .unwrap_or(false)
             {
                 continue;
             }
@@ -266,7 +284,10 @@ impl RefreshAdvisor {
             };
             let w = size.get("width").and_then(|v| v.as_i64()).unwrap_or(0) as i32;
             let h = size.get("height").and_then(|v| v.as_i64()).unwrap_or(0) as i32;
-            let hz = mode.get("refreshRate").and_then(|v| v.as_f64()).unwrap_or(0.0);
+            let hz = mode
+                .get("refreshRate")
+                .and_then(|v| v.as_f64())
+                .unwrap_or(0.0);
             if mode.get("id").and_then(|v| v.as_str()) == Some(&plan.target_mode)
                 && w == plan.width
                 && h == plan.height
@@ -281,13 +302,18 @@ impl RefreshAdvisor {
     /// Builds standard backend command arguments (no mandatory Lua `eval` dependency on Hyprland).
     pub fn apply_command_args(backend: RefreshBackend, plan: &RefreshPlan) -> Vec<String> {
         match backend {
-            RefreshBackend::Kde => vec![format!("output.{}.mode.{}", plan.output, plan.target_mode)],
+            RefreshBackend::Kde => {
+                vec![format!("output.{}.mode.{}", plan.output, plan.target_mode)]
+            }
             RefreshBackend::Hyprland => vec![
                 "keyword".to_string(),
                 "monitor".to_string(),
                 format!(
                     "{},{}x{}@{},auto,auto",
-                    plan.output, plan.width, plan.height, plan.target_hz.round() as i32
+                    plan.output,
+                    plan.width,
+                    plan.height,
+                    plan.target_hz.round() as i32
                 ),
             ],
             RefreshBackend::Unsupported => Vec::new(),
@@ -319,7 +345,10 @@ mod tests {
         assert!(!RefreshAdvisor::applied(&cfg, &p));
 
         let args = RefreshAdvisor::apply_command_args(RefreshBackend::Hyprland, &p);
-        assert_eq!(args, vec!["keyword", "monitor", "eDP-1,2560x1600@60,auto,auto"]);
+        assert_eq!(
+            args,
+            vec!["keyword", "monitor", "eDP-1,2560x1600@60,auto,auto"]
+        );
     }
 
     #[test]

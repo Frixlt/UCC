@@ -106,7 +106,10 @@ impl LiveUccdBackend {
         if platform.is_available() && capabilities.tdp_channels > 0 {
             if !preserve_empty_tdps || !profile.odm_power_limits.is_empty() {
                 let target_len = if preserve_empty_tdps {
-                    profile.odm_power_limits.len().min(capabilities.tdp_channels)
+                    profile
+                        .odm_power_limits
+                        .len()
+                        .min(capabilities.tdp_channels)
                 } else {
                     capabilities.tdp_channels
                 };
@@ -656,17 +659,37 @@ impl LiveUccdBackend {
                     (None, None, None, None, None)
                 }
             };
-            let latest_has_charging = latest.profile.charging.start_threshold.or(cfg_start).is_some()
+            let latest_has_charging = latest
+                .profile
+                .charging
+                .start_threshold
+                .or(cfg_start)
+                .is_some()
                 || latest.profile.charging.end_threshold.or(cfg_end).is_some()
                 || latest.profile.charging.charge_type.is_some()
                 || cfg_type.is_some()
-                || latest.profile.charging.charging_profile.as_deref().or(cfg_prof.as_deref()).is_some()
-                || latest.profile.charging.charging_priority.as_deref().or(cfg_prio.as_deref()).is_some();
+                || latest
+                    .profile
+                    .charging
+                    .charging_profile
+                    .as_deref()
+                    .or(cfg_prof.as_deref())
+                    .is_some()
+                || latest
+                    .profile
+                    .charging
+                    .charging_priority
+                    .as_deref()
+                    .or(cfg_prio.as_deref())
+                    .is_some();
             if !latest_has_charging && !self.restore_charging_rollback(rb, None) {
                 repair_ok = false;
             }
         }
-        if self.apply_charging_settings_checked(&latest.profile, None).is_err() {
+        if self
+            .apply_charging_settings_checked(&latest.profile, None)
+            .is_err()
+        {
             repair_ok = false;
         }
         if let Some(offset) = latest.profile.nvidia_ctgp_offset {
@@ -742,7 +765,8 @@ impl LiveUccdBackend {
                         {
                             return None;
                         }
-                        s.profiles.insert(updated_prof.id.clone(), updated_prof.clone());
+                        s.profiles
+                            .insert(updated_prof.id.clone(), updated_prof.clone());
                     }
                     if let Some(del_id) = delete_profile_id {
                         if is_builtin_profile_id(del_id) || del_id == committed_profile.id {
@@ -779,7 +803,8 @@ impl LiveUccdBackend {
 
         let (target_odm_code, hw_odm_prev) = match profile.odm_profile_name {
             Some(ref odm_name)
-                if self.platform.is_available() && self.capabilities.perf_profiles_available > 0 =>
+                if self.platform.is_available()
+                    && self.capabilities.perf_profiles_available > 0 =>
             {
                 let Some(code) = self.resolve_odm_profile_code(odm_name) else {
                     return ApplyOutcome::Failed;
@@ -1013,7 +1038,11 @@ impl LiveUccdBackend {
                         None,
                         true,
                         &prev_tdps,
-                        if wrote_odm { prev_tdps.len() } else { wrote_tdps },
+                        if wrote_odm {
+                            prev_tdps.len()
+                        } else {
+                            wrote_tdps
+                        },
                         cpu_res.rollback,
                     );
                 }
@@ -1348,23 +1377,40 @@ impl LiveUccdBackend {
             wrote_webcam = true;
         }
 
-        let charging_rb = match self.apply_charging_settings_checked(&committed_profile, Some(start_epoch)) {
-            Ok(rb) => rb,
-            Err(()) => {
-                if self.shutting_down.load(Ordering::SeqCst) {
-                    return self.abort_apply_on_shutdown(
-                        prev_brightness,
-                        wrote_brightness,
-                        prev_webcam,
-                        wrote_webcam,
-                        hw_odm_prev,
-                        wrote_odm,
-                        &prev_tdps,
-                        tdps_written,
-                        cpu_res.rollback,
-                    );
-                }
-                if self.profile_commit_epoch.load(Ordering::SeqCst) != start_epoch {
+        let charging_rb =
+            match self.apply_charging_settings_checked(&committed_profile, Some(start_epoch)) {
+                Ok(rb) => rb,
+                Err(()) => {
+                    if self.shutting_down.load(Ordering::SeqCst) {
+                        return self.abort_apply_on_shutdown(
+                            prev_brightness,
+                            wrote_brightness,
+                            prev_webcam,
+                            wrote_webcam,
+                            hw_odm_prev,
+                            wrote_odm,
+                            &prev_tdps,
+                            tdps_written,
+                            cpu_res.rollback,
+                        );
+                    }
+                    if self.profile_commit_epoch.load(Ordering::SeqCst) != start_epoch {
+                        self.restore_device_writes(
+                            prev_brightness,
+                            wrote_brightness,
+                            prev_webcam,
+                            wrote_webcam,
+                            Some(start_epoch),
+                        );
+                        return self.reconcile_to_latest_committed(SupersededUndo {
+                            hw_odm_prev,
+                            wrote_odm,
+                            prev_tdps: &prev_tdps,
+                            tdps_written,
+                            cpu_rollback: cpu_res.rollback,
+                            charging_rb: None,
+                        });
+                    }
                     self.restore_device_writes(
                         prev_brightness,
                         wrote_brightness,
@@ -1372,33 +1418,17 @@ impl LiveUccdBackend {
                         wrote_webcam,
                         Some(start_epoch),
                     );
-                    return self.reconcile_to_latest_committed(SupersededUndo {
+                    let _ = self.rollback_hardware(
                         hw_odm_prev,
                         wrote_odm,
-                        prev_tdps: &prev_tdps,
+                        &prev_tdps,
                         tdps_written,
-                        cpu_rollback: cpu_res.rollback,
-                        charging_rb: None,
-                    });
+                        cpu_res.rollback,
+                        Some(start_epoch),
+                    );
+                    return ApplyOutcome::Failed;
                 }
-                self.restore_device_writes(
-                    prev_brightness,
-                    wrote_brightness,
-                    prev_webcam,
-                    wrote_webcam,
-                    Some(start_epoch),
-                );
-                let _ = self.rollback_hardware(
-                    hw_odm_prev,
-                    wrote_odm,
-                    &prev_tdps,
-                    tdps_written,
-                    cpu_res.rollback,
-                    Some(start_epoch),
-                );
-                return ApplyOutcome::Failed;
-            }
-        };
+            };
         let post_phase2_charging_seq = self.charging_write_seq.load(Ordering::SeqCst);
         if let Some(offset) = committed_profile.nvidia_ctgp_offset {
             let _ = self.set_nvidia_power_offset_impl(offset);
@@ -1534,7 +1564,9 @@ impl LiveUccdBackend {
                 }
             }
             if self.charging_write_seq.load(Ordering::SeqCst) != post_phase2_charging_seq
-                && self.apply_charging_settings_checked(&committed_profile, None).is_err()
+                && self
+                    .apply_charging_settings_checked(&committed_profile, None)
+                    .is_err()
             {
                 drop(guard);
                 let _ = self.restore_charging_rollback(&charging_rb, Some(start_epoch));
@@ -1740,8 +1772,9 @@ impl LiveUccdBackend {
         let prev_state = self.lock_mutex(&self.last_power_state).clone();
         let state_changed = prev_state.as_deref() != Some(state_str.as_str());
         let prev_applied_state = self.lock_mutex(&self.last_applied_profile_state).clone();
-        let profile_pending =
-            force_apply || state_changed || prev_applied_state.as_deref() != Some(state_str.as_str());
+        let profile_pending = force_apply
+            || state_changed
+            || prev_applied_state.as_deref() != Some(state_str.as_str());
         let prev_effective = *self.lock_mutex(&self.last_effective_mode);
         let effective_changed = prev_effective != Some(effective_mode);
         let prev_policy = self.lock_mutex(&self.last_policy_json).clone();
@@ -1971,7 +2004,11 @@ impl LiveUccdBackend {
                 let Some(_op_guard) = self.enter_hardware_op() else {
                     return false;
                 };
-                if !self.read_rw(&self.settings).profiles.contains_key(profile_id) {
+                if !self
+                    .read_rw(&self.settings)
+                    .profiles
+                    .contains_key(profile_id)
+                {
                     return false;
                 }
                 let decision = self.current_decision();
@@ -2014,7 +2051,10 @@ impl LiveUccdBackend {
                                         .as_ref()
                                         .and_then(|v| v.get(idx).copied().flatten())
                                         .or_else(|| {
-                                            self.platform.read_tdp_limits(idx).ok().map(|(_, max)| max)
+                                            self.platform
+                                                .read_tdp_limits(idx)
+                                                .ok()
+                                                .map(|(_, max)| max)
                                         });
                                     if let Some(default_w) = fallback_w {
                                         let _ = self.write_tdp_verified(idx, default_w);

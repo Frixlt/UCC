@@ -4,7 +4,9 @@
 //! `NameOwnerChanged` client eviction, signal dispatching, periodic worker loops,
 //! and bounded shutdown (`M8.1`, `M8.2`, `M8.3`).
 
-use crate::backend::{run_water_cooler_ble_loop, CpuDefaultsSnapshot, DbusSignalEvent, LiveUccdBackend};
+use crate::backend::{
+    run_water_cooler_ble_loop, CpuDefaultsSnapshot, DbusSignalEvent, LiveUccdBackend,
+};
 use std::collections::HashMap;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Condvar, Mutex, OnceLock};
@@ -76,7 +78,9 @@ fn register_in_flight_shutdown(bus_name: &str) -> ShutdownHandoffGuard {
     ShutdownHandoffGuard { tx, settled: false }
 }
 
-async fn wait_for_predecessor_shutdown(bus_name: &str) -> Result<Option<CpuDefaultsSnapshot>, String> {
+async fn wait_for_predecessor_shutdown(
+    bus_name: &str,
+) -> Result<Option<CpuDefaultsSnapshot>, String> {
     let mut first_error: Option<String> = None;
     let mut inherited_cpu_defaults: Option<CpuDefaultsSnapshot> = None;
     loop {
@@ -163,8 +167,8 @@ where
     std::thread::Builder::new()
         .name(thread_name.to_string())
         .spawn(move || {
-            let outcome =
-                std::panic::catch_unwind(std::panic::AssertUnwindSafe(f)).map_err(format_panic_payload);
+            let outcome = std::panic::catch_unwind(std::panic::AssertUnwindSafe(f))
+                .map_err(format_panic_payload);
             let _ = tx.send(outcome);
         })
         .map_err(|err| format!("Failed spawning {thread_name}: {err}"))?;
@@ -266,16 +270,12 @@ async fn dispatch_signal_event(connection: &zbus::Connection, event: &DbusSignal
                     .await;
                 }
                 DbusSignalEvent::PowerStateChanged { state } => {
-                    let _ = UccdInterface::<LiveUccdBackend>::power_state_changed(
-                        emitter, state,
-                    )
-                    .await;
+                    let _ =
+                        UccdInterface::<LiveUccdBackend>::power_state_changed(emitter, state).await;
                 }
                 DbusSignalEvent::PowerPolicyChanged { json } => {
-                    let _ = UccdInterface::<LiveUccdBackend>::power_policy_changed(
-                        emitter, json,
-                    )
-                    .await;
+                    let _ =
+                        UccdInterface::<LiveUccdBackend>::power_policy_changed(emitter, json).await;
                 }
                 DbusSignalEvent::PowerDeviceStatusChanged { json } => {
                     let _ = UccdInterface::<LiveUccdBackend>::power_device_status_changed(
@@ -284,10 +284,9 @@ async fn dispatch_signal_event(connection: &zbus::Connection, event: &DbusSignal
                     .await;
                 }
                 DbusSignalEvent::LightbarSettingsChanged { json } => {
-                    let _ = UccdInterface::<LiveUccdBackend>::lightbar_settings_changed(
-                        emitter, json,
-                    )
-                    .await;
+                    let _ =
+                        UccdInterface::<LiveUccdBackend>::lightbar_settings_changed(emitter, json)
+                            .await;
                 }
                 DbusSignalEvent::WaterCoolerStatusChanged { status } => {
                     let _ = UccdInterface::<LiveUccdBackend>::water_cooler_status_changed(
@@ -318,44 +317,38 @@ async fn dispatch_signal_event(connection: &zbus::Connection, event: &DbusSignal
                     .await;
                 }
                 DbusSignalEvent::ModeReapplyPendingChanged { pending } => {
-                    let _ =
-                        UccdLegacyInterface::<LiveUccdBackend>::mode_reapply_pending_changed(
-                            emitter, *pending,
-                        )
-                        .await;
-                }
-                DbusSignalEvent::PowerStateChanged { state } => {
-                    let _ = UccdLegacyInterface::<LiveUccdBackend>::power_state_changed(
-                        emitter, state,
+                    let _ = UccdLegacyInterface::<LiveUccdBackend>::mode_reapply_pending_changed(
+                        emitter, *pending,
                     )
                     .await;
                 }
+                DbusSignalEvent::PowerStateChanged { state } => {
+                    let _ =
+                        UccdLegacyInterface::<LiveUccdBackend>::power_state_changed(emitter, state)
+                            .await;
+                }
                 DbusSignalEvent::PowerPolicyChanged { json } => {
-                    let _ = UccdLegacyInterface::<LiveUccdBackend>::power_policy_changed(
+                    let _ =
+                        UccdLegacyInterface::<LiveUccdBackend>::power_policy_changed(emitter, json)
+                            .await;
+                }
+                DbusSignalEvent::PowerDeviceStatusChanged { json } => {
+                    let _ = UccdLegacyInterface::<LiveUccdBackend>::power_device_status_changed(
                         emitter, json,
                     )
                     .await;
                 }
-                DbusSignalEvent::PowerDeviceStatusChanged { json } => {
-                    let _ =
-                        UccdLegacyInterface::<LiveUccdBackend>::power_device_status_changed(
-                            emitter, json,
-                        )
-                        .await;
-                }
                 DbusSignalEvent::LightbarSettingsChanged { json } => {
-                    let _ =
-                        UccdLegacyInterface::<LiveUccdBackend>::lightbar_settings_changed(
-                            emitter, json,
-                        )
-                        .await;
+                    let _ = UccdLegacyInterface::<LiveUccdBackend>::lightbar_settings_changed(
+                        emitter, json,
+                    )
+                    .await;
                 }
                 DbusSignalEvent::WaterCoolerStatusChanged { status } => {
-                    let _ =
-                        UccdLegacyInterface::<LiveUccdBackend>::water_cooler_status_changed(
-                            emitter, status,
-                        )
-                        .await;
+                    let _ = UccdLegacyInterface::<LiveUccdBackend>::water_cooler_status_changed(
+                        emitter, status,
+                    )
+                    .await;
                 }
             }
         }
@@ -415,8 +408,7 @@ impl DaemonRuntime {
             )));
         }
 
-        if let Err(err) =
-            register_uccd_service(&connection, Arc::clone(&backend), authorizer).await
+        if let Err(err) = register_uccd_service(&connection, Arc::clone(&backend), authorizer).await
         {
             backend.set_activation_pending(false);
             return Err(err);
@@ -638,11 +630,7 @@ impl DaemonRuntime {
         let deadline = tokio::time::Instant::now() + timeout;
         self.backend.begin_shutdown();
         {
-            let mut stopped = self
-                .worker_stop
-                .0
-                .lock()
-                .unwrap_or_else(|e| e.into_inner());
+            let mut stopped = self.worker_stop.0.lock().unwrap_or_else(|e| e.into_inner());
             *stopped = true;
             self.worker_stop.1.notify_all();
         }
@@ -799,7 +787,11 @@ async fn run_logind_monitor_loop(
     )
     .await
     {
-        Ok(p) => p.receive_signal("PropertiesChanged").await.ok().map(Box::pin),
+        Ok(p) => p
+            .receive_signal("PropertiesChanged")
+            .await
+            .ok()
+            .map(Box::pin),
         Err(_) => None,
     };
 
@@ -811,7 +803,11 @@ async fn run_logind_monitor_loop(
     )
     .await
     {
-        Ok(p) => p.receive_signal("PropertiesChanged").await.ok().map(Box::pin),
+        Ok(p) => p
+            .receive_signal("PropertiesChanged")
+            .await
+            .ok()
+            .map(Box::pin),
         Err(_) => None,
     };
 

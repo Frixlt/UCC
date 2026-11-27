@@ -1,9 +1,9 @@
 //! Fan command implementation.
 
-use serde_json::Value;
 use crate::cli::FanAction;
 use crate::client::{with_rpc_timeout, CliClient};
 use crate::format::*;
+use serde_json::Value;
 
 fn extract_json_field_string(v: &Value) -> Option<String> {
     match v {
@@ -29,7 +29,8 @@ pub async fn run_fan(client: &CliClient, action: &FanAction, json_mode: bool) ->
             let customs_raw = customs_res.unwrap_or_else(|_| "[]".to_string());
 
             let names_val: Value = serde_json::from_str(&names_raw).unwrap_or(Value::Array(vec![]));
-            let customs_val: Value = serde_json::from_str(&customs_raw).unwrap_or(Value::Array(vec![]));
+            let customs_val: Value =
+                serde_json::from_str(&customs_raw).unwrap_or(Value::Array(vec![]));
 
             if json_mode {
                 let out = serde_json::json!({
@@ -51,7 +52,13 @@ pub async fn run_fan(client: &CliClient, action: &FanAction, json_mode: bool) ->
                             v.get("name").and_then(|s| s.as_str()).unwrap_or(""),
                         )
                     };
-                    let tag = assignment_tag(assignments.fan_states.get(id).map(|v| v.as_slice()).unwrap_or(&[]));
+                    let tag = assignment_tag(
+                        assignments
+                            .fan_states
+                            .get(id)
+                            .map(|v| v.as_slice())
+                            .unwrap_or(&[]),
+                    );
                     println!("  {:<36}  {}{}", id, name, tag);
                 }
             }
@@ -62,7 +69,13 @@ pub async fn run_fan(client: &CliClient, action: &FanAction, json_mode: bool) ->
                     for v in arr {
                         let id = v.get("id").and_then(|s| s.as_str()).unwrap_or("");
                         let name = v.get("name").and_then(|s| s.as_str()).unwrap_or("");
-                        let tag = assignment_tag(assignments.fan_states.get(id).map(|v| v.as_slice()).unwrap_or(&[]));
+                        let tag = assignment_tag(
+                            assignments
+                                .fan_states
+                                .get(id)
+                                .map(|v| v.as_slice())
+                                .unwrap_or(&[]),
+                        );
                         println!("  {:<36}  {}{}", id, name, tag);
                     }
                 }
@@ -71,12 +84,16 @@ pub async fn run_fan(client: &CliClient, action: &FanAction, json_mode: bool) ->
             Ok(())
         }
         FanAction::Get { id } => {
-            let mut prof_json = with_rpc_timeout(client.proxy().get_fan_profile(id)).await.ok();
+            let mut prof_json = with_rpc_timeout(client.proxy().get_fan_profile(id))
+                .await
+                .ok();
             let mut display_name = id.clone();
 
             if prof_json.as_deref() == Some("{}") || prof_json.is_none() {
                 // Check custom profiles
-                if let Ok(cust_raw) = with_rpc_timeout(client.proxy().get_custom_fan_profiles_json()).await {
+                if let Ok(cust_raw) =
+                    with_rpc_timeout(client.proxy().get_custom_fan_profiles_json()).await
+                {
                     if let Ok(val) = serde_json::from_str::<Value>(&cust_raw) {
                         if let Some(arr) = val.as_array() {
                             for item in arr {
@@ -84,7 +101,8 @@ pub async fn run_fan(client: &CliClient, action: &FanAction, json_mode: bool) ->
                                     if let Some(n) = item.get("name").and_then(|s| s.as_str()) {
                                         display_name = n.to_string();
                                     }
-                                    prof_json = item.get("json").and_then(extract_json_field_string);
+                                    prof_json =
+                                        item.get("json").and_then(extract_json_field_string);
                                     break;
                                 }
                             }
@@ -134,14 +152,19 @@ pub async fn run_fan(client: &CliClient, action: &FanAction, json_mode: bool) ->
         }
         FanAction::Set { id } => {
             // Find fan profile JSON and apply
-            let mut found_json = with_rpc_timeout(client.proxy().get_fan_profile(id)).await.ok();
+            let mut found_json = with_rpc_timeout(client.proxy().get_fan_profile(id))
+                .await
+                .ok();
             if found_json.as_deref() == Some("{}") || found_json.is_none() {
-                if let Ok(cust_raw) = with_rpc_timeout(client.proxy().get_custom_fan_profiles_json()).await {
+                if let Ok(cust_raw) =
+                    with_rpc_timeout(client.proxy().get_custom_fan_profiles_json()).await
+                {
                     if let Ok(val) = serde_json::from_str::<Value>(&cust_raw) {
                         if let Some(arr) = val.as_array() {
                             for item in arr {
                                 if item.get("id").and_then(|s| s.as_str()) == Some(id) {
-                                    found_json = item.get("json").and_then(extract_json_field_string);
+                                    found_json =
+                                        item.get("json").and_then(extract_json_field_string);
                                     break;
                                 }
                             }
@@ -168,14 +191,30 @@ pub async fn run_fan(client: &CliClient, action: &FanAction, json_mode: bool) ->
             };
 
             let mut dst = serde_json::Map::new();
-            if let Some(v) = val.get("tableCPU") { dst.insert("cpu".into(), v.clone()); }
-            if let Some(v) = val.get("tableGPU") { dst.insert("gpu".into(), v.clone()); }
-            if let Some(v) = val.get("tablePump") { dst.insert("pump".into(), v.clone()); }
-            if let Some(v) = val.get("tableWaterCoolerFan") { dst.insert("waterCoolerFan".into(), v.clone()); }
-            if let Some(v) = val.get("cpu") { dst.insert("cpu".into(), v.clone()); }
-            if let Some(v) = val.get("gpu") { dst.insert("gpu".into(), v.clone()); }
-            if let Some(v) = val.get("pump") { dst.insert("pump".into(), v.clone()); }
-            if let Some(v) = val.get("waterCoolerFan") { dst.insert("waterCoolerFan".into(), v.clone()); }
+            if let Some(v) = val.get("tableCPU") {
+                dst.insert("cpu".into(), v.clone());
+            }
+            if let Some(v) = val.get("tableGPU") {
+                dst.insert("gpu".into(), v.clone());
+            }
+            if let Some(v) = val.get("tablePump") {
+                dst.insert("pump".into(), v.clone());
+            }
+            if let Some(v) = val.get("tableWaterCoolerFan") {
+                dst.insert("waterCoolerFan".into(), v.clone());
+            }
+            if let Some(v) = val.get("cpu") {
+                dst.insert("cpu".into(), v.clone());
+            }
+            if let Some(v) = val.get("gpu") {
+                dst.insert("gpu".into(), v.clone());
+            }
+            if let Some(v) = val.get("pump") {
+                dst.insert("pump".into(), v.clone());
+            }
+            if let Some(v) = val.get("waterCoolerFan") {
+                dst.insert("waterCoolerFan".into(), v.clone());
+            }
 
             let apply_json = serde_json::to_string(&Value::Object(dst)).unwrap_or_default();
             let res = with_rpc_timeout(client.proxy().apply_fan_profiles(&apply_json))
@@ -199,7 +238,9 @@ pub async fn run_fan(client: &CliClient, action: &FanAction, json_mode: bool) ->
 }
 
 fn print_curve_table(label: &str, arr: &[Value]) {
-    if arr.is_empty() { return; }
+    if arr.is_empty() {
+        return;
+    }
     println!("\n  {}:", label);
     println!("    {:<10} Speed (%)", "Temp (°C)");
     println!("    {:<10} ---------", "--------");

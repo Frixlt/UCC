@@ -193,7 +193,8 @@ impl KeyboardBacklightController {
 
         let write_res = (|| -> Result<(), LightingError> {
             let target_brightness = (states[0].brightness as u32).min(caps.max_brightness);
-            self.transport.write_keyboard_brightness(target_brightness)?;
+            self.transport
+                .write_keyboard_brightness(target_brightness)?;
 
             if caps.max_red > 0 {
                 let zone_colors = map_states_by_led_id(&caps, states);
@@ -240,7 +241,10 @@ impl KeyboardBacklightController {
         self.apply_states(&normalized)
     }
 
-    pub fn apply_profile_keyboard_json(&mut self, keyboard_data_json: &str) -> Result<(), LightingError> {
+    pub fn apply_profile_keyboard_json(
+        &mut self,
+        keyboard_data_json: &str,
+    ) -> Result<(), LightingError> {
         let value: serde_json::Value = serde_json::from_str(keyboard_data_json)
             .map_err(|e| LightingError::InvalidConfig(e.to_string()))?;
         let states_val = value

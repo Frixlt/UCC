@@ -8,7 +8,7 @@ fn test_stress_fuzzed_corrupted_packets() {
         vec![],
         vec![0xfe],
         vec![0xfe, 0xef],
-        vec![0xfe, 0x19, 0x00, 0x01, 0x00, 0x00, 0xef],       // 7 bytes (short)
+        vec![0xfe, 0x19, 0x00, 0x01, 0x00, 0x00, 0xef], // 7 bytes (short)
         vec![0xfe, 0x19, 0x00, 0x01, 0x00, 0x00, 0x00, 0x00, 0xef], // 9 bytes (long)
     ];
 
@@ -69,7 +69,7 @@ fn test_stress_pump_voltage_coverage_and_safety() {
         assert_eq!(p[0], PACKET_HEADER);
         assert_eq!(p[1], CMD_PUMP);
         assert_eq!(p[2], 0x01); // enable
-        assert_eq!(p[3], 60);   // duty cycle 60%
+        assert_eq!(p[3], 60); // duty cycle 60%
         assert_eq!(p[4], expected_code);
         assert_eq!(p[7], PACKET_FOOTER);
     }

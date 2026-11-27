@@ -149,13 +149,22 @@ impl PowerDeviceController {
             return Some((crate::SysfsRoot::custom(&self.sys_path), rest.to_path_buf()));
         }
         if let Ok(rest) = p.strip_prefix(&self.proc_path) {
-            return Some((crate::SysfsRoot::custom(&self.proc_path), rest.to_path_buf()));
+            return Some((
+                crate::SysfsRoot::custom(&self.proc_path),
+                rest.to_path_buf(),
+            ));
         }
         if let Some(rest) = path.strip_prefix("/sys/") {
-            return Some((crate::SysfsRoot::custom(&self.sys_path), PathBuf::from(rest)));
+            return Some((
+                crate::SysfsRoot::custom(&self.sys_path),
+                PathBuf::from(rest),
+            ));
         }
         if let Some(rest) = path.strip_prefix("/proc/") {
-            return Some((crate::SysfsRoot::custom(&self.proc_path), PathBuf::from(rest)));
+            return Some((
+                crate::SysfsRoot::custom(&self.proc_path),
+                PathBuf::from(rest),
+            ));
         }
         None
     }
@@ -189,7 +198,11 @@ impl PowerDeviceController {
     /// Overlay mode-specific CPU governor, EPP, and noTurbo parameters onto a UccProfile.
     pub fn overlay_cpu(&self, profile: &mut UccProfile, mode: &str) {
         let config = self.settings();
-        if !config.get("enabled").and_then(|v| v.as_bool()).unwrap_or(false) {
+        if !config
+            .get("enabled")
+            .and_then(|v| v.as_bool())
+            .unwrap_or(false)
+        {
             return;
         }
 
@@ -211,7 +224,9 @@ impl PowerDeviceController {
 
         if let Some(devices) = config.get("devices").and_then(|d| d.as_array()) {
             for dev in devices {
-                if dev.get("path").and_then(|p| p.as_str()) == Some("/sys/devices/system/cpu/intel_pstate/no_turbo") {
+                if dev.get("path").and_then(|p| p.as_str())
+                    == Some("/sys/devices/system/cpu/intel_pstate/no_turbo")
+                {
                     let key = format!("{}_val", mode);
                     if let Some(val) = dev.get(&key).and_then(|v| v.as_str()) {
                         profile.cpu.no_turbo = val == "1";
@@ -228,7 +243,10 @@ impl PowerDeviceController {
         }
 
         let config = self.settings();
-        let enabled = config.get("enabled").and_then(|v| v.as_bool()).unwrap_or(false);
+        let enabled = config
+            .get("enabled")
+            .and_then(|v| v.as_bool())
+            .unwrap_or(false);
 
         let mut result = json!({
             "mode": mode,
@@ -241,14 +259,18 @@ impl PowerDeviceController {
             if let Some(cpu_mode) = config.get("cpu").and_then(|c| c.get(mode)) {
                 if let Some(aspm) = cpu_mode.get("aspm").and_then(|a| a.as_str()) {
                     if !aspm.is_empty() {
-                        let applied = self.write_file("/sys/module/pcie_aspm/parameters/policy", aspm);
+                        let applied =
+                            self.write_file("/sys/module/pcie_aspm/parameters/policy", aspm);
                         result["aspmApplied"] = json!(applied);
                     }
                 }
             }
 
             // 2. NVIDIA GPU power guard and persistence
-            let keep_awake = config.get("keepNvidiaAwake").and_then(|k| k.as_bool()).unwrap_or(false);
+            let keep_awake = config
+                .get("keepNvidiaAwake")
+                .and_then(|k| k.as_bool())
+                .unwrap_or(false);
             let mut wake_nvidia = false;
             let mut manage_nvidia = false;
             let mut any_nvidia_active = false;
@@ -259,16 +281,22 @@ impl PowerDeviceController {
                         if let Some(path) = dev.get("path").and_then(|p| p.as_str()) {
                             let p = Path::new(path);
                             if let Some(parent) = p.parent().and_then(|p| p.parent()) {
-                                let vendor = self.read_file(&parent.join("vendor").to_string_lossy());
+                                let vendor =
+                                    self.read_file(&parent.join("vendor").to_string_lossy());
                                 let class = self.read_file(&parent.join("class").to_string_lossy());
                                 if vendor == "0x10de" && class.starts_with("0x03") {
                                     manage_nvidia = true;
-                                    let rt_status = self.read_file(&parent.join("power/runtime_status").to_string_lossy());
+                                    let rt_status = self.read_file(
+                                        &parent.join("power/runtime_status").to_string_lossy(),
+                                    );
                                     if rt_status.is_empty() || rt_status == "active" {
                                         any_nvidia_active = true;
                                     }
                                     let mode_key = format!("{}_val", mode);
-                                    let mode_val = dev.get(&mode_key).and_then(|v| v.as_str()).unwrap_or("auto");
+                                    let mode_val = dev
+                                        .get(&mode_key)
+                                        .and_then(|v| v.as_str())
+                                        .unwrap_or("auto");
                                     if keep_awake || mode_val == "on" {
                                         wake_nvidia = self.write_file(path, "on") || wake_nvidia;
                                     }
@@ -298,7 +326,11 @@ impl PowerDeviceController {
                     let dev_type = dev.get("type").and_then(|t| t.as_str()).unwrap_or_default();
                     let path = dev.get("path").and_then(|p| p.as_str()).unwrap_or_default();
                     let mode_key = format!("{}_val", mode);
-                    let mut value = dev.get(&mode_key).and_then(|v| v.as_str()).unwrap_or("auto").to_string();
+                    let mut value = dev
+                        .get(&mode_key)
+                        .and_then(|v| v.as_str())
+                        .unwrap_or("auto")
+                        .to_string();
 
                     let mut guarded = false;
 
@@ -311,7 +343,8 @@ impl PowerDeviceController {
                         if dev_type == "pci" && keep_awake {
                             let p = Path::new(path);
                             if let Some(parent) = p.parent().and_then(|p| p.parent()) {
-                                let vendor = self.read_file(&parent.join("vendor").to_string_lossy());
+                                let vendor =
+                                    self.read_file(&parent.join("vendor").to_string_lossy());
                                 let class = self.read_file(&parent.join("class").to_string_lossy());
                                 if vendor == "0x10de" && class.starts_with("0x03") {
                                     value = "on".to_string();
@@ -423,7 +456,13 @@ impl PowerDeviceController {
                             || lower.contains("controller"));
 
                     if is_valid_path(bus, &sysfs_path) {
-                        append_device(bus, &sysfs_path, &name, "on", if critical { "on" } else { "auto" });
+                        append_device(
+                            bus,
+                            &sysfs_path,
+                            &name,
+                            "on",
+                            if critical { "on" } else { "auto" },
+                        );
                     }
                 }
             }
@@ -445,15 +484,36 @@ impl PowerDeviceController {
 
         // 3. Enumerate nvidia-powerd service
         if self.programs_path.join("nvidia-powerd").exists() {
-            append_device("service", "nvidia-powerd", "NVIDIA Dynamic Boost", "active", "inactive");
+            append_device(
+                "service",
+                "nvidia-powerd",
+                "NVIDIA Dynamic Boost",
+                "active",
+                "inactive",
+            );
         }
 
         // 4. Enumerate system tunables
         let system_tunables = [
-            ("Audio Powersave", "/sys/module/snd_hda_intel/parameters/power_save", "0", "1"),
+            (
+                "Audio Powersave",
+                "/sys/module/snd_hda_intel/parameters/power_save",
+                "0",
+                "1",
+            ),
             ("NMI Watchdog", "/proc/sys/kernel/nmi_watchdog", "0", "0"),
-            ("VM Writeback", "/proc/sys/vm/dirty_writeback_centisecs", "500", "1500"),
-            ("CPU Turbo Boost (1 = disabled)", "/sys/devices/system/cpu/intel_pstate/no_turbo", "0", "1"),
+            (
+                "VM Writeback",
+                "/proc/sys/vm/dirty_writeback_centisecs",
+                "500",
+                "1500",
+            ),
+            (
+                "CPU Turbo Boost (1 = disabled)",
+                "/sys/devices/system/cpu/intel_pstate/no_turbo",
+                "0",
+                "1",
+            ),
         ];
 
         for (name, path, ac, bat) in system_tunables {

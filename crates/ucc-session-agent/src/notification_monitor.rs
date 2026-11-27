@@ -83,8 +83,7 @@ impl NotificationMonitorParser {
                                 if !SELF_APP_NAMES.contains(&app_name) && self.try_emit(now) {
                                     count += 1;
                                 }
-                            } else if Self::is_notify_header(line) && !self.header_from_self(line)
-                            {
+                            } else if Self::is_notify_header(line) && !self.header_from_self(line) {
                                 // Back-to-back Notify header without visible string line
                                 if self.try_emit(now) {
                                     count += 1;
@@ -134,16 +133,31 @@ mod tests {
         assert_eq!(parser.feed_bytes(self_app, t0), 0);
 
         let legacy_app = b"method call time=1.05 sender=:1.42 -> destination=:1.5 serial=9 path=/org/freedesktop/Notifications; interface=org.freedesktop.Notifications; member=Notify\n   string \"Frixit Control Center\"\n   uint32 0\n";
-        assert_eq!(parser.feed_bytes(legacy_app, t0 + Duration::from_millis(50)), 0);
+        assert_eq!(
+            parser.feed_bytes(legacy_app, t0 + Duration::from_millis(50)),
+            0
+        );
 
         let self_sender = b"method call time=1.1 sender=:1.77 -> destination=:1.5 serial=10 path=/org/freedesktop/Notifications; interface=org.freedesktop.Notifications; member=Notify\n   string \"Other\"\n";
-        assert_eq!(parser.feed_bytes(self_sender, t0 + Duration::from_millis(200)), 0);
+        assert_eq!(
+            parser.feed_bytes(self_sender, t0 + Duration::from_millis(200)),
+            0
+        );
 
         let external = b"method call time=1.2 sender=:1.88 -> destination=:1.5 serial=11 path=/org/freedesktop/Notifications; interface=org.freedesktop.Notifications; member=Notify\n   string \"Firefox\"\n";
-        assert_eq!(parser.feed_bytes(external, t0 + Duration::from_millis(400)), 1);
+        assert_eq!(
+            parser.feed_bytes(external, t0 + Duration::from_millis(400)),
+            1
+        );
         // Within 100ms debounce -> suppressed
-        assert_eq!(parser.feed_bytes(external, t0 + Duration::from_millis(450)), 0);
+        assert_eq!(
+            parser.feed_bytes(external, t0 + Duration::from_millis(450)),
+            0
+        );
         // After 100ms -> allowed again
-        assert_eq!(parser.feed_bytes(external, t0 + Duration::from_millis(550)), 1);
+        assert_eq!(
+            parser.feed_bytes(external, t0 + Duration::from_millis(550)),
+            1
+        );
     }
 }

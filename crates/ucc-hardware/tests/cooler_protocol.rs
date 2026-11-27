@@ -129,7 +129,16 @@ fn m12_5_fuzz_smoke_cooler_packet_decoder_never_panics() {
         let _ = CoolerPacketEncoder::validate_packet(&buf);
     }
     for byte in 0u8..=u8::MAX {
-        let pkt = [byte, byte ^ 0x1b, byte.wrapping_mul(3), 101, byte, 0, 0, byte ^ 0xef];
+        let pkt = [
+            byte,
+            byte ^ 0x1b,
+            byte.wrapping_mul(3),
+            101,
+            byte,
+            0,
+            0,
+            byte ^ 0xef,
+        ];
         let _ = CoolerPacketEncoder::validate_packet(&pkt);
     }
     let mut state: u64 = 0xC001_ED42_1234_5678;

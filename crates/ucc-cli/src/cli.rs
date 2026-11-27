@@ -1,8 +1,8 @@
 //! CLI definition with clap, subcommands, aliases, completions, and manpages.
 
-use std::io::Write;
 use clap::{Args, CommandFactory, Parser, Subcommand};
 use clap_complete::Shell;
+use std::io::Write;
 
 #[derive(Parser, Debug)]
 #[command(

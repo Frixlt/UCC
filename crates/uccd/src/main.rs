@@ -69,7 +69,8 @@ impl PidLock {
             .map_err(|e| format!("Failed to open/create PID file {}: {e}", path.display()))?;
 
         let fd = file.as_raw_fd();
-        let st = fstat(fd).map_err(|e| format!("Failed to stat PID file {}: {e}", path.display()))?;
+        let st =
+            fstat(fd).map_err(|e| format!("Failed to stat PID file {}: {e}", path.display()))?;
         if (st.st_mode & libc::S_IFMT) != libc::S_IFREG || st.st_uid != unsafe { libc::geteuid() } {
             return Err(format!(
                 "PID file {} is not a regular file owned by current UID",
@@ -121,7 +122,10 @@ impl Drop for PidLock {
 fn stop_daemon(pid_path: &Path) -> i32 {
     if let Ok(meta) = fs::symlink_metadata(pid_path) {
         if meta.file_type().is_symlink() {
-            eprintln!("PID file {} is a symlink; refusing to stop.", pid_path.display());
+            eprintln!(
+                "PID file {} is a symlink; refusing to stop.",
+                pid_path.display()
+            );
             return 1;
         }
     }
@@ -181,7 +185,9 @@ fn stop_daemon(pid_path: &Path) -> i32 {
     if let Ok(comm) = fs::read_to_string(format!("/proc/{pid}/comm")) {
         let comm_trimmed = comm.trim();
         if comm_trimmed != DAEMON_NAME {
-            eprintln!("PID {pid} comm ('{comm_trimmed}') does not match daemon name '{DAEMON_NAME}'");
+            eprintln!(
+                "PID {pid} comm ('{comm_trimmed}') does not match daemon name '{DAEMON_NAME}'"
+            );
             return 1;
         }
     }
@@ -299,14 +305,17 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Connect to D-Bus without acquiring com.uniwill.uccd yet: register objects BEFORE
     // requesting the well-known name so Type=dbus activation sees ready endpoints immediately (M8.2).
     // Fail closed when the system D-Bus is unavailable unless an explicit non-root test flag opts in.
-    let allow_session_fallback =
-        std::env::var("UCC_ALLOW_SESSION_BUS").as_deref() == Ok("1") && unsafe { libc::geteuid() } != 0;
+    let allow_session_fallback = std::env::var("UCC_ALLOW_SESSION_BUS").as_deref() == Ok("1")
+        && unsafe { libc::geteuid() } != 0;
     let (connection, bus_label) = match zbus::connection::Builder::system() {
         Ok(builder) => match builder.build().await {
             Ok(conn) => (conn, "system"),
             Err(e) if allow_session_fallback => {
                 warn!("System D-Bus unavailable ({e}); using session bus because UCC_ALLOW_SESSION_BUS=1");
-                (zbus::connection::Builder::session()?.build().await?, "session")
+                (
+                    zbus::connection::Builder::session()?.build().await?,
+                    "session",
+                )
             }
             Err(e) => {
                 return Err(format!("System D-Bus unavailable: {e}").into());
@@ -314,7 +323,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         },
         Err(e) if allow_session_fallback => {
             warn!("System D-Bus builder failed ({e}); using session bus because UCC_ALLOW_SESSION_BUS=1");
-            (zbus::connection::Builder::session()?.build().await?, "session")
+            (
+                zbus::connection::Builder::session()?.build().await?,
+                "session",
+            )
         }
         Err(e) => {
             return Err(format!("System D-Bus builder failed: {e}").into());
@@ -332,7 +344,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         true,
     )
     .await?;
-    info!("Registered D-Bus interfaces on /com/uniwill/uccd and /de/uniwill/uccd ({bus_label} bus)");
+    info!(
+        "Registered D-Bus interfaces on /com/uniwill/uccd and /de/uniwill/uccd ({bus_label} bus)"
+    );
 
     // Wait for shutdown signal (SIGINT or SIGTERM)
     let mut sigint = tokio::signal::unix::signal(tokio::signal::unix::SignalKind::interrupt())?;

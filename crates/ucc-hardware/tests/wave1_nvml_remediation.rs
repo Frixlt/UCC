@@ -56,8 +56,10 @@ fn hotplug_does_not_change_the_selected_active_pci_device() {
     std::env::remove_var("UCC_E16_FIXTURE_HOTPLUG_FROM");
     std::env::remove_var("UCC_E16_FIXTURE_HOTPLUG_TO");
     assert!(target.exists());
-    let selected_new_gpu =
-        unsafe { lib.get::<unsafe extern "C" fn() -> u32>(b"nvmlAuditSelectedNewGpu").unwrap()() };
+    let selected_new_gpu = unsafe {
+        lib.get::<unsafe extern "C" fn() -> u32>(b"nvmlAuditSelectedNewGpu")
+            .unwrap()()
+    };
     assert_eq!(
         selected_new_gpu, 0,
         "initial index 0 was 03:00.0: {result:?}"
@@ -129,7 +131,9 @@ fn bdf_lookup_allows_explicit_target_when_another_gpu_is_suspended() {
             .temperature_c,
         42
     );
-    wrapper.set_power_limit_by_bdf("0000:03:00.0", 40_000).unwrap();
+    wrapper
+        .set_power_limit_by_bdf("0000:03:00.0", 40_000)
+        .unwrap();
 }
 
 #[test]

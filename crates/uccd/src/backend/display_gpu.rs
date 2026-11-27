@@ -2,7 +2,7 @@
 
 //! Display backlight/DRM/PRIME/charging, GPU PCI discovery, cached SystemInfo, and NVIDIA cTGP (`ISSUE-08`, `ISSUE-19`, `ISSUE-21`, `ISSUE-23`, `ISSUE-24`).
 
-use super::{LiveUccdBackend};
+use super::LiveUccdBackend;
 use serde_json::{json, Value};
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
@@ -288,7 +288,16 @@ impl LiveUccdBackend {
     }
 
     pub(super) fn get_system_info_json_impl(&self) -> String {
-        let (sys_vendor, board_vendor, board_name, product_sku, manufacturer, cpu_model, pci_igpu, pci_dgpu) = {
+        let (
+            sys_vendor,
+            board_vendor,
+            board_name,
+            product_sku,
+            manufacturer,
+            cpu_model,
+            pci_igpu,
+            pci_dgpu,
+        ) = {
             let mut cache = self.lock_mutex(&self.cached_system_info);
             if let Some(ref c) = *cache {
                 c.clone()
@@ -394,7 +403,8 @@ impl LiveUccdBackend {
                                 if let Some(cname) = conn.file_name().to_str() {
                                     if Self::is_backlight_internal_connector(cname) {
                                         found = true;
-                                        best = best.max(self.backlight_connector_score(&conn.path()));
+                                        best =
+                                            best.max(self.backlight_connector_score(&conn.path()));
                                     }
                                 }
                             }
@@ -502,11 +512,16 @@ impl LiveUccdBackend {
         if is_amdgpu {
             raw = (max_val - raw).clamp(0, max_val);
         }
-        if self.sysfs.write(&brightness_path, &raw.to_string()).is_err() {
+        if self
+            .sysfs
+            .write(&brightness_path, &raw.to_string())
+            .is_err()
+        {
             return false;
         }
         let tol = ((100.0 / f64::from(max_val)).ceil() as i32).max(1);
-        let max_attempts = (BACKLIGHT_RAMP_MAX_WAIT_MS / BACKLIGHT_RAMP_POLL_STEP.as_millis() as usize).max(1);
+        let max_attempts =
+            (BACKLIGHT_RAMP_MAX_WAIT_MS / BACKLIGHT_RAMP_POLL_STEP.as_millis() as usize).max(1);
         for attempt in 0..=max_attempts {
             if self.shutting_down.load(Ordering::SeqCst)
                 || self.shutdown_wait_expired.load(Ordering::SeqCst)
@@ -808,12 +823,17 @@ impl LiveUccdBackend {
             let has_end = self.sysfs.exists(&end_path);
             let has_ct = self.sysfs.exists(&ct_path);
 
-            if (explicit_end && !has_end) || (explicit_start && !has_start) || (explicit_type && !has_ct) {
+            if (explicit_end && !has_end)
+                || (explicit_start && !has_start)
+                || (explicit_type && !has_ct)
+            {
                 return Err(());
             }
 
             rb.bat_dir = Some(bat.clone());
-            rb.prev_start = has_start.then(|| self.sysfs.read(&start_path).ok()).flatten();
+            rb.prev_start = has_start
+                .then(|| self.sysfs.read(&start_path).ok())
+                .flatten();
             rb.prev_end = has_end.then(|| self.sysfs.read(&end_path).ok()).flatten();
             rb.prev_type = has_ct.then(|| self.sysfs.read(&ct_path).ok()).flatten();
 
@@ -873,7 +893,12 @@ impl LiveUccdBackend {
             }
         }
 
-        if let Some(prof_desc) = profile.charging.charging_profile.as_deref().or(cfg_prof.as_deref()) {
+        if let Some(prof_desc) = profile
+            .charging
+            .charging_profile
+            .as_deref()
+            .or(cfg_prof.as_deref())
+        {
             if let Some((avail_path, cur_path)) = self.charging_profile_paths() {
                 let avail = self.read_whitespace_tokens(&avail_path);
                 if avail.iter().any(|p| p == prof_desc.trim()) {
@@ -893,7 +918,12 @@ impl LiveUccdBackend {
                 return Err(());
             }
         }
-        if let Some(prio_desc) = profile.charging.charging_priority.as_deref().or(cfg_prio.as_deref()) {
+        if let Some(prio_desc) = profile
+            .charging
+            .charging_priority
+            .as_deref()
+            .or(cfg_prio.as_deref())
+        {
             if let Some((avail_path, cur_path)) = self.charging_priority_paths() {
                 let avail = self.read_whitespace_tokens(&avail_path);
                 if avail.iter().any(|p| p == prio_desc.trim()) {
@@ -1318,7 +1348,10 @@ impl LiveUccdBackend {
         let message = if healthy {
             String::new()
         } else {
-            format!("Проблема с драйверами · ядро {kernel}\n{}", issues.join("\n"))
+            format!(
+                "Проблема с драйверами · ядро {kernel}\n{}",
+                issues.join("\n")
+            )
         };
         json!({
             "healthy": healthy,
@@ -1449,7 +1482,10 @@ impl LiveUccdBackend {
         let Some(bat) = self.discover_battery_dir() else {
             return "[]".to_string();
         };
-        if !self.sysfs.exists(&bat.join("charge_control_start_threshold")) {
+        if !self
+            .sysfs
+            .exists(&bat.join("charge_control_start_threshold"))
+        {
             return "[]".to_string();
         }
         let avail_path = bat.join("charge_control_start_available_thresholds");

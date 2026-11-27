@@ -101,7 +101,10 @@ async fn test_tracking_authorizer_records_action() {
 
     let recorded = tracker.recorded_actions();
     assert_eq!(recorded.len(), 3);
-    assert_eq!(recorded[0], (Some(":1.42".to_string()), AuthAction::Control));
+    assert_eq!(
+        recorded[0],
+        (Some(":1.42".to_string()), AuthAction::Control)
+    );
     assert_eq!(
         recorded[1],
         (Some(":1.42".to_string()), AuthAction::ManageHardware)

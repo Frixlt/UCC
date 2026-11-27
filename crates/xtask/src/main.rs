@@ -4,9 +4,9 @@
 
 use clap_complete::Shell;
 use std::ffi::{OsStr, OsString};
+use std::fs;
 use std::io;
 use std::os::unix::fs::PermissionsExt;
-use std::fs;
 use std::path::{Path, PathBuf};
 
 fn repo_root() -> PathBuf {
@@ -57,8 +57,12 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             println!("Distribution assets staged in {}", dest.display());
         }
         "install-runtime" => {
-            let dest = args.next().ok_or("install-runtime requires a destination")?;
-            let bins = args.next().ok_or("install-runtime requires a binary directory")?;
+            let dest = args
+                .next()
+                .ok_or("install-runtime requires a destination")?;
+            let bins = args
+                .next()
+                .ok_or("install-runtime requires a binary directory")?;
             install_runtime(Path::new(&dest), Path::new(&bins))?;
             stage_cli_assets(Path::new(&dest))?;
         }
@@ -109,7 +113,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             let root = repo_root();
             let changed = bump_versions_in_root(&root, version, dry_run)?;
             if dry_run {
-                println!("Dry-run complete for version {version} ({} files checked):", changed.len());
+                println!(
+                    "Dry-run complete for version {version} ({} files checked):",
+                    changed.len()
+                );
                 for p in &changed {
                     println!("  would update {}", p.display());
                 }
@@ -121,7 +128,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 maybe_run_git_cliff(&root, version);
                 println!("Next steps:");
                 println!("  1. cargo update --workspace --offline");
-                println!("  2. cargo clippy --workspace --all-targets --locked --offline -- -D warnings");
+                println!(
+                    "  2. cargo clippy --workspace --all-targets --locked --offline -- -D warnings"
+                );
                 println!("  3. dbus-run-session -- cargo test --workspace --locked --offline --no-fail-fast");
                 println!("  4. git commit -am \"chore(release): v{version}\" && git tag -a v{version} -m \"v{version}\"");
             }
@@ -162,8 +171,14 @@ fn stage_dist_assets(dest: &Path) -> Result<(), Box<dyn std::error::Error>> {
     let root = repo_root();
     for (src_rel, dst_rel) in [
         ("uccd/uccd.service", "lib/systemd/system/uccd.service"),
-        ("uccd/uccd-sleep.service", "lib/systemd/system/uccd-sleep.service"),
-        ("uccd/com.uniwill.uccd.conf", "share/dbus-1/system.d/com.uniwill.uccd.conf"),
+        (
+            "uccd/uccd-sleep.service",
+            "lib/systemd/system/uccd-sleep.service",
+        ),
+        (
+            "uccd/com.uniwill.uccd.conf",
+            "share/dbus-1/system.d/com.uniwill.uccd.conf",
+        ),
         (
             "uccd/com.uniwill.uccd.service",
             "share/dbus-1/system-services/com.uniwill.uccd.service",
@@ -212,18 +227,20 @@ fn json_escape(input: &str) -> String {
 /// Pure-Rust SHA-256 hex digest (zero external dependencies, works offline everywhere).
 pub fn sha256_hex(data: &[u8]) -> String {
     const K: [u32; 64] = [
-        0x428a2f98, 0x71374491, 0xb5c0fbcf, 0xe9b5dba5, 0x3956c25b, 0x59f111f1, 0x923f82a4, 0xab1c5ed5,
-        0xd807aa98, 0x12835b01, 0x243185be, 0x550c7dc3, 0x72be5d74, 0x80deb1fe, 0x9bdc06a7, 0xc19bf174,
-        0xe49b69c1, 0xefbe4786, 0x0fc19dc6, 0x240ca1cc, 0x2de92c6f, 0x4a7484aa, 0x5cb0a9dc, 0x76f988da,
-        0x983e5152, 0xa831c66d, 0xb00327c8, 0xbf597fc7, 0xc6e00bf3, 0xd5a79147, 0x06ca6351, 0x14292967,
-        0x27b70a85, 0x2e1b2138, 0x4d2c6dfc, 0x53380d13, 0x650a7354, 0x766a0abb, 0x81c2c92e, 0x92722c85,
-        0xa2bfe8a1, 0xa81a664b, 0xc24b8b70, 0xc76c51a3, 0xd192e819, 0xd6990624, 0xf40e3585, 0x106aa070,
-        0x19a4c116, 0x1e376c08, 0x2748774c, 0x34b0bcb5, 0x391c0cb3, 0x4ed8aa4a, 0x5b9cca4f, 0x682e6ff3,
-        0x748f82ee, 0x78a5636f, 0x84c87814, 0x8cc70208, 0x90befffa, 0xa4506ceb, 0xbef9a3f7, 0xc67178f2,
+        0x428a2f98, 0x71374491, 0xb5c0fbcf, 0xe9b5dba5, 0x3956c25b, 0x59f111f1, 0x923f82a4,
+        0xab1c5ed5, 0xd807aa98, 0x12835b01, 0x243185be, 0x550c7dc3, 0x72be5d74, 0x80deb1fe,
+        0x9bdc06a7, 0xc19bf174, 0xe49b69c1, 0xefbe4786, 0x0fc19dc6, 0x240ca1cc, 0x2de92c6f,
+        0x4a7484aa, 0x5cb0a9dc, 0x76f988da, 0x983e5152, 0xa831c66d, 0xb00327c8, 0xbf597fc7,
+        0xc6e00bf3, 0xd5a79147, 0x06ca6351, 0x14292967, 0x27b70a85, 0x2e1b2138, 0x4d2c6dfc,
+        0x53380d13, 0x650a7354, 0x766a0abb, 0x81c2c92e, 0x92722c85, 0xa2bfe8a1, 0xa81a664b,
+        0xc24b8b70, 0xc76c51a3, 0xd192e819, 0xd6990624, 0xf40e3585, 0x106aa070, 0x19a4c116,
+        0x1e376c08, 0x2748774c, 0x34b0bcb5, 0x391c0cb3, 0x4ed8aa4a, 0x5b9cca4f, 0x682e6ff3,
+        0x748f82ee, 0x78a5636f, 0x84c87814, 0x8cc70208, 0x90befffa, 0xa4506ceb, 0xbef9a3f7,
+        0xc67178f2,
     ];
     let mut h: [u32; 8] = [
-        0x6a09e667, 0xbb67ae85, 0x3c6ef372, 0xa54ff53a,
-        0x510e527f, 0x9b05688c, 0x1f83d9ab, 0x5be0cd19,
+        0x6a09e667, 0xbb67ae85, 0x3c6ef372, 0xa54ff53a, 0x510e527f, 0x9b05688c, 0x1f83d9ab,
+        0x5be0cd19,
     ];
     let bit_len = (data.len() as u64).wrapping_mul(8);
     let mut msg = data.to_vec();
@@ -247,13 +264,20 @@ pub fn sha256_hex(data: &[u8]) -> String {
         for i in 16..64 {
             let s0 = w[i - 15].rotate_right(7) ^ w[i - 15].rotate_right(18) ^ (w[i - 15] >> 3);
             let s1 = w[i - 2].rotate_right(17) ^ w[i - 2].rotate_right(19) ^ (w[i - 2] >> 10);
-            w[i] = w[i - 16].wrapping_add(s0).wrapping_add(w[i - 7]).wrapping_add(s1);
+            w[i] = w[i - 16]
+                .wrapping_add(s0)
+                .wrapping_add(w[i - 7])
+                .wrapping_add(s1);
         }
         let [mut a, mut b, mut c, mut d, mut e, mut f, mut g, mut hh] = h;
         for i in 0..64 {
             let s1 = e.rotate_right(6) ^ e.rotate_right(11) ^ e.rotate_right(25);
             let ch = (e & f) ^ ((!e) & g);
-            let temp1 = hh.wrapping_add(s1).wrapping_add(ch).wrapping_add(K[i]).wrapping_add(w[i]);
+            let temp1 = hh
+                .wrapping_add(s1)
+                .wrapping_add(ch)
+                .wrapping_add(K[i])
+                .wrapping_add(w[i]);
             let s0 = a.rotate_right(2) ^ a.rotate_right(13) ^ a.rotate_right(22);
             let maj = (a & b) ^ (a & c) ^ (b & c);
             let temp2 = s0.wrapping_add(maj);
@@ -331,7 +355,10 @@ fn parse_cargo_lock_packages(lock_content: &str) -> Vec<LockPkg> {
     pkgs
 }
 
-pub fn generate_sbom_json(root: &Path, app_version: &str) -> Result<String, Box<dyn std::error::Error>> {
+pub fn generate_sbom_json(
+    root: &Path,
+    app_version: &str,
+) -> Result<String, Box<dyn std::error::Error>> {
     let lock_raw = fs::read_to_string(root.join("Cargo.lock"))?;
     let pkgs = parse_cargo_lock_packages(&lock_raw);
     let mut out = String::from("{\n  \"bomFormat\": \"CycloneDX\",\n  \"specVersion\": \"1.5\",\n  \"metadata\": {\n    \"component\": {\n      \"type\": \"application\",\n      \"name\": \"ucc-rusted\",\n      \"version\": \"");
@@ -348,7 +375,12 @@ pub fn generate_sbom_json(root: &Path, app_version: &str) -> Result<String, Box<
         let hash_line = pkg
             .checksum
             .as_ref()
-            .map(|h| format!(", \"hashes\": [{{\"alg\": \"SHA-256\", \"content\": \"{}\"}}]", json_escape(h)))
+            .map(|h| {
+                format!(
+                    ", \"hashes\": [{{\"alg\": \"SHA-256\", \"content\": \"{}\"}}]",
+                    json_escape(h)
+                )
+            })
             .unwrap_or_default();
         out.push_str(&format!(
             "    {{\"type\": \"library\", \"name\": \"{}\", \"version\": \"{}\", \"purl\": \"{}\"{source_line}{hash_line}}}{comma}\n",
@@ -389,7 +421,11 @@ fn stage_release_metadata(root: &Path, dest: &Path) -> Result<(), Box<dyn std::e
         let rel = format!("{subdir}/{name}");
         let bytes = fs::read(dest.join(&rel))?;
         let digest = sha256_hex(&bytes);
-        let comma = if idx + 1 < RUNTIME_BINARIES.len() { "," } else { "" };
+        let comma = if idx + 1 < RUNTIME_BINARIES.len() {
+            ","
+        } else {
+            ""
+        };
         manifest.push_str(&format!(
             "    {{\"path\": \"{}\", \"bytes\": {}, \"sha256\": \"{}\"}}{comma}\n",
             json_escape(&rel),
@@ -408,7 +444,10 @@ fn stage_release_metadata(root: &Path, dest: &Path) -> Result<(), Box<dyn std::e
 fn install_runtime(dest: &Path, bins: &Path) -> io::Result<()> {
     for (name, _) in RUNTIME_BINARIES {
         let src = bins.join(name);
-        if !src.metadata().is_ok_and(|m| m.is_file() && m.permissions().mode() & 0o111 != 0) {
+        if !src
+            .metadata()
+            .is_ok_and(|m| m.is_file() && m.permissions().mode() & 0o111 != 0)
+        {
             return Err(io::Error::other(format!(
                 "required executable missing or not executable: {}",
                 src.display()
@@ -543,7 +582,10 @@ where
     I: IntoIterator<Item = S>,
     S: AsRef<OsStr>,
 {
-    let collected: Vec<OsString> = args.into_iter().map(|s| s.as_ref().to_os_string()).collect();
+    let collected: Vec<OsString> = args
+        .into_iter()
+        .map(|s| s.as_ref().to_os_string())
+        .collect();
     let status = std::process::Command::new(prog).args(&collected).status()?;
     if !status.success() {
         return Err(format!("Command '{prog}' failed with status {status}").into());
@@ -580,9 +622,9 @@ pub fn validate_semver(version: &str) -> Result<(), String> {
     }
     if let Some(pre_tag) = pre {
         if pre_tag.is_empty()
-            || !pre_tag
-                .split('.')
-                .all(|seg| !seg.is_empty() && seg.bytes().all(|b| b.is_ascii_alphanumeric() || b == b'-'))
+            || !pre_tag.split('.').all(|seg| {
+                !seg.is_empty() && seg.bytes().all(|b| b.is_ascii_alphanumeric() || b == b'-')
+            })
         {
             return Err(format!(
                 "Invalid SemVer '{version}': invalid prerelease suffix '{pre_tag}'"
@@ -728,7 +770,8 @@ fn rewrite_manifest_version(
                 }
                 if in_project {
                     if trimmed.starts_with("VERSION ") {
-                        let indent: String = line.chars().take_while(|c| c.is_whitespace()).collect();
+                        let indent: String =
+                            line.chars().take_while(|c| c.is_whitespace()).collect();
                         *line = format!("{indent}VERSION {new_version}");
                         replaced = true;
                         break;
@@ -889,7 +932,9 @@ fn maybe_run_git_cliff(root: &Path, version: &str) {
             println!("Updated CHANGELOG.md with git-cliff ({tag})");
         }
         Ok(status) => {
-            eprintln!("git-cliff exited with status {status}; update CHANGELOG.md manually if needed");
+            eprintln!(
+                "git-cliff exited with status {status}; update CHANGELOG.md manually if needed"
+            );
         }
         Err(_) => {
             println!("git-cliff not installed on PATH; skipping automatic CHANGELOG.md update");
@@ -959,17 +1004,18 @@ mod tests {
 
         // Dry run leaves 0.3.0 intact
         bump_versions_in_root(root, "0.4.0", true).unwrap();
-        assert_eq!(
-            check_versions_in_root(root).unwrap()[0].1,
-            "0.3.0"
-        );
+        assert_eq!(check_versions_in_root(root).unwrap()[0].1, "0.3.0");
 
         // Actual bump updates all 6 manifests and resets pkgrel/Release
         bump_versions_in_root(root, "0.4.0", false).unwrap();
         let bumped = check_versions_in_root(root).unwrap();
         assert!(bumped.iter().all(|(_, v)| v == "0.4.0"));
-        assert!(fs::read_to_string(root.join("PKGBUILD")).unwrap().contains("pkgrel=1"));
-        assert!(fs::read_to_string(root.join("ucc.spec")).unwrap().contains("Release:        1%{?dist}"));
+        assert!(fs::read_to_string(root.join("PKGBUILD"))
+            .unwrap()
+            .contains("pkgrel=1"));
+        assert!(fs::read_to_string(root.join("ucc.spec"))
+            .unwrap()
+            .contains("Release:        1%{?dist}"));
 
         // Idempotent re-run does not duplicate debian/changelog entry
         let changelog_once = fs::read_to_string(root.join("debian/changelog")).unwrap();
@@ -1001,7 +1047,8 @@ mod tests {
         install_runtime(&dest, &bins).unwrap();
         stage_dist_assets(&dest).unwrap();
 
-        let manifest = fs::read_to_string(dest.join("share/doc/ucc/RELEASE_MANIFEST.json")).unwrap();
+        let manifest =
+            fs::read_to_string(dest.join("share/doc/ucc/RELEASE_MANIFEST.json")).unwrap();
         assert!(manifest.contains("\"package\": \"ucc-rusted\""));
         assert!(manifest.contains("lib/ucc/ucc-sleep"));
         assert!(dest.join("share/doc/ucc/SBOM.json").is_file());

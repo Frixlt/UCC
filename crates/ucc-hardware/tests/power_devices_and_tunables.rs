@@ -24,7 +24,10 @@ fn test_power_devices_apply_every_mode_without_real_sysfs() {
     let sys = root.path().join("sys");
     let proc = root.path().join("proc");
 
-    write_file(&sys.join("bus/pci/devices/0000:02:00.0/power/control"), "auto");
+    write_file(
+        &sys.join("bus/pci/devices/0000:02:00.0/power/control"),
+        "auto",
+    );
     write_file(&proc.join("sys/vm/dirty_writeback_centisecs"), "500");
     write_file(&sys.join("module/pcie_aspm/parameters/policy"), "default");
 
@@ -37,12 +40,7 @@ fn test_power_devices_apply_every_mode_without_real_sysfs() {
         true
     });
 
-    let controller = PowerDeviceController::new(
-        &sys,
-        &proc,
-        runner,
-        root.path().join("bin"),
-    );
+    let controller = PowerDeviceController::new(&sys, &proc, runner, root.path().join("bin"));
 
     let config = json!({
         "enabled": true,
@@ -180,7 +178,10 @@ fn test_rejects_arbitrary_paths_and_injection_attempts() {
 fn test_rescan_preserves_disconnected_devices_and_user_edits() {
     let root = TempDir::new().unwrap();
     let sys = root.path().join("sys");
-    write_file(&sys.join("bus/pci/devices/0000:00:00.0/power/control"), "on");
+    write_file(
+        &sys.join("bus/pci/devices/0000:00:00.0/power/control"),
+        "on",
+    );
     write_file(&sys.join("devices/system/cpu/intel_pstate/no_turbo"), "0");
 
     let saved = json!({
@@ -199,7 +200,9 @@ fn test_rescan_preserves_disconnected_devices_and_user_edits() {
         root.path().join("bin"),
     );
 
-    assert!(controller.set_settings(json!({ "devices": [saved.clone()] })).is_ok());
+    assert!(controller
+        .set_settings(json!({ "devices": [saved.clone()] }))
+        .is_ok());
 
     let scanned = controller.scan();
     let devices = scanned["devices"].as_array().unwrap();
@@ -213,7 +216,9 @@ fn test_rescan_preserves_disconnected_devices_and_user_edits() {
     assert!(PowerDeviceController::validate(&scanned).is_ok());
 
     // Check turbo tunable discovered
-    let has_turbo = devices.iter().any(|d| d["path"] == "/sys/devices/system/cpu/intel_pstate/no_turbo");
+    let has_turbo = devices
+        .iter()
+        .any(|d| d["path"] == "/sys/devices/system/cpu/intel_pstate/no_turbo");
     assert!(has_turbo);
 }
 
@@ -277,12 +282,8 @@ fn test_cpu_overlay_and_nvidia_blackwell_guard() {
 #[test]
 fn test_absent_hardware_reported_as_failure() {
     let root = TempDir::new().unwrap();
-    let controller = PowerDeviceController::new(
-        root.path(),
-        root.path(),
-        Arc::new(|_, _| true),
-        root.path(),
-    );
+    let controller =
+        PowerDeviceController::new(root.path(), root.path(), Arc::new(|_, _| true), root.path());
 
     let config = json!({
         "enabled": true,
@@ -320,7 +321,10 @@ fn test_disabling_keep_awake_and_switching_to_battery_undoes_persistence() {
     let calls_log = Arc::clone(&calls);
 
     let runner = Arc::new(move |cmd: &str, args: &[&str]| {
-        calls_log.lock().unwrap().push(format!("{}:{}", cmd, args.last().unwrap_or(&"")));
+        calls_log
+            .lock()
+            .unwrap()
+            .push(format!("{}:{}", cmd, args.last().unwrap_or(&"")));
         true
     });
 
@@ -361,5 +365,7 @@ fn test_disabling_keep_awake_and_switching_to_battery_undoes_persistence() {
     // Type-C disables persistence (-pm 0)
     controller.apply("type_c");
     assert_eq!(calls.lock().unwrap().last().unwrap(), "nvidia-smi:0");
-    assert!(!controller.status()["nvidiaPersistenceEnabled"].as_bool().unwrap());
+    assert!(!controller.status()["nvidiaPersistenceEnabled"]
+        .as_bool()
+        .unwrap());
 }

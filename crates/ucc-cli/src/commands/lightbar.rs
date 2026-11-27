@@ -1,11 +1,15 @@
 //! Lightbar command implementation.
 
-use serde_json::Value;
 use crate::cli::LightbarAction;
 use crate::client::{with_rpc_timeout, CliClient};
 use crate::format::*;
+use serde_json::Value;
 
-pub async fn run_lightbar(client: &CliClient, action: &LightbarAction, json_mode: bool) -> Result<(), i32> {
+pub async fn run_lightbar(
+    client: &CliClient,
+    action: &LightbarAction,
+    json_mode: bool,
+) -> Result<(), i32> {
     match action {
         LightbarAction::Get => {
             let raw = match with_rpc_timeout(client.proxy().get_lightbar_settings_json()).await {

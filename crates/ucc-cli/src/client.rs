@@ -1,8 +1,8 @@
 //! D-Bus client wrapper for UCC CLI commands.
 
-use std::collections::HashMap;
 use serde_json::Value;
-use ucc_dbus::{UccdProxy, DBUS_SERVICE, DBUS_PATH, DBUS_INTERFACE};
+use std::collections::HashMap;
+use ucc_dbus::{UccdProxy, DBUS_INTERFACE, DBUS_PATH, DBUS_SERVICE};
 use zbus::Connection;
 
 pub const DAEMON_CONNECT_ERR: &str =
@@ -15,7 +15,9 @@ pub async fn with_rpc_timeout<T>(
 ) -> zbus::Result<T> {
     match tokio::time::timeout(DEFAULT_RPC_TIMEOUT, fut).await {
         Ok(res) => res,
-        Err(_) => Err(zbus::Error::Failure("RPC call deadline exceeded".to_string())),
+        Err(_) => Err(zbus::Error::Failure(
+            "RPC call deadline exceeded".to_string(),
+        )),
     }
 }
 
@@ -98,7 +100,11 @@ fn value_to_i64(v: &zbus::zvariant::Value<'_>) -> Option<i64> {
 fn owned_value_to_i64(v: &zbus::zvariant::OwnedValue) -> Option<i64> {
     v.downcast_ref::<i64>()
         .ok()
-        .or_else(|| v.downcast_ref::<u64>().ok().and_then(|u| i64::try_from(u).ok()))
+        .or_else(|| {
+            v.downcast_ref::<u64>()
+                .ok()
+                .and_then(|u| i64::try_from(u).ok())
+        })
         .or_else(|| v.downcast_ref::<i32>().ok().map(i64::from))
         .or_else(|| v.downcast_ref::<u32>().ok().map(i64::from))
 }
@@ -158,7 +164,9 @@ fn extract_variant_i32(v: &zbus::zvariant::OwnedValue) -> Option<i32> {
     if let Ok(val) = v.downcast_ref::<u16>() {
         return Some(val as i32);
     }
-    if let Ok(map) = <std::collections::HashMap<String, zbus::zvariant::OwnedValue>>::try_from(v.clone()) {
+    if let Ok(map) =
+        <std::collections::HashMap<String, zbus::zvariant::OwnedValue>>::try_from(v.clone())
+    {
         if let Some(data_val) = map.get("data") {
             return extract_variant_i32(data_val);
         }
@@ -204,8 +212,10 @@ impl CliClient {
     /// Connect to system D-Bus (or session bus if UCCD_DBUS_SERVICE is set) and create UccdProxy.
     /// Exits with code 2 if connection to daemon fails.
     pub async fn connect() -> Result<Self, i32> {
-        let service_name = std::env::var("UCCD_DBUS_SERVICE").unwrap_or_else(|_| DBUS_SERVICE.to_string());
-        let use_session = std::env::var("UCCD_DBUS_SERVICE").is_ok() || std::env::var("UCCD_DBUS_SESSION").is_ok();
+        let service_name =
+            std::env::var("UCCD_DBUS_SERVICE").unwrap_or_else(|_| DBUS_SERVICE.to_string());
+        let use_session = std::env::var("UCCD_DBUS_SERVICE").is_ok()
+            || std::env::var("UCCD_DBUS_SESSION").is_ok();
         let conn = if use_session {
             match Connection::session().await {
                 Ok(c) => c,
@@ -225,13 +235,16 @@ impl CliClient {
         };
 
         // Check if service exists / is owned on the bus
-        let has_owner = match conn.call_method(
-            Some("org.freedesktop.DBus"),
-            "/org/freedesktop/DBus",
-            Some("org.freedesktop.DBus"),
-            "NameHasOwner",
-            &(&service_name),
-        ).await {
+        let has_owner = match conn
+            .call_method(
+                Some("org.freedesktop.DBus"),
+                "/org/freedesktop/DBus",
+                Some("org.freedesktop.DBus"),
+                "NameHasOwner",
+                &(&service_name),
+            )
+            .await
+        {
             Ok(msg) => msg.body().deserialize::<bool>().unwrap_or(false),
             Err(_) => false,
         };
@@ -242,9 +255,12 @@ impl CliClient {
         }
 
         let proxy = match UccdProxy::builder(&conn)
-            .destination(service_name).map_err(|_| 2)?
-            .path(DBUS_PATH).map_err(|_| 2)?
-            .interface(DBUS_INTERFACE).map_err(|_| 2)?
+            .destination(service_name)
+            .map_err(|_| 2)?
+            .path(DBUS_PATH)
+            .map_err(|_| 2)?
+            .interface(DBUS_INTERFACE)
+            .map_err(|_| 2)?
             .build()
             .await
         {
@@ -256,20 +272,15 @@ impl CliClient {
         };
 
         // Verify that the destination actually exposes UCC API and is responsive
-        let api_check = tokio::time::timeout(
-            std::time::Duration::from_secs(2),
-            proxy.get_device_name(),
-        ).await;
+        let api_check =
+            tokio::time::timeout(std::time::Duration::from_secs(2), proxy.get_device_name()).await;
 
         if !matches!(api_check, Ok(Ok(_))) {
             eprintln!("{}", DAEMON_CONNECT_ERR);
             return Err(2);
         }
 
-        Ok(Self {
-            _conn: conn,
-            proxy,
-        })
+        Ok(Self { _conn: conn, proxy })
     }
 
     /// Access the typed UccdProxy.
@@ -363,32 +374,48 @@ impl CliClient {
         if let Ok(raw) = with_rpc_timeout(self.proxy.get_dgpu_info_values_json()).await {
             if let Ok(val) = serde_json::from_str::<Value>(&raw) {
                 if let Some(t) = val.get("temp").and_then(json_number_as_i32) {
-                    if t >= 0 { m.temperature = Some(t); }
+                    if t >= 0 {
+                        m.temperature = Some(t);
+                    }
                 }
-                if let Some(f) = val.get("coreFrequency").or_else(|| val.get("coreFreq")).and_then(json_number_as_i32) {
-                    if f >= 0 { m.frequency = Some(f); }
+                if let Some(f) = val
+                    .get("coreFrequency")
+                    .or_else(|| val.get("coreFreq"))
+                    .and_then(json_number_as_i32)
+                {
+                    if f >= 0 {
+                        m.frequency = Some(f);
+                    }
                 }
                 if let Some(p) = val.get("powerDraw").and_then(|v| v.as_f64()) {
-                    if p >= 0.0 { m.power = Some(p); }
+                    if p >= 0.0 {
+                        m.power = Some(p);
+                    }
                 }
             }
         }
 
         // Fan speeds from GPU1 and GPU2
-        let gpu1_spd = with_rpc_timeout(self.proxy.get_fan_data_gpu1()).await.ok().and_then(|map| {
-            if fan_map_entry_is_stale(&map, "speed") {
-                None
-            } else {
-                map.get("speed").and_then(extract_variant_i32)
-            }
-        });
-        let gpu2_spd = with_rpc_timeout(self.proxy.get_fan_data_gpu2()).await.ok().and_then(|map| {
-            if fan_map_entry_is_stale(&map, "speed") {
-                None
-            } else {
-                map.get("speed").and_then(extract_variant_i32)
-            }
-        });
+        let gpu1_spd = with_rpc_timeout(self.proxy.get_fan_data_gpu1())
+            .await
+            .ok()
+            .and_then(|map| {
+                if fan_map_entry_is_stale(&map, "speed") {
+                    None
+                } else {
+                    map.get("speed").and_then(extract_variant_i32)
+                }
+            });
+        let gpu2_spd = with_rpc_timeout(self.proxy.get_fan_data_gpu2())
+            .await
+            .ok()
+            .and_then(|map| {
+                if fan_map_entry_is_stale(&map, "speed") {
+                    None
+                } else {
+                    map.get("speed").and_then(extract_variant_i32)
+                }
+            });
 
         match (gpu1_spd, gpu2_spd) {
             (Some(s1), Some(s2)) if s1 >= 0 && s2 >= 0 => {
@@ -415,13 +442,23 @@ impl CliClient {
         if let Ok(raw) = with_rpc_timeout(self.proxy.get_igpu_info_values_json()).await {
             if let Ok(val) = serde_json::from_str::<Value>(&raw) {
                 if let Some(t) = val.get("temp").and_then(json_number_as_i32) {
-                    if t >= 0 { m.temperature = Some(t); }
+                    if t >= 0 {
+                        m.temperature = Some(t);
+                    }
                 }
-                if let Some(f) = val.get("coreFrequency").or_else(|| val.get("coreFreq")).and_then(json_number_as_i32) {
-                    if f >= 0 { m.frequency = Some(f); }
+                if let Some(f) = val
+                    .get("coreFrequency")
+                    .or_else(|| val.get("coreFreq"))
+                    .and_then(json_number_as_i32)
+                {
+                    if f >= 0 {
+                        m.frequency = Some(f);
+                    }
                 }
                 if let Some(p) = val.get("powerDraw").and_then(|v| v.as_f64()) {
-                    if p >= 0.0 { m.power = Some(p); }
+                    if p >= 0.0 {
+                        m.power = Some(p);
+                    }
                 }
             }
         }
@@ -430,30 +467,54 @@ impl CliClient {
 
     pub async fn get_hardware_metrics(&self) -> HardwareMetrics {
         HardwareMetrics {
-            display_brightness: with_rpc_timeout(self.proxy.get_display_brightness()).await.ok(),
-            webcam_enabled: with_rpc_timeout(self.proxy.get_webcam_sw_status()).await.ok(),
+            display_brightness: with_rpc_timeout(self.proxy.get_display_brightness())
+                .await
+                .ok(),
+            webcam_enabled: with_rpc_timeout(self.proxy.get_webcam_sw_status())
+                .await
+                .ok(),
             fn_lock: with_rpc_timeout(self.proxy.get_fn_lock_status()).await.ok(),
         }
     }
 
     pub async fn get_water_cooler_metrics(&self) -> WaterCoolerMetrics {
-        let supported = with_rpc_timeout(self.proxy.get_water_cooler_supported()).await.unwrap_or(false);
-        let connected = with_rpc_timeout(self.proxy.get_water_cooler_connected()).await.unwrap_or(false);
-        let enabled = with_rpc_timeout(self.proxy.is_water_cooler_enabled()).await.ok();
-        let fan_speed = with_rpc_timeout(self.proxy.get_water_cooler_fan_speed()).await.ok();
-        let pump_level = with_rpc_timeout(self.proxy.get_water_cooler_pump_level()).await.ok();
+        let supported = with_rpc_timeout(self.proxy.get_water_cooler_supported())
+            .await
+            .unwrap_or(false);
+        let connected = with_rpc_timeout(self.proxy.get_water_cooler_connected())
+            .await
+            .unwrap_or(false);
+        let enabled = with_rpc_timeout(self.proxy.is_water_cooler_enabled())
+            .await
+            .ok();
+        let fan_speed = with_rpc_timeout(self.proxy.get_water_cooler_fan_speed())
+            .await
+            .ok();
+        let pump_level = with_rpc_timeout(self.proxy.get_water_cooler_pump_level())
+            .await
+            .ok();
 
         WaterCoolerMetrics {
             supported,
             connected,
             enabled,
-            fan_speed: if connected { fan_speed.filter(|&v| v >= 0) } else { None },
-            pump_level: if connected { pump_level.filter(|&v| v >= 0) } else { None },
+            fan_speed: if connected {
+                fan_speed.filter(|&v| v >= 0)
+            } else {
+                None
+            },
+            pump_level: if connected {
+                pump_level.filter(|&v| v >= 0)
+            } else {
+                None
+            },
         }
     }
 
     pub async fn get_charging_metrics(&self) -> ChargingMetrics {
-        let profiles_avail = with_rpc_timeout(self.proxy.get_charging_profiles_available()).await.ok();
+        let profiles_avail = with_rpc_timeout(self.proxy.get_charging_profiles_available())
+            .await
+            .ok();
         let has_hw = if let Some(ref raw) = profiles_avail {
             if let Ok(val) = serde_json::from_str::<Value>(raw) {
                 val.as_array().is_some_and(|a| !a.is_empty())
@@ -465,14 +526,28 @@ impl CliClient {
         };
 
         if !has_hw {
-            return ChargingMetrics { available: false, ..Default::default() };
+            return ChargingMetrics {
+                available: false,
+                ..Default::default()
+            };
         }
 
-        let profile = with_rpc_timeout(self.proxy.get_current_charging_profile()).await.ok().filter(|s| !s.is_empty());
-        let priority = with_rpc_timeout(self.proxy.get_current_charging_priority()).await.ok().filter(|s| !s.is_empty());
-        let charge_type = with_rpc_timeout(self.proxy.get_charge_type()).await.ok().filter(|s| !s.is_empty() && s != "Unknown" && s != "N/A");
+        let profile = with_rpc_timeout(self.proxy.get_current_charging_profile())
+            .await
+            .ok()
+            .filter(|s| !s.is_empty());
+        let priority = with_rpc_timeout(self.proxy.get_current_charging_priority())
+            .await
+            .ok()
+            .filter(|s| !s.is_empty());
+        let charge_type = with_rpc_timeout(self.proxy.get_charge_type())
+            .await
+            .ok()
+            .filter(|s| !s.is_empty() && s != "Unknown" && s != "N/A");
 
-        let end_avail = with_rpc_timeout(self.proxy.get_charge_end_available_thresholds()).await.ok();
+        let end_avail = with_rpc_timeout(self.proxy.get_charge_end_available_thresholds())
+            .await
+            .ok();
         let has_thresholds = if let Some(ref raw) = end_avail {
             if let Ok(val) = serde_json::from_str::<Value>(raw) {
                 val.as_array().is_some_and(|a| !a.is_empty())
@@ -485,8 +560,14 @@ impl CliClient {
 
         let (start_threshold, end_threshold) = if has_thresholds {
             (
-                with_rpc_timeout(self.proxy.get_charge_start_threshold()).await.ok().filter(|&v| v >= 0),
-                with_rpc_timeout(self.proxy.get_charge_end_threshold()).await.ok().filter(|&v| v >= 0),
+                with_rpc_timeout(self.proxy.get_charge_start_threshold())
+                    .await
+                    .ok()
+                    .filter(|&v| v >= 0),
+                with_rpc_timeout(self.proxy.get_charge_end_threshold())
+                    .await
+                    .ok()
+                    .filter(|&v| v >= 0),
             )
         } else {
             (None, None)
@@ -514,7 +595,10 @@ impl CliClient {
             for (state, prof_val) in map {
                 if let Some(prof_id) = prof_val.as_str() {
                     if !prof_id.is_empty() {
-                        let list = assignments.profile_states.entry(prof_id.to_string()).or_default();
+                        let list = assignments
+                            .profile_states
+                            .entry(prof_id.to_string())
+                            .or_default();
                         if !list.contains(state) {
                             list.push(state.clone());
                         }
@@ -528,17 +612,31 @@ impl CliClient {
             for (k, v) in profiles_obj {
                 if let Some(prof_id) = v.as_str() {
                     if !prof_id.is_empty() {
-                        let list = assignments.profile_states.entry(prof_id.to_string()).or_default();
+                        let list = assignments
+                            .profile_states
+                            .entry(prof_id.to_string())
+                            .or_default();
                         if !list.contains(k) {
                             list.push(k.clone());
                         }
                     }
                 } else if v.is_object() {
-                    let states = assignments.profile_states.get(k).cloned().unwrap_or_default();
+                    let states = assignments
+                        .profile_states
+                        .get(k)
+                        .cloned()
+                        .unwrap_or_default();
                     if !states.is_empty() {
-                        if let Some(fan_id) = v.get("fan").and_then(|f| f.get("fanProfile")).and_then(|s| s.as_str()) {
+                        if let Some(fan_id) = v
+                            .get("fan")
+                            .and_then(|f| f.get("fanProfile"))
+                            .and_then(|s| s.as_str())
+                        {
                             if !fan_id.is_empty() {
-                                let flist = assignments.fan_states.entry(fan_id.to_string()).or_default();
+                                let flist = assignments
+                                    .fan_states
+                                    .entry(fan_id.to_string())
+                                    .or_default();
                                 for s in &states {
                                     if !flist.contains(s) {
                                         flist.push(s.clone());
@@ -575,9 +673,16 @@ impl CliClient {
                 if let Some(prof_id) = prof.get("id").and_then(|v| v.as_str()) {
                     if let Some(states) = assignments.profile_states.get(prof_id).cloned() {
                         // Fan profile
-                        if let Some(fan_id) = prof.get("fan").and_then(|f| f.get("fanProfile")).and_then(|v| v.as_str()) {
+                        if let Some(fan_id) = prof
+                            .get("fan")
+                            .and_then(|f| f.get("fanProfile"))
+                            .and_then(|v| v.as_str())
+                        {
                             if !fan_id.is_empty() {
-                                let flist = assignments.fan_states.entry(fan_id.to_string()).or_default();
+                                let flist = assignments
+                                    .fan_states
+                                    .entry(fan_id.to_string())
+                                    .or_default();
                                 for s in &states {
                                     if !flist.contains(s) {
                                         flist.push(s.clone());
@@ -587,9 +692,12 @@ impl CliClient {
                         }
 
                         // Keyboard profile
-                        if let Some(kb_id) = prof.get("selectedKeyboardProfile").and_then(|v| v.as_str()) {
+                        if let Some(kb_id) =
+                            prof.get("selectedKeyboardProfile").and_then(|v| v.as_str())
+                        {
                             if !kb_id.is_empty() {
-                                let klist = assignments.kb_states.entry(kb_id.to_string()).or_default();
+                                let klist =
+                                    assignments.kb_states.entry(kb_id.to_string()).or_default();
                                 for s in &states {
                                     if !klist.contains(s) {
                                         klist.push(s.clone());

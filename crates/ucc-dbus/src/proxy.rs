@@ -149,7 +149,12 @@ pub mod primary {
         fn set_manual_power_mode(&self, mode_val: &str) -> zbus::Result<bool>;
 
         #[zbus(name = "RegisterPowerRequest")]
-        fn register_power_request(&self, name: &str, reason: &str, mode_val: &str) -> zbus::Result<bool>;
+        fn register_power_request(
+            &self,
+            name: &str,
+            reason: &str,
+            mode_val: &str,
+        ) -> zbus::Result<bool>;
 
         #[zbus(name = "UnregisterPowerRequest")]
         fn unregister_power_request(&self, name: &str) -> zbus::Result<bool>;
@@ -233,13 +238,21 @@ pub mod primary {
         fn get_keyboard_backlight_states_json(&self) -> zbus::Result<String>;
 
         #[zbus(name = "SetKeyboardBacklightStatesJSON")]
-        fn set_keyboard_backlight_states_json(&self, keyboard_backlight_states_json: &str) -> zbus::Result<bool>;
+        fn set_keyboard_backlight_states_json(
+            &self,
+            keyboard_backlight_states_json: &str,
+        ) -> zbus::Result<bool>;
 
         #[zbus(name = "GetCustomKeyboardProfilesJSON")]
         fn get_custom_keyboard_profiles_json(&self) -> zbus::Result<String>;
 
         #[zbus(name = "SaveCustomKeyboardProfile")]
-        fn save_custom_keyboard_profile(&self, id: &str, name: &str, json: &str) -> zbus::Result<bool>;
+        fn save_custom_keyboard_profile(
+            &self,
+            id: &str,
+            name: &str,
+            json: &str,
+        ) -> zbus::Result<bool>;
 
         #[zbus(name = "DeleteCustomKeyboardProfile")]
         fn delete_custom_keyboard_profile(&self, id: &str) -> zbus::Result<bool>;
@@ -368,7 +381,13 @@ pub mod primary {
         fn set_water_cooler_pump_voltage(&self, voltage: i32) -> zbus::Result<bool>;
 
         #[zbus(name = "SetWaterCoolerLEDColor")]
-        fn set_water_cooler_led_color(&self, red: i32, green: i32, blue: i32, mode_val: i32) -> zbus::Result<bool>;
+        fn set_water_cooler_led_color(
+            &self,
+            red: i32,
+            green: i32,
+            blue: i32,
+            mode_val: i32,
+        ) -> zbus::Result<bool>;
 
         #[zbus(name = "TurnOffWaterCoolerLED")]
         fn turn_off_water_cooler_led(&self) -> zbus::Result<bool>;
@@ -405,7 +424,6 @@ pub mod primary {
 
         #[zbus(name = "GetCpuFrequencyMHz")]
         fn get_cpu_frequency_mhz(&self) -> zbus::Result<i32>;
-
     }
 }
 
@@ -558,7 +576,12 @@ pub mod legacy {
         fn set_manual_power_mode(&self, mode_val: &str) -> zbus::Result<bool>;
 
         #[zbus(name = "RegisterPowerRequest")]
-        fn register_power_request(&self, name: &str, reason: &str, mode_val: &str) -> zbus::Result<bool>;
+        fn register_power_request(
+            &self,
+            name: &str,
+            reason: &str,
+            mode_val: &str,
+        ) -> zbus::Result<bool>;
 
         #[zbus(name = "UnregisterPowerRequest")]
         fn unregister_power_request(&self, name: &str) -> zbus::Result<bool>;
@@ -642,13 +665,21 @@ pub mod legacy {
         fn get_keyboard_backlight_states_json(&self) -> zbus::Result<String>;
 
         #[zbus(name = "SetKeyboardBacklightStatesJSON")]
-        fn set_keyboard_backlight_states_json(&self, keyboard_backlight_states_json: &str) -> zbus::Result<bool>;
+        fn set_keyboard_backlight_states_json(
+            &self,
+            keyboard_backlight_states_json: &str,
+        ) -> zbus::Result<bool>;
 
         #[zbus(name = "GetCustomKeyboardProfilesJSON")]
         fn get_custom_keyboard_profiles_json(&self) -> zbus::Result<String>;
 
         #[zbus(name = "SaveCustomKeyboardProfile")]
-        fn save_custom_keyboard_profile(&self, id: &str, name: &str, json: &str) -> zbus::Result<bool>;
+        fn save_custom_keyboard_profile(
+            &self,
+            id: &str,
+            name: &str,
+            json: &str,
+        ) -> zbus::Result<bool>;
 
         #[zbus(name = "DeleteCustomKeyboardProfile")]
         fn delete_custom_keyboard_profile(&self, id: &str) -> zbus::Result<bool>;
@@ -777,7 +808,13 @@ pub mod legacy {
         fn set_water_cooler_pump_voltage(&self, voltage: i32) -> zbus::Result<bool>;
 
         #[zbus(name = "SetWaterCoolerLEDColor")]
-        fn set_water_cooler_led_color(&self, red: i32, green: i32, blue: i32, mode_val: i32) -> zbus::Result<bool>;
+        fn set_water_cooler_led_color(
+            &self,
+            red: i32,
+            green: i32,
+            blue: i32,
+            mode_val: i32,
+        ) -> zbus::Result<bool>;
 
         #[zbus(name = "TurnOffWaterCoolerLED")]
         fn turn_off_water_cooler_led(&self) -> zbus::Result<bool>;
@@ -814,7 +851,6 @@ pub mod legacy {
 
         #[zbus(name = "GetCpuFrequencyMHz")]
         fn get_cpu_frequency_mhz(&self) -> zbus::Result<i32>;
-
     }
 }
 

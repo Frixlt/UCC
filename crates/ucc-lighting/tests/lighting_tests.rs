@@ -6,8 +6,8 @@ use ucc_core::KeyboardBacklightState;
 use ucc_hardware::RealSysfs;
 use ucc_lighting::{
     KeyboardBacklightController, KeyboardCapabilities, LightbarAnimation, LightbarCapabilities,
-    LightbarController, LightbarPowerMode, LightingError, LightingOp, MockLightingTransport,
-    RgbColor, SysfsLedTransport, LightingTransport, MECHREVO_ENTER_LED_ID,
+    LightbarController, LightbarPowerMode, LightingError, LightingOp, LightingTransport,
+    MockLightingTransport, RgbColor, SysfsLedTransport, MECHREVO_ENTER_LED_ID,
     MECHREVO_EXPECTED_ZONES, MECHREVO_LCTRL_LED_ID, MECHREVO_LSHIFT_LED_ID,
     MECHREVO_PHYSICAL_KEY_COUNT,
 };
@@ -208,7 +208,10 @@ fn lightbar_controller_lifecycle_flash_silent_and_auto_majority_color() {
     );
     mock.clear_ops();
     lb.configure(&json!({ "managed": false })).unwrap();
-    assert_eq!(mock.ops(), vec![LightingOp::WriteLightbarColor(RgbColor::BLACK)]);
+    assert_eq!(
+        mock.ops(),
+        vec![LightingOp::WriteLightbarColor(RgbColor::BLACK)]
+    );
 
     // 5. Validation rejects bad brightness or animation
     assert!(matches!(

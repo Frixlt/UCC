@@ -86,9 +86,7 @@ fn t_desk01_bounded_tray_action_channel_drops_excess_without_blocking() {
         received.push(action);
     }
     assert_eq!(received.len(), 32);
-    assert!(received
-        .iter()
-        .all(|a| matches!(a, TrayAction::OpenGui(_))));
+    assert!(received.iter().all(|a| matches!(a, TrayAction::OpenGui(_))));
 }
 
 #[test]
@@ -128,10 +126,22 @@ fn t_desk01_disconnected_daemon_disables_controls_and_shows_service_unavailable(
         }
     }
 
-    assert!(saw_unavailable, "disconnected menu must expose 'Service unavailable'");
-    assert!(radio_disabled, "profile radio options must be disabled while disconnected");
-    assert!(fan_disabled, "fan toggle must be disabled while disconnected");
-    assert!(wc_disabled, "water cooler toggle must be disabled while disconnected");
+    assert!(
+        saw_unavailable,
+        "disconnected menu must expose 'Service unavailable'"
+    );
+    assert!(
+        radio_disabled,
+        "profile radio options must be disabled while disconnected"
+    );
+    assert!(
+        fan_disabled,
+        "fan toggle must be disabled while disconnected"
+    );
+    assert!(
+        wc_disabled,
+        "water cooler toggle must be disabled while disconnected"
+    );
     assert!(
         rx.try_recv().is_err(),
         "disabled daemon controls must not enqueue TrayAction while disconnected"
@@ -143,7 +153,10 @@ fn t_desk01_disconnected_daemon_disables_controls_and_shows_service_unavailable(
         MenuItem::Standard(s) => s.label.contains("Service unavailable"),
         _ => false,
     });
-    assert!(!has_unavailable, "reconnected menu should clear 'Service unavailable'");
+    assert!(
+        !has_unavailable,
+        "reconnected menu should clear 'Service unavailable'"
+    );
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
@@ -188,13 +201,9 @@ async fn t_m97_activate_gui_dbus_prefers_activate_with_token_and_uses_preview_bu
         .await
         .unwrap();
 
-    activate_gui_dbus_on(
-        &client_conn,
-        GUI_DBUS_PREVIEW_SERVICE,
-        Some("xdg-token-42"),
-    )
-    .await
-    .expect("preview GUI activation with token must succeed");
+    activate_gui_dbus_on(&client_conn, GUI_DBUS_PREVIEW_SERVICE, Some("xdg-token-42"))
+        .await
+        .expect("preview GUI activation with token must succeed");
 
     activate_gui_dbus_on(&client_conn, GUI_DBUS_SERVICE, Some("xdg-token-99"))
         .await
@@ -204,10 +213,7 @@ async fn t_m97_activate_gui_dbus_prefers_activate_with_token_and_uses_preview_bu
         *preview_calls.lock().unwrap(),
         vec!["ActivateWithToken:xdg-token-42".to_string()]
     );
-    assert_eq!(
-        *legacy_calls.lock().unwrap(),
-        vec!["Activate".to_string()]
-    );
+    assert_eq!(*legacy_calls.lock().unwrap(), vec!["Activate".to_string()]);
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]

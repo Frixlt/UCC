@@ -119,7 +119,9 @@ pub mod cpu_sentinel_serde {
         match opt {
             Some(v) if v <= 0 => Ok(None),
             Some(v) if v <= u32::MAX as i128 => Ok(Some(v as u32)),
-            Some(_) => Err(serde::de::Error::custom("CPU numeric value exceeds u32::MAX")),
+            Some(_) => Err(serde::de::Error::custom(
+                "CPU numeric value exceeds u32::MAX",
+            )),
             None => Ok(None),
         }
     }
@@ -153,13 +155,25 @@ pub struct ProfileCpu {
 #[derive(Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct ProfileCpuWire {
-    #[serde(default, with = "cpu_sentinel_serde", skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        with = "cpu_sentinel_serde",
+        skip_serializing_if = "Option::is_none"
+    )]
     online_cores: Option<u32>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     enabled_cores: Option<Vec<u32>>,
-    #[serde(rename = "scalingMinFrequency", default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        rename = "scalingMinFrequency",
+        default,
+        skip_serializing_if = "Option::is_none"
+    )]
     scaling_min_frequency: Option<i64>,
-    #[serde(rename = "scalingMaxFrequency", default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        rename = "scalingMaxFrequency",
+        default,
+        skip_serializing_if = "Option::is_none"
+    )]
     scaling_max_frequency: Option<i64>,
     #[serde(default)]
     governor: String,

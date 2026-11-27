@@ -220,11 +220,7 @@ impl<H: HardwareIo> TuxedoIoBackend<H> {
     }
 
     /// Probes capabilities using a shared owned [`Sysfs`] handle for runtime sysfs reads.
-    pub fn with_sysfs(
-        hw: H,
-        dmi: Option<&DmiInfo>,
-        sysfs: std::sync::Arc<dyn Sysfs>,
-    ) -> Self {
+    pub fn with_sysfs(hw: H, dmi: Option<&DmiInfo>, sysfs: std::sync::Arc<dyn Sysfs>) -> Self {
         let sys_ref: &dyn Sysfs = sysfs.as_ref();
         Self::build(hw, dmi, Some(sys_ref), Some(sysfs.clone()))
     }
@@ -320,7 +316,11 @@ impl<H: HardwareIo> PlatformBackend for TuxedoIoBackend<H> {
                     0 => requests::R_CL_FANINFO1,
                     1 => requests::R_CL_FANINFO2,
                     2 => requests::R_CL_FANINFO3,
-                    _ => return Err(PlatformError::InvalidArgument("Clevo fan index must be 0..=2")),
+                    _ => {
+                        return Err(PlatformError::InvalidArgument(
+                            "Clevo fan index must be 0..=2",
+                        ))
+                    }
                 };
                 let info = self.hw.read_i32(req)?;
                 let temp = ((info >> 16) & 0xff) as i8 as i32;
@@ -359,13 +359,19 @@ impl<H: HardwareIo> PlatformBackend for TuxedoIoBackend<H> {
 
     fn read_tdp(&self, index: usize) -> Result<i32, PlatformError> {
         if self.require_available()? != DeviceVendor::Uniwill {
-            return Err(PlatformError::Unsupported("TDP read requires Uniwill backend"));
+            return Err(PlatformError::Unsupported(
+                "TDP read requires Uniwill backend",
+            ));
         }
         let req = match index {
             0 => requests::R_UW_TDP0,
             1 => requests::R_UW_TDP1,
             2 => requests::R_UW_TDP2,
-            _ => return Err(PlatformError::InvalidArgument("Uniwill TDP index must be 0..=2")),
+            _ => {
+                return Err(PlatformError::InvalidArgument(
+                    "Uniwill TDP index must be 0..=2",
+                ))
+            }
         };
         Ok(self.hw.read_i32(req)?)
     }
@@ -381,16 +387,21 @@ impl<H: HardwareIo> PlatformBackend for TuxedoIoBackend<H> {
 
     fn set_tdp(&self, index: usize, watts: i32) -> Result<(), PlatformError> {
         if self.require_available()? != DeviceVendor::Uniwill {
-            return Err(PlatformError::Unsupported("TDP write requires Uniwill backend"));
+            return Err(PlatformError::Unsupported(
+                "TDP write requires Uniwill backend",
+            ));
         }
         Ok(set_uniwill_tdp(&self.hw, index, watts, None)?)
     }
 
     fn read_perf_profile(&self) -> Result<i32, PlatformError> {
         let vendor = self.require_available()?;
-        let path = self.platform_profile_path.as_ref().ok_or({
-            PlatformError::Unsupported("Reading perf profile unsupported")
-        })?;
+        let path = self
+            .platform_profile_path
+            .as_ref()
+            .ok_or(PlatformError::Unsupported(
+                "Reading perf profile unsupported",
+            ))?;
         if let Some(ref sys) = self.sysfs {
             let raw = sys.read(path).map_err(|_| {
                 PlatformError::Unsupported("Reading perf profile from sysfs unavailable")
@@ -582,7 +593,11 @@ impl MockPlatformBackend {
 
     pub fn set_tdp_limits(&self, index: usize, limits: (i32, i32)) {
         self.tdp_limits.lock().unwrap().insert(index, limits);
-        self.tdp_values.lock().unwrap().entry(index).or_insert(limits.1);
+        self.tdp_values
+            .lock()
+            .unwrap()
+            .entry(index)
+            .or_insert(limits.1);
     }
 
     pub fn journal(&self) -> Vec<PlatformWrite> {
@@ -657,7 +672,10 @@ impl PlatformBackend for MockPlatformBackend {
 
     fn set_fans_auto(&self) -> Result<(), PlatformError> {
         self.ensure_write_ready()?;
-        self.journal.lock().unwrap().push(PlatformWrite::SetFansAuto);
+        self.journal
+            .lock()
+            .unwrap()
+            .push(PlatformWrite::SetFansAuto);
         Ok(())
     }
 

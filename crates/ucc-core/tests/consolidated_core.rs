@@ -15,6 +15,10 @@ fn legacy_pump_level_4_clamps_to_safe_execution_policy() {
     profile.table_pump = vec![PumpPoint::new(50, 4)];
     assert!(profile.validate().is_ok());
     let voltage = profile.get_pump_speed_for_temp(60);
-    assert_ne!(voltage, PumpVoltage::V12, "V12 must never be returned for hardware execution");
+    assert_ne!(
+        voltage,
+        PumpVoltage::V12,
+        "V12 must never be returned for hardware execution"
+    );
     assert_eq!(voltage, PumpVoltage::V11, "Level 4 should clamp to V11");
 }

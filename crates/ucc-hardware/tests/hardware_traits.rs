@@ -158,14 +158,29 @@ fn test_mock_gpu_backend_and_write_journal() {
 
     let journal = gpu.journal();
     assert_eq!(journal.len(), 2);
-    assert_eq!(journal[0], GpuWrite::SetPowerLimit { watts: 115, timestamp: journal[0].timestamp() });
-    assert_eq!(journal[1], GpuWrite::SetPowerOffset { offset_watts: 15, timestamp: journal[1].timestamp() });
+    assert_eq!(
+        journal[0],
+        GpuWrite::SetPowerLimit {
+            watts: 115,
+            timestamp: journal[0].timestamp()
+        }
+    );
+    assert_eq!(
+        journal[1],
+        GpuWrite::SetPowerOffset {
+            offset_watts: 15,
+            timestamp: journal[1].timestamp()
+        }
+    );
 
     // D3cold suspended GPU blocks queries
     gpu.set_suspended(true);
     assert!(gpu.is_suspended());
     assert!(matches!(gpu.get_telemetry(), Err(NvmlError::GpuSuspended)));
-    assert!(matches!(gpu.set_power_limit(100), Err(NvmlError::GpuSuspended)));
+    assert!(matches!(
+        gpu.set_power_limit(100),
+        Err(NvmlError::GpuSuspended)
+    ));
 }
 
 trait TimestampExtract {

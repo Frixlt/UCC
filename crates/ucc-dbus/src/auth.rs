@@ -178,7 +178,11 @@ impl PolkitAuthorizer {
             tracing::warn!(
                 "Rejecting Polkit check for sender '{}': concurrent {} limit exceeded",
                 sender,
-                if is_interactive { "interactive" } else { "read" }
+                if is_interactive {
+                    "interactive"
+                } else {
+                    "read"
+                }
             );
             return false;
         };
@@ -276,11 +280,17 @@ impl PolkitAuthorizer {
                 );
             }
             Ok(Err(e)) => {
-                tracing::warn!("Polkit primary check error for '{}': {e}", action.action_id());
+                tracing::warn!(
+                    "Polkit primary check error for '{}': {e}",
+                    action.action_id()
+                );
                 return false;
             }
             Err(_) => {
-                tracing::warn!("Polkit primary check timed out for '{}'", action.action_id());
+                tracing::warn!(
+                    "Polkit primary check timed out for '{}'",
+                    action.action_id()
+                );
                 return false;
             }
         }
@@ -307,7 +317,10 @@ impl PolkitAuthorizer {
                 false
             }
             Err(_) => {
-                tracing::warn!("Polkit fallback check timed out for '{}'", action.legacy_action_id());
+                tracing::warn!(
+                    "Polkit fallback check timed out for '{}'",
+                    action.legacy_action_id()
+                );
                 false
             }
         }

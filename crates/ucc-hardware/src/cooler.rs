@@ -356,9 +356,7 @@ enum CommandSlot {
 impl CoolerCommand {
     pub fn validate(self) -> Result<(), CoolerError> {
         match self {
-            Self::FanSpeed(percent) if percent > 100 => {
-                Err(CoolerError::InvalidFanSpeed(percent))
-            }
+            Self::FanSpeed(percent) if percent > 100 => Err(CoolerError::InvalidFanSpeed(percent)),
             Self::PumpVoltage(PumpVoltage::V12) => Err(CoolerError::V12Forbidden),
             _ => Ok(()),
         }
@@ -430,12 +428,8 @@ impl CoolerCommandQueue {
 
     /// Removes any queued fan/pump commands while preserving pending RGB/Reset and the 80ms rate-limiter (`W1-11`).
     pub fn clear_fan_and_pump(&mut self) {
-        self.queue.retain(|entry| {
-            !matches!(
-                entry.command.slot(),
-                CommandSlot::Fan | CommandSlot::Pump
-            )
-        });
+        self.queue
+            .retain(|entry| !matches!(entry.command.slot(), CommandSlot::Fan | CommandSlot::Pump));
     }
 
     /// Cancels all pending commands and invalidates any previously stamped generation.
@@ -449,7 +443,11 @@ impl CoolerCommandQueue {
     pub fn enqueue(&mut self, command: CoolerCommand) -> Result<(), CoolerError> {
         command.validate()?;
         let slot = command.slot();
-        if let Some(existing) = self.queue.iter_mut().find(|entry| entry.command.slot() == slot) {
+        if let Some(existing) = self
+            .queue
+            .iter_mut()
+            .find(|entry| entry.command.slot() == slot)
+        {
             existing.command = command;
             existing.generation = self.generation;
         } else {
@@ -699,7 +697,9 @@ impl CoolerController {
         };
 
         let next_pump = if !profile.table_pump.is_empty() {
-            PumpTarget::Voltage(from_core_pump_voltage(profile.get_pump_speed_for_temp(temp_c)))
+            PumpTarget::Voltage(from_core_pump_voltage(
+                profile.get_pump_speed_for_temp(temp_c),
+            ))
         } else {
             self.auto_pump
         };

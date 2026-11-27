@@ -4,9 +4,9 @@ use std::sync::Arc;
 use std::time::{Duration, Instant};
 use ucc_hardware::{
     decode_history_binary, dgpu_to_legacy_json, find_intel_gpu_rapl_path, igpu_to_legacy_json,
-    nvidia_telemetry_due, read_amd_gpu_hwmon, read_intel_igpu_sysfs, CpuTelemetryReader,
-    GpuVendor, HistoryCodecError, MetricId, MetricsHistoryStore, MockSysfs, NvidiaPowerGuard,
-    NvmlWrapper, RaplEnergyCounter, TelemetryCollector, TelemetryConfig, MAX_POINTS_PER_SERIES,
+    nvidia_telemetry_due, read_amd_gpu_hwmon, read_intel_igpu_sysfs, CpuTelemetryReader, GpuVendor,
+    HistoryCodecError, MetricId, MetricsHistoryStore, MockSysfs, NvidiaPowerGuard, NvmlWrapper,
+    RaplEnergyCounter, TelemetryCollector, TelemetryConfig, MAX_POINTS_PER_SERIES,
 };
 
 #[test]
@@ -55,7 +55,10 @@ fn intel_i915_xe_and_amd_hwmon_readers_isolate_sensors() {
     sysfs.set_file(i915_card.join("gt_act_freq_mhz"), "450\n");
     sysfs.set_file(i915_card.join("gt_RP0_freq_mhz"), "2000\n");
     sysfs.set_file(i915_card.join("device/hwmon/hwmon3/temp1_input"), "51000\n");
-    sysfs.set_file(i915_card.join("device/hwmon/hwmon3/power1_average"), "4250000\n");
+    sysfs.set_file(
+        i915_card.join("device/hwmon/hwmon3/power1_average"),
+        "4250000\n",
+    );
 
     let snap_i915 = read_intel_igpu_sysfs(&sysfs, i915_card, now);
     assert_eq!(snap_i915.vendor, GpuVendor::Intel);
@@ -118,12 +121,16 @@ fn nvidia_cadence_sleeping_isolation_and_no_gpu_machine_behavior() {
 
     // No-GPU machine: CPU-only TelemetryCollector runs cleanly with None GPUs
     let empty_sysfs = Arc::new(MockSysfs::new());
-    empty_sysfs.set_file("/sys/devices/system/cpu/cpu0/cpufreq/scaling_cur_freq", "2400000");
+    empty_sysfs.set_file(
+        "/sys/devices/system/cpu/cpu0/cpufreq/scaling_cur_freq",
+        "2400000",
+    );
     empty_sysfs.set_file("/sys/class/hwmon/hwmon0/name", "coretemp");
     empty_sysfs.set_file("/sys/class/hwmon/hwmon0/temp1_input", "55000");
 
     let history = Arc::new(MetricsHistoryStore::new());
-    let mut collector = TelemetryCollector::new(empty_sysfs, TelemetryConfig::default(), history.clone());
+    let mut collector =
+        TelemetryCollector::new(empty_sysfs, TelemetryConfig::default(), history.clone());
     let t0 = Instant::now();
     let snap = collector.poll(t0, 10_000);
     assert!(snap.is_fresh(t0 + Duration::from_millis(500), Duration::from_secs(2)));
@@ -191,7 +198,12 @@ fn telemetry_history_store_tracks_all_10_series_and_rejects_corrupt_binary_paylo
     let json: serde_json::Value = serde_json::from_str(&store.query_since_json(0)).unwrap();
     for (idx, id) in MetricId::ALL.iter().enumerate() {
         let arr = json[id.name()].as_array().unwrap();
-        assert_eq!(arr.len(), 2, "eviction should drop 10_000 point for {:?}", id);
+        assert_eq!(
+            arr.len(),
+            2,
+            "eviction should drop 10_000 point for {:?}",
+            id
+        );
         assert_eq!(arr[1][1].as_f64().unwrap(), 20.0 + idx as f64);
     }
 
@@ -222,7 +234,11 @@ fn telemetry_history_store_tracks_all_10_series_and_rejects_corrupt_binary_paylo
     bad_payload.extend_from_slice(&[0u8; 8]);
     assert!(matches!(
         decode_history_binary(&bad_payload),
-        Err(HistoryCodecError::TruncatedPayload { metric_id: 0, expected_bytes: 32, remaining_bytes: 8 })
+        Err(HistoryCodecError::TruncatedPayload {
+            metric_id: 0,
+            expected_bytes: 32,
+            remaining_bytes: 8
+        })
     ));
 
     // Bounded capacity cap
@@ -262,7 +278,9 @@ fn telemetry_collector_uses_option_nvml_snapshot_for_active_gpu() {
         .unwrap()
         .success());
 
-    let nvml = Arc::new(NvmlWrapper::with_library_path(NvidiaPowerGuard::new(&pci_root), so_path).unwrap());
+    let nvml = Arc::new(
+        NvmlWrapper::with_library_path(NvidiaPowerGuard::new(&pci_root), so_path).unwrap(),
+    );
     let history = Arc::new(MetricsHistoryStore::new());
     let mut collector = TelemetryCollector::new(
         Arc::new(ucc_hardware::RealSysfs),
@@ -280,7 +298,10 @@ fn telemetry_collector_uses_option_nvml_snapshot_for_active_gpu() {
     assert_eq!(dgpu.temp_c, Some(42.0));
     assert_eq!(dgpu.power_w, None); // failed getter stays None, NEVER 0.0
     assert_eq!(dgpu_to_legacy_json(&dgpu)["powerDraw"], -1.0);
-    assert_eq!(CpuTelemetryReader::new(tmp.path()).read_average_freq_mhz(&MockSysfs::new()), None);
+    assert_eq!(
+        CpuTelemetryReader::new(tmp.path()).read_average_freq_mhz(&MockSysfs::new()),
+        None
+    );
 }
 
 fn write_nvidia_pci_dev(pci_root: &Path, bdf: &str, status: &str, control: &str) {
@@ -420,7 +441,10 @@ fn igpu_uses_rapl_when_hwmon_power_is_not_exposed_and_preserves_valid_zero() {
     let s2 = Arc::new(MockSysfs::new());
     let non_intel = Path::new("/sys/class/drm/card1");
     s2.set_file(non_intel.join("device/vendor"), "0x1002");
-    s2.set_file(non_intel.join("device/uevent"), "PCI_SLOT_NAME=0000:05:00.0\n");
+    s2.set_file(
+        non_intel.join("device/uevent"),
+        "PCI_SLOT_NAME=0000:05:00.0\n",
+    );
     s2.set_file("/sys/class/powercap/intel-rapl:0:0/name", "uncore");
     s2.set_file("/sys/class/powercap/intel-rapl:0:0/energy_uj", "1000000");
     let mut c2 = TelemetryCollector::new(
@@ -442,8 +466,14 @@ fn igpu_uses_rapl_when_hwmon_power_is_not_exposed_and_preserves_valid_zero() {
     s2.set_file(amd_hwmon.join("temp1_input"), "54000");
     s2.set_file(amd_hwmon.join("freq1_input"), "1100000000");
     s2.set_file(amd_hwmon.join("power1_average"), "12500000");
-    s2.set_file(amd_hwmon.join("device/pp_dpm_sclk"), "0: 400Mhz\n1: 2200Mhz *\n");
-    s2.set_file(amd_hwmon.join("device/uevent"), "PCI_SLOT_NAME=0000:c4:00.0\n");
+    s2.set_file(
+        amd_hwmon.join("device/pp_dpm_sclk"),
+        "0: 400Mhz\n1: 2200Mhz *\n",
+    );
+    s2.set_file(
+        amd_hwmon.join("device/uevent"),
+        "PCI_SLOT_NAME=0000:c4:00.0\n",
+    );
     let mut amd_col = TelemetryCollector::new(
         s2,
         TelemetryConfig {
@@ -463,8 +493,14 @@ fn igpu_uses_rapl_when_hwmon_power_is_not_exposed_and_preserves_valid_zero() {
 fn cpu_frequency_excludes_offline_cores_and_handles_rapl_constraints_and_reset() {
     let s = MockSysfs::new();
     // cpu0 typically has no online file on Linux; cpu1 is offline with stale 4 GHz
-    s.set_file("/sys/devices/system/cpu/cpu0/cpufreq/scaling_cur_freq", "2000000");
-    s.set_file("/sys/devices/system/cpu/cpu1/cpufreq/scaling_cur_freq", "4000000");
+    s.set_file(
+        "/sys/devices/system/cpu/cpu0/cpufreq/scaling_cur_freq",
+        "2000000",
+    );
+    s.set_file(
+        "/sys/devices/system/cpu/cpu1/cpufreq/scaling_cur_freq",
+        "4000000",
+    );
     s.set_file("/sys/devices/system/cpu/cpu1/online", "0");
     let mut reader = CpuTelemetryReader::new("/");
     assert_eq!(reader.read_average_freq_mhz(&s), Some(2000));
@@ -543,7 +579,10 @@ fn binary_history_rejects_duplicate_metric_records_and_non_finite_values() {
     nan_payload.extend_from_slice(&f64::NAN.to_ne_bytes());
     assert!(matches!(
         decode_history_binary(&nan_payload),
-        Err(HistoryCodecError::NonFiniteValue { metric_id: 0, index: 0 })
+        Err(HistoryCodecError::NonFiniteValue {
+            metric_id: 0,
+            index: 0
+        })
     ));
 }
 
@@ -700,9 +739,10 @@ fn legacy_dgpu_json_contract_and_extended_nvml_nvapi_metrics() {
 
 #[test]
 fn nvml_memory_abi_handles_v1_only_v2_only_and_both_symbols() {
-    let base_src =
-        std::fs::read_to_string(Path::new(env!("CARGO_MANIFEST_DIR")).join("../../extra-fixtures/nvml.c"))
-            .unwrap();
+    let base_src = std::fs::read_to_string(
+        Path::new(env!("CARGO_MANIFEST_DIR")).join("../../extra-fixtures/nvml.c"),
+    )
+    .unwrap();
 
     // 1. v2-only validating NVIDIA MemoryV2 version macro
     let tmp = tempfile::tempdir().unwrap();
@@ -737,7 +777,9 @@ fn nvml_memory_abi_handles_v1_only_v2_only_and_both_symbols() {
         .unwrap()
         .success());
     let nvml_v2 = NvmlWrapper::with_library_path(NvidiaPowerGuard::new(&pci), v2_only_so).unwrap();
-    let s_v2 = nvml_v2.get_telemetry_snapshot_by_bdf("0000:01:00.0").unwrap();
+    let s_v2 = nvml_v2
+        .get_telemetry_snapshot_by_bdf("0000:01:00.0")
+        .unwrap();
     assert_eq!(s_v2.memory.map(|m| m.total / (1024 * 1024)), Some(8192));
     assert_eq!(s_v2.memory.map(|m| m.used / (1024 * 1024)), Some(3968));
 
@@ -766,7 +808,9 @@ fn nvml_memory_abi_handles_v1_only_v2_only_and_both_symbols() {
         .unwrap()
         .success());
     let nvml_both = NvmlWrapper::with_library_path(NvidiaPowerGuard::new(&pci), both_so).unwrap();
-    let s_both = nvml_both.get_telemetry_snapshot_by_bdf("0000:01:00.0").unwrap();
+    let s_both = nvml_both
+        .get_telemetry_snapshot_by_bdf("0000:01:00.0")
+        .unwrap();
     assert_eq!(s_both.memory.map(|m| m.total), Some(1024));
 }
 
@@ -776,9 +820,10 @@ fn nvapi_voltage_binding_rejects_bdf_replacement_and_topology_drift() {
     let pci = tmp.path().join("sys/bus/pci/devices");
     write_nvidia_pci_dev(&pci, "0000:01:00.0", "active", "on");
 
-    let base_nvml =
-        std::fs::read_to_string(Path::new(env!("CARGO_MANIFEST_DIR")).join("../../extra-fixtures/nvml.c"))
-            .unwrap();
+    let base_nvml = std::fs::read_to_string(
+        Path::new(env!("CARGO_MANIFEST_DIR")).join("../../extra-fixtures/nvml.c"),
+    )
+    .unwrap();
     let nvml_c = tmp.path().join("nvml.c");
     let nvml_so = tmp.path().join("nvml.so");
     std::fs::write(&nvml_c, base_nvml).unwrap();
@@ -824,12 +869,9 @@ fn nvapi_voltage_binding_rejects_bdf_replacement_and_topology_drift() {
         .success());
 
     // 1. one -> one BDF replacement returns None
-    let nvml = NvmlWrapper::with_library_paths(
-        NvidiaPowerGuard::new(&pci),
-        &nvml_so,
-        Some(&nvapi_so),
-    )
-    .unwrap();
+    let nvml =
+        NvmlWrapper::with_library_paths(NvidiaPowerGuard::new(&pci), &nvml_so, Some(&nvapi_so))
+            .unwrap();
     assert_eq!(
         nvml.get_telemetry_snapshot_by_bdf("0000:01:00.0")
             .unwrap()
@@ -848,12 +890,9 @@ fn nvapi_voltage_binding_rejects_bdf_replacement_and_topology_drift() {
     // 2. one -> many -> one never reuses unverified handle
     let pci2 = tmp.path().join("pci2");
     write_nvidia_pci_dev(&pci2, "0000:01:00.0", "active", "on");
-    let nvml2 = NvmlWrapper::with_library_paths(
-        NvidiaPowerGuard::new(&pci2),
-        &nvml_so,
-        Some(&nvapi_so),
-    )
-    .unwrap();
+    let nvml2 =
+        NvmlWrapper::with_library_paths(NvidiaPowerGuard::new(&pci2), &nvml_so, Some(&nvapi_so))
+            .unwrap();
     assert_eq!(
         nvml2
             .get_telemetry_snapshot_by_bdf("0000:01:00.0")
@@ -882,12 +921,9 @@ fn nvapi_voltage_binding_rejects_bdf_replacement_and_topology_drift() {
     let pci3 = tmp.path().join("pci3");
     write_nvidia_pci_dev(&pci3, "0000:01:00.0", "active", "on");
     write_nvidia_pci_dev(&pci3, "0000:02:00.0", "active", "on");
-    let nvml3 = NvmlWrapper::with_library_paths(
-        NvidiaPowerGuard::new(&pci3),
-        &nvml_so,
-        Some(&nvapi_so),
-    )
-    .unwrap();
+    let nvml3 =
+        NvmlWrapper::with_library_paths(NvidiaPowerGuard::new(&pci3), &nvml_so, Some(&nvapi_so))
+            .unwrap();
     std::fs::remove_dir_all(pci3.join("0000:01:00.0")).unwrap();
     assert_eq!(
         nvml3
@@ -942,11 +978,9 @@ fn intel_rapl_matches_card_package_and_fails_closed_when_ambiguous() {
         "/sys/devices/system/cpu/cpu0/topology/physical_package_id",
         "0",
     );
-    sysfs
-        .files
-        .lock()
-        .unwrap()
-        .remove(Path::new("/sys/devices/system/cpu/cpu4/topology/physical_package_id"));
+    sysfs.files.lock().unwrap().remove(Path::new(
+        "/sys/devices/system/cpu/cpu4/topology/physical_package_id",
+    ));
     sysfs.set_file(wrong.join("energy_uj"), "70000000");
     sysfs.set_file(matching.join("energy_uj"), "7000000");
     assert_eq!(
@@ -959,7 +993,11 @@ fn intel_rapl_matches_card_package_and_fails_closed_when_ambiguous() {
     );
 
     // Ambiguous 2 uncore domains without local_cpulist -> None instead of guessing package 0
-    sysfs.files.lock().unwrap().remove(&card.join("device/local_cpulist"));
+    sysfs
+        .files
+        .lock()
+        .unwrap()
+        .remove(&card.join("device/local_cpulist"));
     sysfs.set_file(wrong.join("energy_uj"), "90000000");
     sysfs.set_file(matching.join("energy_uj"), "9000000");
     let ambiguous_power = collector
@@ -982,9 +1020,10 @@ fn intel_rapl_matches_card_package_and_fails_closed_when_ambiguous() {
 #[test]
 fn nvapi_singleton_drift_before_first_sample_and_domain_collisions_fail_closed() {
     let tmp = tempfile::tempdir().unwrap();
-    let base_nvml =
-        std::fs::read_to_string(Path::new(env!("CARGO_MANIFEST_DIR")).join("../../extra-fixtures/nvml.c"))
-            .unwrap();
+    let base_nvml = std::fs::read_to_string(
+        Path::new(env!("CARGO_MANIFEST_DIR")).join("../../extra-fixtures/nvml.c"),
+    )
+    .unwrap();
     let nvml_c = tmp.path().join("nvml.c");
     let nvml_so = tmp.path().join("nvml.so");
     std::fs::write(&nvml_c, base_nvml).unwrap();
@@ -1075,12 +1114,9 @@ fn nvapi_singleton_drift_before_first_sample_and_domain_collisions_fail_closed()
     let pci_dom = tmp.path().join("pci_dom");
     write_nvidia_pci_dev(&pci_dom, "0000:01:00.0", "active", "on");
     write_nvidia_pci_dev(&pci_dom, "0001:01:00.0", "active", "on");
-    let nvml_dom = NvmlWrapper::with_library_paths(
-        NvidiaPowerGuard::new(&pci_dom),
-        &nvml_so,
-        Some(&nvapi_so),
-    )
-    .unwrap();
+    let nvml_dom =
+        NvmlWrapper::with_library_paths(NvidiaPowerGuard::new(&pci_dom), &nvml_so, Some(&nvapi_so))
+            .unwrap();
     assert_eq!(
         nvml_dom
             .get_telemetry_snapshot_by_bdf("0001:01:00.0")
@@ -1116,4 +1152,3 @@ fn intel_igpu_discovery_skips_discrete_arc_and_selects_integrated_card() {
     let snap = collector.poll(Instant::now(), 1000);
     assert_eq!(snap.igpu.unwrap().core_freq_mhz, Some(950.0));
 }
-

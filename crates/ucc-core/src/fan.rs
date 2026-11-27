@@ -105,7 +105,8 @@ impl FanCurve {
                     return prev.speed as i32;
                 }
                 let frac = (temp - prev.temp) as f64 / temp_diff as f64;
-                let interpolated = prev.speed as f64 + frac * (entry.speed as f64 - prev.speed as f64);
+                let interpolated =
+                    prev.speed as f64 + frac * (entry.speed as f64 - prev.speed as f64);
                 return interpolated.round() as i32;
             }
         }
@@ -233,7 +234,11 @@ pub struct FanProfile {
     pub table_gpu: Vec<FanPoint>,
     #[serde(rename = "tablePump", default, skip_serializing_if = "Vec::is_empty")]
     pub table_pump: Vec<PumpPoint>,
-    #[serde(rename = "tableWaterCoolerFan", default, skip_serializing_if = "Vec::is_empty")]
+    #[serde(
+        rename = "tableWaterCoolerFan",
+        default,
+        skip_serializing_if = "Vec::is_empty"
+    )]
     pub table_water_cooler_fan: Vec<FanPoint>,
 }
 

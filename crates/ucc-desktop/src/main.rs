@@ -76,7 +76,11 @@ fn parse_profiles_json(raw: &str, out: &mut Vec<(String, String)>) {
         return;
     };
     for item in arr {
-        let Some(id) = item.get("id").and_then(|v| v.as_str()).filter(|s| !s.is_empty()) else {
+        let Some(id) = item
+            .get("id")
+            .and_then(|v| v.as_str())
+            .filter(|s| !s.is_empty())
+        else {
             continue;
         };
         let name = item
@@ -167,8 +171,7 @@ async fn main() {
     tracing_subscriber::fmt::init();
 
     let preview = args.iter().any(|a| a == "--preview")
-        || std::env::var("UCC_PREVIEW")
-            .is_ok_and(|v| v == "1" || v.eq_ignore_ascii_case("true"));
+        || std::env::var("UCC_PREVIEW").is_ok_and(|v| v == "1" || v.eq_ignore_ascii_case("true"));
     let singleton_name = if preview {
         TRAY_PREVIEW_DBUS_SERVICE
     } else {
@@ -192,9 +195,7 @@ async fn main() {
                 zbus::fdo::RequestNameReply::PrimaryOwner
                 | zbus::fdo::RequestNameReply::AlreadyOwner,
             ) => {}
-            Ok(
-                zbus::fdo::RequestNameReply::Exists | zbus::fdo::RequestNameReply::InQueue,
-            ) => {
+            Ok(zbus::fdo::RequestNameReply::Exists | zbus::fdo::RequestNameReply::InQueue) => {
                 info!("{singleton_name} is already owned on session D-Bus; exiting");
                 return;
             }
@@ -234,7 +235,9 @@ async fn main() {
     if let Some(wc) = state.wc_connected {
         update_water_cooler_connected(&handle, wc).await;
     }
-    info!("ucc-desktop-tray registered StatusNotifierItem (preview={preview}, connected={connected})");
+    info!(
+        "ucc-desktop-tray registered StatusNotifierItem (preview={preview}, connected={connected})"
+    );
 
     let mut refresh = tokio::time::interval(Duration::from_secs(5));
     let mut fan_auto = true;

@@ -33,7 +33,9 @@ use ucc_hardware::{
     PlatformCapabilities, PowerDeviceController, RealSysfs, Sysfs, TelemetryCollector,
     TelemetryConfig, TelemetrySnapshot, TuxedoIoBackend, TuxedoIoDevice,
 };
-use ucc_lighting::{KeyboardBacklightController, LightbarController, LightingTransport, SysfsLedTransport};
+use ucc_lighting::{
+    KeyboardBacklightController, LightbarController, LightingTransport, SysfsLedTransport,
+};
 use zbus::zvariant::{OwnedValue, Value as ZValue};
 
 /// Asynchronous D-Bus signals emitted by [`LiveUccdBackend`] and dispatched by `DaemonRuntime`.
@@ -302,13 +304,17 @@ impl LiveUccdBackend {
         let fan_enabled = settings
             .fan_control_enabled
             .unwrap_or(configured_initial_profile.fan.use_control);
-        let mut base_fan_profile =
-            FanProfile::new(&configured_initial_profile.fan.fan_profile, &configured_initial_profile.fan.fan_profile);
+        let mut base_fan_profile = FanProfile::new(
+            &configured_initial_profile.fan.fan_profile,
+            &configured_initial_profile.fan.fan_profile,
+        );
         base_fan_profile.table_cpu = configured_initial_profile.fan.table_cpu.clone();
         base_fan_profile.table_gpu = configured_initial_profile.fan.table_gpu.clone();
         base_fan_profile.table_pump = configured_initial_profile.fan.table_pump.clone();
-        base_fan_profile.table_water_cooler_fan =
-            configured_initial_profile.fan.table_water_cooler_fan.clone();
+        base_fan_profile.table_water_cooler_fan = configured_initial_profile
+            .fan
+            .table_water_cooler_fan
+            .clone();
 
         let fan_controller = Arc::new(Mutex::new(FanController::new(
             deps.platform.as_ref(),
@@ -424,27 +430,34 @@ impl LiveUccdBackend {
     pub fn new_production() -> Self {
         let sysfs: Arc<dyn Sysfs> = Arc::new(RealSysfs);
         let dmi = DmiInfo::read_from_sysfs(sysfs.as_ref());
-        let platform: Arc<dyn PlatformBackend> = match TuxedoIoDevice::open(TuxedoIoDevice::DEFAULT_PATH)
-        {
-            Ok(dev) => Arc::new(TuxedoIoBackend::new(dev, Some(&dmi), Some(sysfs.as_ref()))),
-            Err(_) => {
-                let hw = MockHardwareIo::new();
-                hw.set_available(false);
-                let mock = MockPlatformBackend::new(PlatformCapabilities {
-                    backend: ucc_hardware::PlatformBackendKind::Unsupported,
-                    device: ucc_hardware::detect_device_capabilities(&hw, Some(&dmi), Some(sysfs.as_ref())),
-                    tdp_channels: 0,
-                    perf_profiles_available: 0,
-                });
-                mock.set_available(false);
-                Arc::new(mock)
-            }
-        };
+        let platform: Arc<dyn PlatformBackend> =
+            match TuxedoIoDevice::open(TuxedoIoDevice::DEFAULT_PATH) {
+                Ok(dev) => Arc::new(TuxedoIoBackend::new(dev, Some(&dmi), Some(sysfs.as_ref()))),
+                Err(_) => {
+                    let hw = MockHardwareIo::new();
+                    hw.set_available(false);
+                    let mock = MockPlatformBackend::new(PlatformCapabilities {
+                        backend: ucc_hardware::PlatformBackendKind::Unsupported,
+                        device: ucc_hardware::detect_device_capabilities(
+                            &hw,
+                            Some(&dmi),
+                            Some(sysfs.as_ref()),
+                        ),
+                        tdp_channels: 0,
+                        perf_profiles_available: 0,
+                    });
+                    mock.set_available(false);
+                    Arc::new(mock)
+                }
+            };
 
         let manufacturer = classify_manufacturer(&dmi.sys_vendor, &dmi.board_vendor);
-        let model = build_laptop_model(platform.capabilities().device.device_id, manufacturer, &dmi);
+        let model =
+            build_laptop_model(platform.capabilities().device.device_id, manufacturer, &dmi);
 
-        let nvml = NvmlWrapper::new(NvidiaPowerGuard::default()).ok().map(Arc::new);
+        let nvml = NvmlWrapper::new(NvidiaPowerGuard::default())
+            .ok()
+            .map(Arc::new);
         let telemetry_config = TelemetryConfig {
             sys_root: PathBuf::from("/"),
             nvml,

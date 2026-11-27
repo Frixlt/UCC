@@ -50,7 +50,10 @@ impl LedSettings {
     pub fn validate(&self) -> Result<(), ValidationError> {
         if let Some(ref m) = self.mode {
             let is_valid_anim = Self::VALID_ANIMATIONS.contains(&m.as_str());
-            let is_valid_static = matches!(m.as_str(), "Static" | "Auto" | "Breathe" | "Colorful" | "BreatheColor" | "Temperature");
+            let is_valid_static = matches!(
+                m.as_str(),
+                "Static" | "Auto" | "Breathe" | "Colorful" | "BreatheColor" | "Temperature"
+            );
             if !is_valid_anim && !is_valid_static {
                 return Err(ValidationError::InvalidLedMode(m.clone()));
             }

@@ -21,7 +21,10 @@ pub enum YCbCrWorkaroundEntry {
     /// Port struct: `{"port": "eDP-1", "enabled": true}`
     Port { port: String, enabled: bool },
     /// Card struct: `{"card": 0, "ports": [...]}`
-    Card { card: i32, ports: Vec<serde_json::Value> },
+    Card {
+        card: i32,
+        ports: Vec<serde_json::Value>,
+    },
     /// Simple string display ID
     String(String),
 }

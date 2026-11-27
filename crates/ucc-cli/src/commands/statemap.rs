@@ -1,11 +1,15 @@
 //! Statemap command implementation.
 
-use serde_json::Value;
 use crate::cli::StatemapAction;
 use crate::client::{with_rpc_timeout, CliClient};
 use crate::format::*;
+use serde_json::Value;
 
-pub async fn run_statemap(client: &CliClient, action: &StatemapAction, json_mode: bool) -> Result<(), i32> {
+pub async fn run_statemap(
+    client: &CliClient,
+    action: &StatemapAction,
+    json_mode: bool,
+) -> Result<(), i32> {
     match action {
         StatemapAction::Get => {
             let raw = with_rpc_timeout(client.proxy().get_settings_json())
@@ -36,16 +40,35 @@ pub async fn run_statemap(client: &CliClient, action: &StatemapAction, json_mode
 
             println!("\n  Feature controls:");
             if let Some(cpu) = settings.get("cpuSettingsEnabled").and_then(|v| v.as_bool()) {
-                println!("    {:<24} {}", "CPU settings:", if cpu { "enabled" } else { "disabled" });
+                println!(
+                    "    {:<24} {}",
+                    "CPU settings:",
+                    if cpu { "enabled" } else { "disabled" }
+                );
             }
             if let Some(fan) = settings.get("fanControlEnabled").and_then(|v| v.as_bool()) {
-                println!("    {:<24} {}", "Fan control:", if fan { "enabled" } else { "disabled" });
+                println!(
+                    "    {:<24} {}",
+                    "Fan control:",
+                    if fan { "enabled" } else { "disabled" }
+                );
             }
-            if let Some(kb) = settings.get("keyboardBacklightControlSupported").and_then(|v| v.as_bool()) {
-                println!("    {:<24} {}", "Keyboard backlight:", if kb { "enabled" } else { "disabled" });
+            if let Some(kb) = settings
+                .get("keyboardBacklightControlSupported")
+                .and_then(|v| v.as_bool())
+            {
+                println!(
+                    "    {:<24} {}",
+                    "Keyboard backlight:",
+                    if kb { "enabled" } else { "disabled" }
+                );
             }
             if let Some(f) = settings.get("fahrenheit").and_then(|v| v.as_bool()) {
-                println!("    {:<24} {}", "Temperature unit:", if f { "Fahrenheit" } else { "Celsius" });
+                println!(
+                    "    {:<24} {}",
+                    "Temperature unit:",
+                    if f { "Fahrenheit" } else { "Celsius" }
+                );
             }
 
             if let Some(cp) = settings.get("chargingProfile").and_then(|v| v.as_str()) {

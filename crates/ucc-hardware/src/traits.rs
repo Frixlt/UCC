@@ -137,11 +137,14 @@ impl HardwareIo for MockHardwareIo {
                 source: nix::Error::EIO,
             });
         }
-        self.journal.lock().unwrap().push(HardwareIoWrite::WriteI32 {
-            request,
-            val,
-            timestamp: Instant::now(),
-        });
+        self.journal
+            .lock()
+            .unwrap()
+            .push(HardwareIoWrite::WriteI32 {
+                request,
+                val,
+                timestamp: Instant::now(),
+            });
         Ok(())
     }
 
@@ -155,10 +158,13 @@ impl HardwareIo for MockHardwareIo {
                 source: nix::Error::EIO,
             });
         }
-        self.journal.lock().unwrap().push(HardwareIoWrite::CallNone {
-            request,
-            timestamp: Instant::now(),
-        });
+        self.journal
+            .lock()
+            .unwrap()
+            .push(HardwareIoWrite::CallNone {
+                request,
+                timestamp: Instant::now(),
+            });
         Ok(())
     }
 
@@ -306,12 +312,17 @@ impl Sysfs for MockSysfs {
                 "Simulated read permission denied",
             ));
         }
-        self.files.lock().unwrap().get(path).cloned().ok_or_else(|| {
-            std::io::Error::new(
-                std::io::ErrorKind::NotFound,
-                format!("File not found in MockSysfs: {}", path.display()),
-            )
-        })
+        self.files
+            .lock()
+            .unwrap()
+            .get(path)
+            .cloned()
+            .ok_or_else(|| {
+                std::io::Error::new(
+                    std::io::ErrorKind::NotFound,
+                    format!("File not found in MockSysfs: {}", path.display()),
+                )
+            })
     }
 
     fn write(&self, path: &Path, content: &str) -> Result<(), std::io::Error> {

@@ -166,22 +166,30 @@ fn test_enable_before_disable_core_scheduling() {
 
     // Check disk state
     assert_eq!(
-        fs::read_to_string(temp.path().join("cpu8/online")).unwrap().trim(),
+        fs::read_to_string(temp.path().join("cpu8/online"))
+            .unwrap()
+            .trim(),
         "1"
     );
     assert_eq!(
-        fs::read_to_string(temp.path().join("cpu1/online")).unwrap().trim(),
+        fs::read_to_string(temp.path().join("cpu1/online"))
+            .unwrap()
+            .trim(),
         "0"
     );
 
     // Switching back using use_cores(2)
     assert!(controller.use_cores(Some(2)).is_ok());
     assert_eq!(
-        fs::read_to_string(temp.path().join("cpu1/online")).unwrap().trim(),
+        fs::read_to_string(temp.path().join("cpu1/online"))
+            .unwrap()
+            .trim(),
         "1"
     );
     assert_eq!(
-        fs::read_to_string(temp.path().join("cpu8/online")).unwrap().trim(),
+        fs::read_to_string(temp.path().join("cpu8/online"))
+            .unwrap()
+            .trim(),
         "0"
     );
 }
@@ -199,7 +207,9 @@ fn test_failed_enable_aborts_without_disabling_existing_cores() {
     assert!(result.is_err());
     // Core 1 must NOT have been disabled!
     assert_eq!(
-        fs::read_to_string(temp.path().join("cpu1/online")).unwrap().trim(),
+        fs::read_to_string(temp.path().join("cpu1/online"))
+            .unwrap()
+            .trim(),
         "1"
     );
 }
@@ -225,27 +235,40 @@ fn test_cpu_worker_lifecycle_clamping_and_restoration() {
 
     // Cores state
     assert_eq!(
-        fs::read_to_string(temp.path().join("cpu1/online")).unwrap().trim(),
+        fs::read_to_string(temp.path().join("cpu1/online"))
+            .unwrap()
+            .trim(),
         "0"
     );
     assert_eq!(
-        fs::read_to_string(temp.path().join("cpu8/online")).unwrap().trim(),
+        fs::read_to_string(temp.path().join("cpu8/online"))
+            .unwrap()
+            .trim(),
         "1"
     );
 
     // Governor and EPP
     assert_eq!(
-        fs::read_to_string(temp.path().join("cpu8/cpufreq/scaling_governor")).unwrap().trim(),
+        fs::read_to_string(temp.path().join("cpu8/cpufreq/scaling_governor"))
+            .unwrap()
+            .trim(),
         "powersave"
     );
     assert_eq!(
-        fs::read_to_string(temp.path().join("cpu9/cpufreq/energy_performance_preference")).unwrap().trim(),
+        fs::read_to_string(
+            temp.path()
+                .join("cpu9/cpufreq/energy_performance_preference")
+        )
+        .unwrap()
+        .trim(),
         "power"
     );
 
     // E-core max frequency clamped to its base_frequency (2100000) under no_turbo
     assert_eq!(
-        fs::read_to_string(temp.path().join("cpu8/cpufreq/scaling_max_freq")).unwrap().trim(),
+        fs::read_to_string(temp.path().join("cpu8/cpufreq/scaling_max_freq"))
+            .unwrap()
+            .trim(),
         "2100000"
     );
 
@@ -257,22 +280,30 @@ fn test_cpu_worker_lifecycle_clamping_and_restoration() {
     profile.cpu.min_freq_khz = Some(2700000);
     assert!(worker.reapply_profile(&profile).is_ok());
     assert_eq!(
-        fs::read_to_string(temp.path().join("cpu8/cpufreq/scaling_min_freq")).unwrap().trim(),
+        fs::read_to_string(temp.path().join("cpu8/cpufreq/scaling_min_freq"))
+            .unwrap()
+            .trim(),
         "2100000"
     );
 
     // Worker exit restores all cores online and resets no_turbo
     worker.set_cpu_default_config();
     assert_eq!(
-        fs::read_to_string(temp.path().join("cpu1/online")).unwrap().trim(),
+        fs::read_to_string(temp.path().join("cpu1/online"))
+            .unwrap()
+            .trim(),
         "1"
     );
     assert_eq!(
-        fs::read_to_string(temp.path().join("cpu8/online")).unwrap().trim(),
+        fs::read_to_string(temp.path().join("cpu8/online"))
+            .unwrap()
+            .trim(),
         "1"
     );
     assert_eq!(
-        fs::read_to_string(temp.path().join("intel_pstate/no_turbo")).unwrap().trim(),
+        fs::read_to_string(temp.path().join("intel_pstate/no_turbo"))
+            .unwrap()
+            .trim(),
         "0"
     );
 }

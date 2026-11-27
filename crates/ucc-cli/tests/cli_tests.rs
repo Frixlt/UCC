@@ -1,7 +1,9 @@
 //! Integration tests for UCC CLI (clap parsing, aliases, exit codes, completions, manpages).
 
 use clap::Parser;
-use ucc_cli::cli::{Cli, Commands, ProfileAction, CoolerAction, ChargingAction, KeyboardAction, FanAction};
+use ucc_cli::cli::{
+    ChargingAction, Cli, Commands, CoolerAction, FanAction, KeyboardAction, ProfileAction,
+};
 use ucc_cli::format::*;
 use ucc_cli::run_cli;
 
@@ -50,7 +52,9 @@ fn test_cli_parsing_aliases() {
     // prof alias
     let cli = Cli::try_parse_from(["ucc-cli", "prof", "list"]).expect("parse prof list");
     match cli.command {
-        Some(Commands::Profile { action: Some(ProfileAction::List) }) => {}
+        Some(Commands::Profile {
+            action: Some(ProfileAction::List),
+        }) => {}
         other => panic!("expected Profile::List, got {:?}", other),
     }
 
@@ -69,8 +73,12 @@ fn test_cli_parsing_aliases() {
     // wc / watercooler aliases
     let cli_wc = Cli::try_parse_from(["ucc-cli", "wc", "status"]).expect("parse wc status");
     assert!(matches!(cli_wc.command, Some(Commands::Cooler { .. })));
-    let cli_watercooler = Cli::try_parse_from(["ucc-cli", "watercooler", "status"]).expect("parse watercooler status");
-    assert!(matches!(cli_watercooler.command, Some(Commands::Cooler { .. })));
+    let cli_watercooler = Cli::try_parse_from(["ucc-cli", "watercooler", "status"])
+        .expect("parse watercooler status");
+    assert!(matches!(
+        cli_watercooler.command,
+        Some(Commands::Cooler { .. })
+    ));
 
     // charge alias
     let cli = Cli::try_parse_from(["ucc-cli", "charge", "status"]).expect("parse charge status");
@@ -99,75 +107,145 @@ fn test_cli_parsing_aliases() {
 fn test_subcommand_aliases() {
     // profile aliases
     let cli = Cli::try_parse_from(["ucc-cli", "profile", "ls"]).expect("profile ls");
-    assert!(matches!(cli.command, Some(Commands::Profile { action: Some(ProfileAction::List) })));
+    assert!(matches!(
+        cli.command,
+        Some(Commands::Profile {
+            action: Some(ProfileAction::List)
+        })
+    ));
 
     let cli = Cli::try_parse_from(["ucc-cli", "profile", "show"]).expect("profile show");
-    assert!(matches!(cli.command, Some(Commands::Profile { action: Some(ProfileAction::Get { .. }) })));
+    assert!(matches!(
+        cli.command,
+        Some(Commands::Profile {
+            action: Some(ProfileAction::Get { .. })
+        })
+    ));
 
     let cli = Cli::try_parse_from(["ucc-cli", "profile", "active"]).expect("profile active");
-    assert!(matches!(cli.command, Some(Commands::Profile { action: Some(ProfileAction::Get { .. }) })));
+    assert!(matches!(
+        cli.command,
+        Some(Commands::Profile {
+            action: Some(ProfileAction::Get { .. })
+        })
+    ));
 
-    let cli = Cli::try_parse_from(["ucc-cli", "profile", "activate", "p1"]).expect("profile activate");
+    let cli =
+        Cli::try_parse_from(["ucc-cli", "profile", "activate", "p1"]).expect("profile activate");
     match cli.command {
-        Some(Commands::Profile { action: Some(ProfileAction::Set { id }) }) => assert_eq!(id, "p1"),
+        Some(Commands::Profile {
+            action: Some(ProfileAction::Set { id }),
+        }) => assert_eq!(id, "p1"),
         other => panic!("expected Set p1, got {:?}", other),
     }
 
     let cli = Cli::try_parse_from(["ucc-cli", "profile", "default"]).expect("profile default");
-    assert!(matches!(cli.command, Some(Commands::Profile { action: Some(ProfileAction::Defaults) })));
+    assert!(matches!(
+        cli.command,
+        Some(Commands::Profile {
+            action: Some(ProfileAction::Defaults)
+        })
+    ));
 
     let cli = Cli::try_parse_from(["ucc-cli", "profile", "custom"]).expect("profile custom");
-    assert!(matches!(cli.command, Some(Commands::Profile { action: Some(ProfileAction::Customs) })));
+    assert!(matches!(
+        cli.command,
+        Some(Commands::Profile {
+            action: Some(ProfileAction::Customs)
+        })
+    ));
 
     let cli = Cli::try_parse_from(["ucc-cli", "profile", "del", "p2"]).expect("profile del");
     match cli.command {
-        Some(Commands::Profile { action: Some(ProfileAction::Delete { id }) }) => assert_eq!(id, "p2"),
+        Some(Commands::Profile {
+            action: Some(ProfileAction::Delete { id }),
+        }) => assert_eq!(id, "p2"),
         other => panic!("expected Delete p2, got {:?}", other),
     }
 
     let cli = Cli::try_parse_from(["ucc-cli", "profile", "rm", "p3"]).expect("profile rm");
     match cli.command {
-        Some(Commands::Profile { action: Some(ProfileAction::Delete { id }) }) => assert_eq!(id, "p3"),
+        Some(Commands::Profile {
+            action: Some(ProfileAction::Delete { id }),
+        }) => assert_eq!(id, "p3"),
         other => panic!("expected Delete p3, got {:?}", other),
     }
 
     // fan aliases
     let cli = Cli::try_parse_from(["ucc-cli", "fan", "ls"]).expect("fan ls");
-    assert!(matches!(cli.command, Some(Commands::Fan { action: Some(FanAction::List) })));
+    assert!(matches!(
+        cli.command,
+        Some(Commands::Fan {
+            action: Some(FanAction::List)
+        })
+    ));
 
     let cli = Cli::try_parse_from(["ucc-cli", "fan", "show", "f1"]).expect("fan show");
     match cli.command {
-        Some(Commands::Fan { action: Some(FanAction::Get { id }) }) => assert_eq!(id, "f1"),
+        Some(Commands::Fan {
+            action: Some(FanAction::Get { id }),
+        }) => assert_eq!(id, "f1"),
         other => panic!("expected Fan::Get f1, got {:?}", other),
     }
 
     // keyboard aliases
     let cli = Cli::try_parse_from(["ucc-cli", "keyboard", "caps"]).expect("keyboard caps");
-    assert!(matches!(cli.command, Some(Commands::Keyboard { action: Some(KeyboardAction::Info) })));
+    assert!(matches!(
+        cli.command,
+        Some(Commands::Keyboard {
+            action: Some(KeyboardAction::Info)
+        })
+    ));
 
-    let cli = Cli::try_parse_from(["ucc-cli", "keyboard", "profile-list"]).expect("keyboard profile-list");
-    assert!(matches!(cli.command, Some(Commands::Keyboard { action: Some(KeyboardAction::Profiles) })));
+    let cli = Cli::try_parse_from(["ucc-cli", "keyboard", "profile-list"])
+        .expect("keyboard profile-list");
+    assert!(matches!(
+        cli.command,
+        Some(Commands::Keyboard {
+            action: Some(KeyboardAction::Profiles)
+        })
+    ));
 
     let cli = Cli::try_parse_from(["ucc-cli", "keyboard", "use", "k1"]).expect("keyboard use");
     match cli.command {
-        Some(Commands::Keyboard { action: Some(KeyboardAction::Activate { id }) }) => assert_eq!(id, "k1"),
+        Some(Commands::Keyboard {
+            action: Some(KeyboardAction::Activate { id }),
+        }) => assert_eq!(id, "k1"),
         other => panic!("expected Keyboard::Activate k1, got {:?}", other),
     }
 
     // cooler aliases
     let cli = Cli::try_parse_from(["ucc-cli", "cooler", "on"]).expect("cooler on");
-    assert!(matches!(cli.command, Some(Commands::Cooler { action: Some(CoolerAction::Enable) })));
+    assert!(matches!(
+        cli.command,
+        Some(Commands::Cooler {
+            action: Some(CoolerAction::Enable)
+        })
+    ));
 
     let cli = Cli::try_parse_from(["ucc-cli", "cooler", "off"]).expect("cooler off");
-    assert!(matches!(cli.command, Some(Commands::Cooler { action: Some(CoolerAction::Disable) })));
+    assert!(matches!(
+        cli.command,
+        Some(Commands::Cooler {
+            action: Some(CoolerAction::Disable)
+        })
+    ));
 
     let cli = Cli::try_parse_from(["ucc-cli", "cooler", "led_off"]).expect("cooler led_off");
-    assert!(matches!(cli.command, Some(Commands::Cooler { action: Some(CoolerAction::LedOff) })));
+    assert!(matches!(
+        cli.command,
+        Some(Commands::Cooler {
+            action: Some(CoolerAction::LedOff)
+        })
+    ));
 
     // charging aliases
-    let cli = Cli::try_parse_from(["ucc-cli", "charging", "set_profile", "bal"]).expect("charging set_profile");
+    let cli = Cli::try_parse_from(["ucc-cli", "charging", "set_profile", "bal"])
+        .expect("charging set_profile");
     match cli.command {
-        Some(Commands::Charging { action: Some(ChargingAction::SetProfile { profile }) }) => assert_eq!(profile, "bal"),
+        Some(Commands::Charging {
+            action: Some(ChargingAction::SetProfile { profile }),
+        }) => assert_eq!(profile, "bal"),
         other => panic!("expected SetProfile bal, got {:?}", other),
     }
 }
