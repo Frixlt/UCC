@@ -653,8 +653,7 @@ impl LiveUccdBackend {
         )
     }
 
-    fn active_bracket_token(&self, path: &Path) -> Option<String> {
-        let raw = self.sysfs.read(path).ok()?;
+    fn parse_active_charging_token(raw: &str) -> Option<&str> {
         let trimmed = raw.trim();
         if trimmed.is_empty() {
             return None;
@@ -663,9 +662,17 @@ impl LiveUccdBackend {
             .split_whitespace()
             .find(|t| t.starts_with('[') && t.ends_with(']') && t.len() >= 2)
         {
-            return Some(tok[1..tok.len() - 1].to_string());
+            return Some(&tok[1..tok.len() - 1]);
         }
-        Some(trimmed.to_string())
+        if !trimmed.contains(char::is_whitespace) {
+            return Some(trimmed);
+        }
+        None
+    }
+
+    fn active_bracket_token(&self, path: &Path) -> Option<String> {
+        let raw = self.sysfs.read(path).ok()?;
+        Self::parse_active_charging_token(&raw).map(str::to_string)
     }
 
     fn write_charging_token_checked(&self, path: &Path, token: &str) -> bool {
@@ -682,11 +689,7 @@ impl LiveUccdBackend {
         let Ok(raw) = self.sysfs.read(path) else {
             return false;
         };
-        let trimmed = raw.trim();
-        trimmed == target
-            || trimmed
-                .split_whitespace()
-                .any(|tok| tok.trim_matches(|c| c == '[' || c == ']') == target)
+        Self::parse_active_charging_token(&raw) == Some(target)
     }
 
     pub(super) fn restore_charging_rollback(
@@ -835,7 +838,9 @@ impl LiveUccdBackend {
                 .then(|| self.sysfs.read(&start_path).ok())
                 .flatten();
             rb.prev_end = has_end.then(|| self.sysfs.read(&end_path).ok()).flatten();
-            rb.prev_type = has_ct.then(|| self.sysfs.read(&ct_path).ok()).flatten();
+            rb.prev_type = has_ct
+                .then(|| self.active_bracket_token(&ct_path))
+                .flatten();
 
             let current_end = rb
                 .prev_end
@@ -846,11 +851,11 @@ impl LiveUccdBackend {
             let write_end_step = |rb: &mut ChargingRollback| -> Result<(), ()> {
                 if let Some(e) = end {
                     if has_end {
+                        rb.wrote_end = true;
                         if !self.write_charging_u8_checked(&end_path, e) {
                             let _ = self.restore_charging_rollback(rb, start_epoch);
                             return Err(());
                         }
-                        rb.wrote_end = true;
                     }
                 }
                 Ok(())
@@ -858,11 +863,11 @@ impl LiveUccdBackend {
             let write_start_step = |rb: &mut ChargingRollback| -> Result<(), ()> {
                 if let Some(s) = start {
                     if has_start && end.is_none_or(|e| s < e) {
+                        rb.wrote_start = true;
                         if !self.write_charging_u8_checked(&start_path, s) {
                             let _ = self.restore_charging_rollback(rb, start_epoch);
                             return Err(());
                         }
-                        rb.wrote_start = true;
                     }
                 }
                 Ok(())
@@ -884,11 +889,11 @@ impl LiveUccdBackend {
                 .or(cfg_type)
             {
                 if has_ct {
+                    rb.wrote_type = true;
                     if !self.write_charging_token_checked(&ct_path, &ct) {
                         let _ = self.restore_charging_rollback(&rb, start_epoch);
                         return Err(());
                     }
-                    rb.wrote_type = true;
                 }
             }
         }
@@ -904,11 +909,11 @@ impl LiveUccdBackend {
                 if avail.iter().any(|p| p == prof_desc.trim()) {
                     rb.profile_path = Some(cur_path.clone());
                     rb.prev_profile = self.active_bracket_token(&cur_path);
+                    rb.wrote_profile = true;
                     if !self.write_charging_token_checked(&cur_path, prof_desc) {
                         let _ = self.restore_charging_rollback(&rb, start_epoch);
                         return Err(());
                     }
-                    rb.wrote_profile = true;
                 } else if explicit_prof {
                     let _ = self.restore_charging_rollback(&rb, start_epoch);
                     return Err(());
@@ -929,11 +934,11 @@ impl LiveUccdBackend {
                 if avail.iter().any(|p| p == prio_desc.trim()) {
                     rb.priority_path = Some(cur_path.clone());
                     rb.prev_priority = self.active_bracket_token(&cur_path);
+                    rb.wrote_priority = true;
                     if !self.write_charging_token_checked(&cur_path, prio_desc) {
                         let _ = self.restore_charging_rollback(&rb, start_epoch);
                         return Err(());
                     }
-                    rb.wrote_priority = true;
                 } else if explicit_prio {
                     let _ = self.restore_charging_rollback(&rb, start_epoch);
                     return Err(());

@@ -5774,6 +5774,7 @@ struct SysfsGateControl {
     gate: std::sync::Mutex<Option<SysfsWriteGate>>,
     deny_write_suffix: std::sync::Mutex<Option<String>>,
     silent_noop_suffix: std::sync::Mutex<Option<String>>,
+    rewrite_value: std::sync::Mutex<Option<(String, String, String)>>,
 }
 
 struct AuditSysfsGate {
@@ -5813,6 +5814,11 @@ impl ucc_hardware::Sysfs for AuditSysfsGate {
         if let Some(ref suffix) = *self.ctrl.silent_noop_suffix.lock().unwrap() {
             if path.ends_with(suffix) {
                 return Ok(());
+            }
+        }
+        if let Some((ref suffix, ref from, ref to)) = *self.ctrl.rewrite_value.lock().unwrap() {
+            if path.ends_with(suffix) && content.trim() == from {
+                return self.inner.write(path, to);
             }
         }
         self.inner.write(path, content)
@@ -6331,4 +6337,121 @@ async fn rejected_settings_save_restores_ctgp_and_keyboard_state() {
     assert!(!backend.set_active_profile(&attempted.id));
     assert_eq!(sysfs.get_file(&ctgp_path).as_deref(), Some("0"));
     assert_eq!(lighting.read_keyboard_colors().unwrap(), vec![before]);
+}
+
+#[tokio::test]
+async fn charging_token_bracket_check_rejects_unselected_option() {
+    let root = tempfile::tempdir().unwrap();
+    let bat = root.path().join("sys/class/power_supply/BAT0");
+    let charge_type_path = bat.join("charge_type");
+    let prof_avail_path = root
+        .path()
+        .join("sys/devices/platform/tuxedo_keyboard/charging_profile/charging_profiles_available");
+    let prof_cur_path = root
+        .path()
+        .join("sys/devices/platform/tuxedo_keyboard/charging_profile/charging_profile");
+    let prio_avail_path = root
+        .path()
+        .join("sys/devices/platform/tuxedo_keyboard/charging_priority/charging_prios_available");
+    let prio_cur_path = root
+        .path()
+        .join("sys/devices/platform/tuxedo_keyboard/charging_priority/charging_prio");
+
+    let ctrl = Arc::new(SysfsGateControl::default());
+    let (backend, _, _sysfs, _) = build_backend_with_sysfs_gate(
+        root.path(),
+        Arc::clone(&ctrl),
+        |sysfs| {
+            sysfs.set_file(bat.join("type"), "Battery");
+            sysfs.set_file(&charge_type_path, "[Standard] Fast");
+            sysfs.set_file(&prof_avail_path, "high_capacity balanced stationary");
+            sysfs.set_file(&prof_cur_path, "[high_capacity] balanced stationary");
+            sysfs.set_file(&prio_avail_path, "performance battery");
+            sysfs.set_file(&prio_cur_path, "[performance] battery");
+        },
+        |p| p,
+    );
+
+    // 1. charge_type unchanged bracketed token must fail without publishing profile.
+    *ctrl.silent_noop_suffix.lock().unwrap() = Some("charge_type".to_string());
+    let mut p_ct = default_quiet_profile();
+    p_ct.id = "fast-ct".into();
+    p_ct.charging.charge_type = Some(ucc_core::ChargeType::Fast);
+    assert!(
+        !backend.apply_profile(&serde_json::to_string(&p_ct).unwrap()),
+        "charge_type [Standard] Fast must reject Fast"
+    );
+    assert_eq!(
+        serde_json::from_str::<serde_json::Value>(&backend.get_active_profile_json()).unwrap()
+            ["id"],
+        "unapplied"
+    );
+
+    // 2. charging_profile unchanged bracketed token must fail.
+    *ctrl.silent_noop_suffix.lock().unwrap() = Some("charging_profile".to_string());
+    let mut p_prof = default_quiet_profile();
+    p_prof.id = "stationary-prof".into();
+    p_prof.charging.charging_profile = Some("stationary".into());
+    assert!(
+        !backend.apply_profile(&serde_json::to_string(&p_prof).unwrap()),
+        "charging_profile [high_capacity] stationary must reject stationary"
+    );
+
+    // 3. charging_priority unchanged bracketed token must fail.
+    *ctrl.silent_noop_suffix.lock().unwrap() = Some("charging_prio".to_string());
+    let mut p_prio = default_quiet_profile();
+    p_prio.id = "bat-prio".into();
+    p_prio.charging.charging_priority = Some("battery".into());
+    assert!(
+        !backend.apply_profile(&serde_json::to_string(&p_prio).unwrap()),
+        "charging_priority [performance] battery must reject battery"
+    );
+}
+
+#[tokio::test]
+async fn charging_quantized_readback_failure_restores_all_thresholds() {
+    let root = tempfile::tempdir().unwrap();
+    let bat = root.path().join("sys/class/power_supply/BAT0");
+    let start_path = bat.join("charge_control_start_threshold");
+    let end_path = bat.join("charge_control_end_threshold");
+
+    let ctrl = Arc::new(SysfsGateControl::default());
+    let (backend, _, sysfs, _) = build_backend_with_sysfs_gate(
+        root.path(),
+        Arc::clone(&ctrl),
+        |sysfs| {
+            sysfs.set_file(bat.join("type"), "Battery");
+            sysfs.set_file(&start_path, "40");
+            sysfs.set_file(&end_path, "80");
+        },
+        |p| p,
+    );
+
+    // Case A: start first (50 < 80), then end 85 quantized to 84 -> both restore to (40, 80).
+    *ctrl.rewrite_value.lock().unwrap() = Some((
+        "charge_control_end_threshold".to_string(),
+        "85".to_string(),
+        "84".to_string(),
+    ));
+    let mut p_up = default_quiet_profile();
+    p_up.id = "quant-up".into();
+    p_up.charging.start_threshold = Some(50);
+    p_up.charging.end_threshold = Some(85);
+    assert!(!backend.apply_profile(&serde_json::to_string(&p_up).unwrap()));
+    assert_eq!(sysfs.get_file(&start_path).as_deref(), Some("40"));
+    assert_eq!(sysfs.get_file(&end_path).as_deref(), Some("80"));
+
+    // Case B: end-first ordering (start=85 >= cur_end=80), end writes 95, start 85 quantized to 84 -> both restore to (40, 80).
+    *ctrl.rewrite_value.lock().unwrap() = Some((
+        "charge_control_start_threshold".to_string(),
+        "85".to_string(),
+        "84".to_string(),
+    ));
+    let mut p_end_first = default_quiet_profile();
+    p_end_first.id = "quant-end-first".into();
+    p_end_first.charging.start_threshold = Some(85);
+    p_end_first.charging.end_threshold = Some(95);
+    assert!(!backend.apply_profile(&serde_json::to_string(&p_end_first).unwrap()));
+    assert_eq!(sysfs.get_file(&start_path).as_deref(), Some("40"));
+    assert_eq!(sysfs.get_file(&end_path).as_deref(), Some("80"));
 }
