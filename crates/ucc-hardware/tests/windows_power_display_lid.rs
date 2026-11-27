@@ -457,3 +457,21 @@ fn windows_lid_parser_lifecycle_and_deduplicated_callbacks() {
         ]
     );
 }
+
+#[test]
+fn windows_nvapi_candidate_path_uses_trusted_system32() {
+    use ucc_hardware::nvml::windows_nvapi_candidate_path;
+
+    assert_eq!(
+        windows_nvapi_candidate_path(None),
+        r"C:\Windows\System32\nvapi64.dll"
+    );
+    assert_eq!(
+        windows_nvapi_candidate_path(Some("   ")),
+        r"C:\Windows\System32\nvapi64.dll"
+    );
+    assert_eq!(
+        windows_nvapi_candidate_path(Some(r"D:\WinOS\")),
+        r"D:\WinOS\System32\nvapi64.dll"
+    );
+}

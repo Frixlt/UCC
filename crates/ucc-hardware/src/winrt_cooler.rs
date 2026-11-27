@@ -180,14 +180,14 @@ pub fn parse_winrt_guid(uuid: &str) -> Result<WinRtGuid, WinRtBleError> {
         .map_err(|_| WinRtBleError::InvalidGuid(uuid.to_string()))?;
 
     let mut data4 = [0u8; 8];
-    for i in 0..2 {
+    for (i, slot) in data4[..2].iter_mut().enumerate() {
         let slice = &parts[3][i * 2..i * 2 + 2];
-        data4[i] = u8::from_str_radix(slice, 16)
+        *slot = u8::from_str_radix(slice, 16)
             .map_err(|_| WinRtBleError::InvalidGuid(uuid.to_string()))?;
     }
-    for i in 0..6 {
+    for (i, slot) in data4[2..].iter_mut().enumerate() {
         let slice = &parts[4][i * 2..i * 2 + 2];
-        data4[2 + i] = u8::from_str_radix(slice, 16)
+        *slot = u8::from_str_radix(slice, 16)
             .map_err(|_| WinRtBleError::InvalidGuid(uuid.to_string()))?;
     }
 
@@ -828,7 +828,7 @@ mod winrt_ffi {
                     let vtable = *(self.ptr as *const *const *const c_void);
                     if !vtable.is_null() {
                         let release_ptr = *vtable.add(2);
-                        let release: ReleaseFn = core::mem::transmute(release_ptr);
+                        let release = core::mem::transmute::<*const c_void, ReleaseFn>(release_ptr);
                         let _ = release(self.ptr);
                     }
                 }

@@ -628,6 +628,17 @@ pub fn windows_nvml_candidate_paths(
     out
 }
 
+/// Builds the trusted absolute Windows path to `nvapi64.dll` under `<SystemRoot>\System32`
+/// to avoid bare relative DLL search-order hijacking when running as `LocalSystem`.
+pub fn windows_nvapi_candidate_path(system_root: Option<&str>) -> String {
+    let sys_root = system_root
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+        .unwrap_or(r"C:\Windows")
+        .trim_end_matches(['\\', '/']);
+    format!(r"{sys_root}\System32\nvapi64.dll")
+}
+
 impl NvmlWrapper {
     /// Attempts to load `libnvidia-ml.so.1`/`libnvidia-ml.so` (Unix) or `nvml.dll` (Windows)
     pub fn new(power_guard: NvidiaPowerGuard) -> Result<Self, NvmlError> {
@@ -664,7 +675,8 @@ impl NvmlWrapper {
                     None => unsafe { Library::new("nvml.dll")? },
                 },
             };
-            Self::from_library(power_guard, lib, Some(PathBuf::from("nvapi64.dll")))
+            let nvapi_path = PathBuf::from(windows_nvapi_candidate_path(sys_root.as_deref()));
+            Self::from_library(power_guard, lib, Some(nvapi_path))
         }
     }
 
