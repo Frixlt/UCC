@@ -6980,3 +6980,231 @@ fn deep_08_apply_profile_refuses_charging_write_when_baseline_readback_is_unread
     assert_eq!(sysfs.get_file(&start_path).as_deref(), Some("40"));
     assert_eq!(sysfs.get_file(&end_path).as_deref(), Some("80"));
 }
+
+#[test]
+fn deep_09_ctgp_direct_setter_rejects_noop_sysfs_and_nvml_readback() {
+    let root = tempfile::tempdir().unwrap();
+    let ctgp_path = root
+        .path()
+        .join("sys/devices/platform/tuxedo_nvidia_power_ctrl/ctgp_offset");
+
+    let ctrl = Arc::new(SysfsGateControl::default());
+    let (backend, _, sysfs, _) = build_backend_with_sysfs_gate(
+        root.path(),
+        Arc::clone(&ctrl),
+        |sysfs| {
+            sysfs.set_file(&ctgp_path, "0");
+        },
+        |p| p,
+    );
+
+    *ctrl.silent_noop_suffix.lock().unwrap() = Some("ctgp_offset".into());
+    assert!(!backend.set_nvidia_power_offset(5));
+    *ctrl.silent_noop_suffix.lock().unwrap() = None;
+    assert_eq!(sysfs.get_file(&ctgp_path).as_deref(), Some("0"));
+    assert_eq!(backend.nvidia_power_offset(), None);
+
+    // Also verify NVML power limit readback mismatch detection end-to-end (`DEEP-09`).
+    let nvml_root = tempfile::tempdir().unwrap();
+    let c_source = nvml_root.path().join("nvml_noop_limit.c");
+    let fixture = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../stand-fixtures/nvml.c");
+    let source = format!(
+        "{}\nunsigned nvmlDeviceGetPowerManagementLimit(void *dev, unsigned *limit) {{ if (limit) *limit = 50000; return 0; }}\n",
+        std::fs::read_to_string(fixture).unwrap()
+    );
+    std::fs::write(&c_source, source).unwrap();
+    let so_path = nvml_root.path().join("fixture_nvml.so");
+    let cc = std::process::Command::new("cc")
+        .arg("-shared")
+        .arg("-fPIC")
+        .arg("-o")
+        .arg(&so_path)
+        .arg(&c_source)
+        .status()
+        .unwrap();
+    assert!(cc.success());
+    let gpu = nvml_root.path().join("sys/bus/pci/devices/0000:01:00.0");
+    let nodes = [
+        ("vendor", "0x10de"),
+        ("class", "0x030000"),
+        ("power/runtime_status", "active"),
+        ("power/control", "on"),
+    ];
+    std::fs::create_dir_all(gpu.join("power")).unwrap();
+    for (path, data) in nodes {
+        std::fs::write(gpu.join(path), data).unwrap();
+    }
+    let (nvml_backend, _, _, _) = build_custom_backend(
+        nvml_root.path(),
+        true,
+        |sysfs| {
+            for (path, data) in nodes {
+                sysfs.set_file(gpu.join(path), data);
+            }
+        },
+        |p| p,
+    );
+    assert!(!nvml_backend.set_nvidia_power_offset(-5));
+    assert_eq!(nvml_backend.nvidia_power_offset(), None);
+}
+
+#[test]
+fn deep_10_and_21_apply_profile_aborts_on_ctgp_write_error_and_unreadable_baseline() {
+    let root = tempfile::tempdir().unwrap();
+    let ctgp_path = root
+        .path()
+        .join("sys/devices/platform/tuxedo_nvidia_power_ctrl/ctgp_offset");
+
+    let ctrl = Arc::new(SysfsGateControl::default());
+    let (backend, platform, sysfs, _) = build_backend_with_sysfs_gate(
+        root.path(),
+        Arc::clone(&ctrl),
+        |sysfs| {
+            sysfs.set_file(&ctgp_path, "0");
+        },
+        |p| p,
+    );
+
+    // First commit a known baseline profile.
+    let mut base = default_quiet_profile();
+    base.id = "ctgp-base".into();
+    base.odm_profile_name = Some("power_save".into());
+    base.nvidia_ctgp_offset = Some(0);
+    assert!(backend.apply_profile(&serde_json::to_string(&base).unwrap()));
+    let before_odm = platform.read_perf_profile().unwrap();
+
+    // Write EIO on ctgp_offset must fail ApplyProfile and roll back earlier phases (`DEEP-10`).
+    *ctrl.deny_write_suffix.lock().unwrap() = Some("ctgp_offset".into());
+    let mut broken = default_high_performance_profile();
+    broken.id = "ctgp-write-errno".into();
+    broken.odm_profile_name = Some("enthusiast".into());
+    broken.nvidia_ctgp_offset = Some(10);
+    assert!(!backend.apply_profile(&serde_json::to_string(&broken).unwrap()));
+    *ctrl.deny_write_suffix.lock().unwrap() = None;
+    let active: serde_json::Value =
+        serde_json::from_str(&backend.get_active_profile_json()).unwrap();
+    assert_eq!(active["id"], "ctgp-base");
+    assert_eq!(sysfs.get_file(&ctgp_path).as_deref(), Some("0"));
+    assert_eq!(platform.read_perf_profile().unwrap(), before_odm);
+
+    // Unreadable cTGP baseline must reject the write before mutating sysfs (`DEEP-21`).
+    *ctrl.deny_read_suffix.lock().unwrap() = Some("ctgp_offset".into());
+    assert!(!backend.apply_profile(&serde_json::to_string(&broken).unwrap()));
+    *ctrl.deny_read_suffix.lock().unwrap() = None;
+    assert_eq!(sysfs.get_file(&ctgp_path).as_deref(), Some("0"));
+}
+
+#[test]
+fn deep_11_apply_profile_rolls_back_keyboard_brightness_and_colors_on_rgb_write_error() {
+    use ucc_lighting::{LightingTransport, RgbColor};
+
+    let root = tempfile::tempdir().unwrap();
+    let ctrl = Arc::new(SysfsGateControl::default());
+    let (backend, _, _, lighting) =
+        build_backend_with_sysfs_gate(root.path(), Arc::clone(&ctrl), |_| {}, |p| p);
+
+    assert!(backend.save_custom_keyboard_profile(
+        "kb-blue",
+        "KB Blue",
+        r#"[{"brightness":50,"red":0,"green":0,"blue":255}]"#,
+    ));
+    assert!(backend.save_custom_keyboard_profile(
+        "kb-red",
+        "KB Red",
+        r#"[{"brightness":255,"red":255,"green":0,"blue":0}]"#,
+    ));
+    assert!(backend.set_keyboard_backlight_states_json(
+        r#"{"keyboardProfileId":"kb-blue","states":[{"brightness":50,"red":0,"green":0,"blue":255}]}"#,
+    ));
+
+    lighting.set_fail_on_keyboard_zones(true);
+    let mut bad = default_high_performance_profile();
+    bad.id = "rgb-write-errno".into();
+    bad.keyboard.keyboard_profile_id = "kb-red".into();
+    bad.selected_keyboard_profile = Some("kb-red".into());
+    assert!(!backend.apply_profile(&serde_json::to_string(&bad).unwrap()));
+    lighting.set_fail_on_keyboard_zones(false);
+
+    assert_eq!(lighting.read_keyboard_brightness_state(), Some(50));
+    assert_eq!(
+        lighting.read_keyboard_colors().unwrap(),
+        vec![RgbColor { r: 0, g: 0, b: 255 }]
+    );
+}
+
+#[test]
+fn deep_12_direct_keyboard_rgb_setter_rolls_back_on_settings_save_failure() {
+    use ucc_lighting::{LightingTransport, RgbColor};
+
+    let root = tempfile::tempdir().unwrap();
+    let ctrl = Arc::new(SysfsGateControl::default());
+    let (backend, _, _, lighting) =
+        build_backend_with_sysfs_gate(root.path(), Arc::clone(&ctrl), |_| {}, |p| p);
+
+    let blue = RgbColor { r: 0, g: 0, b: 255 };
+    assert!(
+        backend.set_keyboard_backlight_states_json(
+            r#"[{"brightness":50,"red":0,"green":0,"blue":255}]"#,
+        )
+    );
+    assert_eq!(lighting.read_keyboard_colors().unwrap(), vec![blue]);
+
+    let cfg = root.path().join("settings.json");
+    std::fs::remove_file(&cfg).unwrap();
+    std::fs::create_dir(&cfg).unwrap();
+
+    assert!(!backend.set_keyboard_backlight_states_json(
+        r#"[{"brightness":255,"red":255,"green":0,"blue":0}]"#,
+    ));
+    assert_eq!(lighting.read_keyboard_brightness_state(), Some(50));
+    assert_eq!(lighting.read_keyboard_colors().unwrap(), vec![blue]);
+}
+
+#[test]
+fn deep_13_lightbar_configure_error_returns_false_and_preserves_previous_settings() {
+    let root = tempfile::tempdir().unwrap();
+    let ctrl = Arc::new(SysfsGateControl::default());
+    let (backend, _, _, lighting) =
+        build_backend_with_sysfs_gate(root.path(), Arc::clone(&ctrl), |_| {}, |p| p);
+
+    assert!(backend.set_lightbar_settings_json(
+        &serde_json::json!({
+            "managed": true,
+            "welcome_anim": false,
+            "mode": "solid",
+            "power_settings": {
+                "ac": {
+                    "enabled": true,
+                    "brightness": 40,
+                    "color": {"r": 0, "g": 200, "b": 0}
+                }
+            }
+        })
+        .to_string(),
+    ));
+    let prev_settings = backend.get_lightbar_settings_json();
+
+    lighting.set_fail_on_lightbar_write(true);
+    assert!(!backend.set_lightbar_settings_json(
+        &serde_json::json!({
+            "managed": true,
+            "welcome_anim": false,
+            "mode": "solid",
+            "power_settings": {
+                "ac": {
+                    "enabled": true,
+                    "brightness": 100,
+                    "color": {"r": 255, "g": 0, "b": 0}
+                }
+            }
+        })
+        .to_string(),
+    ));
+    lighting.set_fail_on_lightbar_write(false);
+
+    let status: serde_json::Value =
+        serde_json::from_str(&backend.get_lightbar_status_json()).unwrap();
+    assert_eq!(status["ok"], serde_json::json!(false));
+    assert!(!status["error"].as_str().unwrap_or("").is_empty());
+    assert_eq!(backend.get_lightbar_settings_json(), prev_settings);
+}

@@ -381,6 +381,10 @@ impl LightbarController {
     ///
     /// Returns `Err` if applying hardware state fails (`last_ok` becomes `false` with `last_error`),
     /// while preserving normalized configuration for retry via [`Self::apply_current`].
+    pub fn restore_config_preserving_error(&mut self, prev: LightbarSettings) {
+        self.config = prev;
+    }
+
     pub fn configure(&mut self, input: &Value) -> Result<(), LightingError> {
         let normalized = LightbarSettings::normalize_json(input)?;
         let was_managed = self.config.managed;

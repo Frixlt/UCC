@@ -208,9 +208,9 @@ impl LiveUccdBackend {
         ok
     }
 
-    pub(super) fn apply_profile_keyboard(&self, profile: &UccProfile) {
+    pub(super) fn apply_profile_keyboard(&self, profile: &UccProfile) -> Result<bool, ()> {
         if self.is_vendor_unsupported() || ucc_config::is_read_only_preview() {
-            return;
+            return Ok(false);
         }
         let kb_id = profile
             .selected_keyboard_profile
@@ -219,7 +219,7 @@ impl LiveUccdBackend {
             .filter(|s| !s.is_empty())
             .unwrap_or(profile.keyboard.keyboard_profile_id.trim());
         if kb_id.is_empty() {
-            return;
+            return Ok(false);
         }
         let saved_json = {
             let settings = self.read_rw(&self.settings);
@@ -230,34 +230,42 @@ impl LiveUccdBackend {
             })
         };
         let Some(val) = saved_json else {
-            return;
+            return Ok(false);
         };
         let Some((states, _)) = Self::parse_keyboard_states_value(&val) else {
-            return;
+            return Ok(false);
         };
         let lid_policy = self.current_lid_source_policy();
         let blanked_under_lid =
             self.is_lid_closed() && lid_policy.turn_off_keyboard_backlight_on_lid_close;
-        if blanked_under_lid {
-            *self.lock_mutex(&self.lid_saved_keyboard_states) = Some(states.clone());
-        }
+        let prev_lid_saved = self.lock_mutex(&self.lid_saved_keyboard_states).clone();
         let target_states = if blanked_under_lid {
             Self::blanked_keyboard_states(&states)
         } else {
-            states
+            states.clone()
         };
         self.kb_write_seq.fetch_add(1, Ordering::SeqCst);
-        let applied = {
+        let hw_res = {
             let mut ctrl = self.lock_mutex(&self.keyboard_ctrl);
             if !ctrl.is_available() {
                 let _ = ctrl.init();
             }
-            ctrl.is_available() && ctrl.apply_states(&target_states).is_ok()
+            if !ctrl.is_available() {
+                return Ok(false);
+            }
+            ctrl.apply_states(&target_states)
         };
         self.kb_write_seq.fetch_add(1, Ordering::SeqCst);
-        if applied && !blanked_under_lid {
+        if hw_res.is_err() {
+            *self.lock_mutex(&self.lid_saved_keyboard_states) = prev_lid_saved;
+            return Err(());
+        }
+        if blanked_under_lid {
+            *self.lock_mutex(&self.lid_saved_keyboard_states) = Some(states);
+        } else {
             self.lock_mutex(&self.lightbar_ctrl).keyboard_changed();
         }
+        Ok(true)
     }
 
     pub(super) fn current_lid_source_policy(&self) -> LidSourcePolicy {
@@ -396,21 +404,30 @@ impl LiveUccdBackend {
         if self.write_aborted_by_shutdown() {
             return false;
         }
+        let prev_kb = self.snapshot_keyboard_rollback();
         let blanked_under_lid = self.is_lid_closed()
             && self
                 .current_lid_source_policy()
                 .turn_off_keyboard_backlight_on_lid_close;
+        let my_seq = self.kb_write_seq.fetch_add(1, Ordering::SeqCst) + 1;
         {
             let mut ctrl = self.lock_mutex(&self.keyboard_ctrl);
             if !ctrl.is_available() {
                 let _ = ctrl.init();
             }
-            if blanked_under_lid {
+            let write_ok = if blanked_under_lid {
                 let dark = Self::blanked_keyboard_states(&states);
-                if ctrl.apply_states(&dark).is_err() {
-                    return false;
+                ctrl.apply_states(&dark).is_ok()
+            } else {
+                ctrl.apply_states(&states).is_ok()
+            };
+            drop(ctrl);
+            if !write_ok {
+                if let Some(ref snap) = prev_kb {
+                    if self.kb_write_seq.load(Ordering::SeqCst) == my_seq {
+                        let _ = self.restore_keyboard_rollback(snap, None);
+                    }
                 }
-            } else if ctrl.apply_states(&states).is_err() {
                 return false;
             }
         }
@@ -427,6 +444,11 @@ impl LiveUccdBackend {
             })
             .is_none()
         {
+            if let Some(ref snap) = prev_kb {
+                if self.kb_write_seq.load(Ordering::SeqCst) == my_seq {
+                    let _ = self.restore_keyboard_rollback(snap, None);
+                }
+            }
             return false;
         }
 
@@ -494,6 +516,23 @@ impl LiveUccdBackend {
             return false;
         }
         let normalized_json = normalized_cfg.to_json();
+        let (cfg_res, actual_json) = {
+            let mut lb = self.lock_mutex(&self.lightbar_ctrl);
+            let prev_cfg = lb.settings().clone();
+            let res = lb.configure(&val);
+            if let Err(ref err) = res {
+                if !matches!(err, ucc_lighting::LightingError::Unavailable) {
+                    lb.restore_config_preserving_error(prev_cfg);
+                }
+            }
+            let json = lb.settings_json().to_string();
+            (res, json)
+        };
+        if let Err(err) = cfg_res {
+            if !matches!(err, ucc_lighting::LightingError::Unavailable) {
+                return false;
+            }
+        }
         if self
             .update_settings(|s| {
                 s.lightbar = Some(normalized_json.clone());
@@ -503,10 +542,6 @@ impl LiveUccdBackend {
         {
             return false;
         }
-        let mut lb = self.lock_mutex(&self.lightbar_ctrl);
-        let _ = lb.configure(&val);
-        let actual_json = lb.settings_json().to_string();
-        drop(lb);
         self.emit_signal(DbusSignalEvent::LightbarSettingsChanged { json: actual_json });
         true
     }

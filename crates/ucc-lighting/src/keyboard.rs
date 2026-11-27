@@ -146,7 +146,12 @@ impl KeyboardBacklightController {
             return None;
         }
         let colors = self.transport.read_keyboard_colors().unwrap_or_default();
-        let brightness = self.current_states.first().map(|s| s.brightness as u32);
+        let brightness = self
+            .transport
+            .read_keyboard_brightness()
+            .ok()
+            .flatten()
+            .or_else(|| self.current_states.first().map(|s| s.brightness as u32));
         Some(KeyboardHardwareSnapshot {
             colors,
             brightness,
@@ -245,6 +250,12 @@ impl KeyboardBacklightController {
             ));
         }
 
+        let prev_brightness = self
+            .transport
+            .read_keyboard_brightness()
+            .ok()
+            .flatten()
+            .or_else(|| self.current_states.first().map(|s| s.brightness as u32));
         let buffer_guard = BufferInputGuard::acquire(Arc::clone(&self.transport))?;
 
         let write_res = (|| -> Result<(), LightingError> {
@@ -254,7 +265,12 @@ impl KeyboardBacklightController {
 
             if caps.max_red > 0 {
                 let zone_colors = map_states_by_led_id(&caps, states);
-                self.transport.write_keyboard_zones(&zone_colors)?;
+                if let Err(err) = self.transport.write_keyboard_zones(&zone_colors) {
+                    if let Some(prev_b) = prev_brightness {
+                        let _ = self.transport.write_keyboard_brightness(prev_b);
+                    }
+                    return Err(err);
+                }
             }
             Ok(())
         })();

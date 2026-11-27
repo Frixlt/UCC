@@ -62,6 +62,9 @@ pub enum LightingError {
 pub trait LightingTransport: Send + Sync {
     fn detect_keyboard(&self) -> Result<Option<KeyboardCapabilities>, LightingError>;
     fn set_keyboard_buffer_input(&self, enabled: bool) -> Result<(), LightingError>;
+    fn read_keyboard_brightness(&self) -> Result<Option<u32>, LightingError> {
+        Ok(None)
+    }
     fn write_keyboard_brightness(&self, brightness: u32) -> Result<(), LightingError>;
     fn write_keyboard_zones(&self, colors: &[RgbColor]) -> Result<(), LightingError>;
     fn read_keyboard_colors(&self) -> Result<Vec<RgbColor>, LightingError>;
@@ -309,6 +312,15 @@ impl LightingTransport for SysfsLedTransport {
         Ok(())
     }
 
+    fn read_keyboard_brightness(&self) -> Result<Option<u32>, LightingError> {
+        let paths = self.cache.lock().unwrap().kbd_led_paths.clone();
+        let Some(first) = paths.first() else {
+            return Ok(None);
+        };
+        let raw = self.sysfs.read(&first.join("brightness"))?;
+        Ok(raw.trim().parse::<u32>().ok())
+    }
+
     fn write_keyboard_brightness(&self, brightness: u32) -> Result<(), LightingError> {
         let paths = self.cache.lock().unwrap().kbd_led_paths.clone();
         if paths.is_empty() {
@@ -483,6 +495,7 @@ pub enum LightingOp {
 #[derive(Debug, Default)]
 pub struct MockLightingTransport {
     keyboard_caps: Mutex<Option<KeyboardCapabilities>>,
+    keyboard_brightness: Mutex<Option<u32>>,
     keyboard_colors: Mutex<Vec<RgbColor>>,
     lightbar_caps: Mutex<Option<LightbarCapabilities>>,
     fail_on_buffer_enable: Mutex<bool>,
@@ -507,6 +520,10 @@ impl MockLightingTransport {
 
     pub fn set_lightbar_caps(&self, caps: Option<LightbarCapabilities>) {
         *self.lightbar_caps.lock().unwrap() = caps;
+    }
+
+    pub fn read_keyboard_brightness_state(&self) -> Option<u32> {
+        *self.keyboard_brightness.lock().unwrap()
     }
 
     pub fn set_fail_on_buffer_input(&self, fail_enable: bool, fail_disable: bool) {
@@ -554,7 +571,12 @@ impl LightingTransport for MockLightingTransport {
         Ok(())
     }
 
+    fn read_keyboard_brightness(&self) -> Result<Option<u32>, LightingError> {
+        Ok(*self.keyboard_brightness.lock().unwrap())
+    }
+
     fn write_keyboard_brightness(&self, brightness: u32) -> Result<(), LightingError> {
+        *self.keyboard_brightness.lock().unwrap() = Some(brightness);
         self.ops
             .lock()
             .unwrap()

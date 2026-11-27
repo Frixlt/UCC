@@ -1679,6 +1679,27 @@ impl LiveUccdBackend {
         .to_string()
     }
 
+    pub fn nvidia_power_offset(&self) -> Option<i32> {
+        *self.lock_mutex(&self.nvidia_power_offset)
+    }
+
+    pub(super) fn has_ctgp_controller(&self) -> bool {
+        if !self.capabilities.device.ctgp_supported {
+            return false;
+        }
+        if self.nvidia_ctgp_sysfs_path().is_some() {
+            return true;
+        }
+        if self.nvml.is_some() {
+            return self
+                .read_rw(&self.latest_telemetry)
+                .as_ref()
+                .and_then(|s| s.dgpu.as_ref().and_then(|d| d.bdf.as_ref()))
+                .is_some();
+        }
+        false
+    }
+
     pub(super) fn set_nvidia_power_offset_impl(&self, offset: i32) -> bool {
         let Some(_op_guard) = self.enter_hardware_op() else {
             return false;
@@ -1735,12 +1756,25 @@ impl LiveUccdBackend {
                         if self.write_aborted_by_shutdown() {
                             return false;
                         }
+                        let prev_mw = nvml.get_power_limit_by_bdf(bdf).ok().flatten();
                         self.ctgp_write_seq.fetch_add(1, Ordering::SeqCst);
                         let nv_res = nvml.set_power_limit_by_bdf(bdf, target_mw);
                         self.ctgp_write_seq.fetch_add(1, Ordering::SeqCst);
                         if nv_res.is_ok() {
-                            *self.lock_mutex(&self.nvidia_power_offset) = Some(offset);
-                            return true;
+                            let verified = match nvml.get_power_limit_by_bdf(bdf) {
+                                Ok(Some(actual_mw)) => {
+                                    (i64::from(actual_mw) - i64::from(target_mw)).abs() <= 500
+                                }
+                                Ok(None) => true,
+                                Err(_) => false,
+                            };
+                            if verified {
+                                *self.lock_mutex(&self.nvidia_power_offset) = Some(offset);
+                                return true;
+                            }
+                            if let Some(pmw) = prev_mw {
+                                let _ = nvml.set_power_limit_by_bdf(bdf, pmw);
+                            }
                         }
                     }
                 }
@@ -1751,12 +1785,30 @@ impl LiveUccdBackend {
             if !(-1000..=1000).contains(&offset) || self.write_aborted_by_shutdown() {
                 return false;
             }
+            let prev_sysfs = self
+                .sysfs
+                .read(&ctgp_path)
+                .ok()
+                .and_then(|s| s.trim().parse::<i32>().ok());
             self.ctgp_write_seq.fetch_add(1, Ordering::SeqCst);
             let w_res = self.sysfs.write(&ctgp_path, &offset.to_string());
             self.ctgp_write_seq.fetch_add(1, Ordering::SeqCst);
             if w_res.is_ok() {
-                *self.lock_mutex(&self.nvidia_power_offset) = Some(offset);
-                return true;
+                let readback_ok = self
+                    .sysfs
+                    .read(&ctgp_path)
+                    .ok()
+                    .and_then(|s| s.trim().parse::<i32>().ok())
+                    == Some(offset);
+                if readback_ok {
+                    *self.lock_mutex(&self.nvidia_power_offset) = Some(offset);
+                    return true;
+                }
+                if let Some(prev) = prev_sysfs {
+                    if prev != offset {
+                        let _ = self.sysfs.write(&ctgp_path, &prev.to_string());
+                    }
+                }
             }
         }
 
@@ -1765,9 +1817,26 @@ impl LiveUccdBackend {
 
     pub(super) fn read_ctgp_baseline(&self) -> Option<i32> {
         if let Some(ctgp_path) = self.nvidia_ctgp_sysfs_path() {
-            if let Ok(raw) = self.sysfs.read(&ctgp_path) {
-                if let Ok(val) = raw.trim().parse::<i32>() {
-                    return Some(val);
+            return self
+                .sysfs
+                .read(&ctgp_path)
+                .ok()
+                .and_then(|raw| raw.trim().parse::<i32>().ok());
+        }
+        if let Some(ref nvml) = self.nvml {
+            let dgpu_bdf = self
+                .read_rw(&self.latest_telemetry)
+                .as_ref()
+                .and_then(|s| s.dgpu.as_ref().and_then(|d| d.bdf.clone()));
+            if let Some(ref bdf) = dgpu_bdf {
+                if let Ok(Some(cur_mw)) = nvml.get_power_limit_by_bdf(bdf) {
+                    let stored_base = self
+                        .lock_mutex(&self.nvidia_default_power_limit_w)
+                        .as_ref()
+                        .and_then(|(sb, w)| if sb == bdf { Some(*w) } else { None });
+                    if let Some(base_w) = stored_base {
+                        return Some(((cur_mw as f64 / 1000.0) - base_w).round() as i32);
+                    }
                 }
             }
         }

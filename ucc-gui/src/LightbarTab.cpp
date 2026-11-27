@@ -93,8 +93,24 @@ QJsonObject LightbarTab::collect() const {
 }
 void LightbarTab::save() {
   if(readOnlyPreview) return;
-  if(m_client->setLightbarSettingsJSON(QJsonDocument(collect()).toJson(QJsonDocument::Compact).toStdString())) {emit message("Lightbar settings saved and applied");reload();}
-  else emit message("Lightbar settings could not be saved");
+  const auto payload=QJsonDocument(collect()).toJson(QJsonDocument::Compact).toStdString();
+  if(m_client->setLightbarSettingsJSON(payload)) {
+    const auto statusJson=m_client->getLightbarStatusJSON();
+    const auto status=statusJson ? QJsonDocument::fromJson(QByteArray::fromStdString(*statusJson)).object() : QJsonObject();
+    if(!status.isEmpty() && !status["ok"].toBool(true) && status["available"].toBool(true)) {
+      const QString err=status["error"].toString();
+      emit message(err.isEmpty() ? QStringLiteral("Lightbar settings could not be applied") : QStringLiteral("Lightbar error: %1").arg(err));
+    } else {
+      emit message("Lightbar settings saved and applied");
+    }
+    reload();
+  } else {
+    const auto statusJson=m_client->getLightbarStatusJSON();
+    const auto status=statusJson ? QJsonDocument::fromJson(QByteArray::fromStdString(*statusJson)).object() : QJsonObject();
+    const QString err=status["error"].toString();
+    emit message(err.isEmpty() ? QStringLiteral("Lightbar settings could not be saved") : QStringLiteral("Lightbar settings could not be applied: %1").arg(err));
+    showStatus();
+  }
 }
 void LightbarTab::showStatus() {
   const auto json=m_client->getLightbarStatusJSON();

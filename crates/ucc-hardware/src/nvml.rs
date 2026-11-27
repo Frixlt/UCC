@@ -554,6 +554,8 @@ pub struct NvmlWrapper {
         unsafe extern "C" fn(*mut c_void, *mut c_uint, *mut c_uint) -> c_uint,
     fn_device_get_power_management_default_limit:
         Option<unsafe extern "C" fn(*mut c_void, *mut c_uint) -> c_uint>,
+    fn_device_get_power_management_limit:
+        Option<unsafe extern "C" fn(*mut c_void, *mut c_uint) -> c_uint>,
     fn_device_set_power_management_limit: unsafe extern "C" fn(*mut c_void, c_uint) -> c_uint,
     fn_device_get_utilization_rates:
         unsafe extern "C" fn(*mut c_void, *mut NvmlUtilization) -> c_uint,
@@ -666,6 +668,12 @@ impl NvmlWrapper {
                 )
                 .ok()
                 .map(|s| *s);
+            let fn_device_get_power_management_limit = lib
+                .get::<unsafe extern "C" fn(*mut c_void, *mut c_uint) -> c_uint>(
+                    b"nvmlDeviceGetPowerManagementLimit",
+                )
+                .ok()
+                .map(|s| *s);
             let fn_device_set_power_management_limit: unsafe extern "C" fn(
                 *mut c_void,
                 c_uint,
@@ -775,6 +783,7 @@ impl NvmlWrapper {
                 fn_device_get_enforced_power_limit,
                 fn_device_get_power_management_limit_constraints,
                 fn_device_get_power_management_default_limit,
+                fn_device_get_power_management_limit,
                 fn_device_set_power_management_limit,
                 fn_device_get_utilization_rates,
                 fn_device_get_memory_info_v1,
@@ -1301,6 +1310,20 @@ impl NvmlWrapper {
     }
 
     /// Set power limit in milliwatts for an explicit PCI BDF (`"0000:02:00.0"`).
+    /// Reads the enforced/configured power management limit in milliwatts by PCI BDF, if supported.
+    pub fn get_power_limit_by_bdf(&self, bdf: &str) -> Result<Option<u32>, NvmlError> {
+        let Some(get_limit) = self.fn_device_get_power_management_limit else {
+            return Ok(None);
+        };
+        let handle = self.resolve_pinned_handle_by_bdf(bdf)?;
+        let mut limit_mw: c_uint = 0;
+        let ret = unsafe { get_limit(handle, &mut limit_mw) };
+        if ret != NVML_SUCCESS {
+            return Err(NvmlError::NvmlCall(ret));
+        }
+        Ok(Some(limit_mw))
+    }
+
     pub fn set_power_limit_by_bdf(&self, bdf: &str, power_mw: u32) -> Result<(), NvmlError> {
         let handle = self.resolve_pinned_handle_by_bdf(bdf)?;
         self.apply_power_limit_for_handle(handle, power_mw)

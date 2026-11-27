@@ -799,7 +799,9 @@ impl LiveUccdBackend {
             }
         }
         if Self::profile_has_keyboard(&latest.profile) {
-            self.apply_profile_keyboard(&latest.profile);
+            if self.apply_profile_keyboard(&latest.profile).is_err() {
+                repair_ok = false;
+            }
         } else if undo.wrote_kb {
             if let Some(prev) = latest.hw_kb.as_ref().or(undo.prev_kb) {
                 let _ = self.restore_keyboard_rollback(prev, None);
@@ -1593,11 +1595,56 @@ impl LiveUccdBackend {
         }
 
         if let Some(offset) = committed_profile.nvidia_ctgp_offset {
-            if let Some(base) = prev_ctgp {
+            if !self.is_vendor_unsupported()
+                && !ucc_config::is_read_only_preview()
+                && self.has_ctgp_controller()
+            {
+                let Some(base) = prev_ctgp else {
+                    if !self.shutting_down.load(Ordering::SeqCst)
+                        && self.profile_commit_epoch.load(Ordering::SeqCst) == start_epoch
+                    {
+                        let _ = self.restore_charging_rollback(&charging_rb, Some(start_epoch));
+                        self.restore_device_writes(
+                            prev_brightness,
+                            wrote_brightness,
+                            prev_webcam,
+                            wrote_webcam,
+                            Some(start_epoch),
+                        );
+                        let _ = self.rollback_hardware(
+                            hw_odm_prev,
+                            wrote_odm,
+                            &prev_tdps,
+                            tdps_written,
+                            cpu_res.rollback,
+                            Some(start_epoch),
+                        );
+                    }
+                    return ApplyOutcome::Failed;
+                };
                 self.record_in_flight_ctgp_baseline(tx_id, base);
-            }
-            if self.set_nvidia_power_offset_impl(offset) {
-                wrote_ctgp = true;
+                if self.set_nvidia_power_offset_impl(offset) {
+                    wrote_ctgp = true;
+                } else {
+                    let _ = self.restore_ctgp_baseline(prev_ctgp, Some(start_epoch));
+                    let _ = self.restore_charging_rollback(&charging_rb, Some(start_epoch));
+                    self.restore_device_writes(
+                        prev_brightness,
+                        wrote_brightness,
+                        prev_webcam,
+                        wrote_webcam,
+                        Some(start_epoch),
+                    );
+                    let _ = self.rollback_hardware(
+                        hw_odm_prev,
+                        wrote_odm,
+                        &prev_tdps,
+                        tdps_written,
+                        cpu_res.rollback,
+                        Some(start_epoch),
+                    );
+                    return ApplyOutcome::Failed;
+                }
             }
         }
         let post_phase2_ctgp_seq = self.ctgp_write_seq.load(Ordering::SeqCst);
@@ -1643,8 +1690,40 @@ impl LiveUccdBackend {
             if let Some(ref snap) = prev_kb {
                 self.record_in_flight_kb_baseline(tx_id, snap);
             }
-            self.apply_profile_keyboard(&committed_profile);
-            wrote_kb = prev_kb.is_some();
+            match self.apply_profile_keyboard(&committed_profile) {
+                Ok(applied) => {
+                    wrote_kb = applied && prev_kb.is_some();
+                }
+                Err(()) => {
+                    if let Some(ref snap) = prev_kb {
+                        let _ = self.restore_keyboard_rollback(snap, Some(start_epoch));
+                    }
+                    self.restore_ctgp_and_kb_writes(
+                        prev_ctgp,
+                        wrote_ctgp,
+                        None,
+                        false,
+                        Some(start_epoch),
+                    );
+                    let _ = self.restore_charging_rollback(&charging_rb, Some(start_epoch));
+                    self.restore_device_writes(
+                        prev_brightness,
+                        wrote_brightness,
+                        prev_webcam,
+                        wrote_webcam,
+                        Some(start_epoch),
+                    );
+                    let _ = self.rollback_hardware(
+                        hw_odm_prev,
+                        wrote_odm,
+                        &prev_tdps,
+                        tdps_written,
+                        cpu_res.rollback,
+                        Some(start_epoch),
+                    );
+                    return ApplyOutcome::Failed;
+                }
+            }
         }
         let post_phase2_kb_seq = self.kb_write_seq.load(Ordering::SeqCst);
 
@@ -1850,7 +1929,7 @@ impl LiveUccdBackend {
             }
             if self.kb_write_seq.load(Ordering::SeqCst) != post_phase2_kb_seq {
                 if Self::profile_has_keyboard(&committed_profile) {
-                    self.apply_profile_keyboard(&committed_profile);
+                    let _ = self.apply_profile_keyboard(&committed_profile);
                 } else if let Some(ref kb) = self.snapshot_unmanaged_kb_baseline(tx_id) {
                     let _ = self.restore_keyboard_rollback(kb, Some(start_epoch));
                 }
