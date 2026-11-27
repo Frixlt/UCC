@@ -25,9 +25,9 @@ fn windows_nvml_candidate_paths_defaults_custom_and_dedup() {
     assert_eq!(
         defaults,
         vec![
-            r"nvml.dll".to_string(),
             r"C:\Windows\System32\nvml.dll".to_string(),
             r"C:\Program Files\NVIDIA Corporation\NVSMI\nvml.dll".to_string(),
+            r"nvml.dll".to_string(),
         ]
     );
 
@@ -38,9 +38,9 @@ fn windows_nvml_candidate_paths_defaults_custom_and_dedup() {
     assert_eq!(
         custom,
         vec![
-            r"nvml.dll".to_string(),
             r"D:\WinDir\System32\nvml.dll".to_string(),
             r"E:\Apps\NVIDIA Corporation\NVSMI\nvml.dll".to_string(),
+            r"nvml.dll".to_string(),
         ]
     );
 }

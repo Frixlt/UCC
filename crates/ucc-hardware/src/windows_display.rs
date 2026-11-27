@@ -349,6 +349,7 @@ mod win32 {
     const MONITOR_DEFAULTTOPRIMARY: u32 = 0x0000_0001;
     const PHYSICAL_MONITOR_DESCRIPTION_SIZE: usize = 128;
 
+    #[allow(dead_code)]
     #[repr(C)]
     #[derive(Clone, Copy)]
     struct DevModeW {
@@ -424,6 +425,7 @@ mod win32 {
         }
     }
 
+    #[allow(dead_code)]
     #[repr(C)]
     #[derive(Clone, Copy)]
     struct Point {
@@ -431,6 +433,7 @@ mod win32 {
         y: i32,
     }
 
+    #[allow(dead_code)]
     #[repr(C)]
     #[derive(Clone, Copy)]
     struct PhysicalMonitor {
@@ -697,7 +700,7 @@ mod win32 {
             }
             let span = max_b - min_b;
             let clamped = cur_b.clamp(min_b, max_b) - min_b;
-            Ok(((clamped * 100) / span).min(100) as u8)
+            Ok(((u64::from(clamped) * 100) / u64::from(span)).min(100) as u8)
         }
 
         fn write_brightness(&self, percent: u8) -> Result<(), WindowsDisplayError> {
@@ -722,7 +725,7 @@ mod win32 {
                 });
             }
             let span = max_b - min_b;
-            let target = min_b + ((u32::from(pct) * span) / 100);
+            let target = min_b.saturating_add(((u64::from(pct) * u64::from(span)) / 100) as u32);
             let set_ok = unsafe { SetMonitorBrightness(handle, target) };
             if set_ok == 0 {
                 return Err(WindowsDisplayError::Win32Error {

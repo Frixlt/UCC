@@ -19,7 +19,7 @@ use thiserror::Error;
 
 /// WinRT / COM 128-bit GUID matching Windows `GUID` ABI layout (`Data1`, `Data2`, `Data3`, `Data4`).
 #[repr(C)]
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct WinRtGuid {
     pub data1: u32,
     pub data2: u16,

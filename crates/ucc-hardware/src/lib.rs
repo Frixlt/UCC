@@ -77,12 +77,16 @@ pub use windows_display::{
     DisplayModeSpec, MockWindowsDisplayTransport, WindowsDisplayController, WindowsDisplayError,
     WindowsDisplayTransport, WindowsDisplayWrite,
 };
+#[cfg(windows)]
+pub use windows_display::{Win32DisplayTransport, WmiBrightnessBridge};
 pub use windows_lid::{
     parse_lid_power_broadcast, LidGuid, LidRegistrationHandle, LidSwitchState,
     MockWindowsLidTransport, PowerBroadcastSetting, WindowsLidError, WindowsLidMonitor,
-    WindowsLidTransport, DEVICE_NOTIFY_WINDOW_HANDLE, GUID_LIDSWITCH_STATE_CHANGE,
-    GUID_LIDSWITCH_STATE_CHANGE_BYTES,
+    WindowsLidTransport, DEVICE_NOTIFY_SERVICE_HANDLE, DEVICE_NOTIFY_WINDOW_HANDLE,
+    GUID_LIDSWITCH_STATE_CHANGE, GUID_LIDSWITCH_STATE_CHANGE_BYTES,
 };
+#[cfg(windows)]
+pub use windows_lid::{Win32LidNotificationGuard, Win32LidTransport};
 pub use windows_power::{
     epp_percent_to_str, epp_str_to_percent, BoostMode, MockWindowsPowerTransport, PowerGuid,
     WindowsPowerController, WindowsPowerError, WindowsPowerSource, WindowsPowerTransport,
@@ -90,6 +94,8 @@ pub use windows_power::{
     GUID_PROCESSOR_PERF_ENERGY_PREFERENCE, GUID_PROCESSOR_SETTINGS_SUBGROUP,
     GUID_PROCESSOR_THROTTLE_MAXIMUM, GUID_PROCESSOR_THROTTLE_MINIMUM,
 };
+#[cfg(windows)]
+pub use windows_power::Win32PowerTransport;
 pub use windows_wmi::{
     decode_ec_read_byte, ec_reg, encode_ec_read_arg, encode_ec_write_arg, feature_requirement,
     feature_support, AcpiWmiCommand, DriverRequirement, MockWmiEcTransport, WindowsWmiEcBackend,
@@ -97,9 +103,13 @@ pub use windows_wmi::{
     WINDOWS_WMI_CAPABILITY_MATRIX, WMI_CLASS_ACPI_TEST, WMI_EC_READ_FLAG, WMI_METHOD_GET_SET_ULONG,
     WMI_METHOD_ID_EC_RW, WMI_NAMESPACE,
 };
+#[cfg(windows)]
+pub use windows_wmi::Win32WmiEcTransport;
 pub use winrt_cooler::{
     format_ble_address_u64, nordic_uart_guids, parse_ble_address_u64, parse_winrt_guid,
     validate_cooler_tx_packet, MockWinRtGattBridge, WinRtBleDeviceInfo, WinRtBleError,
     WinRtCoolerTransport, WinRtGattBridge, WinRtGattHandles, WinRtGuid, NORDIC_UART_RX_CHAR_GUID,
     NORDIC_UART_SERVICE_GUID, NORDIC_UART_TX_CHAR_GUID,
 };
+#[cfg(windows)]
+pub use winrt_cooler::LiveWinRtGattBridge;

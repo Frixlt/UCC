@@ -10,8 +10,8 @@ use ucc_hardware::cooler::{
 use ucc_hardware::winrt_cooler::{
     format_ble_address_u64, nordic_uart_guids, parse_ble_address_u64, parse_winrt_guid,
     validate_cooler_tx_packet, MockWinRtGattBridge, WinRtBleDeviceInfo, WinRtBleError,
-    WinRtCoolerTransport, WinRtGuid, NORDIC_UART_RX_CHAR_GUID, NORDIC_UART_SERVICE_GUID,
-    NORDIC_UART_TX_CHAR_GUID,
+    WinRtCoolerTransport, WinRtGattBridge, WinRtGuid, NORDIC_UART_RX_CHAR_GUID,
+    NORDIC_UART_SERVICE_GUID, NORDIC_UART_TX_CHAR_GUID,
 };
 
 #[test]

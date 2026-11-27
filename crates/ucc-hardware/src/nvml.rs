@@ -593,8 +593,9 @@ pub struct NvmlWrapper {
 
 /// Returns ordered candidate DLL paths for locating `nvml.dll` on Windows.
 ///
-/// Always tries bare `"nvml.dll"` (standard DLL search order) first, followed by
-/// `<SystemRoot>\System32\nvml.dll` and `<ProgramFiles>\NVIDIA Corporation\NVSMI\nvml.dll`,
+/// Prefers absolute trusted paths (`<SystemRoot>\System32\nvml.dll` and
+/// `<ProgramFiles>\NVIDIA Corporation\NVSMI\nvml.dll`) before falling back to bare
+/// `"nvml.dll"` to prevent DLL search-order hijacking when `uccd` runs as `LocalSystem`,
 /// deduplicating entries case-insensitively while preserving order.
 pub fn windows_nvml_candidate_paths(
     system_root: Option<&str>,
@@ -612,9 +613,9 @@ pub fn windows_nvml_candidate_paths(
         .trim_end_matches(['\\', '/']);
 
     let raw = [
-        String::from("nvml.dll"),
         format!(r"{sys_root}\System32\nvml.dll"),
         format!(r"{prog_files}\NVIDIA Corporation\NVSMI\nvml.dll"),
+        String::from("nvml.dll"),
     ];
 
     let mut seen = HashSet::new();

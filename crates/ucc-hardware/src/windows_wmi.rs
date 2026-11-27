@@ -760,6 +760,7 @@ mod win32_wmi {
     const VT_I8: u16 = 20;
     const VT_UI8: u16 = 21;
 
+    #[allow(dead_code)]
     #[repr(C)]
     struct Guid {
         data1: u32,
@@ -784,6 +785,7 @@ mod win32_wmi {
         data4: [0x88, 0x4d, 0x00, 0xaa, 0x00, 0x4b, 0x2e, 0x24],
     };
 
+    #[allow(dead_code)]
     #[repr(C)]
     struct Variant {
         vt: u16,
@@ -834,6 +836,7 @@ mod win32_wmi {
         release: unsafe extern "system" fn(*mut c_void) -> u32,
     }
 
+    #[allow(dead_code)]
     #[repr(C)]
     struct IWbemLocatorVtbl {
         base: IUnknownVtbl,
@@ -855,6 +858,7 @@ mod win32_wmi {
         vtbl: *const IWbemLocatorVtbl,
     }
 
+    #[allow(dead_code)]
     #[repr(C)]
     struct IWbemServicesVtbl {
         base: IUnknownVtbl,
@@ -909,6 +913,7 @@ mod win32_wmi {
         vtbl: *const IWbemServicesVtbl,
     }
 
+    #[allow(dead_code)]
     #[repr(C)]
     struct IEnumWbemClassObjectVtbl {
         base: IUnknownVtbl,
@@ -927,6 +932,7 @@ mod win32_wmi {
         vtbl: *const IEnumWbemClassObjectVtbl,
     }
 
+    #[allow(dead_code)]
     #[repr(C)]
     struct IWbemClassObjectVtbl {
         base: IUnknownVtbl,
@@ -1153,7 +1159,14 @@ mod win32_wmi {
         }
     }
 
-    fn connect_wmi_services() -> Result<(ComInitGuard, ComPtr<IWbemServices>), PlatformError> {
+    /// Active WMI services session keeping `IWbemServices` ahead of `ComInitGuard` so Rust
+    /// drops `services` (`IWbemServices::Release`) before `_com` (`CoUninitialize`).
+    struct WmiServicesSession {
+        services: ComPtr<IWbemServices>,
+        _com: ComInitGuard,
+    }
+
+    fn connect_wmi_services() -> Result<WmiServicesSession, PlatformError> {
         let com = ComInitGuard::init()?;
 
         let mut locator_raw: *mut c_void = ptr::null_mut();
@@ -1215,7 +1228,10 @@ mod win32_wmi {
             return Err(PlatformError::Unavailable);
         }
 
-        Ok((com, services))
+        Ok(WmiServicesSession {
+            services,
+            _com: com,
+        })
     }
 
     fn find_first_instance_relpath(
@@ -1280,8 +1296,9 @@ mod win32_wmi {
     }
 
     fn exec_get_set_ulong(arg: u64) -> Result<u64, PlatformError> {
-        let (_com, services) = connect_wmi_services()?;
-        let relpath = find_first_instance_relpath(&services)?;
+        let session = connect_wmi_services()?;
+        let services = &session.services;
+        let relpath = find_first_instance_relpath(services)?;
 
         let class_bstr = BstrGuard::new(WMI_CLASS_ACPI_TEST)?;
         let mut class_obj_raw: *mut IWbemClassObject = ptr::null_mut();
@@ -1407,7 +1424,7 @@ mod win32_wmi {
         fn is_available(&self) -> bool {
             let _guard = self.io_lock.lock().unwrap_or_else(|e| e.into_inner());
             connect_wmi_services()
-                .and_then(|(_com, services)| find_first_instance_relpath(&services))
+                .and_then(|session| find_first_instance_relpath(&session.services))
                 .is_ok()
         }
 
