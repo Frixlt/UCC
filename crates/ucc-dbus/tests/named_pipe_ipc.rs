@@ -480,7 +480,7 @@ fn canonical_dbus_method_casing_and_display_refresh_rate_dispatch() {
 
 #[test]
 fn profile_negative_manual_pump_voltage_sentinel_is_not_escalated_and_v12_is_rejected() {
-    let backend = DefaultUccdBackend::new();
+    let backend = DefaultUccdBackend;
     let interactive = CallerIdentity::interactive("IU:pid:4242");
     let privileged = CallerIdentity::privileged("BA:pid:100");
 
