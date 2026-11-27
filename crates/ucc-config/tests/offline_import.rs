@@ -600,3 +600,158 @@ fn mechrevo_preserves_disabled_cooler_outputs_and_rejects_v12_and_bad_address() 
         .to_string();
     assert!(err.contains("address"), "got {err}");
 }
+
+#[test]
+fn deep_16_rejects_brightness_over_u8_max_even_with_higher_max_brightness() {
+    let data = sample_data();
+    let settings = sample_base();
+    let mut caps = sample_caps();
+    caps["maxBrightness"] = json!(500);
+
+    assert!(convert_offline_import(&data, &settings, &caps, Some(255)).is_ok());
+
+    for invalid in [256, 300] {
+        let err = convert_offline_import(&data, &settings, &caps, Some(invalid))
+            .unwrap_err()
+            .to_string();
+        assert!(err.contains("255") || err.contains("u8"), "got {err}");
+    }
+
+    // Also verify valid bundle loads cleanly via ConfigManager::load_from_path.
+    let valid_out = convert_offline_import(&data, &settings, &caps, Some(17)).unwrap();
+    let dir = tempfile::tempdir().unwrap();
+    let bundle_dir = dir.path().join("bundle");
+    write_offline_import_bundle(&bundle_dir, &valid_out, &json!({})).unwrap();
+    let loaded = ucc_config::ConfigManager::load_from_path(&bundle_dir.join("settings")).unwrap();
+    assert_eq!(loaded.keyboard_backlight_states.unwrap()[0].brightness, 17);
+}
+
+#[test]
+fn deep_17_preserves_physical_led_fallback_and_rejects_ambiguous_layouts() {
+    let mut data = sample_data();
+    let mut settings = sample_base();
+    let mut caps = sample_caps();
+
+    // 1. Full (126 zones) -> sparse ([0, 10, 20, 66]) with partial overlay on LED 10.
+    let full_states: Vec<Value> = (0..126)
+        .map(|led| {
+            json!({
+                "brightness": 40,
+                "red": led,
+                "green": 100 + led,
+                "blue": 200,
+                "mode": 0
+            })
+        })
+        .collect();
+    settings["keyboardBacklightStates"] = Value::Array(full_states);
+    caps["zones"] = json!(4);
+    caps["ledIds"] = json!([0, 10, 20, 66]);
+    data.keyboard_colors = json!({ "10": [11, 22, 33] });
+
+    let out = convert_offline_import(&data, &settings, &caps, Some(40)).unwrap();
+    let states = out.settings["keyboardBacklightStates"].as_array().unwrap();
+    assert_eq!(states.len(), 4);
+    // Explicitly overlaid LED 10 (index 1).
+    assert_eq!(
+        (
+            states[1]["red"].clone(),
+            states[1]["green"].clone(),
+            states[1]["blue"].clone()
+        ),
+        (json!(11), json!(22), json!(33))
+    );
+    // Unedited LED 66 (index 3) MUST take physical LED 66 from source, NOT index 3 (`DEEP-17`).
+    assert_eq!(
+        (
+            states[3]["red"].clone(),
+            states[3]["green"].clone(),
+            states[3]["blue"].clone()
+        ),
+        (json!(66), json!(166), json!(200))
+    );
+
+    // 2. Compact (4 zones) -> compact (4 zones).
+    settings["keyboardBacklightStates"] = json!([
+        {"brightness": 40, "red": 1, "green": 2, "blue": 3},
+        {"brightness": 40, "red": 4, "green": 5, "blue": 6},
+        {"brightness": 40, "red": 7, "green": 8, "blue": 9},
+        {"brightness": 40, "red": 77, "green": 88, "blue": 99}
+    ]);
+    let compact_out = convert_offline_import(&data, &settings, &caps, Some(40)).unwrap();
+    let compact_states = compact_out.settings["keyboardBacklightStates"]
+        .as_array()
+        .unwrap();
+    assert_eq!(compact_states[3]["red"], json!(77));
+
+    // 3. Ambiguous 8-entry source mapped onto sparse LED 66 must error cleanly.
+    settings["keyboardBacklightStates"] =
+        Value::Array(vec![json!({"red": 1, "green": 2, "blue": 3}); 8]);
+    let err = convert_offline_import(&data, &settings, &caps, Some(40))
+        .unwrap_err()
+        .to_string();
+    assert!(err.contains("Ambiguous"), "got {err}");
+}
+
+#[test]
+fn deep_18_rejects_duplicate_mechrevo_profile_ids() {
+    let (settings, profiles_val, user, curves, hardware) = mechrevo_fixture();
+    let mut dup_profiles = profiles_val.as_array().unwrap().clone();
+    let mut second = dup_profiles[0].clone();
+    second["name"] = json!("Different Name Same ID");
+    dup_profiles.push(second);
+
+    let err = convert_mechrevo_tcc(
+        &settings,
+        &Value::Array(dup_profiles),
+        &user,
+        &curves,
+        &hardware,
+    )
+    .unwrap_err()
+    .to_string();
+    assert!(err.contains("example"), "got {err}");
+}
+
+#[test]
+fn deep_19_atomic_staging_leaves_no_partial_bundle_on_validation_or_write_failure() {
+    let data = sample_data();
+    let settings = sample_base();
+    let caps = sample_caps();
+    let mut broken_out = convert_offline_import(&data, &settings, &caps, Some(50)).unwrap();
+    // Corrupt brightness in settings so ConfigManager validation during staging fails after files are written.
+    broken_out.settings["keyboardBacklightStates"][0]["brightness"] = json!(300);
+
+    let dir = tempfile::tempdir().unwrap();
+    let dest = dir.path().join("atomic-bundle");
+    assert!(write_offline_import_bundle(&dest, &broken_out, &json!({})).is_err());
+    assert!(
+        !dest.exists(),
+        "failed bundle write must not leave destination directory"
+    );
+    let leftovers: Vec<_> = std::fs::read_dir(dir.path())
+        .unwrap()
+        .map(|e| e.unwrap().file_name().to_string_lossy().to_string())
+        .collect();
+    assert!(
+        leftovers.is_empty(),
+        "leftover staging files: {leftovers:?}"
+    );
+
+    // Subsequent valid retry into the exact same destination succeeds cleanly.
+    let valid_out = convert_offline_import(&data, &settings, &caps, Some(50)).unwrap();
+    write_offline_import_bundle(&dest, &valid_out, &json!({})).unwrap();
+    assert!(dest.join("settings").is_file());
+    assert!(dest.join("report.json").is_file());
+}
+
+#[test]
+fn deep_20_tcc_converter_preserves_utf8_in_double_quoted_profile_names() {
+    let literal = "export const defaultFanProfiles = [\n{name: \"Тихий\", tableCPU: [{temp: 0, speed: 0}, {temp: 100, speed: 100}], tableGPU: [{temp: 0, speed: 15}, {temp: 100, speed: 85}]},\n];\n";
+    let tmp = TempDir::new().unwrap();
+    let archive = tmp.path().join("app.asar");
+    build_asar_archive(&archive, literal.as_bytes());
+
+    let presets = read_tcc_fan_presets(&archive).unwrap();
+    assert_eq!(presets["Тихий"].table_gpu[0].speed, 15);
+}

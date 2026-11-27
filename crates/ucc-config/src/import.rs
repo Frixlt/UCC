@@ -263,22 +263,25 @@ fn normalize_js_literal(raw: &str, allowed_keys: &[&str], convert_single_quotes:
 
     while i < bytes.len() {
         let ch = bytes[i];
-        // Preserve already double-quoted JSON strings verbatim.
+        // Preserve already double-quoted JSON strings verbatim (preserving full UTF-8 chars).
         if ch == b'"' {
-            out.push('"');
+            let start = i;
             i += 1;
             while i < bytes.len() {
                 let c = bytes[i];
-                out.push(c as char);
                 if c == b'\\' && i + 1 < bytes.len() {
                     i += 1;
-                    out.push(bytes[i] as char);
-                } else if c == b'"' {
+                    let esc_len = raw[i..].chars().next().map_or(1, char::len_utf8);
+                    i += esc_len;
+                    continue;
+                }
+                if c == b'"' {
                     i += 1;
                     break;
                 }
-                i += 1;
+                i += raw[i..].chars().next().map_or(1, char::len_utf8);
             }
+            out.push_str(&raw[start..i]);
             continue;
         }
 
@@ -840,20 +843,76 @@ pub fn convert_offline_import(
             "Brightness must use hardware units".to_string(),
         ));
     }
+    if effective_brightness > i64::from(u8::MAX) {
+        return Err(ConfigError::Validation(format!(
+            "Brightness {effective_brightness} exceeds u8 hardware limit (0..={})",
+            u8::MAX
+        )));
+    }
 
-    let mut states: Vec<Map<String, Value>> = (0..zones as usize)
-        .map(|i| {
-            old_states
-                .get(i)
-                .and_then(Value::as_object)
-                .cloned()
-                .unwrap_or_else(|| {
-                    let mut m = Map::new();
-                    m.insert("red".to_string(), json!(0));
-                    m.insert("green".to_string(), json!(0));
-                    m.insert("blue".to_string(), json!(0));
-                    m
-                })
+    let blank_zone = || {
+        let mut m = Map::new();
+        m.insert("red".to_string(), json!(0));
+        m.insert("green".to_string(), json!(0));
+        m.insert("blue".to_string(), json!(0));
+        m
+    };
+    let states_by_led: Option<BTreeMap<i64, Map<String, Value>>> =
+        if old_states.iter().any(|v| v.get("ledId").is_some()) {
+            let mut map = BTreeMap::new();
+            for item in &old_states {
+                let obj = item.as_object().ok_or_else(|| {
+                    ConfigError::Validation("Invalid keyboardBacklightStates entry".to_string())
+                })?;
+                let led_id = obj
+                    .get("ledId")
+                    .and_then(|v| require_strict_int(v, "Invalid keyboard state ledId").ok())
+                    .ok_or_else(|| {
+                        ConfigError::Validation(
+                            "Ambiguous keyboardBacklightStates mix with missing ledId".to_string(),
+                        )
+                    })?;
+                map.insert(led_id, obj.clone());
+            }
+            Some(map)
+        } else {
+            None
+        };
+    let full_by_physical_index =
+        !old_states.is_empty() && leds.iter().all(|&led| (led as usize) < old_states.len());
+    if !old_states.is_empty()
+        && states_by_led.is_none()
+        && old_states.len() != zones as usize
+        && !full_by_physical_index
+    {
+        return Err(ConfigError::Validation(format!(
+            "Ambiguous keyboard layout: {} saved states cannot map to target LEDs {:?}",
+            old_states.len(),
+            leds
+        )));
+    }
+
+    let mut states: Vec<Map<String, Value>> = leds
+        .iter()
+        .enumerate()
+        .map(|(i, &led)| {
+            if let Some(ref map) = states_by_led {
+                map.get(&led).cloned().unwrap_or_else(blank_zone)
+            } else if old_states.is_empty() {
+                blank_zone()
+            } else if old_states.len() == zones as usize {
+                old_states
+                    .get(i)
+                    .and_then(Value::as_object)
+                    .cloned()
+                    .unwrap_or_else(blank_zone)
+            } else {
+                old_states
+                    .get(led as usize)
+                    .and_then(Value::as_object)
+                    .cloned()
+                    .unwrap_or_else(blank_zone)
+            }
         })
         .collect();
 
@@ -1086,8 +1145,15 @@ pub fn convert_offline_import(
         "gui": data.gui_settings.clone(),
     });
 
+    let settings_val = Value::Object(result_map);
+    serde_json::from_value::<crate::UccSettings>(settings_val.clone()).map_err(|err| {
+        ConfigError::Validation(format!(
+            "Converted settings failed schema validation: {err}"
+        ))
+    })?;
+
     Ok(OfflineImportOutput {
-        settings: Value::Object(result_map),
+        settings: settings_val,
         report,
         pending,
     })
@@ -1178,6 +1244,13 @@ pub fn convert_mechrevo_tcc(
         .and_then(|s| s.get("brightness"))
         .cloned()
         .ok_or_else(|| ConfigError::Validation("Missing keyboard brightness".to_string()))?;
+    let brightness_int = require_strict_int(&brightness, "Invalid keyboard brightness")?;
+    if !(0..=i64::from(u8::MAX)).contains(&brightness_int) {
+        return Err(ConfigError::Validation(format!(
+            "Brightness {brightness_int} exceeds u8 hardware limit (0..={})",
+            u8::MAX
+        )));
+    }
 
     result_map.insert(
         "customKeyboardProfiles".to_string(),
@@ -1448,6 +1521,11 @@ pub fn convert_mechrevo_tcc(
             .and_then(Value::as_str)
             .ok_or_else(|| ConfigError::Validation("Missing profile id".to_string()))?
             .to_string();
+        if out_profiles.contains_key(&id) {
+            return Err(ConfigError::Validation(format!(
+                "Duplicate Mechrevo profile id: {id}"
+            )));
+        }
         out_profiles.insert(id, Value::Object(p));
     }
 
@@ -1465,41 +1543,91 @@ pub fn convert_mechrevo_tcc(
 
 /// Writes the offline import bundle into a brand-new `0o700` directory with `0o600` files.
 ///
-/// Refuses to overwrite or reuse an existing directory.
+/// Stages files in a private sibling directory, validates them, and atomically renames on
+/// completion so an interrupted write never leaves a partial/unretryable target directory.
 pub fn write_offline_import_bundle(
     output_dir: &Path,
     output: &OfflineImportOutput,
     preferences: &Value,
 ) -> Result<(), ConfigError> {
-    #[cfg(unix)]
-    {
-        use std::os::unix::fs::DirBuilderExt;
-        fs::DirBuilder::new().mode(0o700).create(output_dir)?;
-    }
-    #[cfg(not(unix))]
-    {
-        fs::create_dir(output_dir)?;
+    use std::sync::atomic::{AtomicU64, Ordering};
+    static STAGING_SEQ: AtomicU64 = AtomicU64::new(0);
+
+    if fs::symlink_metadata(output_dir).is_ok() {
+        return Err(ConfigError::Io(std::io::Error::new(
+            std::io::ErrorKind::AlreadyExists,
+            format!("Output directory already exists: {}", output_dir.display()),
+        )));
     }
 
-    for (name, value) in [
-        ("settings", &output.settings),
-        ("report.json", &output.report),
-        ("pending.json", &output.pending),
-        ("desktop-preferences.json", preferences),
-    ] {
-        let path = output_dir.join(name);
-        let mut opts = OpenOptions::new();
-        opts.write(true).create_new(true);
+    let parent = output_dir
+        .parent()
+        .filter(|p| !p.as_os_str().is_empty())
+        .unwrap_or_else(|| Path::new("."));
+    let base_name = output_dir
+        .file_name()
+        .and_then(|n| n.to_str())
+        .filter(|n| !n.is_empty())
+        .unwrap_or("import-bundle");
+
+    let staging_dir = loop {
+        let seq = STAGING_SEQ.fetch_add(1, Ordering::Relaxed);
+        let candidate = parent.join(format!(".{base_name}.staging-{}-{seq}", std::process::id()));
         #[cfg(unix)]
-        {
-            use std::os::unix::fs::OpenOptionsExt;
-            opts.mode(0o600);
+        let created = {
+            use std::os::unix::fs::DirBuilderExt;
+            fs::DirBuilder::new().mode(0o700).create(&candidate)
+        };
+        #[cfg(not(unix))]
+        let created = fs::create_dir(&candidate);
+        match created {
+            Ok(()) => break candidate,
+            Err(err) if err.kind() == std::io::ErrorKind::AlreadyExists => continue,
+            Err(err) => return Err(ConfigError::Io(err)),
         }
-        let mut file = opts.open(&path)?;
-        let mut serialized = serde_json::to_string_pretty(value)?;
-        serialized.push('\n');
-        file.write_all(serialized.as_bytes())?;
+    };
+
+    let stage_result: Result<(), ConfigError> = (|| {
+        for (name, value) in [
+            ("settings", &output.settings),
+            ("report.json", &output.report),
+            ("pending.json", &output.pending),
+            ("desktop-preferences.json", preferences),
+        ] {
+            let path = staging_dir.join(name);
+            let mut opts = OpenOptions::new();
+            opts.write(true).create_new(true);
+            #[cfg(unix)]
+            {
+                use std::os::unix::fs::OpenOptionsExt;
+                opts.mode(0o600);
+            }
+            let mut file = opts.open(&path)?;
+            let mut serialized = serde_json::to_string_pretty(value)?;
+            serialized.push('\n');
+            file.write_all(serialized.as_bytes())?;
+            file.sync_all()?;
+        }
+
+        let _ = crate::ConfigManager::load_from_path(&staging_dir.join("settings"))?;
+
+        if fs::symlink_metadata(output_dir).is_ok() {
+            return Err(ConfigError::Io(std::io::Error::new(
+                std::io::ErrorKind::AlreadyExists,
+                format!("Output directory already exists: {}", output_dir.display()),
+            )));
+        }
+        fs::rename(&staging_dir, output_dir)?;
+        Ok(())
+    })();
+
+    if let Err(err) = stage_result {
+        let _ = fs::remove_dir_all(&staging_dir);
+        return Err(err);
     }
 
+    if let Ok(dir) = fs::File::open(parent) {
+        let _ = dir.sync_all();
+    }
     Ok(())
 }
