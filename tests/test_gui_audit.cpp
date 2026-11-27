@@ -50,6 +50,8 @@ class AuditDaemon : public QDBusVirtualObject {
   bool ctgpTest=false,ctgpSupported=false,ctgpAvailable=false;
   int ctgpDefault=0,ctgpMax=0;
   int chargeStart=40,chargeEnd=80;
+  int applyDelayMs=0;
+  bool deviceSupported=false;
   QString chargeType="Custom";
   QString customProfile,lastSavedProfile,chargingMode="stationary";
 public:
@@ -97,8 +99,18 @@ public:
     else if (chargeWindowTest && method=="GetChargeStartThreshold") {result=chargeStart;}
     else if (chargeWindowTest && method=="GetChargeEndThreshold") {result=chargeEnd;}
     else if (method=="TestStats") result=QString::fromUtf8(QJsonDocument(QJsonObject{{"writes",writes},{"reads",reads}}).toJson());
-    else if (method=="TestReset") { customProfile.clear();lastSavedProfile.clear();chargingMode="stationary";writes={};reads={};runtimeProfile.clear();driverHealth.clear();lastAppliedProfile.clear();lastDeviceSettings.clear();lastLightbar.clear();failReads=false;failControl=false;visualFixture=false;coolerAuto=false;coolerEnabled=false;chargeWindowTest=false;ctgpTest=false;ctgpSupported=false;ctgpAvailable=false;ctgpDefault=0;ctgpMax=0;chargeStart=40;chargeEnd=80;chargeType="Custom";result=true; }
+    else if (method=="TestReset") { customProfile.clear();lastSavedProfile.clear();chargingMode="stationary";writes={};reads={};runtimeProfile.clear();driverHealth.clear();lastAppliedProfile.clear();lastDeviceSettings.clear();lastLightbar.clear();failReads=false;failControl=false;visualFixture=false;coolerAuto=false;coolerEnabled=false;chargeWindowTest=false;ctgpTest=false;ctgpSupported=false;ctgpAvailable=false;ctgpDefault=0;ctgpMax=0;chargeStart=40;chargeEnd=80;applyDelayMs=0;deviceSupported=false;chargeType="Custom";result=true; }
+    else if (method=="TestDelayApply") { applyDelayMs=msg.arguments().value(0).toInt();result=true; }
+    else if (method=="TestDeviceSupported") { deviceSupported=msg.arguments().value(0).toBool();result=true; }
     else if (method=="TestFailReads") { failReads=msg.arguments().value(0).toBool();result=true; }
+    else if (method=="ApplyProfile" && applyDelayMs>0) {
+      const int delay=applyDelayMs;const bool fail=failControl;const QString arg=msg.arguments().value(0).toString();
+      QTimer::singleShot(delay,this,[this,msg,bus,fail,arg] {
+        if(fail) {bus.send(msg.createReply(false));return;}
+        writes.append(QStringLiteral("ApplyProfile"));lastAppliedProfile=arg;bus.send(msg.createReply(true));
+      });
+      return true;
+    }
     else if (method=="TriggerLightbarAnimation" || method=="ScanPowerDevices" || method.startsWith("Register") || method.startsWith("Unregister") || method.startsWith("Set") || method.startsWith("TurnOff") || method=="EnableWaterCooler" || method.startsWith("Apply") || method.startsWith("Save") || method.startsWith("Delete") || method.startsWith("Revert")) {
       if(failControl) {bus.send(msg.createReply(false));return true;}
       if(method=="SaveCustomProfile") customProfile=lastSavedProfile=msg.arguments().value(0).toString();
@@ -106,7 +118,8 @@ public:
       if(method=="SetLightbarSettingsJSON") lastLightbar=msg.arguments().value(0).toString();
       if(method=="SetPowerDeviceSettingsJSON") lastDeviceSettings=msg.arguments().value(0).toString();
       writes.append(method);if(method=="ApplyProfile") lastAppliedProfile=msg.arguments().value(0).toString();result=true;
-    } else if (method.endsWith("Supported") || method=="GetWebcamSWStatus" || method=="GetFnLockStatus" || method=="IsDeviceSupported" || method=="IsWaterCoolerEnabled") result=false;
+    } else if (method=="IsDeviceSupported") result=deviceSupported;
+    else if (method.endsWith("Supported") || method=="GetWebcamSWStatus" || method=="GetFnLockStatus" || method=="IsWaterCoolerEnabled") result=false;
     else if (method=="GetAvailableGovernors" || method=="GetAvailableEPPs") result=QString("[]");
     else if (method.startsWith("GetWaterCooler") || method=="GetMonitorDataSince") {
       reads[method]=reads.value(method).toInt()+1;
@@ -1104,7 +1117,64 @@ private slots:
     QVERIFY(idxStart>=0 && idxEnd>=0);
     QVERIFY2(idxEnd<idxStart,"Raising charge window 40-80 -> 60-90 must raise SetChargeEndThreshold BEFORE SetChargeStartThreshold");
   }
-  void cleanupTestCase() { profiles.reset();client.reset();daemon.terminate();daemon.waitForFinished(); }
+  void applyFailureDoesNotClaimSuccessOrSendWaterCooler() {
+#ifdef UCC_READ_ONLY_PREVIEW
+    QSKIP("Only applies to writable build");
+#endif
+    control("TestVisualFixture");
+    ucc::MainWindow window;window.resize(1280,900);window.show();
+    auto *nav=window.findChild<QListWidget*>("navigation");nav->setCurrentRow(1);
+    auto *names=window.findChild<QComboBox*>("profileName");QVERIFY(names && names->count()>0);
+    control("TestFailControl",{true});
+    const auto beforeWrites=stats()["writes"].toArray().size();
+    QVERIFY(QMetaObject::invokeMethod(&window,"onApplyClicked",Qt::DirectConnection));
+    QTRY_VERIFY(window.statusBar()->currentMessage().contains("Failed to apply"));
+    QVERIFY(!window.statusBar()->currentMessage().contains("Profile applied"));
+    const auto afterWrites=stats()["writes"].toArray();
+    QCOMPARE(afterWrites.size(),beforeWrites);
+    QVERIFY(!afterWrites.contains("EnableWaterCooler"));
+  }
+  void asyncApplyAllowsImmediateWindowCloseWithoutLateWaterCooler() {
+#ifdef UCC_READ_ONLY_PREVIEW
+    QSKIP("Only applies to writable build");
+#endif
+    control("TestVisualFixture");
+    ucc::MainWindow window;window.resize(1280,900);window.show();
+    auto *nav=window.findChild<QListWidget*>("navigation");nav->setCurrentRow(1);
+    auto *names=window.findChild<QComboBox*>("profileName");QVERIFY(names && names->count()>0);
+    control("TestDelayApply",{800});
+    QElapsedTimer timer;timer.start();
+    QVERIFY(QMetaObject::invokeMethod(&window,"onApplyClicked",Qt::DirectConnection));
+    QTest::qWait(40);
+    const qint64 t0=timer.elapsed();
+    window.close();
+    QCoreApplication::processEvents();
+    QVERIFY2(timer.elapsed()-t0<250,"closeEvent must not block waiting on slow ApplyProfile");
+    QTest::qWait(900);
+    QVERIFY2(!stats()["writes"].toArray().contains("EnableWaterCooler"),"Closed MainWindow must not dispatch late EnableWaterCooler after ApplyProfile finishes");
+  }
+  void prepareForSleepResumeSetsSidebarStatus() {
+    control("TestVisualFixture");
+    ucc::MainWindow window;
+    QVERIFY(QMetaObject::invokeMethod(&window,"onPrepareForSleep",Qt::DirectConnection,Q_ARG(bool,false)));
+    QVERIFY(window.statusBar()->currentMessage().contains("Resuming from sleep"));
+    bool foundLabel=false;
+    for(auto *lbl:window.findChildren<QLabel*>()) {
+      if(lbl->text().contains("Resuming from sleep")) {foundLabel=true;break;}
+    }
+    QVERIFY(foundLabel);
+  }
+  void deviceSupportStatusDistinguishesOfflineFromUnsupported() {
+    QString detail;
+    control("TestDeviceSupported",{false});
+    QCOMPARE(client->checkDeviceSupport(&detail),ucc::DeviceSupportStatus::Unsupported);
+    control("TestDeviceSupported",{true});
+    QCOMPARE(client->checkDeviceSupport(&detail),ucc::DeviceSupportStatus::Supported);
+    daemon.terminate();
+    QVERIFY(daemon.waitForFinished());
+    QTRY_COMPARE(client->checkDeviceSupport(&detail),ucc::DeviceSupportStatus::DaemonUnavailable);
+  }
+  void cleanupTestCase() { profiles.reset();client.reset();if(daemon.state()!=QProcess::NotRunning){daemon.terminate();daemon.waitForFinished();} }
 };
 int main(int argc,char **argv) {
   QApplication app(argc,argv);

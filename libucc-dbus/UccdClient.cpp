@@ -21,6 +21,9 @@
 #include <QDBusPendingReply>
 #include <QDBusArgument>
 #include <QDBusConnectionInterface>
+#include <QDBusError>
+#include <QDBusPendingCall>
+#include <QDBusPendingReply>
 #include <QDebug>
 #include <QJsonDocument>
 #include <QJsonObject>
@@ -281,6 +284,39 @@ std::optional< bool > UccdClient::isDeviceSupported()
   return callMethod< bool >( "IsDeviceSupported" );
 }
 
+DeviceSupportStatus UccdClient::checkDeviceSupport( QString *errorDetail )
+{
+  if ( !isConnected() )
+    connectToDaemon();
+
+  if ( !isConnected() )
+  {
+    if ( errorDetail )
+      *errorDetail = QStringLiteral( "The uccd service is not registered on the D-Bus system bus." );
+    return DeviceSupportStatus::DaemonUnavailable;
+  }
+
+  if ( !mayDispatchUccdMethod( QStringLiteral( "IsDeviceSupported" ) ) )
+    return DeviceSupportStatus::DaemonUnavailable;
+
+  QDBusReply< bool > reply = m_interface->call( QStringLiteral( "IsDeviceSupported" ) );
+  if ( reply.isValid() )
+  {
+    if ( reply.value() )
+      return DeviceSupportStatus::Supported;
+    if ( errorDetail )
+      *errorDetail = QStringLiteral( "Daemon reported that this hardware model is unsupported." );
+    return DeviceSupportStatus::Unsupported;
+  }
+
+  const auto err = reply.error();
+  if ( errorDetail )
+    *errorDetail = err.message();
+  if ( err.type() == QDBusError::NoReply || err.type() == QDBusError::TimedOut )
+    return DeviceSupportStatus::Timeout;
+  return DeviceSupportStatus::DaemonUnavailable;
+}
+
 // Profile Management
 std::optional< std::string > UccdClient::getDefaultProfilesJSON()
 {
@@ -431,6 +467,56 @@ bool UccdClient::setActiveProfile( const std::string &profileId )
 bool UccdClient::applyProfile( const std::string &profileJSON )
 {
   return callMethod< bool >( "ApplyProfile", QString::fromStdString( profileJSON ) ).value_or( false );
+}
+
+QDBusPendingCallWatcher *UccdClient::applyProfileAsync(
+  const std::string &profileJSON,
+  QObject *context,
+  std::function< void( bool, const QString & ) > callback )
+{
+  if ( !mayDispatchUccdMethod( QStringLiteral( "ApplyProfile" ) ) )
+  {
+    if ( callback )
+      callback( false, QStringLiteral( "Blocked in read-only preview mode" ) );
+    return nullptr;
+  }
+  if ( !isConnected() )
+  {
+    connectToDaemon();
+  }
+  if ( !isConnected() )
+  {
+    if ( callback )
+      callback( false, QStringLiteral( "UCC daemon is unavailable" ) );
+    return nullptr;
+  }
+
+  QDBusPendingCall pending = m_interface->asyncCall(
+    QStringLiteral( "ApplyProfile" ),
+    QString::fromStdString( profileJSON ) );
+  QObject *owner = context ? context : this;
+  auto *watcher = new QDBusPendingCallWatcher( pending, owner );
+  QObject::connect(
+    watcher,
+    &QDBusPendingCallWatcher::finished,
+    owner,
+    [watcher, cb = std::move( callback )]( QDBusPendingCallWatcher *finished ) {
+      QDBusPendingReply< bool > reply = *finished;
+      if ( finished == watcher )
+        watcher->deleteLater();
+      if ( !cb )
+        return;
+      if ( reply.isValid() )
+      {
+        const bool ok = reply.value();
+        cb( ok, ok ? QString() : QStringLiteral( "Daemon rejected profile apply" ) );
+      }
+      else
+      {
+        cb( false, reply.error().message() );
+      }
+    } );
+  return watcher;
 }
 
 bool UccdClient::saveCustomProfile( [[maybe_unused]] [[maybe_unused]] const std::string &profileJSON )

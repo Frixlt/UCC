@@ -19,6 +19,7 @@
 #include <QString>
 #include <QDBusInterface>
 #include <QDBusConnection>
+#include <QDBusPendingCallWatcher>
 #include <QDBusReply>
 #include <QDBusServiceWatcher>
 #include <string>
@@ -30,6 +31,14 @@
 
 namespace ucc
 {
+
+enum class DeviceSupportStatus
+{
+  Supported,
+  Unsupported,
+  DaemonUnavailable,
+  Timeout
+};
 
 /**
  * @brief DBus client for communicating with uccd daemon
@@ -51,6 +60,7 @@ public:
   // System Information
   std::optional< std::string > getSystemInfoJSON();
   std::optional< bool > isDeviceSupported();
+  DeviceSupportStatus checkDeviceSupport( QString *errorDetail = nullptr );
   // One nonblocking read per source, shared by every metric in the GUI refresh.
   void requestMonitoringSnapshot(bool includeControls, std::function<void(QVariantMap)> ready);
 
@@ -78,6 +88,10 @@ public:
   bool setBatchStateMap( const std::map< std::string, std::string > &entries );
   bool setActiveProfile( const std::string &profileId );
   bool applyProfile( const std::string &profileJSON );
+  QDBusPendingCallWatcher *applyProfileAsync(
+    const std::string &profileJSON,
+    QObject *context,
+    std::function< void( bool, const QString & ) > callback );
   bool saveCustomProfile( const std::string &profileJSON );
   bool deleteCustomProfile( const std::string &profileId );
   std::optional< std::string > getFanProfile( const std::string &fanProfileId );

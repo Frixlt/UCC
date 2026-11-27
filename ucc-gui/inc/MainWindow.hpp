@@ -16,6 +16,9 @@
 #pragma once
 
 #include <QMainWindow>
+#include <QCloseEvent>
+#include <QDBusPendingCallWatcher>
+#include <QPointer>
 #include <QStatusBar>
 #include <QComboBox>
 #include <QLabel>
@@ -64,6 +67,7 @@ namespace ucc
     void showEvent(QShowEvent *event) override;
     void hideEvent(QHideEvent *event) override;
     void changeEvent(QEvent *event) override;
+    void closeEvent(QCloseEvent *event) override;
 
   private:
     void updateMonitoringActivity();
@@ -71,6 +75,7 @@ namespace ucc
   private slots:
     // Status bar slots
     void updateConnectionStatusLabel();
+    void onPrepareForSleep( bool goingToSleep );
 
     // Profile page slots
     void onProfileIndexChanged( int index );
@@ -260,6 +265,9 @@ namespace ucc
     bool m_loadedBatteryAssignment = false;
     bool m_loadedWaterCoolerAssignment = false;
     bool m_saveInProgress = false;
+    bool m_closing = false;
+    bool m_resumingFromSleep = false;
+    QPointer<QDBusPendingCallWatcher> m_pendingApplyWatcher;
     bool m_initializing = true;  // true during constructor, prevents hardware writes
 
     // Device capability flags (queried from daemon at startup)

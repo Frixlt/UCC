@@ -108,17 +108,40 @@ int main( int argc, char *argv[] )
   // ensure window decorations and the application use the theme icon we installed
   app.setWindowIcon( QIcon::fromTheme( "ucc-gui" ) );
 
+  if ( !ucc::readOnlyPreview )
   {
     ucc::UccdClient client;
-    auto supported = client.isDeviceSupported();
-    if ( !ucc::readOnlyPreview && ( !supported.has_value() || !supported.value() ) )
+    for (;;)
     {
-      QMessageBox::critical(
-        nullptr, "Unsupported Device",
-        "This laptop model is not supported by UCC.\n\n"
-        "Running UCC on untested hardware may cause\n"
-        "unexpected behavior, even damage." );
-      return 1;
+      QString detail;
+      const auto status = client.checkDeviceSupport( &detail );
+      if ( status == ucc::DeviceSupportStatus::Supported )
+        break;
+      if ( status == ucc::DeviceSupportStatus::Unsupported )
+      {
+        QMessageBox::critical(
+          nullptr, "Unsupported Device",
+          "This laptop model is not supported by UCC.\n\n"
+          "Running UCC on untested hardware may cause\n"
+          "unexpected behavior, even damage." );
+        return 1;
+      }
+      const QString title = ( status == ucc::DeviceSupportStatus::Timeout )
+        ? QStringLiteral( "UCC Daemon Timed Out" )
+        : QStringLiteral( "UCC Daemon Unavailable" );
+      const QString text = ( status == ucc::DeviceSupportStatus::Timeout )
+        ? QStringLiteral( "Timed out waiting for uccd while checking device support." )
+        : QStringLiteral( "Could not connect to the uccd background service (com.uniwill.uccd)." );
+      QMessageBox box( QMessageBox::Warning, title, text );
+      box.setInformativeText( detail.isEmpty()
+        ? QStringLiteral( "Start or inspect uccd.service and choose Retry." )
+        : detail );
+      auto *retryBtn = box.addButton( QMessageBox::Retry );
+      box.addButton( QMessageBox::Close );
+      box.setDefaultButton( retryBtn );
+      box.exec();
+      if ( box.clickedButton() != retryBtn )
+        return 1;
     }
   }
 

@@ -160,7 +160,11 @@ if(DBUS_RUN_SESSION_EXECUTABLE AND BUILD_GUI)
     profilePayloadPreservesManualWaterCoolerValues
     batterySettingsRaisesWindowSetsEndBeforeStart
     fanControlPumpComboFindsDiscreteIntCodes
-    displayBrightnessCommitsOnReleaseAndIgnoresMonitorDuringDrag)
+    displayBrightnessCommitsOnReleaseAndIgnoresMonitorDuringDrag
+    applyFailureDoesNotClaimSuccessOrSendWaterCooler
+    asyncApplyAllowsImmediateWindowCloseWithoutLateWaterCooler
+    prepareForSleepResumeSetsSidebarStatus
+    deviceSupportStatusDistinguishesOfflineFromUnsupported)
   add_test(NAME test_gui_audit_dashboard_cooling COMMAND ${DBUS_RUN_SESSION_EXECUTABLE} -- bash ${CMAKE_CURRENT_SOURCE_DIR}/run_gui_audit_test.sh $<TARGET_FILE:test_gui_audit>
     dashboardWaterCoolerSelectors
     dashboardSelectionsApplyImmediatelyFromAuto

@@ -176,6 +176,14 @@ MainWindow::MainWindow( QWidget *parent )
   onUccdConnectionChanged( m_UccdClient->isConnected() );
   statusBar()->showMessage( "Ready" );
 
+  QDBusConnection::systemBus().connect(
+    QStringLiteral( "org.freedesktop.login1" ),
+    QStringLiteral( "/org/freedesktop/login1" ),
+    QStringLiteral( "org.freedesktop.login1.Manager" ),
+    QStringLiteral( "PrepareForSleep" ),
+    this,
+    SLOT( onPrepareForSleep(bool) ) );
+
   // Load initial data - refresh() emits signals that populate the UI.
   // Block the profile combo to avoid cascading loadProfileDetails calls.
   m_profileCombo->blockSignals( true );
@@ -212,6 +220,18 @@ void MainWindow::hideEvent(QHideEvent *event)
 {
   QMainWindow::hideEvent(event);
   updateMonitoringActivity();
+}
+
+void MainWindow::closeEvent(QCloseEvent *event)
+{
+  m_closing = true;
+  if ( m_pendingApplyWatcher )
+  {
+    m_pendingApplyWatcher->disconnect( this );
+    m_pendingApplyWatcher->deleteLater();
+    m_pendingApplyWatcher.clear();
+  }
+  QMainWindow::closeEvent( event );
 }
 
 void MainWindow::changeEvent(QEvent *event)
@@ -1553,12 +1573,25 @@ void MainWindow::updateConnectionStatusLabel()
   if ( !m_UccdClient->isConnected() )
     return;
 
+  m_resumingFromSleep = false;
   QString profileName = m_profileManager->activeProfileName();
   if ( profileName.isEmpty() )
     profileName = QStringLiteral( "Unknown" );
 
   m_connectionLabel->setText(
     QString("Profile: %1").arg(profileName) );
+}
+
+void MainWindow::onPrepareForSleep( bool goingToSleep )
+{
+  if ( goingToSleep )
+    return;
+  m_resumingFromSleep = true;
+  if ( m_connectionLabel )
+    m_connectionLabel->setText( QStringLiteral( "Resuming from sleep…" ) );
+  statusBar()->showMessage( QStringLiteral( "Resuming from sleep…" ), 5000 );
+  if ( m_profileManager )
+    m_profileManager->refresh();
 }
 
 void MainWindow::onActiveProfileIndexChanged()
@@ -2380,16 +2413,46 @@ void MainWindow::onApplyClicked()
     statusBar()->showMessage( "No profile selected" );
     return;
   }
+  if ( m_pendingApplyWatcher )
+    return;
 
-  QString profileJSON = buildProfileJSON();
-  m_profileManager->getClient()->applyProfile( profileJSON.toStdString() );
+  const QString appliedName = m_profileCombo->currentText();
+  const QString profileJSON = buildProfileJSON();
+  if ( m_applyButton )
+    m_applyButton->setEnabled( false );
+  statusBar()->showMessage( QStringLiteral( "Applying profile: " ) + appliedName + QStringLiteral( "…" ) );
 
-  // Re-send the current water cooler enable state so that
-  // the profile apply doesn't override the user's checkbox state.
-  if ( m_fanControlTab )
-    m_fanControlTab->sendWaterCoolerEnable( m_fanControlTab->isWaterCoolerEnabled() );
+  m_pendingApplyWatcher = m_profileManager->getClient()->applyProfileAsync(
+    profileJSON.toStdString(),
+    this,
+    [this, appliedName]( bool ok, const QString &err ) {
+      m_pendingApplyWatcher.clear();
+      if ( m_closing )
+        return;
+      if ( m_applyButton )
+        m_applyButton->setEnabled( true );
+      if ( !ok )
+      {
+        if ( m_profileManager )
+        {
+          const QString activeId = m_profileManager->activeProfileId();
+          if ( !activeId.isEmpty() )
+            loadProfileDetails( activeId );
+        }
+        const QString msg = err.isEmpty()
+          ? QStringLiteral( "Failed to apply profile: %1" ).arg( appliedName )
+          : QStringLiteral( "Failed to apply profile %1: %2" ).arg( appliedName, err );
+        statusBar()->showMessage( msg, 5000 );
+        return;
+      }
 
-  statusBar()->showMessage( "Profile applied: " + m_profileCombo->currentText() );
+      // Re-send the current water cooler enable state so that
+      // the profile apply doesn't override the user's checkbox state.
+      if ( m_fanControlTab )
+        m_fanControlTab->sendWaterCoolerEnable( m_fanControlTab->isWaterCoolerEnabled() );
+
+      statusBar()->showMessage( QStringLiteral( "Profile applied: " ) + appliedName );
+    } );
 }
 
 void MainWindow::onSaveClicked()
@@ -2826,8 +2889,8 @@ void MainWindow::onUccdConnectionChanged( bool connected )
 
   if ( !connected )
   {
-    // Display disconnected status
-    if ( m_connectionLabel )
+    // Display disconnected status unless waiting on post-sleep reconnect
+    if ( m_connectionLabel && !m_resumingFromSleep )
       m_connectionLabel->setText(
         QStringLiteral("Profile: —") );
   }
