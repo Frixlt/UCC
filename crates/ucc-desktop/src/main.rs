@@ -469,13 +469,28 @@ async fn main() {
                     update_daemon_connected(&handle, false).await;
                 }
             }
-            Some(action) = rx.recv() => {
+            action = rx.recv() => {
+                let Some(action) = action else {
+                    info!("Tray action channel closed; exiting tray event loop");
+                    break;
+                };
                 match action {
                     TrayAction::OpenGui(tray_token) => {
                         let env_token = std::env::var("XDG_ACTIVATION_TOKEN").ok();
                         let token = tray_token.or(env_token);
-                        if let Err(err) = activate_or_launch_gui(token.as_deref(), preview).await {
-                            warn!("Failed to activate or launch ucc-gui: {err}");
+                        match tokio::time::timeout(
+                            rpc_timeout_duration(),
+                            activate_or_launch_gui(token.as_deref(), preview),
+                        )
+                        .await
+                        {
+                            Ok(Ok(())) => {}
+                            Ok(Err(err)) => {
+                                warn!("Failed to activate or launch ucc-gui: {err}");
+                            }
+                            Err(_) => {
+                                warn!("Timed out activating or launching ucc-gui");
+                            }
                         }
                     }
                     TrayAction::SelectProfile(idx) => {
@@ -496,8 +511,11 @@ async fn main() {
                                     fan_auto = true;
                                     update_fan_auto(&handle, true).await;
                                 }
-                                Some(_) => {
+                                Some(Ok(false)) => {
                                     warn!("Daemon rejected profile switch to {id}");
+                                }
+                                Some(Err(err)) => {
+                                    warn!("Failed to switch profile to {id}: {err}");
                                 }
                             }
                         }
@@ -511,28 +529,27 @@ async fn main() {
                             warn!("Ignoring ToggleFanAuto while uccd is disconnected");
                             continue;
                         };
-                        let ok = if fan_auto {
-                            match run_rpc_or_shutdown(
+                        let res = if fan_auto {
+                            run_rpc_or_shutdown(
                                 &shutdown_rx,
                                 proxy.apply_fan_profiles(MAX_FAN_CURVES_JSON),
                             )
                             .await
-                            {
-                                None => break,
-                                Some(res) => res.unwrap_or(false),
-                            }
                         } else {
-                            match run_rpc_or_shutdown(&shutdown_rx, proxy.revert_fan_profiles()).await
-                            {
-                                None => break,
-                                Some(res) => res.unwrap_or(false),
-                            }
+                            run_rpc_or_shutdown(&shutdown_rx, proxy.revert_fan_profiles()).await
                         };
-                        if ok {
-                            fan_auto = !fan_auto;
-                            update_fan_auto(&handle, fan_auto).await;
-                        } else {
-                            warn!("Daemon rejected fan Auto/Max toggle");
+                        match res {
+                            None => break,
+                            Some(Ok(true)) => {
+                                fan_auto = !fan_auto;
+                                update_fan_auto(&handle, fan_auto).await;
+                            }
+                            Some(Ok(false)) => {
+                                warn!("Daemon rejected fan Auto/Max toggle");
+                            }
+                            Some(Err(err)) => {
+                                warn!("Failed to toggle fan Auto/Max: {err}");
+                            }
                         }
                     }
                     TrayAction::ToggleWaterCooler => {
@@ -580,8 +597,11 @@ async fn main() {
                                 state.wc_connected = Some(wc_conn);
                                 update_water_cooler_state(&handle, enabled, wc_conn).await;
                             }
-                            Some(_) => {
+                            Some(Ok(false)) => {
                                 warn!("Daemon rejected EnableWaterCooler({target})");
+                            }
+                            Some(Err(err)) => {
+                                warn!("Failed to toggle EnableWaterCooler({target}): {err}");
                             }
                         }
                     }

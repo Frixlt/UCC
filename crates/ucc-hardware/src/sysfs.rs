@@ -254,7 +254,14 @@ impl SysfsRoot {
                 }
                 let proc_link = fs::read_link(format!("/proc/self/fd/{}", file.as_raw_fd()))?;
                 let canon_fd = fs::canonicalize(&proc_link)?;
-                if !canon_fd.starts_with(&self.canonical_root) {
+                if self.root_path == Path::new("/") {
+                    if !canon_fd.starts_with("/sys") && !canon_fd.starts_with("/proc") {
+                        return Err(io::Error::new(
+                            io::ErrorKind::PermissionDenied,
+                            "Symlink escape outside /sys and /proc detected via descriptor",
+                        ));
+                    }
+                } else if !canon_fd.starts_with(&self.canonical_root) {
                     return Err(io::Error::new(
                         io::ErrorKind::PermissionDenied,
                         "Symlink escape detected via descriptor target",

@@ -301,12 +301,22 @@ impl ConfigManager {
             return Err(ConfigError::ReadOnlyPreview);
         }
 
+        let existing_meta = fs::symlink_metadata(path).ok();
+        if let Some(ref meta) = existing_meta {
+            if meta.file_type().is_symlink() {
+                return Err(ConfigError::PermissionDenied(format!(
+                    "Refusing to restore backup over symlink target {}",
+                    path.display()
+                )));
+            }
+        }
+
         #[cfg(unix)]
         let primary_mode = {
             use std::os::unix::fs::PermissionsExt;
-            fs::metadata(path)
+            existing_meta
+                .as_ref()
                 .map(|m| m.permissions().mode() & 0o777)
-                .ok()
         };
 
         for bak_path in Self::backup_paths(path) {
@@ -342,17 +352,18 @@ impl ConfigManager {
                                     .unwrap_or(0o600)
                             });
                             opts.mode(m);
+                            opts.custom_flags(libc::O_NOFOLLOW);
                             m
                         };
-                        let mut f = opts.open(&temp_path)?;
+                        let mut temp_file = opts.open(&temp_path)?;
                         #[cfg(unix)]
                         {
                             use std::os::unix::fs::PermissionsExt;
-                            fs::set_permissions(&temp_path, fs::Permissions::from_mode(mode))?;
+                            temp_file.set_permissions(fs::Permissions::from_mode(mode))?;
                         }
-                        f.write_all(json.as_bytes())?;
-                        f.flush()?;
-                        f.sync_all()?;
+                        temp_file.write_all(json.as_bytes())?;
+                        temp_file.flush()?;
+                        temp_file.sync_all()?;
                         Ok(())
                     })();
                     if let Err(e) = write_res {

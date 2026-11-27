@@ -97,6 +97,30 @@ impl HidDeviceTransport for MockHidTransport {
     }
 }
 
+/// Reads the USB `bInterfaceNumber` for a Linux `hidraw` device from sysfs.
+///
+/// Checks `{root}/{hidraw_name}/device/../bInterfaceNumber` first (standard Linux USB HID
+/// hierarchy where `device` points to the HID child of the USB interface), falling back to
+/// `{root}/{hidraw_name}/device/bInterfaceNumber`.
+pub fn read_sysfs_hidraw_interface_number(
+    sysfs_hidraw_root: &std::path::Path,
+    hidraw_name: &str,
+) -> Option<i32> {
+    let device_dir = sysfs_hidraw_root.join(hidraw_name).join("device");
+    let candidates = [
+        device_dir.join("..").join("bInterfaceNumber"),
+        device_dir.join("bInterfaceNumber"),
+    ];
+    for iface_path in candidates {
+        if let Ok(raw) = std::fs::read_to_string(&iface_path) {
+            if let Ok(iface_num) = i32::from_str_radix(raw.trim(), 16) {
+                return Some(iface_num);
+            }
+        }
+    }
+    None
+}
+
 /// Uniwill / ITE direct USB HID [`LightingTransport`] supporting `048D:600B` keyboards and
 /// `048D:7001`/`048D:7000` Lightbar + lid logo controllers.
 pub struct UniwillHidTransport {
@@ -120,11 +144,11 @@ impl UniwillHidTransport {
             return interface_number == 1;
         }
         if let Some(hidraw_name) = dev.path.strip_prefix("/dev/") {
-            let iface_path = format!("/sys/class/hidraw/{hidraw_name}/device/bInterfaceNumber");
-            if let Ok(raw) = std::fs::read_to_string(iface_path) {
-                if let Ok(iface_num) = i32::from_str_radix(raw.trim(), 16) {
-                    return iface_num == 1;
-                }
+            if let Some(iface_num) = read_sysfs_hidraw_interface_number(
+                std::path::Path::new("/sys/class/hidraw"),
+                hidraw_name,
+            ) {
+                return iface_num == 1;
             }
         }
         true

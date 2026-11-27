@@ -2,7 +2,7 @@ use crate::error::ValidationError;
 use serde::de::IntoDeserializer;
 use serde::{Deserialize, Deserializer, Serialize};
 
-pub(crate) fn deserialize_opt_threshold<'de, D>(deserializer: D) -> Result<Option<u8>, D::Error>
+pub fn deserialize_opt_threshold<'de, D>(deserializer: D) -> Result<Option<u8>, D::Error>
 where
     D: Deserializer<'de>,
 {

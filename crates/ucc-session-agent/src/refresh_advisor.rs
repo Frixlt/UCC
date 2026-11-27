@@ -53,7 +53,11 @@ fn valid_identifier(s: &str) -> bool {
 }
 
 fn is_internal_panel(name: &str) -> bool {
-    name.starts_with("eDP-") || name.starts_with("LVDS-")
+    let upper = name.to_ascii_uppercase();
+    upper.starts_with("EDP-")
+        || upper.starts_with("LVDS-")
+        || upper.starts_with("DSI-")
+        || matches!(upper.as_str(), "EDP" | "LVDS" | "DSI")
 }
 
 fn nvidia_panel(name: &str, drm_root: &Path) -> bool {
@@ -168,7 +172,9 @@ impl RefreshAdvisor {
         }
         let outputs = configuration.get("outputs")?.as_array()?;
         for output in outputs {
-            let name = output.get("name")?.as_str()?;
+            let Some(name) = output.get("name").and_then(|v| v.as_str()) else {
+                continue;
+            };
             if !is_internal_panel(name)
                 || !valid_identifier(name)
                 || !output
@@ -182,11 +188,21 @@ impl RefreshAdvisor {
             {
                 continue;
             }
-            let current = current_mode(output)?;
-            let size = current.get("size")?.as_object()?;
-            let w = size.get("width")?.as_i64()? as i32;
-            let h = size.get("height")?.as_i64()? as i32;
-            let current_hz = current.get("refreshRate")?.as_f64()?;
+            let Some(current) = current_mode(output) else {
+                continue;
+            };
+            let Some(size) = current.get("size").and_then(|v| v.as_object()) else {
+                continue;
+            };
+            let Some(w) = size.get("width").and_then(|v| v.as_i64()).map(|v| v as i32) else {
+                continue;
+            };
+            let Some(h) = size.get("height").and_then(|v| v.as_i64()).map(|v| v as i32) else {
+                continue;
+            };
+            let Some(current_hz) = current.get("refreshRate").and_then(|v| v.as_f64()) else {
+                continue;
+            };
             if w <= 0 || h <= 0 || !current_hz.is_finite() || current_hz <= 0.0 {
                 continue;
             }
@@ -201,11 +217,13 @@ impl RefreshAdvisor {
                 240.0
             };
 
+            let Some(modes) = output.get("modes").and_then(|v| v.as_array()) else {
+                continue;
+            };
             let mut selected: Option<(&Value, f64)> = None;
-            for mode in output.get("modes")?.as_array()? {
-                let m_size = match mode.get("size").and_then(|v| v.as_object()) {
-                    Some(s) => s,
-                    None => continue,
+            for mode in modes {
+                let Some(m_size) = mode.get("size").and_then(|v| v.as_object()) else {
+                    continue;
                 };
                 let mw = m_size.get("width").and_then(|v| v.as_i64()).unwrap_or(0) as i32;
                 let mh = m_size.get("height").and_then(|v| v.as_i64()).unwrap_or(0) as i32;
@@ -242,14 +260,22 @@ impl RefreshAdvisor {
                 }
             }
 
-            let (sel_mode, best_hz) = selected?;
+            let Some((sel_mode, best_hz)) = selected else {
+                continue;
+            };
             if (current_hz - best_hz).abs() < 2.0 {
                 continue;
             }
+            let Some(current_mode_id) = current.get("id").and_then(|v| v.as_str()) else {
+                continue;
+            };
+            let Some(target_mode_id) = sel_mode.get("id").and_then(|v| v.as_str()) else {
+                continue;
+            };
             return Some(RefreshPlan {
                 output: name.to_string(),
-                current_mode: current.get("id")?.as_str()?.to_string(),
-                target_mode: sel_mode.get("id")?.as_str()?.to_string(),
+                current_mode: current_mode_id.to_string(),
+                target_mode: target_mode_id.to_string(),
                 width: w,
                 height: h,
                 current_hz,

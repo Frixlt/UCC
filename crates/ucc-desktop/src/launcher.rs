@@ -101,16 +101,24 @@ pub async fn activate_gui_dbus_on(
         GUI_DBUS_PATH
     };
     let proxy = zbus::Proxy::new(conn, service_name, object_path, GUI_DBUS_INTERFACE).await?;
+    let call_timeout = std::time::Duration::from_secs(3);
     if let Some(token) = activation_token.filter(|t| !t.trim().is_empty()) {
-        if proxy
-            .call::<_, _, ()>("ActivateWithToken", &(token,))
-            .await
-            .is_ok()
-        {
+        if matches!(
+            tokio::time::timeout(
+                call_timeout,
+                proxy.call::<_, _, ()>("ActivateWithToken", &(token,)),
+            )
+            .await,
+            Ok(Ok(()))
+        ) {
             return Ok(());
         }
     }
-    proxy.call::<_, _, ()>("Activate", &()).await
+    tokio::time::timeout(call_timeout, proxy.call::<_, _, ()>("Activate", &()))
+        .await
+        .map_err(|_| {
+            zbus::Error::Failure("GUI D-Bus Activate call timed out".to_string())
+        })?
 }
 
 pub async fn activate_gui_dbus(activation_token: Option<&str>, preview: bool) -> zbus::Result<()> {
@@ -127,7 +135,14 @@ pub async fn activate_or_launch_gui(
     activation_token: Option<&str>,
     preview: bool,
 ) -> std::io::Result<()> {
-    if activate_gui_dbus(activation_token, preview).await.is_ok() {
+    if matches!(
+        tokio::time::timeout(
+            std::time::Duration::from_secs(3),
+            activate_gui_dbus(activation_token, preview),
+        )
+        .await,
+        Ok(Ok(()))
+    ) {
         return Ok(());
     }
     if preview {

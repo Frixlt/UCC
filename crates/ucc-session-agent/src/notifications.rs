@@ -9,6 +9,7 @@ use std::future::poll_fn;
 use std::path::Path;
 use std::pin::Pin;
 use std::process::Stdio;
+use std::time::Duration;
 use tokio::process::Command;
 use tracing::warn;
 use ucc_session_agent::refresh_advisor::hyprland_configuration;
@@ -88,8 +89,9 @@ pub async fn send_notify(
     expire_timeout: i32,
 ) -> Option<u32> {
     let proxy = proxy?;
-    match proxy
-        .notify(
+    match tokio::time::timeout(
+        Duration::from_secs(3),
+        proxy.notify(
             "ucc-rusted",
             0,
             app_icon,
@@ -98,12 +100,17 @@ pub async fn send_notify(
             actions,
             HashMap::new(),
             expire_timeout,
-        )
-        .await
+        ),
+    )
+    .await
     {
-        Ok(id) => Some(id),
-        Err(err) => {
+        Ok(Ok(id)) => Some(id),
+        Ok(Err(err)) => {
             warn!("Failed to send org.freedesktop.Notifications.Notify: {err}");
+            None
+        }
+        Err(_) => {
+            warn!("Timed out sending org.freedesktop.Notifications.Notify");
             None
         }
     }
@@ -114,8 +121,14 @@ pub async fn close_notify(proxy: Option<&NotificationsProxy<'_>>, id: u32) {
         return;
     }
     if let Some(proxy) = proxy {
-        if let Err(err) = proxy.close_notification(id).await {
-            warn!("Failed to close desktop notification {id}: {err}");
+        match tokio::time::timeout(Duration::from_secs(3), proxy.close_notification(id)).await {
+            Ok(Ok(())) => {}
+            Ok(Err(err)) => {
+                warn!("Failed to close desktop notification {id}: {err}");
+            }
+            Err(_) => {
+                warn!("Timed out closing desktop notification {id}");
+            }
         }
     }
 }

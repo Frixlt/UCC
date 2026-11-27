@@ -213,12 +213,16 @@ impl SessionState {
         tokio::spawn(async move {
             close_notify(notif.as_ref(), id).await;
 
-            let Ok(prof_raw) = proxy.get_active_profile_json().await else {
-                warn!("Aborting refresh apply: active profile re-query failed");
+            let Ok(Ok(prof_raw)) =
+                tokio::time::timeout(Duration::from_secs(3), proxy.get_active_profile_json()).await
+            else {
+                warn!("Aborting refresh apply: active profile re-query failed or timed out");
                 return;
             };
-            let Ok(policy_raw) = proxy.get_power_policy_json().await else {
-                warn!("Aborting refresh apply: power policy re-query failed");
+            let Ok(Ok(policy_raw)) =
+                tokio::time::timeout(Duration::from_secs(3), proxy.get_power_policy_json()).await
+            else {
+                warn!("Aborting refresh apply: power policy re-query failed or timed out");
                 return;
             };
             let requested_hz = parse_requested_hz(&prof_raw);

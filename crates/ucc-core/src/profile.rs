@@ -22,6 +22,12 @@ pub struct ProfileDisplay {
     pub y_resolution: i32,
     #[serde(default)]
     pub use_resolution: bool,
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        rename = "lidCloseAction"
+    )]
+    pub lid_close_action: Option<String>,
 }
 
 impl Default for ProfileDisplay {
@@ -34,6 +40,7 @@ impl Default for ProfileDisplay {
             x_resolution: -1,
             y_resolution: -1,
             use_resolution: false,
+            lid_close_action: None,
         }
     }
 }

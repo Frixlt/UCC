@@ -43,6 +43,7 @@ pub fn default_max_energy_save_profile() -> UccProfile {
         x_resolution: 1920,
         y_resolution: 1080,
         use_resolution: false,
+        lid_close_action: None,
     };
 
     profile.cpu = ProfileCpu {

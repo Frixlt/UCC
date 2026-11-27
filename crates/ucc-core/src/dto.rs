@@ -207,6 +207,7 @@ impl LegacyProfileDto {
                 x_resolution: d.x_resolution,
                 y_resolution: d.y_resolution,
                 use_resolution: d.use_resolution,
+                lid_close_action: None,
             }
         } else {
             ProfileDisplay::default()

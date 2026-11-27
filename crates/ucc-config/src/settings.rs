@@ -151,10 +151,18 @@ struct UccSettingsRaw {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub charge_type: Option<String>,
 
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "ucc_core::charging::deserialize_opt_threshold"
+    )]
     pub charge_start_threshold: Option<u8>,
 
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "ucc_core::charging::deserialize_opt_threshold"
+    )]
     pub charge_end_threshold: Option<u8>,
 
     #[serde(default, skip_serializing_if = "Option::is_none")]

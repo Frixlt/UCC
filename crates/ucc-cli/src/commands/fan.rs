@@ -13,7 +13,7 @@ fn extract_json_field_string(v: &Value) -> Option<String> {
     }
 }
 
-fn is_empty_fan_profile_payload(raw: Option<&str>) -> bool {
+pub fn is_empty_fan_profile_payload(raw: Option<&str>) -> bool {
     let Some(trimmed) = raw.map(str::trim).filter(|s| !s.is_empty()) else {
         return true;
     };
@@ -169,7 +169,7 @@ pub async fn run_fan(client: &CliClient, action: &FanAction, json_mode: bool) ->
             let mut found_json = with_rpc_timeout(client.proxy().get_fan_profile(id))
                 .await
                 .ok();
-            if found_json.as_deref() == Some("{}") || found_json.is_none() {
+            if is_empty_fan_profile_payload(found_json.as_deref()) {
                 if let Ok(cust_raw) =
                     with_rpc_timeout(client.proxy().get_custom_fan_profiles_json()).await
                 {
@@ -187,13 +187,11 @@ pub async fn run_fan(client: &CliClient, action: &FanAction, json_mode: bool) ->
                 }
             }
 
-            let profile_content = match found_json {
-                Some(s) if !s.is_empty() && s != "{}" => s,
-                _ => {
-                    eprintln!("Error: Fan profile not found");
-                    return Err(1);
-                }
-            };
+            if is_empty_fan_profile_payload(found_json.as_deref()) {
+                eprintln!("Error: Fan profile not found");
+                return Err(1);
+            }
+            let profile_content = found_json.unwrap_or_default();
 
             // Remap keys: tableCPU->cpu, tableGPU->gpu, etc. per C++ baseline cmdFanSet
             let val = match serde_json::from_str::<Value>(&profile_content) {
@@ -231,6 +229,10 @@ pub async fn run_fan(client: &CliClient, action: &FanAction, json_mode: bool) ->
             }
 
             let apply_json = serde_json::to_string(&Value::Object(dst)).unwrap_or_default();
+            if is_empty_fan_profile_payload(Some(&apply_json)) {
+                eprintln!("Error: Fan profile contains no fan curve tables");
+                return Err(1);
+            }
             let res = crate::client::unwrap_write_rpc(
                 with_write_rpc_timeout(client.proxy().apply_fan_profiles(&apply_json)).await,
             );

@@ -238,9 +238,10 @@ fn map_perf_profile_code_to_str(
     };
 
     if let Some(choices_path) = path.parent().map(|p| p.join("platform_profile_choices")) {
-        let raw_choices = sysfs
-            .and_then(|s| s.read(&choices_path).ok())
-            .or_else(|| std::fs::read_to_string(&choices_path).ok());
+        let raw_choices = match sysfs {
+            Some(s) => s.read(&choices_path).ok(),
+            None => std::fs::read_to_string(&choices_path).ok(),
+        };
         if let Some(raw) = raw_choices {
             let tokens: Vec<&str> = raw.split_whitespace().collect();
             if let Some(matched) = candidates
@@ -467,11 +468,45 @@ impl<H: HardwareIo> PlatformBackend for TuxedoIoBackend<H> {
 
     fn set_perf_profile(&self, profile_code: i32) -> Result<(), PlatformError> {
         let vendor = self.require_available()?;
-        validate_perf_profile_code(
-            vendor,
-            self.capabilities.perf_profiles_available,
-            profile_code,
-        )?;
+        let effective_available = if vendor == DeviceVendor::Uniwill
+            && self.capabilities.perf_profiles_available < 2
+            && self.platform_profile_path.is_some()
+        {
+            3
+        } else {
+            self.capabilities.perf_profiles_available
+        };
+        validate_perf_profile_code(vendor, effective_available, profile_code)?;
+
+        let try_sysfs_fallback = || -> Option<()> {
+            let path = self.platform_profile_path.as_ref()?;
+            let profile_str =
+                map_perf_profile_code_to_str(vendor, profile_code, path, self.sysfs.as_deref())?;
+            let write_res = if let Some(ref sys) = self.sysfs {
+                sys.write(path, profile_str)
+            } else {
+                std::fs::write(path, profile_str)
+            };
+            if write_res.is_ok() {
+                *self
+                    .cached_perf_profile
+                    .lock()
+                    .unwrap_or_else(|e| e.into_inner()) = Some(profile_code);
+                Some(())
+            } else {
+                None
+            }
+        };
+
+        if vendor == DeviceVendor::Uniwill && self.capabilities.perf_profiles_available < 2 {
+            if try_sysfs_fallback().is_some() {
+                return Ok(());
+            }
+            return Err(PlatformError::Unsupported(
+                "Uniwill device reports fewer than 2 performance profiles",
+            ));
+        }
+
         match set_perf_profile(&self.hw, vendor, profile_code) {
             Ok(()) => {
                 *self
@@ -481,24 +516,8 @@ impl<H: HardwareIo> PlatformBackend for TuxedoIoBackend<H> {
                 Ok(())
             }
             Err(ioctl_err) => {
-                if let (Some(ref path), Some(profile_str)) = (
-                    &self.platform_profile_path,
-                    self.platform_profile_path.as_deref().and_then(|p| {
-                        map_perf_profile_code_to_str(vendor, profile_code, p, self.sysfs.as_deref())
-                    }),
-                ) {
-                    let write_res = if let Some(ref sys) = self.sysfs {
-                        sys.write(path, profile_str)
-                    } else {
-                        std::fs::write(path, profile_str)
-                    };
-                    if write_res.is_ok() {
-                        *self
-                            .cached_perf_profile
-                            .lock()
-                            .unwrap_or_else(|e| e.into_inner()) = Some(profile_code);
-                        return Ok(());
-                    }
+                if try_sysfs_fallback().is_some() {
+                    return Ok(());
                 }
                 Err(ioctl_err.into())
             }
