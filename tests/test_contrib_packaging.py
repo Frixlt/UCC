@@ -372,5 +372,195 @@ class Repro1d07126ContribTest(unittest.TestCase):
         )
 
 
+
+class M13GuiLddAndPackagingInvariantsTest(unittest.TestCase):
+    CLEAN_LDD_OUTPUT = (
+        '\tlinux-vdso.so.1 (0x00007fff12340000)\n'
+        '\tlibQt6Charts.so.6 => /usr/lib/libQt6Charts.so.6 (0x00007f0000010000)\n'
+        '\tlibQt6Widgets.so.6 => /usr/lib/libQt6Widgets.so.6 (0x00007f0000020000)\n'
+        '\tlibQt6Gui.so.6 => /usr/lib/libQt6Gui.so.6 (0x00007f0000030000)\n'
+        '\tlibQt6DBus.so.6 => /usr/lib/libQt6DBus.so.6 (0x00007f0000040000)\n'
+        '\tlibQt6Core.so.6 => /usr/lib/libQt6Core.so.6 (0x00007f0000050000)\n'
+        '\tlibxcb.so.1 => /usr/lib/libxcb.so.1 (0x00007f0000060000)\n'
+        '\tlibc.so.6 => /usr/lib/libc.so.6 (0x00007f0000070000)\n'
+    )
+
+    def _run_ldd_check(self, args=(), env_extra=None):
+        script = SOURCE / 'scripts/check_gui_ldd.sh'
+        env = {'PATH': os.environ.get('PATH', '/usr/bin:/bin')}
+        if env_extra:
+            env.update(env_extra)
+        return subprocess.run(
+            [str(script), *args],
+            env=env,
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+
+    def test_m12_7_check_gui_ldd_script_properties_and_arg_handling(self):
+        script = SOURCE / 'scripts/check_gui_ldd.sh'
+        self.assertTrue(script.is_file(), 'scripts/check_gui_ldd.sh must exist')
+        mode = script.stat().st_mode
+        self.assertTrue(mode & stat.S_IXUSR, 'scripts/check_gui_ldd.sh must be executable (+x)')
+        content = script.read_text(encoding='utf-8')
+        self.assertIn('set -euo pipefail', content)
+
+        help_proc = self._run_ldd_check(['--help'])
+        self.assertEqual(help_proc.returncode, 0, help_proc.stderr)
+        self.assertIn('Usage:', help_proc.stdout)
+
+        missing_arg = self._run_ldd_check()
+        self.assertEqual(missing_arg.returncode, 2)
+
+        unknown_opt = self._run_ldd_check(['--bogus'])
+        self.assertEqual(unknown_opt.returncode, 2)
+
+        missing_bin = self._run_ldd_check(['/nonexistent/path/to/ucc-gui'])
+        self.assertEqual(missing_bin.returncode, 2)
+
+        empty_out = self._run_ldd_check(env_extra={'UCC_LDD_OUTPUT': '   \n'})
+        self.assertNotEqual(empty_out.returncode, 0)
+
+    def test_m12_7_check_gui_ldd_accepts_clean_output_and_real_binary(self):
+        ok_env = self._run_ldd_check(['ucc-gui'], env_extra={'UCC_LDD_OUTPUT': self.CLEAN_LDD_OUTPUT})
+        self.assertEqual(ok_env.returncode, 0, ok_env.stderr)
+        self.assertIn('OK:', ok_env.stdout)
+
+        with tempfile.TemporaryDirectory() as tmp:
+            mock_file = Path(tmp) / 'ldd.txt'
+            mock_file.write_text(self.CLEAN_LDD_OUTPUT, encoding='utf-8')
+            ok_file = self._run_ldd_check(['ucc-gui'], env_extra={'UCC_LDD_OUTPUT_FILE': str(mock_file)})
+            self.assertEqual(ok_file.returncode, 0, ok_file.stderr)
+
+            fake_bin = Path(tmp) / 'ucc-gui'
+            fake_bin.write_text('dummy', encoding='utf-8')
+            fake_ldd = Path(tmp) / 'fake-ldd'
+            fake_ldd.write_text(
+                f'#!/usr/bin/env bash\nprintf "%s" {json.dumps(self.CLEAN_LDD_OUTPUT)}\n',
+                encoding='utf-8',
+            )
+            fake_ldd.chmod(fake_ldd.stat().st_mode | stat.S_IXUSR)
+            ok_ldd_bin = self._run_ldd_check(
+                [str(fake_bin)],
+                env_extra={'UCC_LDD_BIN': str(fake_ldd)},
+            )
+            self.assertEqual(ok_ldd_bin.returncode, 0, ok_ldd_bin.stderr)
+
+        real_bin = Path('/bin/true')
+        if real_bin.is_file():
+            ok_real = self._run_ldd_check([str(real_bin)])
+            self.assertEqual(ok_real.returncode, 0, ok_real.stderr)
+
+    def test_m12_7_check_gui_ldd_rejects_all_forbidden_dependencies(self):
+        forbidden_cases = [
+            ('not found', '\tlibmissing.so.1 => not found\n'),
+            ('KF6', '\tlibKF6WindowSystem.so.6 => /usr/lib/libKF6WindowSystem.so.6 (0x1)\n'),
+            ('KF6', '\tlibKF6StatusNotifierItem.so.6 => /usr/lib/libKF6StatusNotifierItem.so.6 (0x1)\n'),
+            ('Qt6Qml', '\tlibQt6Qml.so.6 => /usr/lib/libQt6Qml.so.6 (0x1)\n'),
+            ('Qt6Quick', '\tlibQt6Quick.so.6 => /usr/lib/libQt6Quick.so.6 (0x1)\n'),
+            ('Qt6Bluetooth', '\tlibQt6Bluetooth.so.6 => /usr/lib/libQt6Bluetooth.so.6 (0x1)\n'),
+            ('libucc-dbus.so', '\tlibucc-dbus.so.0 => /usr/lib/libucc-dbus.so.0 (0x1)\n'),
+            ('libucc-dbus.so', '\tlibucc-dbus-preview.so => /tmp/libucc-dbus-preview.so (0x1)\n'),
+        ]
+        for label, bad_line in forbidden_cases:
+            with self.subTest(forbidden=label, line=bad_line.strip()):
+                proc = self._run_ldd_check(
+                    ['ucc-gui'],
+                    env_extra={'UCC_LDD_OUTPUT': self.CLEAN_LDD_OUTPUT + bad_line},
+                )
+                self.assertNotEqual(
+                    proc.returncode,
+                    0,
+                    f'check_gui_ldd.sh unexpectedly passed with forbidden {label}: {bad_line}',
+                )
+                self.assertIn(f'FAIL [{label}]', proc.stderr)
+
+    def test_m12_7_cmake_and_ci_wire_gui_ldd_invariants_without_kf6_leak(self):
+        top_cmake_raw = (SOURCE / 'CMakeLists.txt').read_text(encoding='utf-8')
+        top_cmake = '\n'.join(
+            line.split('#', 1)[0] for line in top_cmake_raw.splitlines()
+        )
+        self.assertNotIn(
+            'KF6WindowSystem',
+            top_cmake,
+            'ADR-01/M12.7: root CMakeLists.txt must not link KF6WindowSystem into ucc-gui in default or M13 builds',
+        )
+        self.assertNotIn(
+            'KF6::WindowSystem',
+            top_cmake,
+            'ADR-01/M12.7: root CMakeLists.txt must not link KF6::WindowSystem into ucc-gui',
+        )
+        self.assertNotRegex(
+            top_cmake,
+            r'if\s*\([^)]*BUILD_GUI[^)]*\)\s*\n\s*find_package\s*\(\s*KF6StatusNotifierItem',
+            'ucc-native-tray KF6StatusNotifierItem lookup must not be triggered by BUILD_GUI',
+        )
+
+        tests_cmake = (SOURCE / 'tests/CMakeLists.txt').read_text(encoding='utf-8')
+        self.assertIn('test_gui_ldd_invariants', tests_cmake)
+        self.assertIn('scripts/check_gui_ldd.sh', tests_cmake)
+        self.assertIn('$<TARGET_FILE:ucc-gui>', tests_cmake)
+
+        build_yml = (SOURCE / '.github/workflows/build.yml').read_text(encoding='utf-8')
+        for expected_call in (
+            'scripts/check_gui_ldd.sh build/bin/ucc-gui',
+            'scripts/check_gui_ldd.sh build-rust-runtime/bin/ucc-gui',
+            'scripts/check_gui_ldd.sh build-preview/bin/ucc-gui',
+        ):
+            self.assertIn(
+                expected_call,
+                build_yml,
+                f'build.yml must invoke {expected_call} to enforce M12.7/ADR-01 invariants',
+            )
+
+    def test_m13_packaging_manifests_free_of_kf6_qml_bluetooth_for_gui(self):
+        # PKGBUILD runtime depends must not pull KF6, QML, or Qt6Bluetooth.
+        pkgbuild = (SOURCE / 'PKGBUILD').read_text(encoding='utf-8')
+        depends_match = re.search(r'(?m)^depends=\(([^)]*)\)', pkgbuild)
+        self.assertIsNotNone(depends_match, 'PKGBUILD must declare depends=(...)')
+        pkgbuild_depends = depends_match.group(1)
+        for forbidden in ('kf6', 'kwindowsystem', 'kstatusnotifieritem', 'plasma', 'qt6-declarative', 'qt6-connectivity'):
+            self.assertNotIn(
+                forbidden,
+                pkgbuild_depends.lower(),
+                f'PKGBUILD depends must not include {forbidden}',
+            )
+
+        # debian/control must not pull KF6, QML, or Qt6Bluetooth.
+        deb_control = (SOURCE / 'debian/control').read_text(encoding='utf-8').lower()
+        for forbidden in ('libkf6', 'kf6-', 'qt6-declarative', 'qt6-connectivity', 'libplasma'):
+            self.assertNotIn(
+                forbidden,
+                deb_control,
+                f'debian/control must not depend on {forbidden}',
+            )
+
+        # ucc.spec must not pull KF6, QML, or Qt6Bluetooth.
+        spec = (SOURCE / 'ucc.spec').read_text(encoding='utf-8').lower()
+        for forbidden in ('kf6-', 'qt6-qtdeclarative', 'qt6-qtconnectivity', 'libplasma'):
+            self.assertNotIn(
+                forbidden,
+                spec,
+                f'ucc.spec must not depend on {forbidden}',
+            )
+
+        # package.nix must not pull Plasma/Breeze/KF6/QML/Qt6Bluetooth into buildInputs.
+        package_nix = (SOURCE / 'package.nix').read_text(encoding='utf-8').lower()
+        for forbidden in ('plasma-integration', 'breeze', 'kwindowsystem', 'kstatusnotifieritem', 'qtdeclarative', 'qtconnectivity'):
+            self.assertNotIn(
+                forbidden,
+                package_nix,
+                f'package.nix must not pull {forbidden} into ucc closure',
+            )
+
+        # flake.nix devShell must not pull retired extra-cmake-modules.
+        flake_nix = (SOURCE / 'flake.nix').read_text(encoding='utf-8').lower()
+        self.assertNotIn(
+            'extra-cmake-modules',
+            flake_nix,
+            'flake.nix devShell must not require retired KDE extra-cmake-modules',
+        )
+
 if __name__ == '__main__':
     unittest.main()
