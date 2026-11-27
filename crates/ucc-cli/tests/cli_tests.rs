@@ -231,7 +231,7 @@ fn test_manpage_generation_output() {
     ucc_cli::cli::generate_manpage(&mut buf).expect("generate manpage");
     let out = String::from_utf8(buf).expect("valid utf-8 manpage");
     assert!(out.contains(".TH ucc-cli 1"));
-    assert!(out.contains("Command\\-line interface for Frixit / Uniwill Control Center"));
+    assert!(out.contains("Command\\-line interface for ucc\\-rusted"));
     assert!(out.contains("status"));
     assert!(out.contains("profile"));
     assert!(out.contains("cooler"));

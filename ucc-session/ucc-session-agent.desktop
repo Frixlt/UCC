@@ -1,6 +1,6 @@
 [Desktop Entry]
 Type=Application
-Name=Frixit Control Center session agent
+Name=ucc-rusted session agent
 Comment=Lightbar notification animations and KDE/Hyprland refresh suggestions
 Exec=ucc-session-agent
 TryExec=ucc-session-agent

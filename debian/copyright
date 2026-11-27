@@ -1,8 +1,8 @@
 Format: https://www.debian.org/doc/packaging-manuals/copyright-format/1.0/
-Upstream-Name: Frixit Control Center
+Upstream-Name: ucc-rusted
 Upstream-Contact: https://github.com/Frixlt/UCC
 Source: https://github.com/Frixlt/UCC
-Comment: Combines Frixit ControlCenter with https://github.com/noteMASTER11/UCC-Revorked,
+Comment: ucc-rusted (formerly Frixit Control Center), derived from https://github.com/noteMASTER11/UCC-Revorked,
  based on https://github.com/nanomatters/ucc
 
 Files: *

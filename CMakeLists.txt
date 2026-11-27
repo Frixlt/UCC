@@ -4,7 +4,7 @@ cmake_minimum_required( VERSION 3.20 )
 
 project( ucc
   VERSION 0.3.0
-  DESCRIPTION "Frixit Control Center - ControlCenter and UCC Revorked integration"
+  DESCRIPTION "ucc-rusted - Rust system control suite and Qt6 GUI for Uniwill/Clevo/TUXEDO laptops"
   LANGUAGES CXX
 )
 

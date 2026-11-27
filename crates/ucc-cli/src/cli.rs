@@ -7,7 +7,7 @@ use clap_complete::Shell;
 #[derive(Parser, Debug)]
 #[command(
     name = "ucc-cli",
-    about = "Command-line interface for Frixit / Uniwill Control Center",
+    about = "Command-line interface for ucc-rusted (Uniwill/Clevo/TUXEDO Control Center)",
     version,
     disable_version_flag = true,
     arg_required_else_help = true

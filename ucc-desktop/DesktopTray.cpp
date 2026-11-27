@@ -56,7 +56,7 @@ DesktopTray::DesktopTray(UccdClient *client,SessionPaths paths,QObject *parent)
     // Plasma's Qt platform-theme tray discards KStatusNotifierItem's token.
     // Own the native item so the user gesture can reach our separate GUI process.
     m_nativeIcon=new KStatusNotifierItem("ucc-desktop-tray",this);
-    m_nativeIcon->setStandardActionsEnabled(false);m_nativeIcon->setTitle("Frixit Control Center");
+    m_nativeIcon->setStandardActionsEnabled(false);m_nativeIcon->setTitle("ucc-rusted");
     m_nativeIcon->setCategory(KStatusNotifierItem::Hardware);m_nativeIcon->setContextMenu(m_menu);
     connect(m_nativeIcon,&KStatusNotifierItem::activateRequested,this,[this](bool,const QPoint &){openControlCenter();});
     m_nativeIcon->setStatus(KStatusNotifierItem::Active);
@@ -164,7 +164,7 @@ void DesktopTray::updateIcon() {
   const auto icon=statusIcon(m_policy,m_snapshot,m_profile);
   const auto tooltip=QString("UCC · %1\n%2\n%3\ndGPU: %4").arg(m_policy["current_mode"].toString("unknown"),m_profile,batterySummary(m_snapshot),m_snapshot["gpuState"].toString("unknown"));
 #ifdef UCC_HAVE_KSTATUSNOTIFIERITEM
-  if(m_nativeIcon) {m_nativeIcon->setIconByPixmap(icon);m_nativeIcon->setToolTip("ucc-gui","Frixit Control Center",tooltip);return;}
+  if(m_nativeIcon) {m_nativeIcon->setIconByPixmap(icon);m_nativeIcon->setToolTip("ucc-gui","ucc-rusted",tooltip);return;}
 #endif
   m_icon.setIcon(icon);m_icon.setToolTip(tooltip);
 }

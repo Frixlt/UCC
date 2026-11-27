@@ -1,8 +1,8 @@
-# Frixit Control Center release; no private settings or kernel driver bundled.
-pkgname=frixit-control-center
+# ucc-rusted release; no private settings or kernel driver bundled.
+pkgname=ucc-rusted
 pkgver=0.3.0
 pkgrel=1
-pkgdesc='Frixit Control Center: personal ControlCenter behavior integrated with UCC Revorked'
+pkgdesc='ucc-rusted: Rust system control daemon, CLI, tray, and Qt6 GUI for Uniwill/Clevo/TUXEDO laptops'
 arch=('x86_64')
 url='https://github.com/Frixlt/UCC'
 license=('GPL-3.0-or-later')
@@ -13,8 +13,9 @@ optdepends=('tuxedo-drivers: hardware interface required by uccd'
             'bluez: Bluetooth water cooler'
             'kscreen: KDE refresh-rate offers'
             'qt6-wayland: native Wayland desktop clients')
-provides=("uniwill-control-center=$pkgver")
-conflicts=('uniwill-control-center' 'uniwill-control-center-mechrevo')
+provides=("uniwill-control-center=$pkgver" "frixit-control-center=$pkgver")
+conflicts=('uniwill-control-center' 'uniwill-control-center-mechrevo' 'frixit-control-center')
+replaces=('frixit-control-center')
 options=('!debug')
 install=ucc.install
 # Settings are created/imported locally, never shipped in the public package.

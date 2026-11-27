@@ -464,7 +464,7 @@ impl LiveUccdBackend {
     pub(super) fn get_device_name_impl(&self) -> String {
         let name = self.device_name.trim();
         if name.is_empty() {
-            "Frixit Control Center Laptop".to_string()
+            "ucc-rusted Laptop".to_string()
         } else {
             name.to_string()
         }

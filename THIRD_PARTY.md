@@ -1,6 +1,6 @@
 # Open-source acknowledgements
 
-Frixit Control Center combines Frixit's original ControlCenter behavior and
+`ucc-rusted` (formerly Frixit Control Center) combines custom power/device policies and
 personal calibration with [UCC Revorked by noteMASTER11](https://github.com/noteMASTER11/UCC-Revorked).
 UCC Revorked derives from [Uniwill Control Center by nanomatters](https://github.com/nanomatters/ucc),
 initially based on commit [d2987af](https://github.com/nanomatters/ucc/commit/d2987af6cbaa39a7357dc610d107da269d42b3a0).
@@ -32,7 +32,7 @@ These projects are dependencies or system services, rather than code authored by
 
 The Fluent-inspired visual design is implemented in Qt. No Microsoft Fluent UI library is bundled. This community project is not affiliated with Microsoft, TUXEDO Computers, or the upstream UCC maintainer.
 
-Frixit Control Center is provided without warranty, as stated in the GNU GPL.
+`ucc-rusted` is provided without warranty, as stated in the GNU GPL.
 The [UCC Revorked upstream](https://github.com/noteMASTER11/UCC-Revorked) provides
 the native foundation. Source code for the combined fork is hosted at
 [Frixlt/UCC](https://github.com/Frixlt/UCC). The About page links to its build

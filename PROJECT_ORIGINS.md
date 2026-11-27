@@ -1,6 +1,6 @@
-# Frixit Control Center: project origins
+# ucc-rusted (formerly Frixit Control Center): project origins
 
-This project combines two codebases and their behavior:
+This project combines two historical codebases and their behavior before migrating the background runtime to Rust:
 
 1. **Frixit's original ControlCenter** — the personal power/device policy model,
    AC / Type-C / Battery behavior, calibrated physical keyboard, front lightbar,

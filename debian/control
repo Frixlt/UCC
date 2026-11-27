@@ -27,10 +27,10 @@ Depends: ${shlibs:Depends}, ${misc:Depends},
          tuxedo-drivers,
          qt6-qpa-plugins,
          policykit-1
-Description: Uniwill Control Center
- Uniwill Control Center (UCC) is a comprehensive system control application
- suite for Uniwill (Tuxedo, XMG etc.) computers. Includes the system daemon,
- graphical user interface, command-line tool and a system tray client.
+Description: ucc-rusted (Uniwill Control Center)
+ ucc-rusted is a Rust-backed system control application suite for Uniwill
+ (TUXEDO, XMG, Mechrevo, Clevo) laptops. Includes the Rust system daemon,
+ graphical Qt6 interface, command-line tool, session agent, and SNI tray.
  .
  Features:
   - Fan control management

@@ -7,7 +7,12 @@ use std::time::{Duration, Instant};
 
 const MAX_LINE_BYTES: usize = 4096;
 const DEBOUNCE_WINDOW: Duration = Duration::from_millis(100);
-const SELF_APP_NAMES: [&str; 3] = ["UCC", "Frixit Control Center", "Uniwill Control Center"];
+const SELF_APP_NAMES: [&str; 4] = [
+    "ucc-rusted",
+    "UCC",
+    "Frixit Control Center",
+    "Uniwill Control Center",
+];
 
 pub struct NotificationMonitorParser {
     pending: Vec<u8>,
@@ -125,8 +130,11 @@ mod tests {
         let mut parser = NotificationMonitorParser::new(Some(":1.77".to_string()));
         let t0 = Instant::now();
 
-        let self_app = b"method call time=1.0 sender=:1.42 -> destination=:1.5 serial=9 path=/org/freedesktop/Notifications; interface=org.freedesktop.Notifications; member=Notify\n   string \"Frixit Control Center\"\n   uint32 0\n";
+        let self_app = b"method call time=1.0 sender=:1.42 -> destination=:1.5 serial=9 path=/org/freedesktop/Notifications; interface=org.freedesktop.Notifications; member=Notify\n   string \"ucc-rusted\"\n   uint32 0\n";
         assert_eq!(parser.feed_bytes(self_app, t0), 0);
+
+        let legacy_app = b"method call time=1.05 sender=:1.42 -> destination=:1.5 serial=9 path=/org/freedesktop/Notifications; interface=org.freedesktop.Notifications; member=Notify\n   string \"Frixit Control Center\"\n   uint32 0\n";
+        assert_eq!(parser.feed_bytes(legacy_app, t0 + Duration::from_millis(50)), 0);
 
         let self_sender = b"method call time=1.1 sender=:1.77 -> destination=:1.5 serial=10 path=/org/freedesktop/Notifications; interface=org.freedesktop.Notifications; member=Notify\n   string \"Other\"\n";
         assert_eq!(parser.feed_bytes(self_sender, t0 + Duration::from_millis(200)), 0);

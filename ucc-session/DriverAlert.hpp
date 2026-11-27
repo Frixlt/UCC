@@ -15,7 +15,7 @@ public:
     if(problem!=m_current) {m_current=problem;m_notified.clear();++m_generation;m_pending=false;if(m_id) {close(m_id);m_id=0;}}
     if(problem.isEmpty() || m_pending || m_notified==problem) return;
     auto call=QDBusMessage::createMethodCall("org.freedesktop.Notifications","/org/freedesktop/Notifications","org.freedesktop.Notifications","Notify");
-    call.setArguments({"Frixit Control Center",quint32(0),"dialog-error", "Проблема с Control Center",problem,QStringList{},QVariantMap{{"urgency",quint8(2)}},qint32(0)});
+    call.setArguments({"ucc-rusted",quint32(0),"dialog-error", "Driver Health Warning",problem,QStringList{},QVariantMap{{"urgency",quint8(2)}},qint32(0)});
     m_pending=true;const auto generation=m_generation;
     auto *watcher=new QDBusPendingCallWatcher(m_bus.asyncCall(call,1500),this);
     connect(watcher,&QDBusPendingCallWatcher::finished,this,[this,generation,watcher]{

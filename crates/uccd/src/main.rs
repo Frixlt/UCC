@@ -225,7 +225,7 @@ fn print_usage(prog: &str) {
 
 fn print_version() {
     println!("{} version {}", DAEMON_NAME, env!("CARGO_PKG_VERSION"));
-    println!("Daemon for Uniwill / Frixit Control Center");
+    println!("Daemon for ucc-rusted (Uniwill/Clevo/TUXEDO Control Center)");
 }
 
 #[tokio::main]

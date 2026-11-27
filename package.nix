@@ -130,7 +130,7 @@ stdenv.mkDerivation {
   '';
 
   meta = with lib; {
-    description = "Uniwill Control Center - System control application suite (daemon, GUI, CLI, tray)";
+    description = "ucc-rusted - Rust system control suite and Qt6 GUI for Uniwill/Clevo/TUXEDO laptops";
     homepage = "https://github.com/Frixlt/UCC";
     license = licenses.gpl3Plus;
     platforms = platforms.linux;

@@ -20,7 +20,7 @@ public:
       m_announced=m_source;
       auto call=QDBusMessage::createMethodCall("org.freedesktop.Notifications","/org/freedesktop/Notifications","org.freedesktop.Notifications","Notify");
       const bool battery=m_source=="bat";
-      call.setArguments({"Frixit Control Center",quint32(0),battery ? "battery" : "ac-adapter",
+      call.setArguments({"ucc-rusted",quint32(0),battery ? "battery" : "ac-adapter",
         battery ? "Питание от батареи" : "Питание подключено",
         battery ? "Ноутбук работает от батареи." : m_source=="type_c" ? "Подключено питание USB-C." : "Подключено питание от сети.",
         QStringList{},QVariantMap{},qint32(5000)});

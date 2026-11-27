@@ -4,7 +4,7 @@
  "http://www.freedesktop.org/standards/PolicyKit/1/policyconfig.dtd">
 <policyconfig>
 
-  <vendor>Frixit Control Center</vendor>
+  <vendor>ucc-rusted</vendor>
   <vendor_url>https://github.com/Frixlt/UCC</vendor_url>
 
   <!--

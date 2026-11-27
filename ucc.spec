@@ -3,11 +3,12 @@
 Name:           ucc
 Version:        0.3.0
 Release:        1%{?dist}
-Summary:        Uniwill Control Center - System control application suite
+Summary:        ucc-rusted - System control application suite for Uniwill/Clevo/TUXEDO laptops
 License:        GPL-3.0-or-later
 
 URL:            https://github.com/Frixlt/UCC
-Source0:        https://github.com/Frixlt/UCC/releases/download/v%{version}/frixit-control-center-%{version}.tar.gz
+Source0:        https://github.com/Frixlt/UCC/releases/download/v%{version}/ucc-rusted-%{version}.tar.gz
+Provides:       ucc-rusted = %{version}-%{release}
 
 BuildRequires:  cmake >= 3.20
 BuildRequires:  cargo
@@ -30,8 +31,8 @@ Requires(preun): systemd
 Requires(postun): systemd
 
 %description
-Uniwill Control Center (UCC) is a comprehensive system control application 
-suite for Uniwill computers. It provides:
+ucc-rusted (Uniwill Control Center) is a Rust-backed system control application
+suite for Uniwill/Clevo/TUXEDO laptops. It provides:
 
 - Daemon (uccd): Background service for system control and monitoring
 - GUI (ucc-gui): Main graphical user interface

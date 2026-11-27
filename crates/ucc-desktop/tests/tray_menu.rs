@@ -12,8 +12,8 @@ fn test_tray_menu_structure_and_actions() {
     let mut tray = UccTray::new(profiles, 1, tx);
 
     // Test title and ID
-    assert_eq!(ksni::Tray::id(&tray), "frixit-control-center");
-    assert_eq!(ksni::Tray::title(&tray), "Frixit Control Center");
+    assert_eq!(ksni::Tray::id(&tray), "ucc-rusted");
+    assert_eq!(ksni::Tray::title(&tray), "ucc-rusted");
     assert_eq!(
         ksni::Tray::icon_name(&tray),
         "preferences-system-performance"

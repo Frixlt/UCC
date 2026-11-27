@@ -56,7 +56,7 @@ async fn test_dbus_server_and_client_proxies_live() {
         .unwrap();
 
     let dev_name = primary_proxy.get_device_name().await.unwrap();
-    assert_eq!(dev_name, "Frixit Control Center Laptop");
+    assert_eq!(dev_name, "ucc-rusted Laptop");
 
     let is_supp = primary_proxy.is_device_supported().await.unwrap();
     assert!(is_supp);
@@ -99,7 +99,7 @@ async fn test_dbus_server_and_client_proxies_live() {
         .unwrap();
 
     let dev_name_leg = legacy_proxy.get_device_name().await.unwrap();
-    assert_eq!(dev_name_leg, "Frixit Control Center Laptop");
+    assert_eq!(dev_name_leg, "ucc-rusted Laptop");
 
     let is_supp_leg = legacy_proxy.is_device_supported().await.unwrap();
     assert!(is_supp_leg);

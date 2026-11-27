@@ -79,8 +79,8 @@ QWidget *createAboutPage(QWidget *parent) {
   auto *identity = card(layout);auto *hero = qobject_cast<QVBoxLayout*>(identity->layout());
   auto *heading = new QHBoxLayout;heading->setSpacing(16);
   auto *mark = text("UCC","aboutMark");mark->setFixedSize(64,64);mark->setAlignment(Qt::AlignCenter);heading->addWidget(mark);
-  auto *intro = new QVBoxLayout;intro->setSpacing(6);intro->addWidget(text("Frixit Control Center","sectionTitle"));
-  intro->addWidget(text("Combines Frixit's ControlCenter behavior with UCC Revorked's native interface and hardware backend.","subtitle"));heading->addLayout(intro,1);hero->addLayout(heading);
+  auto *intro = new QVBoxLayout;intro->setSpacing(6);intro->addWidget(text("ucc-rusted","sectionTitle"));
+  intro->addWidget(text("Rust system control daemon, CLI, tray, and standalone Qt6 interface for Uniwill, Clevo, and TUXEDO laptops.","subtitle"));heading->addLayout(intro,1);hero->addLayout(heading);
   auto *metadata = new QHBoxLayout;metadata->setSpacing(24);
   const QString revision = QString::fromUtf8(UCC_RELEASE);
   const QString values[] = {QString::fromUtf8(UCC_VERSION),revision.isEmpty() ? QStringLiteral("Source archive") : revision,QString::fromLatin1(qVersion())};
@@ -95,7 +95,7 @@ QWidget *createAboutPage(QWidget *parent) {
   auto *source = link("Source code ↗","https://github.com/Frixlt/UCC",identity);source->setObjectName("aboutSource");actions->addWidget(source);
   if(!revision.isEmpty()) actions->addWidget(link("Build source ↗","https://github.com/Frixlt/UCC/commit/"+revision,identity));
   auto *origins=new QPushButton("Project origins",identity);origins->setObjectName("aboutOrigins");actions->addWidget(origins);
-  QObject::connect(origins,&QPushButton::clicked,identity,[identity] {showDocument(identity,"Frixit Control Center — project origins",":/legal/PROJECT_ORIGINS.md",true);});
+  QObject::connect(origins,&QPushButton::clicked,identity,[identity] {showDocument(identity,"ucc-rusted — project origins",":/legal/PROJECT_ORIGINS.md",true);});
   auto *license = new QPushButton("GNU GPL v3",identity);license->setObjectName("aboutLicense");
   QObject::connect(license,&QPushButton::clicked,identity,[identity] {showDocument(identity,"GNU General Public License v3",":/legal/COPYING",false);});actions->addWidget(license);actions->addStretch();hero->addLayout(actions);
   hero->addWidget(text("GPL-3.0-or-later · Distributed without warranty.","muted"));

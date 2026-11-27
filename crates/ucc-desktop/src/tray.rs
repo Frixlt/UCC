@@ -1,4 +1,4 @@
-//! StatusNotifierItem (SNI) system tray service for Frixit Control Center.
+//! StatusNotifierItem (SNI) system tray service for `ucc-rusted`.
 //!
 //! Provides desktop panel integration for KDE Plasma, Hyprland (waybar), GNOME (via AppIndicator),
 //! and X11 without requiring Qt or C++ runtime dependencies.
@@ -50,7 +50,7 @@ pub struct UccTray {
 }
 
 impl UccTray {
-    pub const TRAY_ID: &'static str = "frixit-control-center";
+    pub const TRAY_ID: &'static str = "ucc-rusted";
 
     pub fn new(
         profiles: Vec<String>,
@@ -140,7 +140,7 @@ impl Tray for UccTray {
     }
 
     fn title(&self) -> String {
-        "Frixit Control Center".to_string()
+        "ucc-rusted".to_string()
     }
 
     fn icon_name(&self) -> String {

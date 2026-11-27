@@ -81,7 +81,7 @@ int main( int argc, char *argv[] )
   }
 
   QApplication app( argc, argv );
-  app.setApplicationDisplayName("Frixit Control Center");
+  app.setApplicationDisplayName("ucc-rusted");
   app.setDesktopFileName("ucc-gui");
   app.setOrganizationName( "UniwillControlCenter" );
   app.setOrganizationDomain( "uniwill.local" );

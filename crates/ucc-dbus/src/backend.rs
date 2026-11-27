@@ -10,7 +10,7 @@ static ACTIVE_PROFILE_JSON: std::sync::RwLock<Option<String>> = std::sync::RwLoc
 /// Backend trait covering all 122 baseline D-Bus methods.
 pub trait UccdBackend: Send + Sync + 'static {
     fn get_device_name(&self) -> String {
-        "Frixit Control Center Laptop".to_string()
+        "ucc-rusted Laptop".to_string()
     }
     fn get_system_info_json(&self) -> String {
         "{}".to_string()
