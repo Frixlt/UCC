@@ -1,0 +1,7 @@
+# SPDX-License-Identifier: GPL-2.0-only
+# Kbuild recipe for the uwcc-rs Rust-for-Linux kernel module (Linux 7.3+, CONFIG_RUST=y).
+
+obj-m := uwcc_rs.o
+uwcc_rs-y := src/uwcc_rs.o src/acpi_shim.o
+
+ccflags-y += -I$(src)/include -I$(src)/src -Wall -Wextra -Werror=implicit-function-declaration
