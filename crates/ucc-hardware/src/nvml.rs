@@ -591,6 +591,42 @@ pub struct NvmlWrapper {
         Option<unsafe extern "C" fn(*mut c_void, *mut NvmlClockOffset) -> c_uint>,
 }
 
+/// Returns ordered candidate DLL paths for locating `nvml.dll` on Windows.
+///
+/// Always tries bare `"nvml.dll"` (standard DLL search order) first, followed by
+/// `<SystemRoot>\System32\nvml.dll` and `<ProgramFiles>\NVIDIA Corporation\NVSMI\nvml.dll`,
+/// deduplicating entries case-insensitively while preserving order.
+pub fn windows_nvml_candidate_paths(
+    system_root: Option<&str>,
+    program_files: Option<&str>,
+) -> Vec<String> {
+    let sys_root = system_root
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+        .unwrap_or(r"C:\Windows")
+        .trim_end_matches(['\\', '/']);
+    let prog_files = program_files
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+        .unwrap_or(r"C:\Program Files")
+        .trim_end_matches(['\\', '/']);
+
+    let raw = [
+        String::from("nvml.dll"),
+        format!(r"{sys_root}\System32\nvml.dll"),
+        format!(r"{prog_files}\NVIDIA Corporation\NVSMI\nvml.dll"),
+    ];
+
+    let mut seen = HashSet::new();
+    let mut out = Vec::with_capacity(raw.len());
+    for path in raw {
+        if seen.insert(path.to_ascii_lowercase()) {
+            out.push(path);
+        }
+    }
+    out
+}
+
 impl NvmlWrapper {
     /// Attempts to load `libnvidia-ml.so.1`/`libnvidia-ml.so` (Unix) or `nvml.dll` (Windows)
     pub fn new(power_guard: NvidiaPowerGuard) -> Result<Self, NvmlError> {
@@ -603,7 +639,30 @@ impl NvmlWrapper {
         }
         #[cfg(windows)]
         {
-            let lib = unsafe { Library::new("nvml.dll")? };
+            let sys_root = std::env::var("SystemRoot").ok();
+            let prog_files = std::env::var("ProgramFiles").ok();
+            let candidates =
+                windows_nvml_candidate_paths(sys_root.as_deref(), prog_files.as_deref());
+            let mut last_err: Option<libloading::Error> = None;
+            let mut loaded: Option<Library> = None;
+            for candidate in &candidates {
+                match unsafe { Library::new(candidate) } {
+                    Ok(lib) => {
+                        loaded = Some(lib);
+                        break;
+                    }
+                    Err(err) => {
+                        last_err = Some(err);
+                    }
+                }
+            }
+            let lib = match loaded {
+                Some(lib) => lib,
+                None => match last_err {
+                    Some(err) => return Err(NvmlError::LibraryLoad(err)),
+                    None => unsafe { Library::new("nvml.dll")? },
+                },
+            };
             Self::from_library(power_guard, lib, Some(PathBuf::from("nvapi64.dll")))
         }
     }
