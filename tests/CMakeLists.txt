@@ -143,7 +143,16 @@ if(DBUS_RUN_SESSION_EXECUTABLE AND BUILD_GUI)
     ../ucc-gui/src/KeyboardVisualizerWidget.cpp ../ucc-gui/inc/KeyboardVisualizerWidget.hpp
     ../ucc-gui/src/HardwareTab.cpp ../ucc-gui/inc/HardwareTab.hpp
     ../ucc-gui/src/AssignKeyZones.cpp ../ucc-gui/src/DetectLayout.cpp)
-  add_executable(test_gui_audit test_gui_audit.cpp ${UCC_GUI_AUDIT_SOURCES})
+  add_executable(test_gui_audit
+    test_gui_audit/AuditDaemon.hpp
+    test_gui_audit/GuiAudit.hpp
+    test_gui_audit/main.cpp
+    test_gui_audit/profiles_and_cpu.cpp
+    test_gui_audit/dashboard_and_cooling.cpp
+    test_gui_audit/lighting_and_devices.cpp
+    test_gui_audit/monitor_and_theme.cpp
+    test_gui_audit/preview_and_gallery.cpp
+    ${UCC_GUI_AUDIT_SOURCES})
   target_include_directories(test_gui_audit PRIVATE ../ucc-gui/inc ../include)
   target_link_libraries(test_gui_audit PRIVATE ucc-desktop-tray-support ucc-dbus Qt6::Widgets Qt6::Charts Qt6::Test)
   if(TARGET PkgConfig::UCC_XCB)
