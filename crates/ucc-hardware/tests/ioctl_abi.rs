@@ -106,3 +106,137 @@ fn test_version_buffer_len_and_utf8_conversion() {
     };
     assert_eq!(s, "1.2.3.4.5.6.7.8.9.0");
 }
+
+#[cfg(unix)]
+#[test]
+fn cpp_header_ioctl_abi_matches_rust_byte_for_byte() {
+    use std::path::PathBuf;
+    use std::process::Command;
+
+    let manifest_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+    let include_dir = manifest_dir
+        .join("../../uccd/3rdparty/tuxedo_io_lib")
+        .canonicalize()
+        .expect("tuxedo_io_ioctl.h include dir must exist");
+    assert!(include_dir.join("tuxedo_io_ioctl.h").is_file());
+
+    let rust_table: &[(&str, u64)] = &[
+        ("R_MOD_VERSION", R_MOD_VERSION),
+        ("R_HWCHECK_CL", R_HWCHECK_CL),
+        ("R_HWCHECK_UW", R_HWCHECK_UW),
+        ("R_CL_HW_IF_STR", R_CL_HW_IF_STR),
+        ("R_CL_FANINFO1", R_CL_FANINFO1),
+        ("R_CL_FANINFO2", R_CL_FANINFO2),
+        ("R_CL_FANINFO3", R_CL_FANINFO3),
+        ("R_CL_WEBCAM_SW", R_CL_WEBCAM_SW),
+        ("R_CL_FLIGHTMODE_SW", R_CL_FLIGHTMODE_SW),
+        ("R_CL_TOUCHPAD_SW", R_CL_TOUCHPAD_SW),
+        ("W_CL_FANSPEED", W_CL_FANSPEED),
+        ("W_CL_FANAUTO", W_CL_FANAUTO),
+        ("W_CL_WEBCAM_SW", W_CL_WEBCAM_SW),
+        ("W_CL_FLIGHTMODE_SW", W_CL_FLIGHTMODE_SW),
+        ("W_CL_TOUCHPAD_SW", W_CL_TOUCHPAD_SW),
+        ("W_CL_PERF_PROFILE", W_CL_PERF_PROFILE),
+        ("R_UW_HW_IF_STR", R_UW_HW_IF_STR),
+        ("R_UW_MODEL_ID", R_UW_MODEL_ID),
+        ("R_UW_FANSPEED", R_UW_FANSPEED),
+        ("R_UW_FANSPEED2", R_UW_FANSPEED2),
+        ("R_UW_FAN_TEMP", R_UW_FAN_TEMP),
+        ("R_UW_FAN_TEMP2", R_UW_FAN_TEMP2),
+        ("R_UW_MODE", R_UW_MODE),
+        ("R_UW_MODE_ENABLE", R_UW_MODE_ENABLE),
+        ("R_UW_FANS_OFF_AVAILABLE", R_UW_FANS_OFF_AVAILABLE),
+        ("R_UW_FANS_MIN_SPEED", R_UW_FANS_MIN_SPEED),
+        ("R_UW_TDP0", R_UW_TDP0),
+        ("R_UW_TDP1", R_UW_TDP1),
+        ("R_UW_TDP2", R_UW_TDP2),
+        ("R_UW_TDP0_MIN", R_UW_TDP0_MIN),
+        ("R_UW_TDP1_MIN", R_UW_TDP1_MIN),
+        ("R_UW_TDP2_MIN", R_UW_TDP2_MIN),
+        ("R_UW_TDP0_MAX", R_UW_TDP0_MAX),
+        ("R_UW_TDP1_MAX", R_UW_TDP1_MAX),
+        ("R_UW_TDP2_MAX", R_UW_TDP2_MAX),
+        ("R_UW_PROFS_AVAILABLE", R_UW_PROFS_AVAILABLE),
+        ("W_UW_FANSPEED", W_UW_FANSPEED),
+        ("W_UW_FANSPEED2", W_UW_FANSPEED2),
+        ("W_UW_MODE", W_UW_MODE),
+        ("W_UW_MODE_ENABLE", W_UW_MODE_ENABLE),
+        ("W_UW_FANAUTO", W_UW_FANAUTO),
+        ("W_UW_TDP0", W_UW_TDP0),
+        ("W_UW_TDP1", W_UW_TDP1),
+        ("W_UW_TDP2", W_UW_TDP2),
+        ("W_UW_PERF_PROF", W_UW_PERF_PROF),
+    ];
+
+    let mut cpp = String::from(
+        "#include <cstdint>\n\
+         #include <cstdio>\n\
+         #include <sys/ioctl.h>\n\
+         #include \"tuxedo_io_ioctl.h\"\n\
+         int main() {\n\
+           std::printf(\"PTR_SIZE=%zu\\n\", sizeof(int32_t*));\n",
+    );
+    for (name, _) in rust_table {
+        cpp.push_str(&format!(
+            "  std::printf(\"{name}=0x%llx\\n\", static_cast<unsigned long long>(static_cast<uint32_t>({name})));\n"
+        ));
+    }
+    cpp.push_str("  return 0;\n}\n");
+
+    let tag = format!("ucc_ioctl_abi_{}", std::process::id());
+    let src_path = std::env::temp_dir().join(format!("{tag}.cpp"));
+    let bin_path = std::env::temp_dir().join(&tag);
+    std::fs::write(&src_path, &cpp).unwrap();
+
+    struct Cleanup(PathBuf, PathBuf);
+    impl Drop for Cleanup {
+        fn drop(&mut self) {
+            let _ = std::fs::remove_file(&self.0);
+            let _ = std::fs::remove_file(&self.1);
+        }
+    }
+    let _cleanup = Cleanup(src_path.clone(), bin_path.clone());
+
+    let compile = Command::new("c++")
+        .arg("-std=c++17")
+        .arg("-I")
+        .arg(&include_dir)
+        .arg(&src_path)
+        .arg("-o")
+        .arg(&bin_path)
+        .output()
+        .expect("C++ compiler (c++) must be available for ioctl ABI verification");
+    assert!(
+        compile.status.success(),
+        "C++ reference compile failed: {}",
+        String::from_utf8_lossy(&compile.stderr)
+    );
+
+    let run = Command::new(&bin_path)
+        .output()
+        .expect("Failed to execute C++ ioctl reference binary");
+    assert!(run.status.success());
+
+    let stdout = String::from_utf8(run.stdout).unwrap();
+    let mut parsed = std::collections::HashMap::new();
+    for line in stdout.lines() {
+        if let Some((k, v)) = line.split_once('=') {
+            parsed.insert(k.to_string(), v.to_string());
+        }
+    }
+    assert_eq!(
+        parsed.get("PTR_SIZE").map(String::as_str),
+        Some("8"),
+        "Expected 64-bit pointer size in ABI harness"
+    );
+    for (name, rust_val) in rust_table {
+        let cpp_hex = parsed
+            .get(*name)
+            .unwrap_or_else(|| panic!("Missing macro {name} in C++ harness output"));
+        let rust_hex = format!("0x{rust_val:x}");
+        assert_eq!(
+            cpp_hex, &rust_hex,
+            "ABI mismatch for {name}: C++={cpp_hex} Rust={rust_hex}"
+        );
+    }
+}
