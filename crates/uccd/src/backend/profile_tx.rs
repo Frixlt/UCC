@@ -2148,6 +2148,11 @@ impl LiveUccdBackend {
         {
             return false;
         }
+        let phys_src = self.detect_physical_power_source();
+        let ac_online = matches!(phys_src, ProfileState::Ac | ProfileState::TypeC);
+        self.lock_mutex(&self.lid_controller)
+            .update_power_source(std::time::Instant::now(), ac_online);
+
         let decision = self.current_decision();
         let state_str = decision.profile_state.as_str().to_string();
         let effective_mode = decision.effective;
@@ -2211,7 +2216,7 @@ impl LiveUccdBackend {
                         None => {
                             let cur = self.read_rw(&self.active_profile).clone();
                             if s.profiles.contains_key(&cur.id) {
-                                (cur.clone(), Some(cur))
+                                (cur, None)
                             } else {
                                 (default_high_performance_profile(), None)
                             }
@@ -2229,16 +2234,19 @@ impl LiveUccdBackend {
                     ApplyOutcome::Committed => {
                         let decision_matches =
                             self.current_decision().profile_state.as_str() == apply_state;
-                        let stored_matches = expected_stored.as_ref().is_none_or(|exp| {
+                        let stored_matches = {
                             let dec_now = self.current_decision();
                             let phys_now = dec_now.effective.as_str();
-                            self.read_rw(&self.settings)
-                                .get_active_profile_for_mode_with_fallback(
-                                    &apply_state,
-                                    Some(phys_now),
-                                )
-                                .is_some_and(|cur| cur == exp)
-                        });
+                            let s = self.read_rw(&self.settings);
+                            let cur_mapped = s.get_active_profile_for_mode_with_fallback(
+                                &apply_state,
+                                Some(phys_now),
+                            );
+                            match expected_stored.as_ref() {
+                                Some(exp) => cur_mapped.is_some_and(|cur| cur == exp),
+                                None => cur_mapped.is_none(),
+                            }
+                        };
                         if decision_matches && stored_matches {
                             *self.lock_mutex(&self.last_applied_profile_state) = Some(apply_state);
                             applied_profile_now = true;

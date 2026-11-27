@@ -232,7 +232,17 @@ pub trait SleepOperations {
 }
 
 pub fn prepare_sleep(store: &SleepStateStore, ops: &dyn SleepOperations) -> Result<(), String> {
-    let previous = store.load()?;
+    let previous = match store.load() {
+        Ok(state) => state,
+        Err(err) if err == "Invalid sleep snapshot" => {
+            tracing::warn!(
+                path = %store.path().display(),
+                "Ignoring corrupted sleep snapshot during prepare_sleep; will overwrite"
+            );
+            None
+        }
+        Err(err) => return Err(err),
+    };
     let active = ops.is_daemon_active()?;
     if !active {
         return if previous.is_some() {

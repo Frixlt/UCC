@@ -168,6 +168,17 @@ impl LidController {
         self.config = config;
     }
 
+    /// Updates tracked physical AC online state whenever the power source changes so
+    /// AC-unplug debounce timestamps reflect actual unplug time rather than a later lid close (`V2-P1-02`).
+    pub fn update_power_source(&mut self, now: Instant, ac_online: bool) {
+        if self.ac_online && !ac_online {
+            self.last_ac_unplug = Some(now);
+        } else if ac_online {
+            self.last_ac_unplug = None;
+        }
+        self.ac_online = ac_online;
+    }
+
     /// Evaluates per-source action honoring the 3s AC-unplug debounce window.
     pub fn action_for_source(
         &self,
@@ -416,6 +427,9 @@ pub fn apply_wakeup_policy(
         }
     }
 
+    const ALLOWED_ACPI_WAKEUP_DEVICES: &[&str] =
+        &["LID", "LID0", "LID1", "PS2K", "KBC", "KBC0", "KBD", "KBD0"];
+
     let acpi_wakeup = proc_dir.join("acpi/wakeup");
     if let Ok(content) = sysfs.read(&acpi_wakeup) {
         let mut toggled = HashSet::new();
@@ -433,7 +447,10 @@ pub fn apply_wakeup_policy(
             let Some(status) = parts.next() else {
                 continue;
             };
-            if dev == "Device" || !status.starts_with("*enabled") {
+            if dev == "Device"
+                || ALLOWED_ACPI_WAKEUP_DEVICES.contains(&dev)
+                || !status.starts_with("*enabled")
+            {
                 continue;
             }
             if !toggled.insert(dev.to_string()) {

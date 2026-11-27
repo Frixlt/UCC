@@ -46,54 +46,84 @@ struct PidLock {
 
 impl PidLock {
     fn acquire(path: &Path) -> Result<Self, String> {
-        // Refuse to follow symlinks to protect external files
-        if let Ok(meta) = fs::symlink_metadata(path) {
-            if meta.file_type().is_symlink() {
-                return Err(format!("PID file {} is a symlink", path.display()));
+        use std::os::unix::fs::MetadataExt;
+
+        const MAX_ATTEMPTS: usize = 5;
+        for _ in 0..MAX_ATTEMPTS {
+            // Refuse to follow symlinks to protect external files
+            if let Ok(meta) = fs::symlink_metadata(path) {
+                if meta.file_type().is_symlink() {
+                    return Err(format!("PID file {} is a symlink", path.display()));
+                }
+            }
+
+            let mut opts = OpenOptions::new();
+            opts.read(true)
+                .write(true)
+                .create(true)
+                .truncate(false)
+                .mode(0o600);
+            #[cfg(unix)]
+            {
+                opts.custom_flags(libc::O_NOFOLLOW);
+            }
+
+            let file = opts
+                .open(path)
+                .map_err(|e| format!("Failed to open/create PID file {}: {e}", path.display()))?;
+
+            let fd = file.as_raw_fd();
+            let st = fstat(fd)
+                .map_err(|e| format!("Failed to stat PID file {}: {e}", path.display()))?;
+            if (st.st_mode & libc::S_IFMT) != libc::S_IFREG
+                || st.st_uid != unsafe { libc::geteuid() }
+            {
+                return Err(format!(
+                    "PID file {} is not a regular file owned by current UID",
+                    path.display()
+                ));
+            }
+            let ret = unsafe { libc::flock(fd, libc::LOCK_EX | libc::LOCK_NB) };
+            if ret != 0 {
+                let mut existing_pid = String::new();
+                let mut f = &file;
+                let _ = f.read_to_string(&mut existing_pid);
+                return Err(format!(
+                    "Daemon is already running with PID {}",
+                    existing_pid.trim()
+                ));
+            }
+
+            // Verify locked inode still matches the directory entry at `path` (`V2-P2-01`).
+            match fs::symlink_metadata(path) {
+                Ok(meta)
+                    if !meta.file_type().is_symlink()
+                        && meta.dev() == st.st_dev
+                        && meta.ino() == st.st_ino =>
+                {
+                    let mut lock = Self {
+                        file,
+                        path: path.to_path_buf(),
+                    };
+                    lock.write_pid()?;
+                    return Ok(lock);
+                }
+                Ok(meta) if meta.file_type().is_symlink() => {
+                    return Err(format!("PID file {} is a symlink", path.display()));
+                }
+                _ => {
+                    unsafe {
+                        libc::flock(fd, libc::LOCK_UN);
+                    }
+                    continue;
+                }
             }
         }
-
-        let mut opts = OpenOptions::new();
-        opts.read(true)
-            .write(true)
-            .create(true)
-            .truncate(false)
-            .mode(0o600);
-        #[cfg(unix)]
-        {
-            opts.custom_flags(libc::O_NOFOLLOW);
-        }
-
-        let file = opts
-            .open(path)
-            .map_err(|e| format!("Failed to open/create PID file {}: {e}", path.display()))?;
-
-        let fd = file.as_raw_fd();
-        let st =
-            fstat(fd).map_err(|e| format!("Failed to stat PID file {}: {e}", path.display()))?;
-        if (st.st_mode & libc::S_IFMT) != libc::S_IFREG || st.st_uid != unsafe { libc::geteuid() } {
-            return Err(format!(
-                "PID file {} is not a regular file owned by current UID",
-                path.display()
-            ));
-        }
-        let ret = unsafe { libc::flock(fd, libc::LOCK_EX | libc::LOCK_NB) };
-        if ret != 0 {
-            let mut existing_pid = String::new();
-            let mut f = &file;
-            let _ = f.read_to_string(&mut existing_pid);
-            return Err(format!(
-                "Daemon is already running with PID {}",
-                existing_pid.trim()
-            ));
-        }
-
-        let mut lock = Self {
-            file,
-            path: path.to_path_buf(),
-        };
-        lock.write_pid()?;
-        Ok(lock)
+        Err(format!(
+            "Failed to acquire stable PID lock on {} after {} attempts",
+            path.display(),
+            MAX_ATTEMPTS
+        ))
     }
 
     fn write_pid(&mut self) -> Result<(), String> {

@@ -879,6 +879,15 @@ impl DaemonRuntime {
     }
 }
 
+async fn next_backend_signal(
+    rx: Option<&mut broadcast::Receiver<DbusSignalEvent>>,
+) -> Result<DbusSignalEvent, broadcast::error::RecvError> {
+    let Some(rx) = rx else {
+        return std::future::pending().await;
+    };
+    rx.recv().await
+}
+
 async fn next_signal_opt(
     stream: Option<&mut std::pin::Pin<Box<zbus::proxy::SignalStream<'_>>>>,
 ) -> Option<zbus::Message> {
@@ -905,16 +914,44 @@ fn extract_lid_closed_change(
     bool::try_from(val).ok()
 }
 
+async fn sync_lid_inhibitor(
+    login_proxy: &zbus::Proxy<'_>,
+    backend: &Arc<LiveUccdBackend>,
+    inhibitor_fd: &mut Option<zbus::zvariant::OwnedFd>,
+) {
+    let want_inhibit = backend.should_inhibit_lid_switch();
+    if want_inhibit && inhibitor_fd.is_none() {
+        match login_proxy
+            .call::<_, _, zbus::zvariant::OwnedFd>(
+                "Inhibit",
+                &(
+                    "handle-lid-switch",
+                    "uccd",
+                    "Managing configured lid-switch power policy",
+                    "block",
+                ),
+            )
+            .await
+        {
+            Ok(fd) => *inhibitor_fd = Some(fd),
+            Err(err) => warn!("Failed to acquire logind handle-lid-switch inhibitor: {err}"),
+        }
+    } else if !want_inhibit && inhibitor_fd.is_some() {
+        *inhibitor_fd = None;
+    }
+}
+
 async fn handle_lid_change(
     login_proxy: &zbus::Proxy<'_>,
     backend: &Arc<LiveUccdBackend>,
     closed: bool,
+    holds_inhibitor: bool,
 ) {
     let b = Arc::clone(backend);
     let action = tokio::task::spawn_blocking(move || {
         let _g = b.enter_worker_hw_op()?;
         let transitioned = b.on_lid_state_changed(closed);
-        if transitioned && closed {
+        if transitioned && closed && holds_inhibitor {
             Some(b.evaluate_lid_close_action())
         } else {
             None
@@ -974,25 +1011,9 @@ async fn run_logind_monitor_loop(
         backend.seed_initial_lid_state(closed);
     }
 
+    let mut sig_rx = Some(backend.subscribe_signals());
     let mut inhibitor_fd: Option<zbus::zvariant::OwnedFd> = None;
-    let pd_settings: serde_json::Value =
-        serde_json::from_str(&backend.get_power_device_settings_json()).unwrap_or_default();
-    if pd_settings.get("lid").is_some() {
-        if let Ok(fd) = login_proxy
-            .call::<_, _, zbus::zvariant::OwnedFd>(
-                "Inhibit",
-                &(
-                    "handle-lid-switch",
-                    "uccd",
-                    "Managing configured lid-switch power policy",
-                    "block",
-                ),
-            )
-            .await
-        {
-            inhibitor_fd = Some(fd);
-        }
-    }
+    sync_lid_inhibitor(&login_proxy, &backend, &mut inhibitor_fd).await;
 
     let Ok(sleep_stream) = login_proxy.receive_signal("PrepareForSleep").await else {
         let _ = stop_rx.changed().await;
@@ -1057,13 +1078,28 @@ async fn run_logind_monitor_loop(
                     }
                 }
             }
+            recv = next_backend_signal(sig_rx.as_mut()) => {
+                match recv {
+                    Ok(
+                        DbusSignalEvent::PowerDeviceStatusChanged { .. }
+                        | DbusSignalEvent::ProfileChanged { .. },
+                    )
+                    | Err(broadcast::error::RecvError::Lagged(_)) => {
+                        sync_lid_inhibitor(&login_proxy, &backend, &mut inhibitor_fd).await;
+                    }
+                    Ok(_) => {}
+                    Err(broadcast::error::RecvError::Closed) => {
+                        sig_rx = None;
+                    }
+                }
+            }
             maybe_msg = next_signal_opt(login_props_stream.as_mut()) => {
                 let Some(msg) = maybe_msg else {
                     login_props_stream = None;
                     continue;
                 };
                 if let Some(closed) = extract_lid_closed_change(&msg, "org.freedesktop.login1.Manager", "LidClosed") {
-                    handle_lid_change(&login_proxy, &backend, closed).await;
+                    handle_lid_change(&login_proxy, &backend, closed, inhibitor_fd.is_some()).await;
                 }
             }
             maybe_msg = next_signal_opt(upower_props_stream.as_mut()) => {
@@ -1072,7 +1108,7 @@ async fn run_logind_monitor_loop(
                     continue;
                 };
                 if let Some(closed) = extract_lid_closed_change(&msg, "org.freedesktop.UPower", "LidIsClosed") {
-                    handle_lid_change(&login_proxy, &backend, closed).await;
+                    handle_lid_change(&login_proxy, &backend, closed, inhibitor_fd.is_some()).await;
                 }
             }
         }

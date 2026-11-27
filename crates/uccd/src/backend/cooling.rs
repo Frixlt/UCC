@@ -1186,6 +1186,9 @@ impl LiveUccdBackend {
         name: &str,
         json_str: &str,
     ) -> bool {
+        let Some(_op_guard) = self.enter_hardware_op() else {
+            return false;
+        };
         if ucc_config::is_read_only_preview()
             || self.shutting_down.load(Ordering::SeqCst)
             || json_str.len() > 1024 * 1024
@@ -1388,9 +1391,11 @@ pub async fn run_water_cooler_ble_loop(
                                 active_session = Some(sess);
                                 disconnect_since = None;
                                 connect_since.get_or_insert_with(Instant::now);
-                                backend
-                                    .lock_mutex(&backend.cooler_controller)
-                                    .on_connected();
+                                {
+                                    let mut cooler = backend.lock_mutex(&backend.cooler_controller);
+                                    backend.apply_lid_blank_to_wc_if_closed_locked(&mut cooler);
+                                    cooler.on_connected();
+                                }
                                 debug!("Connected to BLE water cooler {}", chosen.name);
                             }
                             Err(e) => warn!("BLE water cooler connect failed: {e}"),

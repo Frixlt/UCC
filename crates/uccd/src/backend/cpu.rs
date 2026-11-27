@@ -595,6 +595,47 @@ impl LiveUccdBackend {
     }
 
     #[must_use]
+    fn write_sysfs_if_changed_allow_ebusy(&self, path: &Path, target: &str) -> bool {
+        if self.shutdown_wait_expired.load(Ordering::SeqCst) {
+            return false;
+        }
+        if self
+            .sysfs
+            .read(path)
+            .is_ok_and(|cur| cur.trim() == target.trim())
+        {
+            return true;
+        }
+        if self.shutdown_wait_expired.load(Ordering::SeqCst) {
+            return false;
+        }
+        if let Err(err) = self.sysfs.write(path, target) {
+            if err.raw_os_error() == Some(nix::libc::EBUSY) {
+                warn!(
+                    "Ignoring EBUSY while restoring CPU EPP node {}; continuing",
+                    path.display()
+                );
+                return true;
+            }
+            warn!("Failed restoring CPU sysfs node {}: {err}", path.display());
+            return false;
+        }
+        if self.shutdown_wait_expired.load(Ordering::SeqCst) {
+            return false;
+        }
+        match self.sysfs.read(path) {
+            Ok(cur) if cur.trim() == target.trim() => true,
+            result => {
+                warn!(
+                    "Could not verify restored CPU sysfs node {}: {result:?}",
+                    path.display()
+                );
+                false
+            }
+        }
+    }
+
+    #[must_use]
     pub(super) fn apply_cpu_defaults_snapshot(&self, defaults: &CpuDefaultsSnapshot) -> bool {
         let cpu_root = self.sys_root.join("sys/devices/system/cpu");
         if let Some(ref nt) = defaults.no_turbo {
@@ -625,19 +666,51 @@ impl LiveUccdBackend {
                 }
             }
             if let Some(ref epp) = snap.epp {
-                if !self.write_sysfs_if_changed(&cpufreq.join("energy_performance_preference"), epp)
-                {
+                if !self.write_sysfs_if_changed_allow_ebusy(
+                    &cpufreq.join("energy_performance_preference"),
+                    epp,
+                ) {
                     return false;
                 }
             }
-            if let Some(ref max_khz) = snap.max_freq_khz {
-                if !self.write_sysfs_if_changed(&cpufreq.join("scaling_max_freq"), max_khz) {
-                    return false;
+            let min_path = cpufreq.join("scaling_min_freq");
+            let max_path = cpufreq.join("scaling_max_freq");
+            let target_min = snap
+                .min_freq_khz
+                .as_deref()
+                .and_then(|s| s.trim().parse::<u32>().ok());
+            let target_max = snap
+                .max_freq_khz
+                .as_deref()
+                .and_then(|s| s.trim().parse::<u32>().ok());
+            let cur_min = self.read_u32_sysfs(&min_path);
+            let cur_max = self.read_u32_sysfs(&max_path);
+            let min_first = match (target_min, target_max, cur_min, cur_max) {
+                (_, Some(t_max), Some(c_min), _) if t_max < c_min => true,
+                (Some(t_min), _, _, Some(c_max)) if t_min > c_max => false,
+                _ => false,
+            };
+            if min_first {
+                if let Some(ref min_khz) = snap.min_freq_khz {
+                    if !self.write_sysfs_if_changed(&min_path, min_khz) {
+                        return false;
+                    }
                 }
-            }
-            if let Some(ref min_khz) = snap.min_freq_khz {
-                if !self.write_sysfs_if_changed(&cpufreq.join("scaling_min_freq"), min_khz) {
-                    return false;
+                if let Some(ref max_khz) = snap.max_freq_khz {
+                    if !self.write_sysfs_if_changed(&max_path, max_khz) {
+                        return false;
+                    }
+                }
+            } else {
+                if let Some(ref max_khz) = snap.max_freq_khz {
+                    if !self.write_sysfs_if_changed(&max_path, max_khz) {
+                        return false;
+                    }
+                }
+                if let Some(ref min_khz) = snap.min_freq_khz {
+                    if !self.write_sysfs_if_changed(&min_path, min_khz) {
+                        return false;
+                    }
                 }
             }
             if snap.online.as_deref() == Some("0")

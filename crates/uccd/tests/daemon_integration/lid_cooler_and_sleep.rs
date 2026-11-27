@@ -645,9 +645,25 @@ async fn ta_05_ta_06_lid_wc_led_unset_and_disconnected_reconnect_restore() {
             ucc_hardware::CMD_RGB
         ))
     );
-    // Opening lid restores Unset without inventing a bogus RGB color
+    // User Bug #2: Opening lid after blanking an Unset LED restores default static white
+    // and enqueues a real RGB packet so the hardware LED does not stay off.
     backend.on_lid_state_changed(false);
-    assert_eq!(backend.cooler_desired_rgb(), ucc_hardware::RgbTarget::Unset);
+    assert_eq!(
+        backend.cooler_desired_rgb(),
+        ucc_hardware::RgbTarget::Color {
+            red: 255,
+            green: 255,
+            blue: 255,
+            state: ucc_hardware::RgbState::Static,
+        }
+    );
+    let restore_pkts = drain_cooler_packets(&backend, 4).await;
+    assert!(restore_pkts.contains(&ucc_hardware::CoolerPacketEncoder::rgb(
+        255,
+        255,
+        255,
+        ucc_hardware::RgbState::Static
+    )));
 
     // TA-06: Known color saved on lid close, BLE disconnects, lid opens while disconnected ->
     // reconnecting restores saved color rather than staying Off!

@@ -394,12 +394,52 @@ impl LiveUccdBackend {
         true
     }
 
-    /// Evaluates the configured lid-close power action for the current power source (`N01`).
+    /// Returns `true` when `uccd` has a configured lid-close policy (either on the active profile
+    /// or in `powerDevices.lid`) and should hold the systemd-logind `handle-lid-switch` inhibitor (`V2-P1-02`).
+    pub fn should_inhibit_lid_switch(&self) -> bool {
+        let profile_override = {
+            let active = self.read_rw(&self.active_profile);
+            active
+                .display
+                .lid_close_action
+                .as_deref()
+                .map(str::trim)
+                .filter(|s| !s.is_empty())
+                .and_then(crate::lid::LidSourceAction::parse)
+                .is_some()
+        };
+        if profile_override {
+            return true;
+        }
+        serde_json::from_str::<Value>(&self.get_power_device_settings_json())
+            .ok()
+            .and_then(|v| v.get("lid").cloned())
+            .is_some_and(|v| !v.is_null())
+    }
+
+    /// Evaluates the configured lid-close power action for the current power source (`N01`, `V2-P1-02`).
+    /// Prefers `active_profile.display.lid_close_action` when present and non-empty, falling back
+    /// to `powerDevices.lid.<source>`.
     pub fn evaluate_lid_close_action(&self) -> crate::lid::LidSourceAction {
         let now = std::time::Instant::now();
         let src = self.detect_physical_power_source();
         let ac_online = matches!(src, ProfileState::Ac | ProfileState::TypeC);
-        let policy = self.current_lid_source_policy();
+        let mut policy = self.current_lid_source_policy();
+        let profile_override = {
+            let active = self.read_rw(&self.active_profile);
+            active
+                .display
+                .lid_close_action
+                .as_deref()
+                .map(str::trim)
+                .filter(|s| !s.is_empty())
+                .and_then(crate::lid::LidSourceAction::parse)
+        };
+        if let Some(action) = profile_override {
+            policy.ac = action;
+            policy.type_c = action;
+            policy.bat = action;
+        }
         let mut ctrl = self.lock_mutex(&self.lid_controller);
         let _ = ctrl.evaluate_lid_event(now, ac_online, true);
         ctrl.action_for_source(&policy, src.mode_name(), now, ac_online, true)
@@ -445,7 +485,11 @@ impl LiveUccdBackend {
                     let _ = cooler.set_rgb(red, green, blue, state);
                 }
                 RgbTarget::Unset => {
-                    cooler.clear_desired_rgb_if_off();
+                    // `TurnOffLed` was already sent over BLE on lid close, so merely clearing
+                    // `desired_rgb` to `Unset` would leave the hardware LED dark. Enqueue an
+                    // explicit default static white RGB command so the BLE loop wakes and
+                    // restores illumination immediately.
+                    let _ = cooler.set_rgb(255, 255, 255, ucc_hardware::RgbState::Static);
                 }
                 RgbTarget::Off => {}
             }

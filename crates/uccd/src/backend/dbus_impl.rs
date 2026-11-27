@@ -548,12 +548,21 @@ impl UccdBackend for LiveUccdBackend {
         };
         let key = parsed.as_str().to_string();
         if profile_id.trim().is_empty() {
-            return self
+            let cleared = self
                 .update_settings(|s| {
                     s.state_map.remove(&key);
                     Some(())
                 })
                 .is_some();
+            if cleared {
+                let dec = self.current_decision();
+                if dec.profile_state.as_str() == key.as_str()
+                    || dec.effective.as_str() == key.as_str()
+                {
+                    *self.lock_mutex(&self.last_applied_profile_state) = None;
+                }
+            }
+            return cleared;
         }
         for _ in 0..3 {
             let resolved = {
@@ -643,7 +652,7 @@ impl UccdBackend for LiveUccdBackend {
                     ApplyOutcome::SupersededReconciled | ApplyOutcome::Failed => return false,
                 }
             } else {
-                return self
+                let updated = self
                     .update_settings(|s| {
                         if updates.iter().any(|(_, prof_id)| {
                             !prof_id.is_empty() && !s.profiles.contains_key(prof_id)
@@ -660,6 +669,19 @@ impl UccdBackend for LiveUccdBackend {
                         Some(())
                     })
                     .is_some();
+                if updated {
+                    let dec = self.current_decision();
+                    let cleared_active = updates.iter().any(|(k, prof_id)| {
+                        prof_id.is_empty()
+                            && (k == &cur_state
+                                || k.as_str() == dec.profile_state.as_str()
+                                || k.as_str() == dec.effective.as_str())
+                    });
+                    if cleared_active {
+                        *self.lock_mutex(&self.last_applied_profile_state) = None;
+                    }
+                }
+                return updated;
             }
         }
         false
