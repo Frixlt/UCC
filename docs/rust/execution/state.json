@@ -162,9 +162,9 @@
     ]
   },
   "last_verified": {
-    "command": "cargo clippy --workspace --all-targets --locked --offline -- -D warnings; cargo run -p xtask --locked --offline -- check-versions; dbus-run-session -- cargo test --workspace --locked --offline; env CARGO_HOME=$(mktemp -d) UCC_INTEROP_DAEMON_BIN=... ctest --output-on-failure",
-    "top_suites": 95,
-    "top_passed": 488,
+    "command": "cargo fmt --all -- --check && cargo clippy --workspace --all-targets --locked --offline -- -D warnings && cargo run -p xtask --locked --offline -- check-versions && dbus-run-session -- cargo test --workspace --locked --offline; CARGO_HOME=$(mktemp -d) UCC_INTEROP_DAEMON_BIN=... ctest --parallel 4 --output-on-failure",
+    "top_suites": 98,
+    "top_passed": 494,
     "top_failed": 0,
     "top_ignored": 0,
     "clippy_warnings": 0,
@@ -177,8 +177,9 @@
     "extended_recheck_probes_passed": 6,
     "transaction_recheck_probes_passed": 15,
     "config_backup_umask_probe_passed": 1,
-    "cpp_ctest_passed": 42,
-    "cross_lang_interop": "test_rust_uccd_interop passed with empty CARGO_HOME and prebuilt UCC_INTEROP_DAEMON_BIN (full-d494935 remediation)",
+    "cpp_ctest_passed": 48,
+    "m0_9_live_baseline": "ucc-desktop-tray rss=14757888B (0.00 wakeups/s), ucc-session-agent rss=6660096B (0.00 wakeups/s), uccd rss=11632640B (1.00 wakeups/s)",
+    "cross_lang_interop": "test_rust_uccd_interop + test_gui_rust_e2e (live MainWindow <-> Rust interop_daemon) passed with empty CARGO_HOME and prebuilt UCC_INTEROP_DAEMON_BIN",
     "standalone_gui_ldd": "ucc-gui verified clean of missing shared libraries and KF6/Qt6Qml/Qt6Quick/Qt6Bluetooth/libucc-dbus links under UCC_PACKAGE_RUST_RUNTIME=ON",
     "cpu_restore_handoff": "failed_cpu_restore_is_carried_to_the_next_daemon passed on a private bus",
     "runtime_staging": "all seven Cargo-built executables, both XDG autostarts, systemd sleep alias, D-Bus policy, man and completions verified",
@@ -188,6 +189,7 @@
     "read_only_preview": "ucc-gui compiled with UCC_READ_ONLY_PREVIEW=ON in an isolated CMake build"
   },
   "completed_in_current_wave": [
+    "Overnight non-root audit closure & M15 cross-platform foundation (859609a M12.10, 6ce1bc4 M1.6, c98acec M10.4/M10.6/M12.5, 9390e90 M12.1, bbc2f6a M0.9/registry sync, 56d6ae9 zbus/tokio, 67c8d46 ADR-06 & M15.1-M15.4): Formatted all 122 Rust files with zero cargo fmt diffs and added fmt enforcement + CARGO_TARGET_DIR support in CI and tests/run_rust_interop_test.sh; split slow CTest suites into 2 test_refresh_advisor_* and 5 parallel test_gui_audit_* targets covering all 41 audit slots; added C++ header tuxedo_io_ioctl.h byte-for-byte ABI harness (M1.6), real ucc-gui 0-MB lifecycle test (M10.4), and live MainWindow <-> Rust interop_daemon E2E test (M10.6); added Makefile .release-commit fallback in xtask and release SBOM/manifest artifact upload (M12.1); recorded live M0.9 non-root process baselines and synced feature-status.json, MIGRATION_PLAN.md, and backlog.json honestly (76 checked / 63 unchecked of 139); fixed latent standalone zbus/tokio reactor panic in Cargo.toml without altering Cargo.lock (56d6ae9); and implemented Linux+Windows cross-platform abstractions (platform_paths, Windows WMI EC backend, HID lighting transport for 048D:600B/7001/7000, transport-agnostic JSON-RPC/Named Pipe IPC framing) per ADR-06 with 100% Linux feature parity intact. Verified 494/494 Rust tests across 98 suites (0 Clippy warnings, 0 fmt diffs, 6/6 manifest parity 0.3.0) and 48/48 cold-cache CTest passes in 99.68s.",
     "full-d494935 audit remediation (2f4b1f2 FULL-27-01, dd25f24+da07526 FULL-27-02..04, c618614 FULL-27-05..06, 09dbe15 FULL-27-07): Resolved all 7 independent audit findings (3 P1 + 4 P2): preserved /run/ucc/sleep-state.json across resume_sleep when was_active=true, loading in uccd-prime and clearing after activate_hardware() succeeds; moved charging/cTGP/keyboard RGB inside Phase 2/Phase 3 seqlock + reconcile_to_latest_committed; added sysfs readback verification and epoch-guarded rollback on charging writes while skipping when no battery device exists; made active DeleteCustomProfile apply fallback hardware before disk mutation; wired org.freedesktop.Notifications Notify/CloseNotification, self-bus filter, RefreshAdvisor interactive switching, and login1/UPower LidDisplayHandler DPMS in ucc-session-agent with end-to-end integration tests; decoupled CTest rust interop and CI from empty Cargo cache via prebuilt interop_daemon artifact. Verified with 5/5 full_acceptance_probes.rs x3 consecutive runs, 488/488 Rust workspace tests across 95 suites (0 Clippy warnings, 6/6 manifest parity 0.3.0), clean ucc-gui ldd, and 42/42 cold-cache CTest passes.",
     "Wave 5 code closure (8bd11e9 M12.10, 0bad2d6 M13.10, 17d16df M1.5/M10.2-M10.4, 2d87c27 M2.5, 42bbccd M12.1/M12.5/M12.8): Added rustfmt.toml, .editorconfig, cliff.toml, CONTRIBUTING.md, .github/workflows/release.yml, and xtask check-versions/release automation; renamed project and Arch packaging identity to ucc-rusted; wired ksni::current_xdg_activation_token() handoff and 0 MB Qt background lifecycle (splitting DesktopTray.cpp out of ucc-desktop-support); added legacy extensionless settings autosave round-trip test (M2.5), dist RELEASE_MANIFEST.json + Cargo.lock CycloneDX SBOM generation, CI version check, and parser/protocol fuzz-smoke tests. Verified 482/482 Rust workspace tests across 94 suites (0 Clippy warnings), 6/6 manifest version parity, clean ldd linkage on ucc-gui, and 42/42 CTest targets. Added lid logo LED (048D:7001/048D:7000) to F46 and M15.4. M13.11 (final EN/RU documentation) deferred until end of M13 per user instruction.",
     "Wave 4 (bc7d14f M10.8/M10.9, fb3cf39 M8.10, 9906087/bc1db6a M5.9): Added distinct sidebar icons for Power & Devices / Lightbar / Battery & Processes plus the Experimental tab in ucc-gui; added RAM-only lid-close keyboard backlight & optional water cooler LED blank/restore with login1/UPower listeners and PowerDevicesTab Lid toggles; fixed all 5 Rust water cooler profile/LED/suspend-resume/power_wc auto-scan causes with 3 m5_9_* regression tests. Verified 474/474 Rust workspace tests across 94 suites (0 Clippy warnings) and 42/42 CTest targets (including test_gui_audit and test_rust_uccd_interop).",
@@ -204,7 +206,7 @@
     "M8_remaining": "Daemon BlueZ supervision, logind listener and all three helper binaries are implemented. Host physical resume and full hardware cutover remain open.",
     "M5.8": "Hardware test pass with physical LCT cooler remains open",
     "M13": "Live host cutover & hardware acceptance on Arch/CachyOS + Hyprland + RTX 5080 + LCT cooler remain open; M13.10 (rename to ucc-rusted) done; M13.11 (strict EN/RU docs + open-uniwill-cc comparison) deferred to end of M13.",
-    "M14_M15": "Post-M13 uwcc Rust kernel backend (including keyboard 048D:600B + Lightbar/logo 048D:7001/7000) and Windows port (M15) roadmap planned.",
+    "M14_M15": "Post-M13 uwcc Rust kernel backend (keyboard 048D:600B + Lightbar/logo 048D:7001/7000) and Windows port foundation (ADR-06, M15.1-M15.4) implemented with unit tests while Linux retains full feature set; Windows target build/hardware validation remains open.",
     "M9_remaining": "Rust tray and session agent are built and staged. Live Hyprland compositor/tray/notification acceptance remains open.",
     "deferred_to_community": "Non-Arch packaging (DEB/RPM/Nix native builds & hooks), X11 session refresh backend (M9.5), and hardware not accessible on host are deferred to community contributors on those systems."
   }
