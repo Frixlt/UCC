@@ -56,7 +56,6 @@
 
           packages = with pkgs; [
             cmake
-            kdePackages.extra-cmake-modules
             pkg-config
 
             # Nix lint + format toolbox — matches what CI runs

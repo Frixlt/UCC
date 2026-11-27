@@ -47,8 +47,6 @@ stdenv.mkDerivation {
     kdePackages.qtbase
     kdePackages.qtcharts
     kdePackages.qtwayland
-    kdePackages.plasma-integration
-    kdePackages.breeze
     nlohmann_json
     libxrandr
     libxcb-cursor
