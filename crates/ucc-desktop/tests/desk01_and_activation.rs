@@ -6,8 +6,9 @@ use std::process::{Child, Command, Stdio};
 use std::sync::{Arc, Mutex};
 use tokio::sync::mpsc;
 use ucc_desktop::{
-    activate_gui_dbus_on, TrayAction, UccTray, GUI_DBUS_PATH, GUI_DBUS_PREVIEW_PATH,
-    GUI_DBUS_PREVIEW_SERVICE, GUI_DBUS_SERVICE,
+    activate_gui_dbus_on, spawn_tray_bounded, update_active_profile, update_daemon_connected,
+    TrayAction, UccTray, GUI_DBUS_PATH, GUI_DBUS_PREVIEW_PATH, GUI_DBUS_PREVIEW_SERVICE,
+    GUI_DBUS_SERVICE,
 };
 use zbus::connection::Builder;
 
@@ -250,4 +251,15 @@ async fn t_m1_5_activate_with_token_reaches_main_gui_service() {
         *gui_calls.lock().unwrap(),
         vec!["ActivateWithToken:ksni-wayland-tok-7".to_string()]
     );
+}
+
+#[tokio::test]
+async fn t_m9_8_tray_spawns_and_updates_without_status_notifier_watcher() {
+    let (tx, _rx) = mpsc::channel(4);
+    let handle = spawn_tray_bounded(vec!["Office".into(), "Gaming".into()], 0, tx)
+        .await
+        .expect("tray must stay alive even when StatusNotifierWatcher is absent");
+    update_daemon_connected(&handle, false).await;
+    update_active_profile(&handle, 1).await;
+    handle.shutdown().await;
 }

@@ -241,11 +241,22 @@ async fn main() {
 
     let mut refresh = tokio::time::interval(Duration::from_secs(5));
     let mut fan_auto = true;
+    let mut sigterm =
+        tokio::signal::unix::signal(tokio::signal::unix::SignalKind::terminate()).ok();
 
     loop {
         tokio::select! {
             _ = tokio::signal::ctrl_c() => {
-                info!("Received shutdown signal, closing tray");
+                info!("Received SIGINT, closing tray");
+                break;
+            }
+            _ = async {
+                match sigterm.as_mut() {
+                    Some(s) => s.recv().await,
+                    None => std::future::pending().await,
+                }
+            } => {
+                info!("Received SIGTERM, closing tray");
                 break;
             }
             _ = refresh.tick() => {

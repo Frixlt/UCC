@@ -156,6 +156,15 @@ impl Tray for UccTray {
             .send_action(TrayAction::OpenGui(ksni::current_xdg_activation_token()));
     }
 
+    fn watcher_online(&self) {
+        tracing::info!("StatusNotifierWatcher online; tray registered");
+    }
+
+    fn watcher_offline(&self, reason: ksni::OfflineReason) -> bool {
+        tracing::warn!("StatusNotifierWatcher offline ({reason:?}); waiting for tray host");
+        true
+    }
+
     fn menu(&self) -> Vec<MenuItem<Self>> {
         let current_profile = self.active_profile.load(Ordering::SeqCst);
         let profiles = self.profiles.clone();
@@ -254,7 +263,7 @@ pub async fn spawn_tray(
     action_tx: mpsc::UnboundedSender<TrayAction>,
 ) -> Result<ksni::Handle<UccTray>, ksni::Error> {
     let tray = UccTray::new(profiles, active_profile_idx, action_tx);
-    tray.spawn().await
+    tray.assume_sni_available(true).spawn().await
 }
 
 /// Spawns the StatusNotifierItem tray using a bounded action channel.
@@ -264,7 +273,7 @@ pub async fn spawn_tray_bounded(
     action_tx: mpsc::Sender<TrayAction>,
 ) -> Result<ksni::Handle<UccTray>, ksni::Error> {
     let tray = UccTray::new_bounded(profiles, active_profile_idx, action_tx);
-    tray.spawn().await
+    tray.assume_sni_available(true).spawn().await
 }
 
 pub async fn update_daemon_connected(handle: &ksni::Handle<UccTray>, connected: bool) {
