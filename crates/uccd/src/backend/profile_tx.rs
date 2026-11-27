@@ -792,7 +792,7 @@ impl LiveUccdBackend {
             repair_ok = false;
         }
         if let Some(offset) = latest.profile.nvidia_ctgp_offset {
-            let _ = self.set_nvidia_power_offset_impl(offset);
+            let _ = self.set_nvidia_power_offset_internal(offset);
         } else if undo.wrote_ctgp {
             if let Some(prev) = latest.hw_ctgp.or(undo.prev_ctgp) {
                 let _ = self.restore_ctgp_baseline(Some(prev), None);
@@ -1623,7 +1623,7 @@ impl LiveUccdBackend {
                     return ApplyOutcome::Failed;
                 };
                 self.record_in_flight_ctgp_baseline(tx_id, base);
-                if self.set_nvidia_power_offset_impl(offset) {
+                if self.set_nvidia_power_offset_internal(offset) {
                     wrote_ctgp = true;
                 } else {
                     let _ = self.restore_ctgp_baseline(prev_ctgp, Some(start_epoch));
@@ -1922,7 +1922,7 @@ impl LiveUccdBackend {
             }
             if self.ctgp_write_seq.load(Ordering::SeqCst) != post_phase2_ctgp_seq {
                 if let Some(offset) = committed_profile.nvidia_ctgp_offset {
-                    let _ = self.set_nvidia_power_offset_impl(offset);
+                    let _ = self.set_nvidia_power_offset_internal(offset);
                 } else if let Some(base) = self.snapshot_unmanaged_ctgp_baseline(tx_id) {
                     let _ = self.restore_ctgp_baseline(Some(base), Some(start_epoch));
                 }

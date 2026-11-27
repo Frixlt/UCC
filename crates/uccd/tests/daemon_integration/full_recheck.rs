@@ -594,3 +594,84 @@ fn custom_fan_profile_accepts_float_pump_temperatures_from_real_settings() {
     assert_eq!(parsed["tablePump"][1]["temp"], 65);
     assert_eq!(parsed["tablePump"][2]["temp"], 80);
 }
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn startup_activation_applies_nvidia_ctgp_and_clears_pending_for_keyboard_rpc() {
+    use ucc_dbus::UccdBackend;
+
+    let root = tempfile::tempdir().unwrap();
+    let bat = root.path().join("sys/class/power_supply/BAT0");
+    let prof_avail_path = root
+        .path()
+        .join("sys/devices/platform/tuxedo_keyboard/charging_profile/charging_profiles_available");
+    let prof_cur_path = root
+        .path()
+        .join("sys/devices/platform/tuxedo_keyboard/charging_profile/charging_profile");
+    let ctgp_path = root
+        .path()
+        .join("sys/devices/platform/tuxedo_nvidia_power_ctrl/ctgp_offset");
+
+    let mut prof = default_quiet_profile();
+    prof.id = "ctgp-ac".into();
+    prof.name = "cTGP AC".into();
+    prof.odm_profile_name = None;
+    prof.odm_power_limits.clear();
+    prof.nvidia_ctgp_offset = Some(95);
+
+    let mut settings = create_default_settings();
+    settings.profiles.insert(prof.id.clone(), prof.clone());
+    settings.set_active_profile_for_mode("power_ac", prof.id.clone());
+    ConfigManager::with_custom_path(root.path().join("settings.json"))
+        .save(&settings)
+        .unwrap();
+
+    let ctrl = Arc::new(SysfsGateControl::default());
+    let (backend, _, sysfs, lighting) = build_backend_with_sysfs_gate(
+        root.path(),
+        Arc::clone(&ctrl),
+        |sysfs| {
+            sysfs.set_file(bat.join("type"), "Battery");
+            sysfs.set_file(&prof_avail_path, "high_capacity balanced stationary");
+            sysfs.set_file(&prof_cur_path, "[balanced] high_capacity stationary");
+            sysfs.set_file(&ctgp_path, "0");
+        },
+        |_| {
+            let caps = DeviceCapabilities {
+                vendor: ucc_hardware::DeviceVendor::Uniwill,
+                ctgp_supported: true,
+                ..Default::default()
+            };
+            Arc::new(MockPlatformBackend::new(PlatformCapabilities {
+                backend: PlatformBackendKind::TuxedoIo,
+                device: caps,
+                tdp_channels: 0,
+                perf_profiles_available: 0,
+            }))
+        },
+    );
+    lighting.set_keyboard_caps(Some(ucc_lighting::KeyboardCapabilities {
+        zones: 2,
+        max_brightness: 50,
+        max_red: 255,
+        max_green: 255,
+        max_blue: 255,
+        led_ids: vec![0, 1],
+    }));
+
+    let runtime = start_runtime(
+        Arc::clone(&backend),
+        "org.test.uccd.startup_ctgp_and_kbd",
+        false,
+    )
+    .await;
+
+    let active_json: serde_json::Value =
+        serde_json::from_str(&backend.get_active_profile_json()).unwrap();
+    assert_eq!(active_json["id"], "ctgp-ac");
+    assert_eq!(sysfs.get_file(&ctgp_path).as_deref(), Some("95"));
+    assert!(backend.set_keyboard_backlight_states_json(
+        r#"[{"brightness":31,"red":12,"green":34,"blue":56},{"brightness":31,"red":12,"green":34,"blue":56}]"#
+    ));
+
+    runtime.shutdown(Duration::from_secs(1)).await;
+}

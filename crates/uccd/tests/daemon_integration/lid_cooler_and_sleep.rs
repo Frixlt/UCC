@@ -433,3 +433,32 @@ async fn full_27_01_sleep_state_survives_resume_until_daemon_consumes_it() {
     resume_sleep(&store, &StartSucceedsImmediateOps).unwrap();
     assert_eq!(store.load().unwrap(), None);
 }
+
+#[test]
+fn apply_wakeup_policy_skips_symlink_loops_and_non_dirs() {
+    use ucc_hardware::RealSysfs;
+
+    let tmp = tempfile::tempdir().unwrap();
+    let pci_dev = tmp.path().join("sys/devices/pci0000:00/0000:00:14.0");
+    std::fs::create_dir_all(pci_dev.join("power")).unwrap();
+    std::fs::write(pci_dev.join("power/wakeup"), "enabled\n").unwrap();
+    std::fs::write(pci_dev.join("modalias"), "pci:dummy\n").unwrap();
+    #[cfg(unix)]
+    std::os::unix::fs::symlink("..", pci_dev.join("device")).unwrap();
+
+    let started = Instant::now();
+    let policy = WakeupPolicy::with_sys_proc(tmp.path().join("sys"), tmp.path().join("proc"));
+    let res = policy.apply(true, &RealSysfs);
+    assert!(
+        started.elapsed() < Duration::from_millis(500),
+        "wakeup walk should skip symlink loops rapidly, took {:?}",
+        started.elapsed()
+    );
+    assert_eq!(res.disabled, 1);
+    assert_eq!(
+        std::fs::read_to_string(pci_dev.join("power/wakeup"))
+            .unwrap()
+            .trim(),
+        "disabled"
+    );
+}

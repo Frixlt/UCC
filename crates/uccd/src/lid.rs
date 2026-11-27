@@ -406,6 +406,11 @@ pub fn apply_wakeup_policy(
                 if matches!(fname, "power" | "subsystem" | "driver" | "firmware_node") {
                     continue;
                 }
+                if let Ok(meta) = std::fs::symlink_metadata(&child) {
+                    if meta.file_type().is_symlink() || !meta.file_type().is_dir() {
+                        continue;
+                    }
+                }
                 stack.push((child, depth + 1));
             }
         }

@@ -1700,7 +1700,14 @@ impl LiveUccdBackend {
         let Some(_op_guard) = self.enter_hardware_op() else {
             return false;
         };
-        if !self.capabilities.device.ctgp_supported {
+        self.set_nvidia_power_offset_internal(offset)
+    }
+
+    pub(super) fn set_nvidia_power_offset_internal(&self, offset: i32) -> bool {
+        if ucc_config::is_read_only_preview()
+            || self.write_aborted_by_shutdown()
+            || !self.capabilities.device.ctgp_supported
+        {
             return false;
         }
         if let Some(ref nvml) = self.nvml {
@@ -1861,7 +1868,7 @@ impl LiveUccdBackend {
         let Some(prev_offset) = prev else {
             return false;
         };
-        self.set_nvidia_power_offset_impl(prev_offset)
+        self.set_nvidia_power_offset_internal(prev_offset)
     }
 
     pub(super) fn get_charge_start_available_thresholds_impl(&self) -> String {
