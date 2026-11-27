@@ -833,7 +833,6 @@ impl LiveUccdBackend {
         };
         let explicit_start = profile.charging.start_threshold.is_some();
         let explicit_end = profile.charging.end_threshold.is_some();
-        let explicit_type = profile.charging.charge_type.is_some();
         let explicit_prof = profile.charging.charging_profile.is_some();
         let explicit_prio = profile.charging.charging_priority.is_some();
 
@@ -861,10 +860,7 @@ impl LiveUccdBackend {
             let has_end = self.sysfs.exists(&end_path);
             let has_ct = self.sysfs.exists(&ct_path);
 
-            if (explicit_end && !has_end)
-                || (explicit_start && !has_start)
-                || (explicit_type && !has_ct)
-            {
+            if (explicit_end && !has_end) || (explicit_start && !has_start) {
                 return Err(());
             }
 

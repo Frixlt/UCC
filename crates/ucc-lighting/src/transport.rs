@@ -356,27 +356,36 @@ impl LightingTransport for SysfsLedTransport {
     }
 
     fn read_keyboard_colors(&self) -> Result<Vec<RgbColor>, LightingError> {
-        let leds_dir = self.path_under_root("sys/class/leds");
-        let mut colors = Vec::new();
-        if let Ok(mut entries) = self.sysfs.read_dir(&leds_dir) {
-            entries.sort();
-            for entry in entries {
-                let Some(name) = entry.file_name().and_then(|n| n.to_str()) else {
-                    continue;
-                };
-                if !name.starts_with("rgb:kbd_backlight") {
-                    continue;
-                }
-                if let Some(text) = self.read_trimmed(&entry.join("multi_intensity")) {
-                    let parsed = Self::parse_rgb_triples(&text);
-                    colors.extend(parsed);
-                }
-            }
-        }
-        if colors.is_empty() {
-            let cached = self.cache.lock().unwrap().kbd_led_paths.clone();
+        let cached = self.cache.lock().unwrap().kbd_led_paths.clone();
+        if !cached.is_empty() {
+            let mut colors = Vec::new();
             for p in cached {
                 if let Some(text) = self.read_trimmed(&p.join("multi_intensity")) {
+                    colors.extend(Self::parse_rgb_triples(&text));
+                }
+            }
+            if !colors.is_empty() {
+                return Ok(colors);
+            }
+        }
+
+        let leds_dir = self.path_under_root("sys/class/leds");
+        let mut colors = Vec::new();
+        if let Ok(entries) = self.sysfs.read_dir(&leds_dir) {
+            let mut kbd_entries: Vec<(u32, PathBuf)> = entries
+                .into_iter()
+                .enumerate()
+                .filter_map(|(fallback_idx, entry)| {
+                    let name = entry.file_name().and_then(|n| n.to_str())?;
+                    if !name.starts_with("rgb:kbd_backlight") {
+                        return None;
+                    }
+                    Some((Self::parse_zone_id(name, fallback_idx), entry))
+                })
+                .collect();
+            kbd_entries.sort_by_key(|(zone_id, _)| *zone_id);
+            for (_, entry) in kbd_entries {
+                if let Some(text) = self.read_trimmed(&entry.join("multi_intensity")) {
                     colors.extend(Self::parse_rgb_triples(&text));
                 }
             }

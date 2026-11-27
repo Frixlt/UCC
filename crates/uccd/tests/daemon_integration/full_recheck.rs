@@ -506,3 +506,54 @@ async fn charging_quantized_readback_failure_restores_all_thresholds() {
     assert_eq!(sysfs.get_file(&start_path).as_deref(), Some("40"));
     assert_eq!(sysfs.get_file(&end_path).as_deref(), Some("80"));
 }
+
+#[test]
+fn uniwill_profile_with_charge_type_succeeds_when_bat0_lacks_charge_nodes_and_hydrates_kbd() {
+    let root = tempfile::tempdir().unwrap();
+    let bat = root.path().join("sys/class/power_supply/BAT0");
+    let prof_avail_path = root
+        .path()
+        .join("sys/devices/platform/tuxedo_keyboard/charging_profile/charging_profiles_available");
+    let prof_cur_path = root
+        .path()
+        .join("sys/devices/platform/tuxedo_keyboard/charging_profile/charging_profile");
+    let kbd_leds = root
+        .path()
+        .join("sys/bus/hid/drivers/tuxedo-keyboard-ite/0003:048D:600B.0001/leds");
+
+    let ctrl = Arc::new(SysfsGateControl::default());
+    let (backend, _, sysfs, _) = build_backend_with_sysfs_gate(
+        root.path(),
+        Arc::clone(&ctrl),
+        |sysfs| {
+            sysfs.set_file(bat.join("type"), "Battery");
+            sysfs.set_file(&prof_avail_path, "high_capacity balanced stationary");
+            sysfs.set_file(&prof_cur_path, "[balanced] high_capacity stationary");
+            for id in 0..4_u32 {
+                let name = if id == 0 {
+                    "rgb:kbd_backlight".to_string()
+                } else {
+                    format!("rgb:kbd_backlight_{id}")
+                };
+                let z = kbd_leds.join(name);
+                sysfs.set_file(z.join("max_brightness"), "50");
+                sysfs.set_file(z.join("brightness"), "32");
+                sysfs.set_file(z.join("multi_intensity"), "180 0 220");
+            }
+        },
+        |p| p,
+    );
+
+    let mut prof = default_quiet_profile();
+    prof.id = "uniwill-ac".into();
+    prof.charging.charge_type = Some(ucc_core::ChargeType::Standard);
+    prof.charging.charging_profile = Some("high_capacity".into());
+    assert!(
+        backend.apply_profile(&serde_json::to_string(&prof).unwrap()),
+        "legacy profile with chargeType=Standard must succeed when BAT0 has no charge_type sysfs node"
+    );
+    assert_eq!(
+        sysfs.get_file(&prof_cur_path).as_deref(),
+        Some("high_capacity")
+    );
+}

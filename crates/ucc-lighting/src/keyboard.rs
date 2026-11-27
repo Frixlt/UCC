@@ -132,6 +132,37 @@ impl KeyboardBacklightController {
         Ok(self.capabilities_json())
     }
 
+    /// Populates `current_states` from physical LED hardware when no state has been recorded yet.
+    pub fn hydrate_from_hardware(&mut self) {
+        if !self.current_states.is_empty() {
+            return;
+        }
+        let Some(caps) = self.capabilities.as_ref().filter(|c| c.zones > 0) else {
+            return;
+        };
+        let colors = self.transport.read_keyboard_colors().unwrap_or_default();
+        if colors.len() != caps.zones {
+            return;
+        }
+        let brightness = self
+            .transport
+            .read_keyboard_brightness()
+            .ok()
+            .flatten()
+            .unwrap_or(caps.max_brightness)
+            .min(caps.max_brightness)
+            .min(u8::MAX as u32) as u8;
+        self.current_states = colors
+            .into_iter()
+            .map(|c| KeyboardBacklightState {
+                brightness,
+                red: c.r,
+                green: c.g,
+                blue: c.b,
+            })
+            .collect();
+    }
+
     pub fn is_available(&self) -> bool {
         self.capabilities
             .as_ref()

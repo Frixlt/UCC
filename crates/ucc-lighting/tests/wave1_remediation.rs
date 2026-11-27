@@ -197,3 +197,47 @@ fn compact_keyboard_update_preserves_unmentioned_zone_colors() {
         "0 20 0"
     );
 }
+
+#[test]
+fn sysfs_keyboard_readback_sorts_zones_numerically_and_hydrates_controller() {
+    let dir = tempfile::tempdir().unwrap();
+    let hid_leds = dir
+        .path()
+        .join("sys/bus/hid/drivers/tuxedo-keyboard-ite/0003:048D:600B.0001/leds");
+    let sys_leds = dir.path().join("sys/class/leds");
+    fs::create_dir_all(&sys_leds).unwrap();
+    for id in 0..=10_u32 {
+        let name = if id == 0 {
+            "rgb:kbd_backlight".to_string()
+        } else {
+            format!("rgb:kbd_backlight_{id}")
+        };
+        let zone = hid_leds.join(&name);
+        fs::create_dir_all(&zone).unwrap();
+        fs::write(zone.join("max_brightness"), "50").unwrap();
+        fs::write(zone.join("brightness"), "32").unwrap();
+        fs::write(zone.join("multi_intensity"), format!("{id} 10 20")).unwrap();
+        // Deliberately populate sys/class/leds out of lexicographical order too (`_10` before `_2`)
+        let link = sys_leds.join(&name);
+        fs::create_dir_all(&link).unwrap();
+        fs::write(link.join("brightness"), "32").unwrap();
+        fs::write(link.join("multi_intensity"), format!("{id} 10 20")).unwrap();
+    }
+
+    let transport = Arc::new(SysfsLedTransport::new(Arc::new(RealSysfs), dir.path()));
+    let mut kb = KeyboardBacklightController::new(transport);
+    kb.init().unwrap();
+    assert!(kb.current_states().is_empty());
+    kb.hydrate_from_hardware();
+    let states = kb.current_states();
+    assert_eq!(states.len(), 11);
+    for (idx, st) in states.iter().enumerate() {
+        assert_eq!(st.brightness, 32);
+        assert_eq!(
+            st.red, idx as u8,
+            "zone {idx} order corrupted by lexical sort"
+        );
+        assert_eq!(st.green, 10);
+        assert_eq!(st.blue, 20);
+    }
+}

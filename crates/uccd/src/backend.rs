@@ -790,6 +790,7 @@ impl LiveUccdBackend {
                     let _ = kb.apply_states(states);
                 }
             }
+            kb.hydrate_from_hardware();
         }
 
         if let Some(ref lb_cfg) = lb_val {

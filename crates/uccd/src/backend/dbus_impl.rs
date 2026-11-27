@@ -691,7 +691,11 @@ impl UccdBackend for LiveUccdBackend {
     }
 
     fn get_keyboard_backlight_states_json(&self) -> String {
-        self.lock_mutex(&self.keyboard_ctrl).current_states_json()
+        let mut ctrl = self.lock_mutex(&self.keyboard_ctrl);
+        if ctrl.current_states().is_empty() && ctrl.is_available() {
+            ctrl.hydrate_from_hardware();
+        }
+        ctrl.current_states_json()
     }
 
     fn set_keyboard_backlight_states_json(&self, keyboard_backlight_states_json: &str) -> bool {
