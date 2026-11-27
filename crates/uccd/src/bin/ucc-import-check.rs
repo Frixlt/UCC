@@ -51,6 +51,47 @@ fn run_check(settings_path: &str, caps_path: &str) -> Result<Value, String> {
     if max_brightness <= 0 || zones == 0 || zones > 1024 {
         return Err("Invalid keyboard capabilities".to_string());
     }
+    let effective_max_brightness = max_brightness.min(i64::from(u8::MAX));
+
+    if let Some(led_ids_val) = caps.get("ledIds") {
+        let led_ids = led_ids_val
+            .as_array()
+            .ok_or_else(|| "Invalid ledIds capability array".to_string())?;
+        if led_ids.len() != zones as usize {
+            return Err(format!(
+                "ledIds length {} does not match keyboard zones {}",
+                led_ids.len(),
+                zones
+            ));
+        }
+        let mut seen = std::collections::BTreeSet::new();
+        for item in led_ids {
+            let id = item
+                .as_i64()
+                .ok_or_else(|| "Non-integer entry in ledIds".to_string())?;
+            if id < 0 || !seen.insert(id) {
+                return Err(format!("Invalid or duplicate LED ID: {id}"));
+            }
+        }
+    }
+
+    let validate_state_entry = |obj: &serde_json::Map<String, Value>| -> Result<(), String> {
+        for ch in ["red", "green", "blue", "brightness"] {
+            let v = obj
+                .get(ch)
+                .and_then(|n| n.as_i64())
+                .ok_or_else(|| format!("Invalid keyboard channel: {ch}"))?;
+            let max = if ch == "brightness" {
+                effective_max_brightness
+            } else {
+                255
+            };
+            if !(0..=max).contains(&v) {
+                return Err(format!("Keyboard value out of range for {ch}: {v}"));
+            }
+        }
+        Ok(())
+    };
 
     let states = root
         .get("keyboardBacklightStates")
@@ -63,18 +104,63 @@ fn run_check(settings_path: &str, caps_path: &str) -> Result<Value, String> {
         let obj = st
             .as_object()
             .ok_or_else(|| "Invalid keyboard state entry".to_string())?;
-        for ch in ["red", "green", "blue", "brightness"] {
-            let v = obj
-                .get(ch)
-                .and_then(|n| n.as_i64())
-                .ok_or_else(|| format!("Invalid keyboard channel: {ch}"))?;
-            let max = if ch == "brightness" {
-                max_brightness
-            } else {
-                255
-            };
-            if !(0..=max).contains(&v) {
-                return Err(format!("Keyboard value out of range for {ch}: {v}"));
+        validate_state_entry(obj)?;
+    }
+
+    if let Some(custom_kbd) = parsed_settings.custom_keyboard_profiles.as_ref() {
+        for (id, entry) in custom_kbd {
+            if let Some(arr) = entry.json.get("states").and_then(|v| v.as_array()) {
+                for st in arr {
+                    let obj = st.as_object().ok_or_else(|| {
+                        format!("Invalid state entry in customKeyboardProfiles.{id}")
+                    })?;
+                    validate_state_entry(obj)?;
+                }
+            }
+        }
+    }
+
+    if let Some(custom_fans) = parsed_settings.custom_fan_profiles.as_ref() {
+        for (id, fan_entry) in custom_fans {
+            if let Some(obj) = fan_entry.json.as_object() {
+                for curve_key in ["tableCPU", "tableGPU", "tablePump", "tableWaterCoolerFan"] {
+                    if let Some(points) = obj.get(curve_key).and_then(|v| v.as_array()) {
+                        for pt in points {
+                            let temp =
+                                pt.get("temp").and_then(|v| v.as_i64()).ok_or_else(|| {
+                                    format!("Invalid temp in customFanProfiles.{id}.{curve_key}")
+                                })?;
+                            let speed =
+                                pt.get("speed").and_then(|v| v.as_i64()).ok_or_else(|| {
+                                    format!("Invalid speed in customFanProfiles.{id}.{curve_key}")
+                                })?;
+                            if !(0..=150).contains(&temp) || !(0..=100).contains(&speed) {
+                                return Err(format!(
+                                    "Out-of-range fan point ({temp}, {speed}) in customFanProfiles.{id}.{curve_key}"
+                                ));
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    for (id, prof) in &parsed_settings.profiles {
+        if prof.id != *id {
+            return Err("Profile identity mismatch in profiles map".to_string());
+        }
+        prof.validate().map_err(|e| e.to_string())?;
+        if let Some(ref kb_id) = prof.selected_keyboard_profile {
+            let kb_trimmed = kb_id.trim();
+            if !kb_trimmed.is_empty() && !kb_trimmed.starts_with("__") {
+                if let Some(custom_kbd) = parsed_settings.custom_keyboard_profiles.as_ref() {
+                    if !custom_kbd.contains_key(kb_trimmed) {
+                        return Err(format!(
+                            "Profile {id} references unknown selectedKeyboardProfile: {kb_trimmed}"
+                        ));
+                    }
+                }
             }
         }
     }
