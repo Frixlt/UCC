@@ -137,7 +137,7 @@ fn authorization_blocks_unprivileged_manage_hardware_and_allows_read_control() {
         },
         IpcRequest {
             id: 23,
-            method: "SetNvidiaPowerOffset".to_string(),
+            method: "SetNVIDIAPowerOffset".to_string(),
             params: json!({ "offset": 15 }),
         },
         IpcRequest {
@@ -336,4 +336,144 @@ fn named_pipe_server_serves_sessions_enforces_acl_bounds_and_shuts_down_cleanly(
     let after_shutdown = server.run_until_shutdown().unwrap();
     assert_eq!(after_shutdown.connections_served, 0);
     assert!(skipped_out.lock().unwrap().is_empty());
+}
+
+#[test]
+fn pipe_sddl_validator_enforces_case_insensitivity_strict_sids_and_iu_rights_allowlist() {
+    // Lowercase ACE types, rights, and SIDs normalize cleanly to uppercase.
+    let lower = PipeAclPolicy::parse_and_validate("D:P(a;;ga;;;sy)(a;;ga;;;ba)(a;;grgw;;;iu)")
+        .expect("lowercase valid SDDL should normalize and pass");
+    assert!(lower.allows_sid("SY"));
+    assert!(lower.allows_sid("BA"));
+    assert!(lower.allows_sid("IU"));
+
+    // Lowercase forbidden SID (wd) is rejected after normalization.
+    assert_eq!(
+        PipeAclPolicy::parse_and_validate(
+            "D:P(A;;GA;;;SY)(A;;GA;;;BA)(A;;GRGW;;;IU)(a;;gr;;;wd)"
+        ),
+        Err(PipeAclError::ForbiddenAllowSid("WD".to_string()))
+    );
+
+    // Raw numeric Everyone SID (S-1-1-0) is rejected.
+    assert_eq!(
+        PipeAclPolicy::parse_and_validate(
+            "D:P(A;;GA;;;SY)(A;;GA;;;BA)(A;;GRGW;;;IU)(A;;GR;;;S-1-1-0)"
+        ),
+        Err(PipeAclError::ForbiddenAllowSid("S-1-1-0".to_string()))
+    );
+
+    // Object Allow ACE (OA) for a non-allowlisted SID is rejected.
+    assert_eq!(
+        PipeAclPolicy::parse_and_validate(
+            "D:P(A;;GA;;;SY)(A;;GA;;;BA)(A;;GRGW;;;IU)(OA;;GR;;;WD)"
+        ),
+        Err(PipeAclError::ForbiddenAllowSid("WD".to_string()))
+    );
+
+    // Hex access mask (0x10000000 = GENERIC_ALL) for IU is rejected by strict allowlist.
+    assert_eq!(
+        PipeAclPolicy::parse_and_validate("D:P(A;;GA;;;SY)(A;;GA;;;BA)(A;;0x10000000;;;IU)"),
+        Err(PipeAclError::ExcessiveInteractiveRights(
+            "0X10000000".to_string()
+        ))
+    );
+}
+
+#[test]
+fn profile_nvidia_ctgp_offset_and_manual_pump_voltage_require_manage_hardware() {
+    let backend = DefaultUccdBackend;
+
+    let ctgp_req = IpcRequest {
+        id: 200,
+        method: "ApplyProfile".to_string(),
+        params: json!({
+            "profileJson": r#"{"nvidiaCTGPOffset":15}"#
+        }),
+    };
+    assert_eq!(
+        required_access_level(&ctgp_req),
+        IpcAccessLevel::ManageHardware
+    );
+    let ctgp_denied = dispatch_json_rpc_authorized(&backend, &ctgp_req, false);
+    assert!(!ctgp_denied.ok);
+    assert!(ctgp_denied
+        .error
+        .as_deref()
+        .unwrap_or("")
+        .contains("authorization denied"));
+
+    let pump_req = IpcRequest {
+        id: 201,
+        method: "ApplyProfile".to_string(),
+        params: json!({
+            "profileJson": r#"{"fan":{"manualPumpVoltage":2}}"#
+        }),
+    };
+    assert_eq!(
+        required_access_level(&pump_req),
+        IpcAccessLevel::ManageHardware
+    );
+    let pump_denied = dispatch_json_rpc_authorized(&backend, &pump_req, false);
+    assert!(!pump_denied.ok);
+    assert!(pump_denied
+        .error
+        .as_deref()
+        .unwrap_or("")
+        .contains("authorization denied"));
+
+    // Zero cTGP offset and null manualPumpVoltage remain Control-tier.
+    let benign_req = IpcRequest {
+        id: 202,
+        method: "ApplyProfile".to_string(),
+        params: json!({
+            "profileJson": r#"{"nvidiaCTGPOffset":0,"fan":{"manualPumpVoltage":null}}"#
+        }),
+    };
+    assert_eq!(required_access_level(&benign_req), IpcAccessLevel::Control);
+}
+
+#[test]
+fn canonical_dbus_method_casing_and_display_refresh_rate_dispatch() {
+    let backend = DefaultUccdBackend;
+
+    let refresh_req = IpcRequest {
+        id: 300,
+        method: "SetDisplayRefreshRate".to_string(),
+        params: json!({ "display": "eDP-1", "refreshRate": 144 }),
+    };
+    assert_eq!(required_access_level(&refresh_req), IpcAccessLevel::Control);
+    let refresh_resp = dispatch_json_rpc_authorized(&backend, &refresh_req, false);
+    assert!(refresh_resp.ok);
+    assert_eq!(refresh_resp.result, Some(json!(false)));
+
+    let dgpu_req = IpcRequest {
+        id: 301,
+        method: "GetDGpuInfoValuesJSON".to_string(),
+        params: json!({}),
+    };
+    assert_eq!(required_access_level(&dgpu_req), IpcAccessLevel::Read);
+    let dgpu_resp = dispatch_json_rpc_authorized(&backend, &dgpu_req, false);
+    assert!(dgpu_resp.ok);
+    assert_eq!(dgpu_resp.result, Some(json!("{}")));
+
+    let epps_req = IpcRequest {
+        id: 302,
+        method: "GetAvailableEPPs".to_string(),
+        params: json!({}),
+    };
+    assert_eq!(required_access_level(&epps_req), IpcAccessLevel::Read);
+    let epps_resp = dispatch_json_rpc_authorized(&backend, &epps_req, false);
+    assert!(epps_resp.ok);
+    assert_eq!(epps_resp.result, Some(json!("[]")));
+
+    let led_req = IpcRequest {
+        id: 303,
+        method: "SetWaterCoolerLEDColor".to_string(),
+        params: json!({ "red": 255, "green": 64, "blue": 0, "mode": 1 }),
+    };
+    assert_eq!(required_access_level(&led_req), IpcAccessLevel::Control);
+    let led_resp = dispatch_json_rpc_authorized(&backend, &led_req, false);
+    assert!(led_resp.ok);
+    assert_eq!(led_resp.result, Some(json!(true)));
 }

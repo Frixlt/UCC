@@ -31,8 +31,12 @@ use thiserror::Error;
 /// and `BG` (Built-in Guests).
 pub const WINDOWS_PIPE_SDDL: &str = "D:P(A;;GA;;;SY)(A;;GA;;;BA)(A;;GRGW;;;IU)";
 
-const FORBIDDEN_ALLOW_SIDS: &[&str] = &["WD", "AN", "NU", "AU", "BG"];
 const REQUIRED_ALLOW_SIDS: &[&str] = &["SY", "BA", "IU"];
+const ALLOWED_INTERACTIVE_RIGHTS: &[&str] = &["GRGW", "GWGR", "GR", "GW"];
+
+fn is_allow_ace_type(ace_type: &str) -> bool {
+    matches!(ace_type, "A" | "OA" | "XA" | "ZA")
+}
 
 /// Validation errors returned by [`PipeAclPolicy::parse_and_validate`].
 #[derive(Debug, Clone, PartialEq, Eq, Error)]
@@ -94,12 +98,12 @@ impl PipeAclPolicy {
                 return Err(PipeAclError::MalformedAce(format!("({body})")));
             }
             let ace = PipeAce {
-                ace_type: fields[0].trim().to_string(),
+                ace_type: fields[0].trim().to_ascii_uppercase(),
                 ace_flags: fields[1].trim().to_string(),
-                rights: fields[2].trim().to_string(),
+                rights: fields[2].trim().to_ascii_uppercase(),
                 object_guid: fields[3].trim().to_string(),
                 inherit_object_guid: fields[4].trim().to_string(),
-                account_sid: fields[5].trim().to_string(),
+                account_sid: fields[5].trim().to_ascii_uppercase(),
             };
             if ace.ace_type.is_empty() || ace.rights.is_empty() || ace.account_sid.is_empty() {
                 return Err(PipeAclError::MalformedAce(format!("({body})")));
@@ -113,14 +117,12 @@ impl PipeAclPolicy {
         }
 
         for ace in &aces {
-            if ace.ace_type == "A" {
-                if FORBIDDEN_ALLOW_SIDS.contains(&ace.account_sid.as_str()) {
+            if is_allow_ace_type(&ace.ace_type) {
+                if !REQUIRED_ALLOW_SIDS.contains(&ace.account_sid.as_str()) {
                     return Err(PipeAclError::ForbiddenAllowSid(ace.account_sid.clone()));
                 }
                 if ace.account_sid == "IU"
-                    && (ace.rights.contains("GA")
-                        || ace.rights.contains("WD")
-                        || ace.rights.contains("WO"))
+                    && !ALLOWED_INTERACTIVE_RIGHTS.contains(&ace.rights.as_str())
                 {
                     return Err(PipeAclError::ExcessiveInteractiveRights(ace.rights.clone()));
                 }
@@ -192,13 +194,13 @@ impl PipeAclPolicy {
         let denied = self
             .aces
             .iter()
-            .any(|ace| ace.ace_type == "D" && ace.account_sid == sid);
+            .any(|ace| ace.ace_type == "D" && ace.account_sid.eq_ignore_ascii_case(sid));
         if denied {
             return false;
         }
-        self.aces
-            .iter()
-            .any(|ace| ace.ace_type == "A" && ace.account_sid == sid)
+        self.aces.iter().any(|ace| {
+            is_allow_ace_type(&ace.ace_type) && ace.account_sid.eq_ignore_ascii_case(sid)
+        })
     }
 
     /// Returns `true` if `sid` is explicitly denied or absent from Allow ACEs.
@@ -432,7 +434,7 @@ impl<T: NamedPipeTransport> NamedPipeServer<T> {
         &self,
         conn: &mut T::Connection,
     ) -> Result<(usize, usize), NamedPipeError> {
-        let caller = conn.caller_identity();
+        let mut caller: Option<CallerIdentity> = None;
         let mut requests_served = 0usize;
         let mut rejected_frames = 0usize;
 
@@ -440,13 +442,14 @@ impl<T: NamedPipeTransport> NamedPipeServer<T> {
             match conn.read_frame(self.max_frame_bytes) {
                 Ok(None) => break,
                 Ok(Some(raw_frame)) => {
+                    let caller = caller.get_or_insert_with(|| conn.caller_identity());
                     let resp = match decode_frame_bounded::<IpcRequest>(
                         &raw_frame,
                         self.max_frame_bytes,
                     ) {
                         Ok(req) => {
                             requests_served += 1;
-                            dispatch_json_rpc_with_identity(self.backend.as_ref(), &req, &caller)
+                            dispatch_json_rpc_with_identity(self.backend.as_ref(), &req, caller)
                         }
                         Err(err) => {
                             rejected_frames += 1;
@@ -521,6 +524,7 @@ mod win32 {
         (-1isize) as *mut c_void
     }
 
+    #[allow(dead_code)]
     #[repr(C)]
     struct SecurityAttributes {
         n_length: u32,
@@ -706,9 +710,10 @@ mod win32 {
         }
         let is_system = is_impersonated_member_of(WIN_LOCAL_SYSTEM_SID);
         let is_admin = !is_system && is_impersonated_member_of(WIN_BUILTIN_ADMINISTRATORS_SID);
-        // SAFETY: Always revert impersonation before returning to daemon context.
-        unsafe {
-            RevertToSelf();
+        // SAFETY: Always revert impersonation before returning to daemon context;
+        // abort immediately if reverting fails so the service never runs under a client token.
+        if unsafe { RevertToSelf() } == 0 {
+            std::process::abort();
         }
         if is_system {
             CallerIdentity::privileged("SY")
@@ -817,7 +822,7 @@ mod win32 {
     /// Connected Win32 Named Pipe server instance with automatic disconnect and handle cleanup.
     pub struct Win32NamedPipeConnection {
         handle: Win32Handle,
-        caller: CallerIdentity,
+        caller: Mutex<Option<CallerIdentity>>,
         pending: Vec<u8>,
     }
 
@@ -833,11 +838,24 @@ mod win32 {
 
     impl NamedPipeConnection for Win32NamedPipeConnection {
         fn caller_identity(&self) -> CallerIdentity {
-            self.caller.clone()
+            let mut cached = self.caller.lock().unwrap_or_else(|e| e.into_inner());
+            if let Some(ref id) = *cached {
+                return id.clone();
+            }
+            let id = inspect_pipe_client_identity(self.handle.as_raw());
+            *cached = Some(id.clone());
+            id
         }
 
         fn read_frame(&mut self, max_bytes: usize) -> Result<Option<String>, NamedPipeError> {
-            read_framed_line(self.handle.as_raw(), &mut self.pending, max_bytes)
+            let frame = read_framed_line(self.handle.as_raw(), &mut self.pending, max_bytes)?;
+            if frame.is_some() {
+                let mut cached = self.caller.lock().unwrap_or_else(|e| e.into_inner());
+                if cached.is_none() {
+                    *cached = Some(inspect_pipe_client_identity(self.handle.as_raw()));
+                }
+            }
+            Ok(frame)
         }
 
         fn write_frame(&mut self, frame: &str) -> Result<(), NamedPipeError> {
@@ -850,6 +868,7 @@ mod win32 {
         pipe_path: String,
         acl_policy: PipeAclPolicy,
         first_instance: AtomicBool,
+        next_handle: Mutex<Option<Win32Handle>>,
     }
 
     impl Win32NamedPipeTransport {
@@ -860,6 +879,7 @@ mod win32 {
                 pipe_path: pipe_path.into(),
                 acl_policy,
                 first_instance: AtomicBool::new(true),
+                next_handle: Mutex::new(None),
             })
         }
 
@@ -869,22 +889,11 @@ mod win32 {
                 pipe_path: WINDOWS_NAMED_PIPE_PATH.to_string(),
                 acl_policy: PipeAclPolicy::default_policy(),
                 first_instance: AtomicBool::new(true),
+                next_handle: Mutex::new(None),
             }
         }
-    }
 
-    impl NamedPipeTransport for Win32NamedPipeTransport {
-        type Connection = Win32NamedPipeConnection;
-
-        fn pipe_path(&self) -> &str {
-            &self.pipe_path
-        }
-
-        fn acl_policy(&self) -> &PipeAclPolicy {
-            &self.acl_policy
-        }
-
-        fn accept(&self) -> Result<Option<Self::Connection>, NamedPipeError> {
+        fn create_pipe_instance(&self, first: bool) -> Result<Win32Handle, NamedPipeError> {
             let sd_guard = SecurityDescriptorGuard::from_sddl(self.acl_policy.sddl())?;
             let sa = SecurityAttributes {
                 n_length: std::mem::size_of::<SecurityAttributes>() as u32,
@@ -893,7 +902,7 @@ mod win32 {
             };
 
             let mut open_mode = PIPE_ACCESS_DUPLEX;
-            if self.first_instance.swap(false, Ordering::SeqCst) {
+            if first {
                 open_mode |= FILE_FLAG_FIRST_PIPE_INSTANCE;
             }
             let pipe_mode =
@@ -915,14 +924,47 @@ mod win32 {
                     &sa,
                 )
             };
+            let last_err = if raw_handle.is_null() || raw_handle == invalid_handle_value() {
+                // SAFETY: Capture `GetLastError` before `drop(sd_guard)` calls `LocalFree`.
+                unsafe { GetLastError() }
+            } else {
+                0
+            };
             drop(sd_guard);
 
-            let Some(handle) = Win32Handle::new(raw_handle) else {
-                let err = unsafe { GetLastError() };
-                return Err(NamedPipeError::Io(format!(
-                    "CreateNamedPipeW failed for '{}' (Win32 error {err})",
+            Win32Handle::new(raw_handle).ok_or_else(|| {
+                NamedPipeError::Io(format!(
+                    "CreateNamedPipeW failed for '{}' (Win32 error {last_err})",
                     self.pipe_path
-                )));
+                ))
+            })
+        }
+    }
+
+    impl NamedPipeTransport for Win32NamedPipeTransport {
+        type Connection = Win32NamedPipeConnection;
+
+        fn pipe_path(&self) -> &str {
+            &self.pipe_path
+        }
+
+        fn acl_policy(&self) -> &PipeAclPolicy {
+            &self.acl_policy
+        }
+
+        fn accept(&self) -> Result<Option<Self::Connection>, NamedPipeError> {
+            let handle = {
+                let mut slot = self.next_handle.lock().unwrap_or_else(|e| e.into_inner());
+                if let Some(existing) = slot.take() {
+                    existing
+                } else {
+                    let is_first = self.first_instance.load(Ordering::SeqCst);
+                    let created = self.create_pipe_instance(is_first)?;
+                    if is_first {
+                        self.first_instance.store(false, Ordering::SeqCst);
+                    }
+                    created
+                }
             };
 
             // SAFETY: `handle` is a valid pipe instance created above.
@@ -930,16 +972,32 @@ mod win32 {
             if connected == 0 {
                 let err = unsafe { GetLastError() };
                 if err != ERROR_PIPE_CONNECTED {
+                    // Keep a listening instance open before dropping `handle` so the pipe
+                    // instance count never drops to 0.
+                    if let Ok(replacement) = self.create_pipe_instance(false) {
+                        let mut slot =
+                            self.next_handle.lock().unwrap_or_else(|e| e.into_inner());
+                        if slot.is_none() {
+                            *slot = Some(replacement);
+                        }
+                    }
                     return Err(NamedPipeError::Io(format!(
                         "ConnectNamedPipe failed (Win32 error {err})"
                     )));
                 }
             }
 
-            let caller = inspect_pipe_client_identity(handle.as_raw());
+            // Pre-create the next pipe instance before returning the connected handle so the
+            // kernel pipe instance count never drops to 0 (preventing pipe-squatting TOCTOU).
+            let next = self.create_pipe_instance(false)?;
+            {
+                let mut slot = self.next_handle.lock().unwrap_or_else(|e| e.into_inner());
+                *slot = Some(next);
+            }
+
             Ok(Some(Win32NamedPipeConnection {
                 handle,
-                caller,
+                caller: Mutex::new(None),
                 pending: Vec::new(),
             }))
         }
