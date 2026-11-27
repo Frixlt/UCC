@@ -1185,14 +1185,14 @@ pub async fn run_water_cooler_ble_loop(
         let wc_enabled = backend.water_cooler_enabled.load(Ordering::SeqCst);
         if !wc_enabled {
             if let Some(sess) = active_session.take() {
-                let _ = sess.disconnect().await;
+                let _ = tokio::time::timeout(Duration::from_secs(3), sess.disconnect()).await;
             }
             connect_since = None;
             disconnect_since = None;
+            backend
+                .lock_mutex(&backend.cooler_controller)
+                .on_disconnected();
             if backend.water_cooler_connected.swap(false, Ordering::SeqCst) {
-                backend
-                    .lock_mutex(&backend.cooler_controller)
-                    .on_disconnected();
                 backend.emit_signal(DbusSignalEvent::WaterCoolerStatusChanged {
                     status: "disconnected".to_string(),
                 });

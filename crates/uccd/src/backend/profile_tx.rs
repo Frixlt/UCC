@@ -413,8 +413,10 @@ impl LiveUccdBackend {
             }
         }
 
-        // Preserve user runtime WC enablement if active profile doesn't force it on, while enabling when configured.
-        if profile.fan.enable_water_cooler {
+        // Preserve explicit user disablement and runtime enablement across profile reconciles.
+        if profile.fan.enable_water_cooler
+            && !self.water_cooler_user_disabled.load(Ordering::SeqCst)
+        {
             self.water_cooler_enabled.store(true, Ordering::SeqCst);
         }
         {

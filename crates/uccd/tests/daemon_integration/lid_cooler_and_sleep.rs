@@ -462,3 +462,46 @@ fn apply_wakeup_policy_skips_symlink_loops_and_non_dirs() {
         "disabled"
     );
 }
+
+#[test]
+fn enable_water_cooler_false_stays_disabled_across_wc_to_ac_reconcile() {
+    use ucc_dbus::UccdBackend;
+
+    let root = tempfile::tempdir().unwrap();
+    let mut ac_profile = default_high_performance_profile();
+    ac_profile.id = "ac-wc-on".to_string();
+    ac_profile.odm_profile_name = None;
+    ac_profile.odm_power_limits.clear();
+    ac_profile.fan.enable_water_cooler = true;
+
+    let mut settings = create_default_settings();
+    settings.profiles.insert(ac_profile.id.clone(), ac_profile);
+    settings.set_active_profile_for_mode("power_ac", "ac-wc-on".to_string());
+    ConfigManager::with_custom_path(root.path().join("settings.json"))
+        .save(&settings)
+        .unwrap();
+
+    let (backend, _, _, _) = build_test_backend(root.path());
+    backend.reconcile_power_state(true);
+    assert!(backend.is_water_cooler_enabled());
+
+    backend.set_cooler_connected_state(true);
+    assert!(backend.get_water_cooler_connected());
+
+    // Simulate user disabling water cooler via D-Bus while power_ac still has enable_water_cooler=true.
+    assert!(backend.enable_water_cooler(false));
+    assert!(!backend.is_water_cooler_enabled());
+
+    // Emulate BLE worker teardown on disable and subsequent wc -> ac reconciliation.
+    backend.set_cooler_connected_state(false);
+    backend.reconcile_power_state(false);
+    assert!(
+        !backend.is_water_cooler_enabled(),
+        "reconcile_power_state must preserve explicit user EnableWaterCooler(false)"
+    );
+    assert!(!backend.get_water_cooler_connected());
+
+    // Explicit re-enable clears the suppression cleanly.
+    assert!(backend.enable_water_cooler(true));
+    assert!(backend.is_water_cooler_enabled());
+}

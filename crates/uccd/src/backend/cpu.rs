@@ -7,7 +7,7 @@ use serde_json::{json, Value};
 use std::collections::{BTreeMap, HashSet};
 use std::path::{Path, PathBuf};
 use std::sync::atomic::Ordering;
-use tracing::warn;
+use tracing::{debug, warn};
 use ucc_core::UccProfile;
 use ucc_hardware::{parse_cpu_range_list, CpuTopology, Sysfs, MAX_REAPPLY_ATTEMPTS};
 
@@ -446,12 +446,20 @@ impl LiveUccdBackend {
                                 .write(&epp_path, &cpu.energy_performance_preference)
                             {
                                 if err.raw_os_error() == Some(nix::libc::EBUSY) {
-                                    warn!(
-                                        "Ignoring EBUSY while writing EPP '{}' on {}; governor likely owns EPP",
-                                        cpu.energy_performance_preference,
-                                        dir.display()
-                                    );
-                                    fully_applied = false;
+                                    if cpu.governor == "performance" {
+                                        debug!(
+                                            "EPP '{}' locked by performance governor on {}; skipping",
+                                            cpu.energy_performance_preference,
+                                            dir.display()
+                                        );
+                                    } else {
+                                        warn!(
+                                            "Ignoring EBUSY while writing EPP '{}' on {}; governor likely owns EPP",
+                                            cpu.energy_performance_preference,
+                                            dir.display()
+                                        );
+                                        fully_applied = false;
+                                    }
                                 } else {
                                     return Err(format!(
                                         "Failed writing {}: {err}",

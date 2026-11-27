@@ -235,6 +235,7 @@ pub struct LiveUccdBackend {
 
     pub(super) cooler_controller: Arc<Mutex<CoolerController>>,
     pub(super) water_cooler_enabled: AtomicBool,
+    pub(super) water_cooler_user_disabled: AtomicBool,
     pub(super) water_cooler_available: AtomicBool,
     pub(super) water_cooler_connected: AtomicBool,
     pub(super) cooler_suspending: AtomicBool,
@@ -408,6 +409,7 @@ impl LiveUccdBackend {
             fan_control_enabled: AtomicBool::new(fan_enabled),
             cooler_controller: Arc::new(Mutex::new(cooler_ctrl)),
             water_cooler_enabled: AtomicBool::new(initial_wc_enabled),
+            water_cooler_user_disabled: AtomicBool::new(false),
             water_cooler_available: AtomicBool::new(wc_supported),
             water_cooler_connected: AtomicBool::new(false),
             cooler_suspending: AtomicBool::new(false),

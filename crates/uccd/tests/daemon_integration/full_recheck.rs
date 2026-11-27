@@ -675,3 +675,113 @@ async fn startup_activation_applies_nvidia_ctgp_and_clears_pending_for_keyboard_
 
     runtime.shutdown(Duration::from_secs(1)).await;
 }
+
+#[test]
+fn performance_governor_epp_ebusy_does_not_trigger_repeated_reapply() {
+    struct EbusyEppSysfs {
+        inner: Arc<MockSysfs>,
+    }
+
+    impl ucc_hardware::Sysfs for EbusyEppSysfs {
+        fn read(&self, path: &Path) -> Result<String, std::io::Error> {
+            self.inner.read(path)
+        }
+
+        fn write(&self, path: &Path, content: &str) -> Result<(), std::io::Error> {
+            if path.file_name().and_then(|n| n.to_str()) == Some("energy_performance_preference") {
+                return Err(std::io::Error::from_raw_os_error(nix::libc::EBUSY));
+            }
+            self.inner.write(path, content)
+        }
+
+        fn exists(&self, path: &Path) -> bool {
+            self.inner.exists(path)
+        }
+
+        fn read_dir(&self, path: &Path) -> Result<Vec<std::path::PathBuf>, std::io::Error> {
+            self.inner.read_dir(path)
+        }
+    }
+
+    let root = tempfile::tempdir().unwrap();
+    let cpu0_fq = root.path().join("sys/devices/system/cpu/cpu0/cpufreq");
+    let inner = Arc::new(MockSysfs::new());
+    inner.set_file(root.path().join("sys/devices/system/cpu/present"), "0");
+    inner.set_file(cpu0_fq.join("scaling_governor"), "performance");
+    inner.set_file(
+        cpu0_fq.join("scaling_available_governors"),
+        "performance powersave",
+    );
+    inner.set_file(cpu0_fq.join("energy_performance_preference"), "default");
+    inner.set_file(
+        cpu0_fq.join("energy_performance_available_preferences"),
+        "default performance balance_performance power",
+    );
+    inner.set_file(cpu0_fq.join("cpuinfo_min_freq"), "800000");
+    inner.set_file(cpu0_fq.join("cpuinfo_max_freq"), "5400000");
+    inner.set_file(cpu0_fq.join("scaling_min_freq"), "800000");
+    inner.set_file(cpu0_fq.join("scaling_max_freq"), "5400000");
+    inner.set_file(root.path().join("sys/class/power_supply/AC/type"), "Mains");
+    inner.set_file(root.path().join("sys/class/power_supply/AC/online"), "1");
+
+    let mut perf_prof = default_high_performance_profile();
+    perf_prof.id = "perf-ac".into();
+    perf_prof.odm_profile_name = None;
+    perf_prof.odm_power_limits.clear();
+    perf_prof.cpu.governor = "performance".into();
+    perf_prof.cpu.energy_performance_preference = "performance".into();
+
+    let mut settings = create_default_settings();
+    settings.profiles.insert(perf_prof.id.clone(), perf_prof);
+    settings.set_active_profile_for_mode("power_ac", "perf-ac");
+    ConfigManager::with_custom_path(root.path().join("settings.json"))
+        .save(&settings)
+        .unwrap();
+
+    let caps = PlatformCapabilities {
+        backend: PlatformBackendKind::Mock,
+        device: DeviceCapabilities {
+            vendor: ucc_hardware::DeviceVendor::Uniwill,
+            number_of_fans: 2,
+            ..Default::default()
+        },
+        tdp_channels: 0,
+        perf_profiles_available: 0,
+    };
+    let platform = Arc::new(MockPlatformBackend::new(caps));
+    let lighting = Arc::new(ucc_lighting::MockLightingTransport::new());
+    let sysfs: Arc<dyn ucc_hardware::Sysfs> = Arc::new(EbusyEppSysfs {
+        inner: Arc::clone(&inner),
+    });
+    let backend = Arc::new(LiveUccdBackend::new(UccdDependencies {
+        device_name: "PerfTest".into(),
+        platform,
+        sysfs,
+        lighting_transport: lighting,
+        config_manager: ConfigManager::with_custom_path(root.path().join("settings.json")),
+        sys_root: root.path().to_path_buf(),
+        telemetry_config: TelemetryConfig {
+            sys_root: root.path().to_path_buf(),
+            ..Default::default()
+        },
+        power_devices: PowerDeviceController::default(),
+        lid_policy: LidPolicyConfig::default(),
+    }));
+
+    backend.reconcile_power_state(true);
+    let active_json: serde_json::Value =
+        serde_json::from_str(&backend.get_active_profile_json()).unwrap();
+    assert_eq!(active_json["id"], "perf-ac");
+
+    inner.clear_journal();
+    backend.reconcile_power_state(false);
+    let extra_cpu_writes: Vec<_> = inner
+        .journal()
+        .into_iter()
+        .filter(|w| w.path.to_string_lossy().contains("cpufreq"))
+        .collect();
+    assert!(
+        extra_cpu_writes.is_empty(),
+        "EPP EBUSY under performance governor must not keep reapplying CPU sysfs: {extra_cpu_writes:?}"
+    );
+}

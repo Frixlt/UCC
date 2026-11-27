@@ -1113,6 +1113,8 @@ impl UccdBackend for LiveUccdBackend {
         if !self.water_cooler_available.load(Ordering::SeqCst) {
             return false;
         }
+        self.water_cooler_user_disabled
+            .store(!enable, Ordering::SeqCst);
         let prev = self.water_cooler_enabled.swap(enable, Ordering::SeqCst);
         self.write_rw(&self.active_profile).fan.enable_water_cooler = enable;
         if prev != enable {
