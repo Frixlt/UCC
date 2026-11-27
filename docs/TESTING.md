@@ -154,9 +154,9 @@ cmake -S . -B /tmp/ucc-build-preview -G Ninja \
 cmake --build /tmp/ucc-build-preview --parallel 2 \
   --target test_gui_audit test_gui_regressions test_gui_instance test_app_logging ucc-gui
 
-# Targeted 3-test preview gate (matches CI)
+# Targeted 4-test preview gate (matches CI)
 ctest --test-dir /tmp/ucc-build-preview \
-  -R "^(test_gui_audit_preview_gallery|test_gui_instance|test_app_logging)$" \
+  -R "^(test_gui_audit_preview_gallery|test_gui_instance|test_app_logging|test_gui_ldd_invariants)$" \
   --output-on-failure
 
 # Optional: preview-safe 8-slot regression subset
@@ -166,7 +166,7 @@ ctest --test-dir /tmp/ucc-build-preview \
 ```
 
 Under `-DUCC_READ_ONLY_PREVIEW=ON`:
-- `test_gui_audit_preview_gallery` verifies write blocking (`previewMustBlockEveryWritePath`, `previewMustNotSaveLocalMonitorPreferences`), `test_gui_instance` verifies single-instance isolation, and `test_app_logging` verifies preview logging.
+- `test_gui_audit_preview_gallery` verifies write blocking (`previewMustBlockEveryWritePath`, `previewMustNotSaveLocalMonitorPreferences`), `test_gui_instance` verifies single-instance isolation, `test_app_logging` verifies preview logging, and `test_gui_ldd_invariants` verifies `ucc-gui` `ldd` invariants.
 - `test_gui_regressions` runs a preview-safe 8-slot subset (`n12_mainwindow_ctor_avoids_sync_dbus_capability_calls`, `n13_keyboard_visualizer_avoids_blocking_detect_layout_in_ctor`, `n26_preview_mode_allows_readonly_webcam_sw_available`, `n31_fan_control_tab_disables_remove_for_builtin_profile`, `n28_sysfs_node_is_available_does_not_terminate_on_eacces`, `p0_14_monitor_tab_sticky_mark_click_no_sync_self_delete_uaf`, `p0_15_hardware_tab_accepts_null_parent_without_crash`, `m_gui_05_read_json_int_preserves_negative_gpu_clock_offsets`).
 - `test_gui_rust_e2e`, `test_system_monitor`, and `test_rust_uccd_interop` are excluded from CTest in preview builds.
 

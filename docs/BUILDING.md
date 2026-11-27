@@ -256,7 +256,7 @@ Local build and flake checks:
 ```bash
 nix build .#ucc
 nix flake check --print-build-logs
-nix develop   # devShell with cmake, extra-cmake-modules, pkg-config, deadnix, nixfmt, statix, treefmt
+nix develop   # devShell with cmake, pkg-config, deadnix, nixfmt, statix, treefmt
 ```
 
 `package.nix` imports `Cargo.lock` via `rustPlatform.importCargoLock`, builds the Qt6 GUI with `-DUCC_AUTOSTART_DIR=etc/xdg/autostart`, wraps `ucc-gui` (`wrapQtApp`) and `uccd` (`wrapProgram` with runtime `PATH`), and patches `/usr/bin/uccd`, `/usr/lib/ucc/ucc-hardware`, and `/usr/lib/ucc/ucc-sleep` in systemd and D-Bus unit files to `$out/...`.
