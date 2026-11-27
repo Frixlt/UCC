@@ -718,10 +718,15 @@ async fn main() {
                                 Some(Ok(s)) => serde_json::from_str::<Value>(&s).unwrap_or(Value::Null),
                                 Some(Err(())) => Value::Null,
                             };
-                            if lightbar_notify_enabled(&settings, &policy) {
-                                if run_rpc_or_shutdown(&shutdown_rx, proxy.trigger_lightbar_animation(false)).await.is_none() {
-                                    break;
-                                }
+                            if lightbar_notify_enabled(&settings, &policy)
+                                && run_rpc_or_shutdown(
+                                    &shutdown_rx,
+                                    proxy.trigger_lightbar_animation(false),
+                                )
+                                .await
+                                .is_none()
+                            {
+                                break;
                             }
                         }
                     }
