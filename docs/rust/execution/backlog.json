@@ -3220,7 +3220,7 @@
       "id": "M13.11",
       "milestone": "M13",
       "wave": "V13",
-      "title": "Подготовить строгую техническую документацию без маркетинга и нейрослопа ('наш' и т.п.): README.md (EN), README.ru.md (RU), архитектуру, справочники D-Bus API и CLI, матрицу железа и замену колонки 'Личный Python ControlCenter' в docs/COMPARISON.md на open-uniwill-cc (https://github.com/aspidovss/open-uniwill-cc/blob/main/README.ru.md) наряду с upstream UCC Revorked, LCT/CoreCtrl/asusctl.",
+      "title": "Подготовить строгую техническую документацию без маркетинга и нейрослопа ('наш' и т.п.): README.md (EN), README.ru.md (RU), архитектуру, справочники D-Bus API и CLI, матрицу железа и объективное сравнение в docs/COMPARISON.md с open-uniwill-cc (https://github.com/aspidovss/open-uniwill-cc/blob/main/README.ru.md), upstream UCC Revorked, TUXEDO Control Center, Clevo Control Center, LCT, CoreCtrl и asusctl (полностью убрать упоминание 'Личный Python ControlCenter').",
       "status": "planned",
       "status_basis": "Documentation overhaul and open-uniwill-cc comparison planned after project rename decision (M13.10).",
       "suggested_role": null,

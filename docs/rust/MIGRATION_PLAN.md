@@ -548,7 +548,7 @@ Pump code `0` — высокий режим 11V, `2` — 7V, `3` — 8V, `4` —
 - [ ] M13.8 Удалить временные compatibility bridges, source-extraction tests и старые package dependencies после переноса проверок.
 - [ ] M13.9 Обновить README/BUILDING/TESTING/COMPARISON/origins и выпустить проверенный release.
 - [ ] M13.10 Переименовать проект из `Frixit Control Center` в выбранное Rust-ориентированное имя во всех пользовательских поверхностях (GUI, tray, CLI, desktop-файлы, PKGBUILD, документация) с сохранением совместимости D-Bus/миграции.
-- [ ] M13.11 Подготовить строгую техническую документацию без маркетинга и нейрослопа (`наш` и т.п.): `README.md` (EN), `README.ru.md` (RU), архитектуру, справочники D-Bus API и CLI, матрицу железа и замену колонки `Личный Python ControlCenter` в `docs/COMPARISON.md` на [`open-uniwill-cc`](https://github.com/aspidovss/open-uniwill-cc/blob/main/README.ru.md) наряду с upstream `UCC Revorked`, `LCT`/`CoreCtrl`/`asusctl`.
+- [ ] M13.11 Подготовить строгую техническую документацию без маркетинга и нейрослопа (`наш` и т.п.): `README.md` (EN), `README.ru.md` (RU), архитектуру, справочники D-Bus API и CLI, матрицу железа и объективное сравнение в `docs/COMPARISON.md` с [`open-uniwill-cc`](https://github.com/aspidovss/open-uniwill-cc/blob/main/README.ru.md), upstream `UCC Revorked`, `TUXEDO Control Center`, `Clevo Control Center`, `LCT`, `CoreCtrl` и `asusctl` (полностью убрать упоминание «Личный Python ControlCenter»).
 
 **Выход:** достигается определение готовности из раздела 16. Наличие незавершённого hardware test или несогласованной потери embedded shell UI оставляет соответствующий пункт открытым.
 
