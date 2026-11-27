@@ -78,9 +78,9 @@ fn v2_p2_10_uniwill_zero_perf_profiles_falls_back_to_platform_profile_sysfs() {
     let backend = TuxedoIoBackend::with_sysfs(hw, None, Arc::clone(&sysfs) as _);
     assert_eq!(backend.capabilities().perf_profiles_available, 0);
 
-    backend
-        .set_perf_profile(3)
-        .expect("V2-P2-10: set_perf_profile must fall back to sysfs when perf_profiles_available == 0");
+    backend.set_perf_profile(3).expect(
+        "V2-P2-10: set_perf_profile must fall back to sysfs when perf_profiles_available == 0",
+    );
 
     assert!(
         sysfs

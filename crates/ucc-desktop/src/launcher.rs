@@ -116,9 +116,7 @@ pub async fn activate_gui_dbus_on(
     }
     tokio::time::timeout(call_timeout, proxy.call::<_, _, ()>("Activate", &()))
         .await
-        .map_err(|_| {
-            zbus::Error::Failure("GUI D-Bus Activate call timed out".to_string())
-        })?
+        .map_err(|_| zbus::Error::Failure("GUI D-Bus Activate call timed out".to_string()))?
 }
 
 pub async fn activate_gui_dbus(activation_token: Option<&str>, preview: bool) -> zbus::Result<()> {

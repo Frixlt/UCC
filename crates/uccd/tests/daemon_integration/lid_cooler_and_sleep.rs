@@ -658,12 +658,14 @@ async fn ta_05_ta_06_lid_wc_led_unset_and_disconnected_reconnect_restore() {
         }
     );
     let restore_pkts = drain_cooler_packets(&backend, 4).await;
-    assert!(restore_pkts.contains(&ucc_hardware::CoolerPacketEncoder::rgb(
-        255,
-        255,
-        255,
-        ucc_hardware::RgbState::Static
-    )));
+    assert!(
+        restore_pkts.contains(&ucc_hardware::CoolerPacketEncoder::rgb(
+            255,
+            255,
+            255,
+            ucc_hardware::RgbState::Static
+        ))
+    );
 
     // TA-06: Known color saved on lid close, BLE disconnects, lid opens while disconnected ->
     // reconnecting restores saved color rather than staying Off!

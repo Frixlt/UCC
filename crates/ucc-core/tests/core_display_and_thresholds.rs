@@ -65,8 +65,7 @@ fn deserialize_opt_threshold_is_public_and_handles_sentinels() {
         serde_json::from_value(json!({ "threshold": 80 })).expect("deserialize 80");
     assert_eq!(valid.threshold, Some(80));
 
-    let missing: ThresholdHolder =
-        serde_json::from_value(json!({})).expect("deserialize missing");
+    let missing: ThresholdHolder = serde_json::from_value(json!({})).expect("deserialize missing");
     assert_eq!(missing.threshold, None);
 
     let out_of_range = serde_json::from_value::<ThresholdHolder>(json!({ "threshold": 150 }));

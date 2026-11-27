@@ -36,7 +36,9 @@ fn make_panel_output(name: &str, current_hz: f64, high_hz: f64) -> serde_json::V
 #[test]
 fn v2_p2_14_internal_panel_matching_supports_dsi_lvds_edp_case_insensitively() {
     let drm = Path::new("/nonexistent_drm_root");
-    for panel_name in ["DSI-1", "dsi-1", "EDP-1", "edp-1", "LVDS-1", "EDP", "LVDS", "DSI"] {
+    for panel_name in [
+        "DSI-1", "dsi-1", "EDP-1", "edp-1", "LVDS-1", "EDP", "LVDS", "DSI",
+    ] {
         let cfg = json!({
             "outputs": [make_panel_output(panel_name, 60.0, 120.0)]
         });
@@ -89,8 +91,9 @@ fn v2_p2_14_invalid_earlier_outputs_do_not_abort_scanning_subsequent_outputs() {
         ]
     });
 
-    let plan = RefreshAdvisor::plan(&cfg, "ac", drm, 0)
-        .expect("V2-P2-14: invalid earlier outputs must not abort scanning later valid DSI-1 panel");
+    let plan = RefreshAdvisor::plan(&cfg, "ac", drm, 0).expect(
+        "V2-P2-14: invalid earlier outputs must not abort scanning later valid DSI-1 panel",
+    );
     assert_eq!(plan.output, "DSI-1");
     assert_eq!(plan.target_mode, "mode-high");
     assert!((plan.target_hz - 144.0).abs() < 0.01);
@@ -126,11 +129,15 @@ fn v2_p2_15_notifications_and_refresh_action_dbus_calls_have_3s_timeout() {
         .expect("spawn_refresh_action must exist");
     let spawn_body = &main_src[spawn_start..main_src.len().min(spawn_start + 1800)];
     assert!(
-        spawn_body.contains("tokio::time::timeout(Duration::from_secs(3), proxy.get_active_profile_json())"),
+        spawn_body.contains(
+            "tokio::time::timeout(Duration::from_secs(3), proxy.get_active_profile_json())"
+        ),
         "V2-P2-15: spawn_refresh_action must time-bound get_active_profile_json"
     );
     assert!(
-        spawn_body.contains("tokio::time::timeout(Duration::from_secs(3), proxy.get_power_policy_json())"),
+        spawn_body.contains(
+            "tokio::time::timeout(Duration::from_secs(3), proxy.get_power_policy_json())"
+        ),
         "V2-P2-15: spawn_refresh_action must time-bound get_power_policy_json"
     );
 }

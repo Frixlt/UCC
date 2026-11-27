@@ -197,7 +197,11 @@ impl RefreshAdvisor {
             let Some(w) = size.get("width").and_then(|v| v.as_i64()).map(|v| v as i32) else {
                 continue;
             };
-            let Some(h) = size.get("height").and_then(|v| v.as_i64()).map(|v| v as i32) else {
+            let Some(h) = size
+                .get("height")
+                .and_then(|v| v.as_i64())
+                .map(|v| v as i32)
+            else {
                 continue;
             };
             let Some(current_hz) = current.get("refreshRate").and_then(|v| v.as_f64()) else {

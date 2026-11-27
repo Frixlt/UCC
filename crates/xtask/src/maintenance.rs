@@ -298,7 +298,10 @@ fn file_sha256(path: &Path) -> Result<String, String> {
         .metadata()
         .map_err(|e| format!("Failed to inspect {}: {e}", path.display()))?;
     if !meta.is_file() {
-        return Err(format!("Refusing to hash non-regular file {}", path.display()));
+        return Err(format!(
+            "Refusing to hash non-regular file {}",
+            path.display()
+        ));
     }
     let mut bytes = Vec::new();
     file.read_to_end(&mut bytes)
@@ -314,18 +317,12 @@ fn copy_private_regular_file(src: &Path, dst: &Path) -> Result<(), String> {
         use std::os::unix::fs::OpenOptionsExt;
         src_opts.custom_flags(o_nofollow_flag());
     }
-    let mut src_file = src_opts.open(src).map_err(|e| {
-        format!(
-            "Failed opening {} for private copy: {e}",
-            src.display()
-        )
-    })?;
-    let src_meta = src_file.metadata().map_err(|e| {
-        format!(
-            "Failed inspecting opened {}: {e}",
-            src.display()
-        )
-    })?;
+    let mut src_file = src_opts
+        .open(src)
+        .map_err(|e| format!("Failed opening {} for private copy: {e}", src.display()))?;
+    let src_meta = src_file
+        .metadata()
+        .map_err(|e| format!("Failed inspecting opened {}: {e}", src.display()))?;
     if !src_meta.is_file() {
         return Err(format!(
             "Refusing to copy non-regular file {}",
@@ -341,12 +338,9 @@ fn copy_private_regular_file(src: &Path, dst: &Path) -> Result<(), String> {
         use std::os::unix::fs::OpenOptionsExt;
         dst_opts.mode(0o600).custom_flags(o_nofollow_flag());
     }
-    let mut dst_file = dst_opts.open(dst).map_err(|e| {
-        format!(
-            "Failed creating private copy {}: {e}",
-            dst.display()
-        )
-    })?;
+    let mut dst_file = dst_opts
+        .open(dst)
+        .map_err(|e| format!("Failed creating private copy {}: {e}", dst.display()))?;
     if let Err(e) = io::copy(&mut src_file, &mut dst_file).and_then(|_| dst_file.sync_all()) {
         let _ = fs::remove_file(dst);
         return Err(format!(
@@ -1208,7 +1202,9 @@ impl<'a> DeploymentManager<'a> {
             .get("packageSha256")
             .and_then(Value::as_str)
             .ok_or("Missing packageSha256 in deployment.json")?;
-        if meta.file_type().is_symlink() || !meta.is_file() || file_sha256(&package)? != expected_sha
+        if meta.file_type().is_symlink()
+            || !meta.is_file()
+            || file_sha256(&package)? != expected_sha
         {
             return Err("Package checksum mismatch".to_string());
         }

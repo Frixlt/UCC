@@ -36,10 +36,7 @@ pub trait HidDeviceTransport: Send + Sync {
     /// Optional USB HID interface number for interface disambiguation (`P0-12`).
     fn device_interface_number(&self, path: &str) -> Option<i32> {
         let hidraw_name = path.strip_prefix("/dev/")?;
-        read_sysfs_hidraw_interface_number(
-            std::path::Path::new("/sys/class/hidraw"),
-            hidraw_name,
-        )
+        read_sysfs_hidraw_interface_number(std::path::Path::new("/sys/class/hidraw"), hidraw_name)
     }
 }
 

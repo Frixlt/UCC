@@ -553,17 +553,21 @@ fn v2_p2_07_restore_cpu_defaults_orders_min_before_max_and_tolerates_epp_ebusy()
         if cpu == "cpu1" {
             sysfs.inner.set_file(base.join("online"), "1");
         }
+        sysfs.inner.set_file(
+            cf.join("scaling_available_governors"),
+            "powersave performance",
+        );
         sysfs
             .inner
-            .set_file(cf.join("scaling_available_governors"), "powersave performance");
-        sysfs.inner.set_file(cf.join("scaling_governor"), "powersave");
+            .set_file(cf.join("scaling_governor"), "powersave");
         sysfs.inner.set_file(
             cf.join("energy_performance_available_preferences"),
             "performance balance_performance power",
         );
-        sysfs
-            .inner
-            .set_file(cf.join("energy_performance_preference"), "balance_performance");
+        sysfs.inner.set_file(
+            cf.join("energy_performance_preference"),
+            "balance_performance",
+        );
         sysfs.inner.set_file(cf.join("cpuinfo_min_freq"), "800000");
         sysfs.inner.set_file(cf.join("cpuinfo_max_freq"), "4500000");
         sysfs.inner.set_file(cf.join("scaling_min_freq"), "800000");
@@ -575,8 +579,7 @@ fn v2_p2_07_restore_cpu_defaults_orders_min_before_max_and_tolerates_epp_ebusy()
 
     // Apply a profile that raises min=3000000, max=4000000 (so cur_min=3000000 > default_max=2000000)
     // and sets governor=performance, epp=performance.
-    let mut prof: UccProfile =
-        serde_json::from_str(&backend.get_active_profile_json()).unwrap();
+    let mut prof: UccProfile = serde_json::from_str(&backend.get_active_profile_json()).unwrap();
     prof.id = "high-freq-prof".to_string();
     prof.name = "High Freq".to_string();
     prof.cpu.governor = "performance".to_string();
@@ -589,7 +592,10 @@ fn v2_p2_07_restore_cpu_defaults_orders_min_before_max_and_tolerates_epp_ebusy()
     assert_eq!(
         sysfs
             .inner
-            .get_file(tmp.path().join("sys/devices/system/cpu/cpu0/cpufreq/scaling_min_freq"))
+            .get_file(
+                tmp.path()
+                    .join("sys/devices/system/cpu/cpu0/cpufreq/scaling_min_freq")
+            )
             .as_deref(),
         Some("3000000")
     );
