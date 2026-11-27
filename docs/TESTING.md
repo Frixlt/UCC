@@ -58,7 +58,7 @@ cargo build -p uccd --example interop_daemon --locked --offline
 
 Путь к собранному бинарнику передаётся через переменную окружения `UCC_INTEROP_DAEMON_BIN` (по умолчанию `target/debug/examples/interop_daemon`).
 
-### Основной набор (Normal suite — 50 тестов в конфигурации без Plasma / до 54 при наличии `gjs` и `node`)
+### Основной набор (Normal suite — 48 тестов в конфигурации без Plasma / до 52 при наличии `gjs` и `node`)
 
 Конфигурация для автономного Rust runtime (`BUILD_TRAY=OFF`):
 

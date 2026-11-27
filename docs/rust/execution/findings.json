@@ -169,7 +169,7 @@
       "reproducer": "Instantiate NvmlWrapper with mock power_guard returning is_dgpu_awake() == false. Subsequently set power_guard to return true and invoke get_telemetry(0). The call returns Err(NvmlError::NoGpuFound) instead of telemetry.",
       "suggested_direction": "1. Change device_count in NvmlWrapper to Arc<AtomicU32> (or AtomicU32). 2. In ensure_active_and_initialized(), after successful fn_init(), query device count and store with self.device_count.store(count, Ordering::SeqCst). 3. Call ensure_active_and_initialized() prior to index >= self.device_count.load() check in get_telemetry, get_power_limit_constraints, and set_power_limit.",
       "status": "resolved",
-      "resolution": "Converted device_count to Arc<AtomicU32>, dynamic count stored on wake, index checks executed after ensure_active_and_initialized. Verified by recheck_nvml."
+      "resolution": "Converted device_count to Arc<AtomicU32>, dynamic count stored on wake, index checks executed after ensure_active_and_initialized. Verified by nvml_device_lifecycle."
     },
     {
       "id": "FINDING-V4-02",

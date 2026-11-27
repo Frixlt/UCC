@@ -1889,7 +1889,9 @@ CpuCoreGridWidget::CpuCoreGridWidget( QWidget *parent )
 void CpuCoreGridWidget::setTopology( const QMap< int, QString > &coreTypes )
 {
   m_coreTypes = coreTypes;
-  setMinimumHeight( computeContentHeight( width() ) );
+  const int w = width() > 0 ? width() : 640;
+  m_lastColumns = columnsForWidth( w );
+  setMinimumHeight( computeContentHeight( w ) );
   updateGeometry();
   update();
 }
@@ -1900,7 +1902,9 @@ void CpuCoreGridWidget::setCoreLoads( const QVector< double > &loads )
   m_loads = loads;
   if ( countChanged )
   {
-    setMinimumHeight( computeContentHeight( width() ) );
+    const int w = width() > 0 ? width() : 640;
+    m_lastColumns = columnsForWidth( w );
+    setMinimumHeight( computeContentHeight( w ) );
     updateGeometry();
   }
   update();
@@ -2009,11 +2013,13 @@ QSize CpuCoreGridWidget::minimumSizeHint() const
 void CpuCoreGridWidget::resizeEvent( QResizeEvent *event )
 {
   QWidget::resizeEvent( event );
-  const int cols = columnsForWidth( event->size().width() );
-  if ( cols != m_lastColumns )
+  const int w = event->size().width();
+  const int cols = columnsForWidth( w );
+  const int targetH = computeContentHeight( w );
+  if ( cols != m_lastColumns || targetH != minimumHeight() )
   {
     m_lastColumns = cols;
-    setMinimumHeight( computeContentHeight( event->size().width() ) );
+    setMinimumHeight( targetH );
     updateGeometry();
   }
 }

@@ -1268,7 +1268,7 @@
       "feature_ids": [],
       "test_ids": [
         "cooling_engine",
-        "wave1_remediation"
+        "hardware_driver_contracts"
       ],
       "implementation_sha": null,
       "r1_review": null,
@@ -1357,7 +1357,7 @@
       "feature_ids": [],
       "test_ids": [
         "cooling_engine",
-        "wave1_remediation"
+        "hardware_driver_contracts"
       ],
       "implementation_sha": null,
       "r1_review": null,
@@ -1384,7 +1384,7 @@
       "feature_ids": [],
       "test_ids": [
         "cooling_engine",
-        "wave1_remediation"
+        "hardware_driver_contracts"
       ],
       "implementation_sha": null,
       "r1_review": null,
@@ -1499,7 +1499,7 @@
       "feature_ids": [],
       "test_ids": [
         "lighting_tests",
-        "wave1_remediation"
+        "lighting_device_controls"
       ],
       "implementation_sha": null,
       "r1_review": null,
@@ -1526,7 +1526,7 @@
       "feature_ids": [],
       "test_ids": [
         "lighting_tests",
-        "wave1_remediation"
+        "lighting_device_controls"
       ],
       "implementation_sha": null,
       "r1_review": null,
@@ -1553,7 +1553,7 @@
       "feature_ids": [],
       "test_ids": [
         "lighting_tests",
-        "wave1_remediation"
+        "lighting_device_controls"
       ],
       "implementation_sha": null,
       "r1_review": null,
@@ -1580,7 +1580,7 @@
       "feature_ids": [],
       "test_ids": [
         "lighting_tests",
-        "wave1_remediation"
+        "lighting_device_controls"
       ],
       "implementation_sha": null,
       "r1_review": null,
@@ -1664,7 +1664,7 @@
       "feature_ids": [],
       "test_ids": [
         "telemetry_suite",
-        "wave1_nvml_remediation"
+        "nvml_memory_and_bdf"
       ],
       "implementation_sha": null,
       "r1_review": null,
@@ -1699,7 +1699,7 @@
       "feature_ids": [],
       "test_ids": [
         "telemetry_suite",
-        "wave1_nvml_remediation"
+        "nvml_memory_and_bdf"
       ],
       "implementation_sha": null,
       "r1_review": null,
@@ -1734,7 +1734,7 @@
       "feature_ids": [],
       "test_ids": [
         "telemetry_suite",
-        "wave1_nvml_remediation"
+        "nvml_memory_and_bdf"
       ],
       "implementation_sha": null,
       "r1_review": null,
@@ -1742,7 +1742,7 @@
       "integration_sha": null,
       "children": [],
       "blockers": [],
-      "notes": "Extended NvmlWrapper (crates/ucc-hardware/src/nvml.rs) with separate nvmlMemory_t v1 / versioned nvmlMemory_v2_t ABI structs (M7-R01), Option-typed NvmlTelemetrySnapshot, initial-BDF + cross-domain bus/slot conflict-rejecting NvAPI binding (M7-R02), live nvmlDeviceGetCount_v2 check (W1-08), and strict getter return checking (HW-08). Verified in telemetry_suite and wave1_nvml_remediation.",
+      "notes": "Extended NvmlWrapper (crates/ucc-hardware/src/nvml.rs) with separate nvmlMemory_t v1 / versioned nvmlMemory_v2_t ABI structs (M7-R01), Option-typed NvmlTelemetrySnapshot, initial-BDF + cross-domain bus/slot conflict-rejecting NvAPI binding (M7-R02), live nvmlDeviceGetCount_v2 check (W1-08), and strict getter return checking (HW-08). Verified in telemetry_suite and nvml_memory_and_bdf.",
       "artifacts": [
         "crates/ucc-hardware/src/nvml.rs",
         "crates/ucc-hardware/src/telemetry/mod.rs",
@@ -1769,7 +1769,7 @@
       "feature_ids": [],
       "test_ids": [
         "telemetry_suite",
-        "wave1_nvml_remediation"
+        "nvml_memory_and_bdf"
       ],
       "implementation_sha": null,
       "r1_review": null,
@@ -1804,7 +1804,7 @@
       "feature_ids": [],
       "test_ids": [
         "telemetry_suite",
-        "wave1_nvml_remediation"
+        "nvml_memory_and_bdf"
       ],
       "implementation_sha": null,
       "r1_review": null,
@@ -1839,7 +1839,7 @@
       "feature_ids": [],
       "test_ids": [
         "telemetry_suite",
-        "wave1_nvml_remediation"
+        "nvml_memory_and_bdf"
       ],
       "implementation_sha": null,
       "r1_review": null,
@@ -1874,7 +1874,7 @@
       "feature_ids": [],
       "test_ids": [
         "telemetry_suite",
-        "wave1_nvml_remediation"
+        "nvml_memory_and_bdf"
       ],
       "implementation_sha": null,
       "r1_review": null,
@@ -2361,7 +2361,7 @@
       ],
       "feature_ids": [],
       "test_ids": [
-        "desk01_and_activation"
+        "window_activation"
       ],
       "implementation_sha": "d81a9f3",
       "r1_review": null,
@@ -2389,7 +2389,7 @@
       ],
       "feature_ids": [],
       "test_ids": [
-        "desk01_and_activation"
+        "window_activation"
       ],
       "implementation_sha": "e27f104",
       "r1_review": "passed",
