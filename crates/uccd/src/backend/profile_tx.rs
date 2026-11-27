@@ -318,11 +318,16 @@ impl LiveUccdBackend {
         }
         {
             let mut cooler = self.lock_mutex(&self.cooler_controller);
+            cooler.apply_manual_profile_targets(
+                profile.fan.manual_fan_speed,
+                profile.fan.manual_pump_voltage,
+            );
             cooler.set_mode(if profile.fan.auto_control_wc {
                 ucc_hardware::CoolerMode::Auto
             } else {
                 ucc_hardware::CoolerMode::Manual
             });
+            self.apply_active_cooler_targets_locked(&mut cooler, profile);
         }
     }
 

@@ -1143,6 +1143,7 @@ impl UccdBackend for LiveUccdBackend {
             return false;
         }
         let prev = self.water_cooler_enabled.swap(enable, Ordering::SeqCst);
+        self.write_rw(&self.active_profile).fan.enable_water_cooler = enable;
         if prev != enable {
             self.emit_signal(DbusSignalEvent::WaterCoolerStatusChanged {
                 status: if enable { "enabled" } else { "disabled" }.to_string(),

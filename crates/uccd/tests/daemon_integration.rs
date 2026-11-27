@@ -5138,3 +5138,184 @@ async fn m8_10_lid_close_blanks_and_restores_keyboard_and_wc_led_in_ram_only() {
 
     runtime.shutdown(Duration::from_secs(2)).await;
 }
+
+async fn drain_cooler_packets(backend: &LiveUccdBackend, max_rounds: usize) -> Vec<[u8; 8]> {
+    let mut out = Vec::new();
+    for _ in 0..max_rounds {
+        tokio::time::sleep(Duration::from_millis(90)).await;
+        let batch = backend.drain_cooler_commands();
+        if batch.is_empty() {
+            if !out.is_empty() {
+                break;
+            }
+        } else {
+            out.extend(batch);
+        }
+    }
+    out
+}
+
+#[tokio::test]
+async fn m5_9_startup_auto_enables_wc_scan_when_power_wc_profile_requests_it() {
+    use ucc_dbus::UccdBackend;
+
+    let root = tempfile::tempdir().unwrap();
+    let mut ac_profile = default_high_performance_profile();
+    ac_profile.id = "ac-no-wc".to_string();
+    ac_profile.name = "AC No WC".to_string();
+    ac_profile.fan.enable_water_cooler = false;
+
+    let mut wc_profile = default_high_performance_profile();
+    wc_profile.id = "wc-auto-scan".to_string();
+    wc_profile.name = "WC Auto Scan".to_string();
+    wc_profile.fan.enable_water_cooler = true;
+
+    let mut settings = create_default_settings();
+    settings.profiles.insert(ac_profile.id.clone(), ac_profile.clone());
+    settings.profiles.insert(wc_profile.id.clone(), wc_profile.clone());
+    settings.set_active_profile_for_mode("power_ac", ac_profile.id);
+    settings.set_active_profile_for_mode("power_wc", wc_profile.id);
+    ConfigManager::with_custom_path(root.path().join("settings.json"))
+        .save(&settings)
+        .unwrap();
+
+    let (backend, _, _, _) = build_test_backend(root.path());
+    assert!(
+        backend.is_water_cooler_enabled(),
+        "WC scanning must auto-enable at startup when power_wc profile enables water cooler"
+    );
+}
+
+#[tokio::test]
+async fn m5_9_manual_wc_fan_and_pump_profile_apply_and_reconnect_replay() {
+    use ucc_dbus::UccdBackend;
+    use ucc_hardware::{CoolerPacketEncoder, PumpVoltage};
+
+    let root = tempfile::tempdir().unwrap();
+    let (backend, _, _, _) = build_test_backend(root.path());
+    let runtime = start_runtime(Arc::clone(&backend), "org.test.uccd.m5_9_manual", false).await;
+
+    let mut manual_profile = default_high_performance_profile();
+    manual_profile.fan.enable_water_cooler = true;
+    manual_profile.fan.auto_control_wc = false;
+    manual_profile.fan.manual_fan_speed = Some(65);
+    manual_profile.fan.manual_pump_voltage = Some(2); // discrete code 2 == 7V
+
+    assert!(backend.apply_profile(&serde_json::to_string(&manual_profile).unwrap()));
+    assert!(!backend.is_water_cooler_auto_control_enabled());
+    assert_eq!(backend.get_water_cooler_fan_speed(), 65);
+    assert_eq!(backend.get_water_cooler_pump_level(), 2);
+
+    backend.set_cooler_connected_state(true);
+    let pkts = drain_cooler_packets(&backend, 4).await;
+    assert!(
+        pkts.contains(&CoolerPacketEncoder::fan_speed(65).unwrap()),
+        "manual fan speed 65% must be flushed on connect: {pkts:?}"
+    );
+    assert!(
+        pkts.contains(&CoolerPacketEncoder::pump_voltage(PumpVoltage::V7).unwrap()),
+        "manual pump voltage V7 must be flushed on connect: {pkts:?}"
+    );
+
+    // Simulate transient BLE drop + debounced reconnect replay.
+    backend.set_cooler_connected_state(false);
+    backend.set_cooler_connected_state(true);
+    backend.replay_active_cooler_profile();
+    let replayed = drain_cooler_packets(&backend, 4).await;
+    assert!(
+        replayed.contains(&CoolerPacketEncoder::fan_speed(65).unwrap()),
+        "manual fan speed 65% must replay after reconnect: {replayed:?}"
+    );
+    assert!(
+        replayed.contains(&CoolerPacketEncoder::pump_voltage(PumpVoltage::V7).unwrap()),
+        "manual pump voltage V7 must replay after reconnect: {replayed:?}"
+    );
+
+    runtime.shutdown(Duration::from_secs(2)).await;
+}
+
+#[tokio::test]
+async fn m5_9_auto_wc_curve_and_aquaris_led_restore_across_suspend_resume() {
+    use ucc_core::{FanPoint, PumpPoint};
+    use ucc_dbus::UccdBackend;
+    use ucc_hardware::{CoolerPacketEncoder, PumpVoltage, RgbState, RgbTarget};
+
+    let root = tempfile::tempdir().unwrap();
+    let aquaris_path = root.path().join("aquaris.json");
+    std::fs::write(
+        &aquaris_path,
+        json!({
+            "address": "AA:BB:CC:DD:EE:FF",
+            "name": "LCT21001",
+            "red": 10,
+            "green": 180,
+            "blue": 240,
+            "ledMode": 1
+        })
+        .to_string(),
+    )
+    .unwrap();
+
+    let (backend, _, _, _) = build_test_backend(root.path());
+    backend.load_aquaris_saved_state_from(&aquaris_path);
+    let runtime = start_runtime(Arc::clone(&backend), "org.test.uccd.m5_9_resume", false).await;
+
+    let mut auto_profile = default_high_performance_profile();
+    auto_profile.fan.enable_water_cooler = true;
+    auto_profile.fan.auto_control_wc = true;
+    auto_profile.fan.table_water_cooler_fan = vec![
+        FanPoint { temp: 40, speed: 35 },
+        FanPoint { temp: 60, speed: 75 },
+        FanPoint { temp: 80, speed: 95 },
+    ];
+    auto_profile.fan.table_pump = vec![
+        PumpPoint { temp: 40, speed: 1 }, // V7
+        PumpPoint { temp: 60, speed: 2 }, // V8
+        PumpPoint { temp: 80, speed: 3 }, // V11
+    ];
+    assert!(backend.apply_profile(&serde_json::to_string(&auto_profile).unwrap()));
+
+    // Enter suspend: flushing must stay blocked even if targets were queued.
+    backend.on_system_suspend();
+    assert!(backend.drain_cooler_commands().is_empty());
+
+    // Resume + reconnect: saved aquaris.json RGB and Auto curve targets (at 62C -> 77% fan? check interpolation) restore.
+    backend.on_system_resume();
+    backend.set_cooler_connected_state(true);
+
+    assert_eq!(
+        backend.cooler_desired_rgb(),
+        RgbTarget::Color {
+            red: 10,
+            green: 180,
+            blue: 240,
+            state: RgbState::Breathe,
+        }
+    );
+    let fan_pct = backend.get_water_cooler_fan_speed();
+    assert!(
+        (75..=95).contains(&fan_pct),
+        "auto WC curve fan at 62C must be evaluated in 75..=95%, got {fan_pct}"
+    );
+    assert_eq!(
+        backend.get_water_cooler_pump_level(),
+        3,
+        "auto WC pump curve at 62C must select discrete code 3 (8V)"
+    );
+
+    let pkts = drain_cooler_packets(&backend, 5).await;
+    assert!(
+        pkts.contains(&CoolerPacketEncoder::fan_speed(fan_pct as u8).unwrap()),
+        "resumed auto WC fan speed packet missing: {pkts:?}"
+    );
+    assert!(
+        pkts.contains(&CoolerPacketEncoder::pump_voltage(PumpVoltage::V8).unwrap()),
+        "resumed auto WC pump packet missing: {pkts:?}"
+    );
+    assert!(
+        pkts.contains(&CoolerPacketEncoder::rgb(10, 180, 240, RgbState::Breathe)),
+        "saved aquaris.json LED packet must restore on resume reconnect: {pkts:?}"
+    );
+
+    runtime.shutdown(Duration::from_secs(2)).await;
+}

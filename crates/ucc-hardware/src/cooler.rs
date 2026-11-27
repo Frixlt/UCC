@@ -680,6 +680,17 @@ impl CoolerController {
         profile: &ucc_core::FanProfile,
         temp_c: i32,
     ) -> Result<(), CoolerError> {
+        self.apply_profile_temperature_force(profile, temp_c, false)
+    }
+
+    /// Evaluates water cooler fan & pump curves for `temp_c`, optionally forcing hardware enqueue even
+    /// when targets match cached `auto_fan`/`auto_pump` (used after connect or profile switch) (`M5.9`).
+    pub fn apply_profile_temperature_force(
+        &mut self,
+        profile: &ucc_core::FanProfile,
+        temp_c: i32,
+        force: bool,
+    ) -> Result<(), CoolerError> {
         let curve_fan = profile.get_water_cooler_fan_speed_for_temp(temp_c);
         let next_fan = if curve_fan >= 0 {
             FanTarget::Speed(curve_fan.clamp(0, 100) as u8)
@@ -699,14 +710,63 @@ impl CoolerController {
         self.auto_pump = next_pump;
 
         if self.mode == CoolerMode::Auto {
-            if fan_changed {
+            if force || fan_changed {
                 Self::enqueue_fan_target(&mut self.queue, self.auto_fan)?;
             }
-            if pump_changed {
+            if force || pump_changed {
                 Self::enqueue_pump_target(&mut self.queue, self.auto_pump)?;
             }
         }
         Ok(())
+    }
+
+    /// Synchronizes manual fan/pump targets from the active profile (`M5.9`).
+    ///
+    /// Keeps `manual_fan`/`manual_pump` updated even while `Auto` mode is active, and
+    /// immediately purges & re-enqueues active targets when already in `Manual` mode.
+    pub fn apply_manual_profile_targets(
+        &mut self,
+        fan_speed: Option<u8>,
+        pump_voltage_code: Option<i32>,
+    ) {
+        if let Some(spd) = fan_speed {
+            self.manual_fan = if spd == 0 {
+                FanTarget::Off
+            } else {
+                FanTarget::Speed(spd.min(100))
+            };
+        }
+        if let Some(code) = pump_voltage_code {
+            if let Ok(core_v) = ucc_core::PumpVoltage::from_discrete_code(code) {
+                let hw_v = from_core_pump_voltage(core_v);
+                if CoolerCommand::PumpVoltage(hw_v).validate().is_ok() {
+                    self.manual_pump = PumpTarget::Voltage(hw_v);
+                }
+            }
+        }
+        if self.mode == CoolerMode::Manual {
+            self.queue.clear_fan_and_pump();
+            self.enqueue_active_fan_and_pump();
+        }
+    }
+
+    /// Seeds `desired_rgb` from persisted config when no explicit RGB state has been set yet (`M5.9`).
+    pub fn seed_desired_rgb_if_unset(&mut self, red: u8, green: u8, blue: u8, state: RgbState) {
+        if self.desired_rgb == RgbTarget::Unset {
+            self.desired_rgb = RgbTarget::Color {
+                red,
+                green,
+                blue,
+                state,
+            };
+        }
+    }
+
+    /// Re-enqueues current active fan, pump, and RGB targets (e.g. after debounced reconnect or profile switch) (`M5.9`).
+    pub fn force_reapply_active_targets(&mut self) {
+        self.queue.clear_fan_and_pump();
+        self.enqueue_active_fan_and_pump();
+        self.enqueue_desired_rgb();
     }
 
     pub fn set_fan_speed(&mut self, percent: u8) -> Result<(), CoolerError> {
@@ -777,21 +837,7 @@ impl CoolerController {
         self.state_machine.on_connected();
         self.queue.bump_generation();
         self.enqueue_active_fan_and_pump();
-        let _ = match self.desired_rgb {
-            RgbTarget::Unset => Ok(()),
-            RgbTarget::Off => self.queue.enqueue(CoolerCommand::TurnOffLed),
-            RgbTarget::Color {
-                red,
-                green,
-                blue,
-                state,
-            } => self.queue.enqueue(CoolerCommand::Rgb {
-                red,
-                green,
-                blue,
-                state,
-            }),
-        };
+        self.enqueue_desired_rgb();
     }
 
     pub fn on_disconnected(&mut self) {
@@ -881,5 +927,23 @@ impl CoolerController {
         let pump = self.desired_pump_target();
         let _ = Self::enqueue_fan_target(&mut self.queue, fan);
         let _ = Self::enqueue_pump_target(&mut self.queue, pump);
+    }
+
+    fn enqueue_desired_rgb(&mut self) {
+        let _ = match self.desired_rgb {
+            RgbTarget::Unset => Ok(()),
+            RgbTarget::Off => self.queue.enqueue(CoolerCommand::TurnOffLed),
+            RgbTarget::Color {
+                red,
+                green,
+                blue,
+                state,
+            } => self.queue.enqueue(CoolerCommand::Rgb {
+                red,
+                green,
+                blue,
+                state,
+            }),
+        };
     }
 }

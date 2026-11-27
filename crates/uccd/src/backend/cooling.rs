@@ -206,7 +206,25 @@ pub fn build_default_custom_fan_catalog() -> BTreeMap<String, FanProfile> {
     default_custom_fan_profiles()
 }
 
-pub fn load_saved_cooler_identity(path: &Path) -> Option<SavedCoolerIdentity> {
+/// Persisted aquaris.json device identity and last known RGB LED state (`M5.9`).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SavedCoolerConfig {
+    pub identity: Option<SavedCoolerIdentity>,
+    pub led_rgb: Option<(u8, u8, u8, RgbState)>,
+}
+
+fn rgb_state_from_mode(mode_val: i32) -> RgbState {
+    match mode_val {
+        0 => RgbState::Static,
+        1 => RgbState::Breathe,
+        2 => RgbState::Colorful,
+        3 => RgbState::BreatheColor,
+        _ => RgbState::Static,
+    }
+}
+
+/// Parses device identity and optional saved LED RGB settings from `aquaris.json` (`M5.9`).
+pub fn load_saved_cooler_config(path: &Path) -> Option<SavedCoolerConfig> {
     let raw = std::fs::read_to_string(path).ok()?;
     let val: Value = serde_json::from_str(&raw).ok()?;
     let obj = val.as_object()?;
@@ -224,11 +242,37 @@ pub fn load_saved_cooler_identity(path: &Path) -> Option<SavedCoolerIdentity> {
         .map(str::trim)
         .filter(|s| !s.is_empty())
         .map(str::to_string);
-    if address.is_none() && name.is_none() {
+    let identity = if address.is_none() && name.is_none() {
         None
     } else {
         Some(SavedCoolerIdentity { address, name })
+    };
+
+    let parse_channel = |key: &str| -> Option<u8> {
+        let v = obj.get(key)?.as_i64()?;
+        u8::try_from(v).ok()
+    };
+    let led_rgb = match (
+        parse_channel("red"),
+        parse_channel("green"),
+        parse_channel("blue"),
+        obj.get("ledMode").and_then(|v| v.as_i64()),
+    ) {
+        (Some(r), Some(g), Some(b), Some(mode)) if mode >= 0 => {
+            Some((r, g, b, rgb_state_from_mode(mode as i32)))
+        }
+        _ => None,
+    };
+
+    if identity.is_none() && led_rgb.is_none() {
+        None
+    } else {
+        Some(SavedCoolerConfig { identity, led_rgb })
     }
+}
+
+pub fn load_saved_cooler_identity(path: &Path) -> Option<SavedCoolerIdentity> {
+    load_saved_cooler_config(path).and_then(|c| c.identity)
 }
 
 impl LiveUccdBackend {
@@ -379,13 +423,60 @@ impl LiveUccdBackend {
         tick
     }
 
-    pub(super) fn mark_wc_manual_and_emit(&self) {
+    fn mark_wc_manual_targets_and_emit(&self, fan_speed: Option<u8>, pump_voltage: Option<i32>) {
         let updated = {
             let mut active = self.write_rw(&self.active_profile);
             active.fan.auto_control_wc = false;
+            if let Some(spd) = fan_speed {
+                active.fan.manual_fan_speed = Some(spd);
+            }
+            if let Some(code) = pump_voltage {
+                active.fan.manual_pump_voltage = Some(code);
+            }
             active.clone()
         };
         self.emit_profile_changed(&updated);
+    }
+
+    fn current_wc_control_temp_c(&self) -> i32 {
+        self.read_rw(&self.latest_fans)
+            .as_ref()
+            .and_then(|tick| tick.temps_c.iter().flatten().copied().max())
+            .or_else(|| {
+                (0..self.capabilities.device.number_of_fans)
+                    .filter_map(|i| self.platform.read_fan_temp(i).ok())
+                    .max()
+            })
+            .unwrap_or(50)
+    }
+
+    /// Evaluates active WC curve/manual targets and queues hardware packets deterministically (`M5.9`).
+    pub(super) fn apply_active_cooler_targets_locked(
+        &self,
+        cooler: &mut ucc_hardware::CoolerController,
+        profile: &UccProfile,
+    ) {
+        let temp_c = self.current_wc_control_temp_c();
+        let fan_profile = self.fan_profile_from_ucc_profile(profile);
+        let _ = cooler.apply_profile_temperature(&fan_profile, temp_c);
+        cooler.force_reapply_active_targets();
+    }
+
+    /// Re-applies active WC fan, pump, and RGB targets onto the controller queue (`M5.9`).
+    pub fn replay_active_cooler_profile(&self) {
+        let active = self.read_rw(&self.active_profile).clone();
+        let mut cooler = self.lock_mutex(&self.cooler_controller);
+        self.apply_active_cooler_targets_locked(&mut cooler, &active);
+    }
+
+    /// Loads persisted RGB preferences from `aquaris.json` if no explicit LED command was issued yet (`M5.9`).
+    pub fn load_aquaris_saved_state_from(&self, path: &Path) {
+        if let Some(cfg) = load_saved_cooler_config(path) {
+            if let Some((r, g, b, state)) = cfg.led_rgb {
+                self.lock_mutex(&self.cooler_controller)
+                    .seed_desired_rgb_if_unset(r, g, b, state);
+            }
+        }
     }
 
     pub(super) fn get_water_cooler_fan_speed_impl(&self) -> i32 {
@@ -420,7 +511,7 @@ impl LiveUccdBackend {
             ctrl.set_fan_speed(pct).is_ok()
         };
         if ok {
-            self.mark_wc_manual_and_emit();
+            self.mark_wc_manual_targets_and_emit(Some(pct), None);
         }
         ok
     }
@@ -445,7 +536,7 @@ impl LiveUccdBackend {
             ctrl.set_pump_voltage(hw_v).is_ok()
         };
         if ok {
-            self.mark_wc_manual_and_emit();
+            self.mark_wc_manual_targets_and_emit(None, Some(voltage));
         }
         ok
     }
@@ -464,13 +555,7 @@ impl LiveUccdBackend {
         else {
             return false;
         };
-        let state = match mode_val {
-            0 => RgbState::Static,
-            1 => RgbState::Breathe,
-            2 => RgbState::Colorful,
-            3 => RgbState::BreatheColor,
-            _ => RgbState::Static,
-        };
+        let state = rgb_state_from_mode(mode_val);
         if self.is_lid_closed()
             && self
                 .current_lid_source_policy()
@@ -514,7 +599,7 @@ impl LiveUccdBackend {
             ctrl.turn_off_fan().is_ok()
         };
         if ok {
-            self.mark_wc_manual_and_emit();
+            self.mark_wc_manual_targets_and_emit(Some(0), None);
         }
         ok
     }
@@ -529,7 +614,7 @@ impl LiveUccdBackend {
             ctrl.turn_off_pump().is_ok()
         };
         if ok {
-            self.mark_wc_manual_and_emit();
+            self.mark_wc_manual_targets_and_emit(None, Some(4));
         }
         ok
     }
@@ -537,6 +622,11 @@ impl LiveUccdBackend {
     pub(super) fn set_water_cooler_auto_control_impl(&self, enabled: bool) -> bool {
         let Some(_op_guard) = self.enter_hardware_op() else {
             return false;
+        };
+        let updated = {
+            let mut active = self.write_rw(&self.active_profile);
+            active.fan.auto_control_wc = enabled;
+            active.clone()
         };
         let changed = {
             let mut ctrl = self.lock_mutex(&self.cooler_controller);
@@ -547,12 +637,8 @@ impl LiveUccdBackend {
             };
             let ch = ctrl.mode() != next_mode;
             ctrl.set_mode(next_mode);
+            self.apply_active_cooler_targets_locked(&mut ctrl, &updated);
             ch
-        };
-        let updated = {
-            let mut active = self.write_rw(&self.active_profile);
-            active.fan.auto_control_wc = enabled;
-            active.clone()
         };
         self.emit_profile_changed(&updated);
         if changed {
@@ -797,6 +883,19 @@ impl LiveUccdBackend {
     }
 }
 
+async fn sync_wc_power_and_targets(backend: &Arc<LiveUccdBackend>, replay_targets: bool) {
+    let b = Arc::clone(backend);
+    let _ = tokio::task::spawn_blocking(move || {
+        if let Some(_g) = b.enter_worker_hw_op() {
+            b.reconcile_power_state(false);
+            if replay_targets {
+                b.replay_active_cooler_profile();
+            }
+        }
+    })
+    .await;
+}
+
 /// Asynchronous BlueZ BLE GATT worker loop for external liquid coolers (`ISSUE-02`).
 pub async fn run_water_cooler_ble_loop(
     connection: zbus::Connection,
@@ -812,6 +911,19 @@ pub async fn run_water_cooler_ble_loop(
         if *stop_rx.borrow() || backend.shutting_down.load(Ordering::SeqCst) {
             break;
         }
+        if backend.cooler_suspending.load(Ordering::SeqCst) {
+            if let Some(sess) = active_session.take() {
+                let _ = sess.disconnect().await;
+            }
+            connect_since = None;
+            disconnect_since = None;
+            tokio::select! {
+                biased;
+                _ = stop_rx.changed() => break,
+                _ = tokio::time::sleep(Duration::from_millis(500)) => {}
+            }
+            continue;
+        }
         let wc_enabled = backend.water_cooler_enabled.load(Ordering::SeqCst);
         if !wc_enabled {
             if let Some(sess) = active_session.take() {
@@ -824,7 +936,7 @@ pub async fn run_water_cooler_ble_loop(
                 backend.emit_signal(DbusSignalEvent::WaterCoolerStatusChanged {
                     status: "disconnected".to_string(),
                 });
-                backend.reconcile_power_state(false);
+                sync_wc_power_and_targets(&backend, false).await;
             }
         } else if active_session.is_none() {
             let saved = load_saved_cooler_identity(Path::new(AQUARIS_CONFIG_PATH));
@@ -857,7 +969,7 @@ pub async fn run_water_cooler_ble_loop(
                     backend.emit_signal(DbusSignalEvent::WaterCoolerStatusChanged {
                         status: "connected".to_string(),
                     });
-                    backend.reconcile_power_state(false);
+                    sync_wc_power_and_targets(&backend, true).await;
                 }
             }
 
@@ -886,7 +998,7 @@ pub async fn run_water_cooler_ble_loop(
                 backend.emit_signal(DbusSignalEvent::WaterCoolerStatusChanged {
                     status: "disconnected".to_string(),
                 });
-                backend.reconcile_power_state(false);
+                sync_wc_power_and_targets(&backend, false).await;
             }
         }
 

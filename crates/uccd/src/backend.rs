@@ -330,6 +330,14 @@ impl LiveUccdBackend {
             }
         }
 
+        let power_wc_enables_wc = settings
+            .state_map
+            .get("power_wc")
+            .and_then(|id| settings.get_profile(id))
+            .is_some_and(|p| p.fan.enable_water_cooler);
+        let initial_wc_enabled = wc_supported
+            && (configured_initial_profile.fan.enable_water_cooler || power_wc_enables_wc);
+
         let cooler_ctrl = CoolerController::new();
         let (signal_tx, _) = broadcast::channel(256);
 
@@ -354,7 +362,7 @@ impl LiveUccdBackend {
             latest_fans: RwLock::new(None),
             fan_control_enabled: AtomicBool::new(fan_enabled),
             cooler_controller: Arc::new(Mutex::new(cooler_ctrl)),
-            water_cooler_enabled: AtomicBool::new(false),
+            water_cooler_enabled: AtomicBool::new(initial_wc_enabled),
             water_cooler_available: AtomicBool::new(wc_supported),
             water_cooler_connected: AtomicBool::new(false),
             cooler_suspending: AtomicBool::new(false),
@@ -434,7 +442,7 @@ impl LiveUccdBackend {
             ..Default::default()
         };
 
-        Self::new(UccdDependencies {
+        let backend = Self::new(UccdDependencies {
             device_name: model,
             platform,
             sysfs: Arc::clone(&sysfs),
@@ -444,7 +452,9 @@ impl LiveUccdBackend {
             telemetry_config,
             power_devices: PowerDeviceController::default(),
             lid_policy: LidPolicyConfig::default(),
-        })
+        });
+        backend.load_aquaris_saved_state_from(Path::new(cooling::AQUARIS_CONFIG_PATH));
+        backend
     }
 
     pub(super) fn is_vendor_unsupported(&self) -> bool {
@@ -750,6 +760,9 @@ impl LiveUccdBackend {
         self.cooler_suspending.store(false, Ordering::SeqCst);
         self.lock_mutex(&self.cooler_controller)
             .on_prepare_for_sleep(false);
+        if self.water_cooler_enabled.load(Ordering::SeqCst) {
+            self.replay_active_cooler_profile();
+        }
         let _ = self.lock_mutex(&self.lightbar_ctrl).on_resume();
         if !self.is_lid_closed() {
             self.restore_lid_lighting();
