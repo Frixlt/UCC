@@ -1,0 +1,33 @@
+# Ignore patterns for AI coding agents (.aiignore / .claudeignore / .cursorignore)
+# Prevents burning context tokens on lockfiles, binary assets, build dirs, and retired legacy C++.
+
+# Build outputs & caches
+target/
+build/
+/tmp/
+artifacts/
+
+# Lockfiles (high token cost, zero architectural signal)
+Cargo.lock
+flake.lock
+
+# Binary & visual assets
+screenshots/
+icons/
+*.png
+*.svg
+*.so
+*.so.*
+
+# Large raw R&D dumps
+nvidia_findings/*.txt
+nvidia_findings/*.c
+
+# Legacy C++ runtime scheduled for retirement in M13.7+
+# (Keep uccd/com.uniwill.uccd.* and uccd/uccd*.service visible)
+uccd/src/
+uccd/inc/
+uccd/3rdparty/
+ucc-cli/
+ucc-tray/
+ucc-session/

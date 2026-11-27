@@ -1,73 +1,284 @@
-# Сборка, установка и запуск
+# Сборка, упаковка и установка `ucc-rusted`
 
-[Frixit/UCC README](../README.md) · [Проверки](TESTING.md) ·
-[Миграция Python/TCC](../contrib/frixit/README.md)
+[Проверки и тестирование](TESTING.md) · [Миграция и восстановление](MIGRATION_AND_RECOVERY.md)
 
-## Зависимости
+Документ описывает сборку Rust-пространства `ucc-rusted`, автономного Qt6-клиента `ucc-gui`, сборки `UCC_READ_ONLY_PREVIEW`, автоматизацию через `cargo xtask` и упаковку для Arch Linux, Debian/Ubuntu, Fedora/RPM и Nix/NixOS.
 
-Для релизной сборки нужны Linux, Rust и Cargo, CMake 3.20+, C++20-компилятор,
-Ninja, Git, pkg-config, Qt 6 Core/DBus/Gui/Widgets/Charts и libxcb. Версия Rust
-закреплена в [rust-toolchain.toml](../rust-toolchain.toml). Для тестов C++ также
-нужны Qt Test, Qt Bluetooth, libudev и dbus-run-session. GJS и Node.js запускают
-проверки GNOME.
+## 1. Требования к окружению сборки
 
-В Arch/CachyOS:
+### Базовые зависимости (Rust runtime + автономный Qt6 GUI)
+
+| Компонент | Минимальная версия / пакет | Назначение |
+| --- | --- | --- |
+| Rust / Cargo | MSRV `1.89` (`Cargo.toml`), закреплённый тулчейн `1.99.1` (`rust-toolchain.toml` с `rustfmt`, `clippy`) | Сборка всех 10 крейтов рабочего пространства (`edition = "2021"`) |
+| Компилятор C++ | C++20 (`g++ >= 9` или совместимый Clang) | Сборка `libucc-dbus`, `ucc-desktop`, `ucc-gui` |
+| CMake / Ninja | `cmake >= 3.20`, `ninja` | Конфигурация и сборка Qt6-клиента |
+| Инструменты | `git`, `pkg-config` (`pkgconf`) | Определение git-хеша версии и поиск системных библиотек |
+| Qt6 | `Qt6::Core`, `Qt6::DBus`, `Qt6::Gui`, `Qt6::Widgets`, `Qt6::Charts`, `Qt6::Svg` | Графический интерфейс `ucc-gui` и рендеринг SVG-иконок |
+| Системные библиотеки | `libxcb`, `systemd-libs`, `dbus`, `polkit`, `hicolor-icon-theme`, `nlohmann-json` | X11 backdrop blur (`UCC_XCB`), D-Bus, Polkit, systemd-интеграция |
+| Опционально (runtime) | `tuxedo-drivers`, `bluez`, `kscreen`, `qt6-wayland` | Интерфейс `/dev/tuxedo_io`, BLE-водянка, смена частоты в KDE, нативный Wayland |
+
+### Архитектурное ограничение по зависимостям GUI (ADR-01)
+
+Для релизной сборки автономного Qt6 GUI с Rust runtime (`-DUCC_PACKAGE_RUST_RUNTIME=ON -DBUILD_TRAY=OFF`) **не требуются**:
+
+- **KF6 / Plasma / ECM**: `extra-cmake-modules`, `KF6Config`, `KF6CoreAddons`, `KF6WindowSystem`, `KF6StatusNotifierItem`, `Plasma`;
+- **Qt6 QML / Quick**: `Qt6Qml`, `Qt6Quick` (`qt6-declarative`);
+- **Qt6 Bluetooth**: `Qt6Bluetooth` (`qt6-connectivity`).
+
+`KF6` и `Plasma` запрашиваются только при `-DBUILD_TRAY=ON` (устаревший Plasma-апплет) или при `-DUCC_PACKAGE_RUST_RUNTIME=OFF`. `Qt6Bluetooth` и `libudev` требуются только при сборке legacy C++ `uccd` или C++ unit-тестов (`-DBUILD_TESTS=ON`).
+
+### Установка зависимостей по дистрибутивам
+
+**Arch Linux / CachyOS:**
 
 ```bash
+# Минимальный набор для релизной сборки Rust runtime + автономного Qt6 GUI
 sudo pacman -S --needed base-devel rust cmake ninja git pkgconf \
-  qt6-base qt6-charts qt6-connectivity qt6-wayland systemd-libs \
-  dbus polkit bluez python gjs nodejs libxcb nlohmann-json
+  qt6-base qt6-charts qt6-svg qt6-wayland systemd-libs \
+  dbus polkit hicolor-icon-theme libxcb nlohmann-json
+
+# Дополнительно для CTest (C++/Python/GNOME-тесты)
+sudo pacman -S --needed qt6-connectivity python gjs nodejs
 ```
 
-В Debian потребуются зависимости из [debian/control](../debian/control).
-Релизный GUI использует Qt Widgets. Rust-трей регистрируется в
-StatusNotifierItem, а пользовательский агент запускается через XDG autostart.
-
-## Исходники и опции
+**Debian / Ubuntu** (соответствует `debian/control`):
 
 ```bash
-git clone https://github.com/Frixlt/UCC.git
-cd UCC
+sudo apt-get update
+sudo apt-get install -y --no-install-recommends \
+  debhelper cargo rustc cmake ninja-build g++ git pkgconf \
+  nlohmann-json3-dev qt6-base-dev qt6-charts-dev qt6-svg-dev qt6-tools-dev \
+  libsystemd-dev libxrandr-dev libudev-dev libxcb1-dev dbus policykit-1
+```
+
+**Fedora / RHEL** (соответствует `ucc.spec`):
+
+```bash
+sudo dnf install -y \
+  cmake ninja-build cargo rust gcc-c++ git pkgconf-pkg-config \
+  nlohmann-json-devel qt6-qtbase-devel qt6-qtcharts-devel qt6-qtsvg-devel \
+  systemd-devel libXrandr-devel libgudev-devel libxcb-devel dbus polkit
+```
+
+---
+
+## 2. Сборка Rust-пространства и офлайн-архива
+
+Рабочее пространство `Cargo.toml` включает 10 крейтов:
+
+- `crates/ucc-core` — доменные модели, валидация, DTO;
+- `crates/ucc-config` — загрузка, атомарная запись, резервные копии, импорт TCC;
+- `crates/ucc-hardware` — `/dev/tuxedo_io`, CPU/GPU sysfs, NVML, BlueZ BLE;
+- `crates/ucc-dbus` — контракты и интерфейсы `com.uniwill.uccd`;
+- `crates/uccd` — демон `uccd` и root-утилиты `ucc-hardware`, `ucc-sleep`, `ucc-import-check`;
+- `crates/ucc-cli` — CLI `ucc-cli`;
+- `crates/ucc-desktop` — системный трей `ucc-desktop-tray` (StatusNotifierItem);
+- `crates/ucc-session-agent` — пользовательский агент `ucc-session-agent`;
+- `crates/ucc-lighting` — контроллеры клавиатуры и Lightbar;
+- `crates/xtask` — задачи сборки, упаковки и верификации.
+
+### Локальная сборка Rust
+
+При наличии кеша зависимостей (`cargo fetch --locked`) или вендоринга:
+
+```bash
+cargo build --workspace --release --locked --offline
+```
+
+Сборка только исполняемых файлов в выделенный каталог (как в `Makefile`, `PKGBUILD`, `ucc.spec`):
+
+```bash
+cargo build --workspace --bins --release --locked --offline --target-dir target
+```
+
+Результирующие бинарники в `target/release/`: `uccd`, `ucc-cli`, `ucc-desktop-tray`, `ucc-session-agent`, `ucc-hardware`, `ucc-sleep`, `ucc-import-check`, `xtask`.
+
+### Подготовка офлайн-архива с вендорингом зависимостей
+
+Для воспроизводимой офлайн-сборки пакетов (`make deb`, `make rpm`, сборочные фермы без доступа в сеть) используется `make dist`:
+
+```bash
+make dist
+```
+
+Этапы выполнения `make dist`:
+1. Экспорт `HEAD` через `git archive --format=tar --prefix=ucc-<VERSION>/`.
+2. Запись короткого commit SHA в `.release-commit` (используется `xtask` при отсутствии каталога `.git`).
+3. Вызов `bash contrib/package-rust-vendor.sh <export-dir>`:
+   - выполняет `cargo vendor --locked --versioned-dirs vendor`;
+   - дописывает секции `[source.crates-io]` и `[source.vendored-sources]` в `.cargo/config.toml` внутри экспорта.
+4. Упаковка в `dist/ucc-<VERSION>-<GITHASH>.tar.gz` и генерация `dist/ucc-<VERSION>-<GITHASH>.tar.gz.sha256`.
+
+Прямой вызов скрипта вендоринга на уже распакованном дереве исходников:
+
+```bash
+bash contrib/package-rust-vendor.sh /path/to/exported/ucc-0.0.1
+```
+
+---
+
+## 3. Сборка автономного Qt6 `ucc-gui` и Read-Only Preview
+
+### Релизная сборка Qt6 `ucc-gui` для Rust runtime
+
+```bash
+cmake -S . -B build -G Ninja \
+  -DCMAKE_BUILD_TYPE=Release \
+  -DCMAKE_INSTALL_PREFIX=/usr \
+  -DCMAKE_INSTALL_LIBDIR=lib \
+  -DBUILD_GUI=ON \
+  -DBUILD_TRAY=OFF \
+  -DBUILD_CLI=OFF \
+  -DUCC_PACKAGE_RUST_RUNTIME=ON
+cmake --build build --parallel 2
+```
+
+При `-DUCC_PACKAGE_RUST_RUNTIME=ON`:
+- CMake собирает `libucc-dbus`, `ucc-desktop-support` и `ucc-gui` (с определением `UCC_PACKAGE_RUST_RUNTIME=1`);
+- `uccd/CMakeLists.txt` устанавливает только systemd/D-Bus/Polkit-файлы и не собирает C++ `uccd` (если `-DBUILD_TESTS=OFF`);
+- `ucc-desktop/CMakeLists.txt` и `ucc-session/CMakeLists.txt` устанавливают только `.desktop`-файлы автозапуска, не перезаписывая Rust-бинарники `ucc-desktop-tray` и `ucc-session-agent`;
+- `KF6WindowSystem` и `KF6StatusNotifierItem` не ищутся и не линкуются.
+
+Быстрая полная локальная сборка (Rust + Qt6 GUI):
+
+```bash
 make build
 ```
 
-Окно GUI собирается в `build/bin/ucc-gui`. Rust-демон, CLI, фоновые клиенты и
-утилиты находятся в `target/release/`. Для изолированных legacy-тестов
-конфигурируйте отдельный CMake build с `BUILD_TESTS=ON`, `BUILD_TRAY=OFF`.
+### Таблица опций CMake (`CMakeLists.txt`)
 
 | Опция | По умолчанию | Назначение |
 | --- | --- | --- |
-| BUILD_GUI | ON | Основное окно |
-| BUILD_CLI | ON | Командная строка |
-| BUILD_DESKTOP_TRAY | ON | Самостоятельный Qt-трей |
-| BUILD_SESSION_AGENT | ON | Lightbar relay, уведомления питания/драйвера и предложения KDE/Hyprland |
-| BUILD_TRAY | ON | Дополнительный Plasma-апплет; для обычной Qt-сборки задайте OFF |
-| BUILD_GNOME | ON | Установка файлов GNOME extension |
-| BUILD_TESTS | OFF | Тесты Qt/Python/GNOME |
-| UCC_PACKAGE_RUST_RUNTIME | OFF | Установка GUI и интеграционных файлов для Rust-бинарников |
-| UCC_READ_ONLY_PREVIEW | OFF | Клиенты с заблокированными аппаратными записями |
+| `BUILD_GUI` | `ON` | Сборка основного окна `ucc-gui` |
+| `BUILD_CLI` | `ON` | Сборка legacy C++ CLI (при `UCC_PACKAGE_RUST_RUNTIME=ON` и `BUILD_TESTS=OFF` пропускается) |
+| `BUILD_DESKTOP_TRAY` | `ON` | Поддержка `ucc-desktop-support` и установка `ucc-desktop-tray.desktop` |
+| `BUILD_TRAY` | `ON` | Устаревший Plasma-апплет (требует `ECM`/`KF6`/`Plasma`); для Rust runtime задавать `OFF` |
+| `BUILD_SESSION_AGENT` | `ON` | Установка `ucc-session-agent.desktop` (и C++-библиотеки для тестов) |
+| `BUILD_GNOME` | `ON` | Установка расширения GNOME Shell (`ucc@uniwill.com`) |
+| `BUILD_TESTS` | `OFF` | Включение CTest (`Qt6::Test`, C++/Python/GNOME/interop-тесты) |
+| `UCC_PACKAGE_RUST_RUNTIME` | `OFF` | Режим упаковки Qt6 GUI и системных интеграций поверх Rust-бинарников |
+| `UCC_READ_ONLY_PREVIEW` | `OFF` | Сборка preview-клиентов с блокировкой всех аппаратных и конфигурационных записей |
+| `UCC_AUTOSTART_DIR` | `${CMAKE_INSTALL_FULL_SYSCONFDIR}/xdg/autostart` | Каталог установки `.desktop`-файлов XDG-автозапуска |
 
-## Arch-пакет
+### Сборка Read-Only Preview (`UCC_READ_ONLY_PREVIEW=ON`)
 
-Основной [PKGBUILD](../PKGBUILD) собирает исходники релиза `v0.3.0` из Frixlt/UCC,
-прогоняет изолированные проверки и создаёт `frixit-control-center`.
-Для сборки из текущего checkout задайте `UCC_SOURCE_DIR`:
+Read-Only Preview используется для безопасной проверки UI без изменения состояния оборудования и файлов конфигурации. Собирается в отдельный каталог `build-preview/`:
 
 ```bash
-UCC_SOURCE_DIR="$PWD" makepkg -f
-# Установить уже проверенный пакет:
-sudo pacman -U ./frixit-control-center-0.3.0-1-x86_64.pkg.tar.zst
+cmake -S . -B build-preview -G Ninja \
+  -DCMAKE_BUILD_TYPE=RelWithDebInfo \
+  -DUCC_READ_ONLY_PREVIEW=ON \
+  -DUCC_PACKAGE_RUST_RUNTIME=ON \
+  -DBUILD_TRAY=OFF \
+  -DBUILD_CLI=OFF \
+  -DBUILD_GNOME=OFF \
+  -DBUILD_TESTS=ON
+cmake --build build-preview --target ucc-gui --parallel 2
+./build-preview/bin/ucc-gui
 ```
 
-Пакет не содержит импортированных личных настроек и сам не включает/запускает
-службу при первой установке. Для перехода с Python/TCC сначала прочитайте
-[DEPLOYMENT.md](../contrib/frixit/DEPLOYMENT.md). Старый рецепт в
-`contrib/mechrevo/arch/ucc` оставлен как совместимый вход к основному PKGBUILD.
+Для быстрого локального запуска предусмотрен скрипт `./run-preview.sh` (использует `CMAKE_BUILD_TYPE=Debug` и каталог `build-preview/`). Не устанавливайте preview-сборку в `/usr` поверх рабочего пакета.
 
-## Ручная установка
+---
 
-Используйте пакет или ручную установку; не смешивайте владение одними файлами
-между pacman и `cmake --install`.
+## 4. Автоматизация через `cargo xtask`
+
+В `.cargo/config.toml` задан алиас `xtask = "run --package xtask --"`. В офлайн-среде добавляйте `--locked --offline` через `cargo run -p xtask --locked --offline -- <команда>` или вызывайте собранный `target/release/xtask <команда>`.
+
+| Команда | Назначение |
+| --- | --- |
+| `cargo xtask dist [dest [bin-dir]]` | Стадирует полный Rust-комплект в `dest` (по умолчанию `target/dist`): 7 бинарников, man-страницу, completions, systemd/D-Bus/Polkit-файлы, симлинк `uccd-pre-sleep.service -> uccd-sleep.service`, а также `share/doc/ucc/RELEASE_MANIFEST.json` (SHA-256 всех бинарников) и CycloneDX 1.5 `share/doc/ucc/SBOM.json` |
+| `cargo xtask install-runtime <dest> <bin-dir>` | Устанавливает 7 Rust-бинарников в `<dest>/bin` и `<dest>/lib/ucc`, а также `ucc-cli.1` и shell completions (bash, zsh, fish). Используется в `PKGBUILD`, `debian/rules`, `ucc.spec`, `package.nix` |
+| `cargo xtask check-versions` | Проверяет строгое совпадение SemVer во всех 6 манифестах: `Cargo.toml`, `CMakeLists.txt`, `PKGBUILD`, `ucc.spec`, `package.nix`, `debian/changelog` |
+| `cargo xtask parser-check` | Проверяет паритет версий (6 манифестов), валидность и отсутствие дубликатов ключей в 11 служебных JSON-файлах, корректность CycloneDX SBOM и инварианты офлайн-импортёра в памяти |
+| `cargo xtask release <X.Y.Z[-pre]> [--dry-run]` | Обновляет версию во всех 6 манифестах (со сбросом `pkgrel=1` и `Release: 1%{?dist}`), при наличии `git-cliff` обновляет `CHANGELOG.md`; с `--dry-run` только выводит список проверяемых файлов |
+| `cargo xtask completions [out-dir]` | Генерирует completions `ucc-cli.bash`, `_ucc-cli`, `ucc-cli.fish` (по умолчанию в `target/completions`) |
+| `cargo xtask manpages [out-dir]` | Генерирует man-страницу `ucc-cli.1` (по умолчанию в `target/man`) |
+| `cargo xtask dist-cli` (алиас `assets`) | Запускает генерацию completions (`target/completions`) и man-страниц (`target/man`) |
+| `cargo xtask build-fixtures` (алиас `fixtures`) | Компилирует C-фикстуры `LD_PRELOAD` (`stand-fixtures/`, `extra-fixtures/`) в `$UCC_FIXTURES_DIR` или `/tmp/ucc-fixtures-<pid>` |
+| `cargo xtask import-offline ...` | Офлайн-конвертация пользовательского `Data/` и TCC-конфигурации без обращения к системным путям |
+| `cargo xtask maintenance <prepare-deployment\|deploy\|desktop-transition>` | Подготовка пакета развёртывания, установка/откат (`--install`/`--rollback`) и переключение пользовательской сессии |
+| `cargo xtask capture-gallery --build <dir> [--output <dir>]` | Снятие и проверка галереи скриншотов GUI на изолированной шине D-Bus |
+
+---
+
+## 5. Упаковка по дистрибутивам и ручная установка
+
+### Arch Linux (`PKGBUILD`)
+
+Пакет: `ucc-rusted` (`provides=("uniwill-control-center=$pkgver" "frixit-control-center=$pkgver")`, `conflicts=('uniwill-control-center' 'uniwill-control-center-mechrevo' 'frixit-control-center')`, `replaces=('frixit-control-center')`, хук `ucc.install`).
+
+Сборка из локального checkout:
+
+```bash
+make arch
+# или напрямую:
+UCC_SOURCE_DIR="$PWD" makepkg -sf --noconfirm
+sudo pacman -U ./dist/arch/ucc-rusted-*.pkg.tar.zst
+```
+
+Стадия `check()` в `PKGBUILD` автоматически выполняет `dbus-run-session -- cargo test --workspace --locked --offline`, собирает `interop_daemon`, прогоняет `ctest -j1 --output-on-failure` и `contrib/mechrevo/tests/test_migration.py`.
+
+### Debian / Ubuntu (`debian/*`)
+
+Сборка из офлайн-архива (`make dist` -> `debuild -uc -us`):
+
+```bash
+make deb
+```
+
+`debian/rules` использует `dh $@ -Scmake` с `DEB_BUILD_MAINT_OPTIONS=hardening=+all`, собирает Qt6 GUI (`-DCMAKE_BUILD_TYPE=RelWithDebInfo -DUCC_PACKAGE_RUST_RUNTIME=ON -DBUILD_TRAY=OFF -DBUILD_CLI=OFF`), затем выполняет `cargo build --workspace --release --locked --offline --bins --target-dir target/deb` и `xtask install-runtime debian/tmp/usr target/deb/release`.
+
+### Fedora / RPM (`ucc.spec`)
+
+Сборка бинарного RPM и SRPM из вендорированного архива:
+
+```bash
+make rpm    # результат: dist/rpmbuild/RPMS/ и dist/rpmbuild/SRPMS/
+make srpm   # только SRPM
+```
+
+`ucc.spec` включает `%global _hardened_build 1`, `Provides: ucc-rusted = %{version}-%{release}`, собирает Rust-бинарники в `target/rpm` и устанавливает их через `xtask install-runtime "%{buildroot}%{_prefix}" target/rpm/release`.
+
+### Nix / NixOS (`flake.nix`, `package.nix`, `nix/nixos-module.nix`)
+
+Локальная сборка и проверки flake:
+
+```bash
+nix build .#ucc
+nix flake check --print-build-logs
+nix develop   # devShell с cmake, pkg-config, deadnix, nixfmt, statix, treefmt
+```
+
+`package.nix` импортирует `Cargo.lock` через `rustPlatform.importCargoLock`, собирает Qt6 GUI с `-DUCC_AUTOSTART_DIR=etc/xdg/autostart`, оборачивает `ucc-gui` (`wrapQtApp`) и `uccd` (`wrapProgram` с `PATH`), а также патчит пути `/usr/bin/uccd`, `/usr/lib/ucc/ucc-hardware` и `/usr/lib/ucc/ucc-sleep` в systemd/D-Bus-файлах на `$out/...`.
+
+Подключение NixOS-модуля в `flake.nix` системы:
+
+```nix
+{
+  inputs.ucc.url = "github:Frixlt/UCC";
+
+  outputs = { nixpkgs, ucc, ... }: {
+    nixosConfigurations.laptop = nixpkgs.lib.nixosSystem {
+      modules = [
+        ucc.nixosModules.default
+        {
+          services.uccd = {
+            enable = true;
+            enableSleepHandler = true;
+            extraArgs = [ ]; # например, [ "--verbose" ]
+          };
+        }
+      ];
+    };
+  };
+}
+```
+
+### Ручная установка (без пакетного менеджера)
+
+Не смешивайте ручную установку с пакетным менеджером дистрибутива.
 
 ```bash
 sudo cmake --install build
@@ -77,135 +288,36 @@ sudo systemctl daemon-reload
 sudo systemctl reload dbus
 sudo systemctl enable --now uccd.service
 sudo systemctl enable uccd-sleep.service
-ucc-gui
 ```
 
-Перед запуском uccd остановите старые контроллеры TCC/Python. Нужен совместимый
-аппаратный драйвер отдельно от приложения; после обновления ядра проверьте DKMS.
-[Восстановление на Linux 7.3](../contrib/frixit/drivers/README.md).
+---
 
-Демон установлен в `/usr/bin/uccd`, helper-программы — `/usr/lib/ucc`.
-Основная конфигурация — `/etc/ucc/settings`; необязательный private файл водянки —
-`/etc/ucc/aquaris.json`. Сохраняйте резервные копии этих файлов локально.
-GUI запускается пользователем. Трей и session agent устанавливают XDG-autostart
-файлы и запускаются при следующем входе. Для текущей сессии можно выполнить
-`ucc-desktop-tray` и `ucc-session-agent`; повторные экземпляры не нужны.
+## 6. Схема установленной файловой системы
 
-`ucc-gui --minimized` учитывает наличие трея; `ucc-gui --show` явно показывает окно.
-Настройка start minimized находится в Battery & Processes. Состояние темы и запуска
-хранится в пользовательских настройках Qt под `UniwillControlCenter`.
-
-`uccd-sleep.service` сохраняет ручной режим и enable-состояние водянки,
-останавливает демон перед сном и восстанавливает его после сна, если он работал.
-`uccd-pre-sleep.service` — совместимый alias. При обновлении старого вручную
-включённого hook используйте `sudo systemctl reenable uccd-sleep.service`.
-Настоящий аппаратный suspend/resume ещё не прошёл подтверждённую проверку.
-
-## Обновление
-
-Сохраните `/etc/ucc` и установите новый пакет. При обновлении раннего private
-пакета hook сохраняет прежний package-owned settings и восстанавливает его,
-если pacman убрал файл в `.pacsave`; существующие новые настройки не заменяются. Затем перезапустите демон и
-пользовательские GUI/трей/session agent, чтобы они загрузили новые бинарники.
-При необходимости сохраните текущий ручной режим/водянку через `ucc-sleep`
-перед плановым рестартом; это helper для root, а не команда пользовательского GUI.
-Не используйте installer первоначального перехода для обновления существующего UCC.
-
-```bash
-systemctl status uccd.service
-journalctl -u uccd.service -b
-ucc-cli --help
-ucc-cli power status
-ucc-cli devices status
-ucc-cli lightbar status
-```
-
-## Read-only preview и другие дистрибутивы
-
-`./run-preview.sh` использует отдельный `build-preview/`. Он читает данные демона,
-но блокирует аппаратные команды и сохранение профилей/политик. Не устанавливайте
-preview вместо рабочего пакета.
-
-`make dist` архивирует текущий коммит и добавляет зависимости Rust из `Cargo.lock`.
-Зависимости загружаются на этапе подготовки архива. `make deb` и `make rpm`
-собирают из этого архива в офлайн-режиме Cargo. Для Rust-комплекта во временном
-каталоге используйте `cargo xtask dist <каталог> target/release` после сборки.
-
-Nix input форка — `github:Frixlt/UCC`, модуль `ucc.nixosModules.default` и опция
-`services.uccd.enable`. Для локального checkout используйте `nix build .#ucc`.
-
-## Hyprland
-
-Session agent работает через стандартный `org.freedesktop.Notifications`: уведомления
-об изменении физического источника питания не зависят от KDE и настройки
-предложений частоты. Требуется работающий сервер уведомлений (например, Noctalia,
-mako или dunst) и запущенный `ucc-session-agent` в пользовательской сессии.
-XDG-autostart обычно запускает агент автоматически; при ручном запуске Hyprland
-без autostart добавьте `ucc-session-agent` в запуск сессии. Повторный экземпляр
-отсеивается через пользовательский lock-файл.
-
-Предложения частоты поддерживают KDE (`kscreen-doctor`) и Hyprland 0.55+ с Lua
-(`hyprctl`). Используются реальные доступные режимы внутреннего экрана, разрешение
-сохраняется. Изменение выполняется только по действию уведомления и проверяется
-повторным чтением состояния. Lua-обновление меняет поле `mode` существующего
-правила монитора, сохраняя масштаб, положение и цветовой профиль.
-[Документация hyprctl](https://wiki.hypr.land/configuring/core/advanced-configuration/using-hyprctl/)
-и [режимов монитора](https://wiki.hypr.land/configuring/core/monitors/modes/).
-
-Для разрешения сна NVIDIA снимите **Power Devices → Keep NVIDIA awake (Blackwell
-workaround)** и нажмите **Save and apply**. В колонке активного режима для NVIDIA
-должно стоять `auto`. Демон также отключает persistence mode при переходе к `auto`;
-аппаратные задачи или подключённый к NVIDIA экран могут продолжать держать карту
-активной. Периодический мониторинг пропускает NVML-пробы спящей карты. При `auto` NVML
-опрашивается не чаще раза в 16 секунд, чтобы дать драйверу завершить переход
-в сон; между опросами сохраняется последняя выборка, при сне она очищается.
-
-Частоты Intel GPU читаются через интерфейсы обоих драйверов: DRM-атрибуты `i915`
-и `device/tile0/gt0/freq0` для `xe`. Показание 0 МГц допустимо в простое. Мощность
-берётся из GPU hwmon или RAPL-домена по имени. Температура отображается только
-при наличии собственного датчика GPU; температура CPU не подставляется вместо неё.
-
-## Частота экрана в профиле и общая настройка зарядки
-
-В **Profiles → Display and Keyboard → Display refresh rate** выберите частоту
-или **Do not change**. Поля `display.useRefRate` и `display.refreshRate` сохраняются
-в профиле. Для профиля батареи можно выбрать 60 Гц, для профиля сети — 240 Гц;
-назначение профилей AC / Battery / USB-C по-прежнему задаётся кнопками активации.
-Сохранение и применение — отдельные действия. В KDE/Hyprland частоту применяет
-`ucc-session-agent` при запуске, активации профиля и пробуждении. Сохраняются
-текущее разрешение, масштаб и правило цветового профиля; неподдерживаемая частота
-не заменяется произвольным режимом. Настроенная частота профиля имеет приоритет
-над предложениями частоты в уведомлениях.
-
-**Battery & Processes → Battery charging** содержит общие режим зарядки,
-приоритет USB-C и поддерживаемые батареей пороги. **Save and apply** сохраняет
-их отдельно от профилей, в основных настройках демона, и восстанавливает после
-его запуска. Смена профилей производительности не меняет зарядку. Поля зарядки
-в старых профилях сохраняются для совместимости, но больше не применяются; при
-сохранении профиля из нового GUI эти поля не включаются.
-
-В личной Hyprland-конфигурации `frixit-hypr-power` управление частотой передано
-агенту UCC; политика обоев и эффектов остаётся в личном скрипте.
-
-## Выбор отдельных ядер CPU
-
-В **Profiles → System performance → CPU frequency control → CPU selection**
-выберите **Choose individual CPUs**. Отмеченные CPU останутся включёнными,
-снятые галочки отключают соответствующие логические CPU. Кнопки **All CPUs**,
-**P-cores**, **E-cores** заполняют набор; обязательные CPU сохраняются в каждом
-наборе. На проверенной Mechrevo-машине ядро Linux не предоставляет hotplug для
-CPU 0, поэтому оно остаётся отмеченным и заблокированным. P/E определяется через
-CPUID на доступных CPU и сохраняется в памяти демона при отключении ядра.
-Неизвестный тип показывается без обозначения P/E.
-
-**Save** сохраняет набор в профиле, **Apply** применяет его. При активации
-другого профиля применяется его собственный набор. Режим **By number of cores**
-сохраняет прежнюю работу ползунка для старых профилей. Новый массив
-`cpu.enabledCores` содержит точные логические CPU ID и имеет приоритет над
-`cpu.onlineCores`. Пустые наборы, дубликаты, отсутствующие CPU и попытки убрать
-обязательный CPU отклоняются. Новые ядра включаются перед отключением остальных.
-
-Настройки governor/EPP/частот применяются ко всем выбранным CPU, включая ядра
-после разрыва в нумерации. При отключённом turbo верхняя граница частоты каждого
-Intel-ядра ограничивается его `base_frequency`; это предотвращает сброс набора
-из-за различных частот P- и E-ядер.
+| Путь | Компонент / назначение |
+| --- | --- |
+| `/usr/bin/uccd` | Системный демон `com.uniwill.uccd` (Rust) |
+| `/usr/bin/ucc-gui` | Основное приложение GUI (Qt6 Widgets / Charts) |
+| `/usr/bin/ucc-cli` | Утилита командной строки (Rust) |
+| `/usr/bin/ucc-desktop-tray` | Иконка трея StatusNotifierItem (Rust) |
+| `/usr/bin/ucc-session-agent` | Пользовательский агент уведомлений, Lightbar и частоты экрана (Rust) |
+| `/usr/lib/ucc/ucc-hardware` | Root-утилита аудита датчиков (`--audit`) и аварийного возврата вентиляторов (`--fan-auto`) |
+| `/usr/lib/ucc/ucc-sleep` | Root-утилита сохранения/восстановления состояния сна (`prepare` / `resume`) |
+| `/usr/lib/ucc/ucc-import-check` | Офлайн-валидатор импортируемых конфигураций |
+| `/usr/lib/systemd/system/uccd.service` | Основной systemd-юнит демона (`Type=dbus`, `ExecStopPost=-/usr/lib/ucc/ucc-hardware --fan-auto`) |
+| `/usr/lib/systemd/system/uccd-sleep.service` | Юнит сна (`RequiredBy=sleep.target`, `Before=sleep.target nvidia-suspend.service nvidia-hibernate.service`) |
+| `/usr/lib/systemd/system/uccd-pre-sleep.service` | Симлинк-алиас на `uccd-sleep.service` |
+| `/usr/share/dbus-1/system-services/com.uniwill.uccd.service` | D-Bus-активация системного сервиса |
+| `/usr/share/dbus-1/system.d/com.uniwill.uccd.conf` | Политика доступа к системной шине D-Bus |
+| `/usr/share/polkit-1/actions/com.uniwill.uccd.policy` | Политика авторизации Polkit для привилегированных операций |
+| `/etc/xdg/autostart/ucc-desktop-tray.desktop` | XDG-автозапуск трея |
+| `/etc/xdg/autostart/ucc-session-agent.desktop` | XDG-автозапуск пользовательского агента |
+| `/etc/ucc/` | Каталог системной конфигурации (`/etc/ucc/settings`, опционально `/etc/ucc/aquaris.json`) |
+| `/usr/share/applications/ucc-gui.desktop` | Ярлык приложения `ucc-gui` |
+| `/usr/share/icons/hicolor/{scalable,16x16..128x128}/apps/ucc-{gui,tray}.{svg,png}` | Иконки GUI и трея |
+| `/usr/share/man/man1/ucc-cli.1` | Man-страница CLI |
+| `/usr/share/bash-completion/completions/ucc-cli` | Автодополнение Bash |
+| `/usr/share/zsh/site-functions/_ucc-cli` | Автодополнение Zsh |
+| `/usr/share/fish/vendor_completions.d/ucc-cli.fish` | Автодополнение Fish |
+| `/usr/share/gnome-shell/extensions/ucc@uniwill.com/` | Расширение GNOME Shell (`metadata.json`, `extension.js`, `uccdClient.js`, `stylesheet.css`) |
+| `/usr/share/doc/ucc/` | Документация, лицензии, `RELEASE_MANIFEST.json` и `SBOM.json` (при `xtask dist`) |
