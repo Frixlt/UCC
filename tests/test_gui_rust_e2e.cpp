@@ -106,22 +106,30 @@ private slots:
     window.show();
 
     auto *nav = window.findChild<QListWidget *>(QStringLiteral("navigation"));
+    auto *aboutBtn = window.findChild<QPushButton *>(QStringLiteral("aboutNavigation"));
     auto *pages = window.findChild<QTabWidget *>(QStringLiteral("pages"));
+    auto *brand = window.findChild<QLabel *>(QStringLiteral("brand"));
     QVERIFY(nav);
+    QVERIFY(aboutBtn);
     QVERIFY(pages);
-    QCOMPARE(nav->count(), 11);
+    QVERIFY(brand);
+    QCOMPARE(brand->text(), QStringLiteral("ucc-rusted"));
+    QCOMPARE(nav->count(), 10);
     QCOMPARE(nav->item(5)->text(), QStringLiteral("Lighting"));
     QCOMPARE(nav->item(6)->text(), QStringLiteral("Hardware"));
-    QCOMPARE(nav->item(10)->text(), QStringLiteral("About"));
+    QCOMPARE(aboutBtn->text(), QStringLiteral("About"));
 
-    const int expectedPageIndices[] = {0, 1, 2, 2, 3, 4, 5, 6, 7, 8, 9};
-    for (int row = 0; row < 11; ++row) {
+    const int expectedPageIndices[] = {0, 1, 2, 2, 3, 4, 5, 6, 7, 8};
+    for (int row = 0; row < 10; ++row) {
       if (!(nav->item(row)->flags() & Qt::ItemIsEnabled)) {
         continue;
       }
       nav->setCurrentRow(row);
       QCOMPARE(pages->currentIndex(), expectedPageIndices[row]);
     }
+    QTest::mouseClick(aboutBtn, Qt::LeftButton);
+    QCOMPARE(pages->currentIndex(), 9);
+    QVERIFY(aboutBtn->isChecked());
 
     // Verify Lighting browser tabs (non-closable), Hardware page, per-profile lid toggles,
     // per-core monitor checkbox, and Experimental widgets exist inside live MainWindow.
@@ -143,8 +151,8 @@ private slots:
     for (auto theme : {ucc::FluentTheme::Mode::Light, ucc::FluentTheme::Mode::Dark}) {
       ucc::FluentTheme::setMode(theme, false);
       QCoreApplication::processEvents();
-      QCOMPARE(nav->count(), 11);
-    QCOMPARE(nav->item(10)->text(), QStringLiteral("About"));
+      QCOMPARE(nav->count(), 10);
+      QCOMPARE(aboutBtn->text(), QStringLiteral("About"));
     }
 
     // Exercise live Rust mutations via GUI / client and confirm state transitions.
@@ -178,12 +186,14 @@ private slots:
     window.resize(1280, 900);
     window.show();
     auto *nav = window.findChild<QListWidget *>(QStringLiteral("navigation"));
-    QVERIFY(nav);
-    for (int row = 0; row < 11; ++row) {
+    auto *aboutBtn = window.findChild<QPushButton *>(QStringLiteral("aboutNavigation"));
+    QVERIFY(nav && aboutBtn);
+    for (int row = 0; row < 10; ++row) {
       if (nav->item(row)->flags() & Qt::ItemIsEnabled) {
         nav->setCurrentRow(row);
       }
     }
+    QTest::mouseClick(aboutBtn, Qt::LeftButton);
 
     // All mutations must be rejected by UCC_READ_ONLY_PREVIEW=1 Rust daemon.
     QVERIFY(!client.setDisplayBrightness(42));

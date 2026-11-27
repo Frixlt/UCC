@@ -70,5 +70,7 @@ private slots:
   void asyncApplyAllowsImmediateWindowCloseWithoutLateWaterCooler();
   void prepareForSleepResumeSetsSidebarStatus();
   void deviceSupportStatusDistinguishesOfflineFromUnsupported();
+  void aboutTabStaysPinnedToSidebarBottom();
+  void watercoolCrosshairsStayVisibleAcrossTabsAndPartialReads();
   void cleanupTestCase();
 };

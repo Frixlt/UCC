@@ -230,13 +230,16 @@ QLabel#detailValue { font-size: 13px; font-weight: 600; color: @text; }
 QLabel#settingValue { font-size: 14px; font-weight: 600; color: @accent; }
 QFrame#metricDivider { border: none; background: @border; }
 QLabel[aboutMetadata="true"] { font-size: 16px; font-weight: 600; }
-QLabel#aboutMark { background: @selected; color: @accent; border-radius: 12px; font-size: 20px; font-weight: 600; }
+QLabel#aboutMark { background: @selected; color: @accent; border-radius: 12px; font-size: 15px; font-weight: 700; }
 QLabel#cardTitle { font-size: 16px; font-weight: 600; }
 QLabel#previewBadge { background: @selected; color: @accent; border-radius: 4px; padding: 6px 10px; }
 QListWidget#navigation { background: transparent; border: none; outline: none; font-size: 14px; }
 QListWidget#navigation::item { padding: 14px 12px; margin: 3px 0; border-radius: 5px; border-left: 3px solid transparent; }
 QListWidget#navigation::item:selected { color: @accent; background: @selected; border-left: 3px solid @accent; }
 QListWidget#navigation::item:hover { background: @hover; }
+QPushButton#aboutNavigation { text-align: left; padding: 12px 12px; margin: 2px 0; border: none; border-radius: 5px; border-left: 3px solid transparent; background: transparent; font-size: 14px; font-weight: 400; }
+QPushButton#aboutNavigation:hover { background: @hover; }
+QPushButton#aboutNavigation:checked { color: @accent; background: @selected; border-left: 3px solid @accent; }
 QPushButton { background: @surface; border: 1px solid @controlBorder; border-radius: 4px; padding: 7px 14px; min-height: 18px; }
 QPushButton:hover { background: @hover; border-color: @controlHoverBorder; }
 QPushButton:pressed { background: @selected; }

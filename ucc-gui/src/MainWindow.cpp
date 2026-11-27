@@ -144,7 +144,7 @@ MainWindow::MainWindow( QWidget *parent )
 
   setWindowTitle( "ucc-rusted" );
   resize(1280,900);
-  if (readOnlyPreview) setWindowTitle("UCC · Read-only preview");
+  if (readOnlyPreview) setWindowTitle("ucc-rusted · Read-only preview");
 
   setAttribute(Qt::WA_TranslucentBackground);
   setupUI();
@@ -265,15 +265,21 @@ void MainWindow::setupUI()
   auto *sidebar=new FluentSidebar(shell);
   sidebar->setFixedWidth(250);
   auto *sideLayout=new QVBoxLayout(sidebar);sideLayout->setContentsMargins(12,28,12,20);
-  auto *brand=new QLabel("UCC",sidebar);brand->setObjectName("brand");
+  auto *brand=new QLabel("ucc-rusted",sidebar);brand->setObjectName("brand");
   sideLayout->addWidget(brand);sideLayout->addSpacing(12);
   auto *device=new QLabel("ucc-rusted",sidebar);device->setWordWrap(true);device->setObjectName("muted");
   sideLayout->addWidget(device);sideLayout->addSpacing(20);
   auto *navigation=new QListWidget(sidebar);navigation->setObjectName("navigation");
   navigation->setIconSize(QSize(24,24));
-  const QStringList labels={"Overview","Profiles","Cooler Settings","Watercool Settings","Monitor","Lighting","Hardware","Power & Devices","Battery & Processes","Experimental","About"};
+  const QStringList labels={"Overview","Profiles","Cooler Settings","Watercool Settings","Monitor","Lighting","Hardware","Power & Devices","Battery & Processes","Experimental"};
   for(const auto &label:labels) new QListWidgetItem(FluentTheme::icon(label),label,navigation);
   sideLayout->addWidget(navigation,1);
+  m_aboutNavButton=new QPushButton(FluentTheme::icon("About"),"About",sidebar);
+  m_aboutNavButton->setObjectName("aboutNavigation");
+  m_aboutNavButton->setCheckable(true);
+  m_aboutNavButton->setIconSize(QSize(24,24));
+  sideLayout->addSpacing(4);
+  sideLayout->addWidget(m_aboutNavButton);
   auto *footer=new QWidget(sidebar);footer->setObjectName("sidebarFooter");
   auto *statusLayout=new QVBoxLayout(footer);statusLayout->setObjectName("sidebarStatusLayout");statusLayout->setContentsMargins(12,16,12,0);statusLayout->setSpacing(8);
   if(readOnlyPreview) {
@@ -331,19 +337,22 @@ void MainWindow::setupUI()
   notificationBell->setFixedSize(36,34);notificationBell->setIconSize(QSize(22,22));notificationBell->setStyleSheet("padding: 5px;");
   auto *notifications=new NotificationCenter(notificationBell,this);
   headerRow->addWidget(notificationBell,0,Qt::AlignTop);
-  connect(statusBar(),&QStatusBar::messageChanged,notifications,[notifications,navigation](const QString &message){
+  connect(statusBar(),&QStatusBar::messageChanged,notifications,[this,notifications,navigation](const QString &message){
     const int row=navigation->currentRow();
-    const QString section=row>=0 ? navigation->item(row)->text() : QStringLiteral("UCC");
+    const QString section=(m_aboutNavButton && m_aboutNavButton->isChecked())
+      ? QStringLiteral("About")
+      : (row>=0 && navigation->item(row) ? navigation->item(row)->text() : QStringLiteral("ucc-rusted"));
     notifications->addEvent(section,message);
     if(AppLogging::isEnabled() && !message.trimmed().isEmpty() && message!="Ready")
       qInfo().noquote()<<"[UI]"<<section<<message;
   });
   headerRow->addWidget(themeToggle,0,Qt::AlignTop);contentLayout->addLayout(headerRow);
-  auto refreshTheme=[themeToggle,navigation,sidebar]{
+  auto refreshTheme=[this,themeToggle,navigation,sidebar]{
     themeToggle->setIcon(FluentTheme::icon(FluentTheme::modeLabel()));
     themeToggle->setAccessibleName("Theme: "+FluentTheme::modeLabel());
     themeToggle->setToolTip("Theme: "+FluentTheme::modeLabel()+" · Light → Dark → Auto (system theme)");
     for(int i=0;i<navigation->count();++i) navigation->item(i)->setIcon(FluentTheme::icon(navigation->item(i)->text()));
+    if(m_aboutNavButton) m_aboutNavButton->setIcon(FluentTheme::icon("About"));
     sidebar->update();
   };
   connect(themeToggle,&QPushButton::clicked,this,[]{
@@ -355,25 +364,63 @@ void MainWindow::setupUI()
   contentLayout->addWidget(m_tabs,1);shellLayout->addWidget(content,1);setCentralWidget(shell);
   m_entrance=new FluentEntrance(content);
   auto showNavigationHeading=[heading,subtitle,labels](int row) {
+    if(row==10) {
+      heading->setText("About");
+      subtitle->setText("Build information, project origins and open-source acknowledgements");
+      return;
+    }
     if(row<0 || row>=labels.size()) return;
     heading->setText(labels[row]);
-    const QStringList descriptions={"Your system at a glance","Power, cooling and lighting in one profile","Shape CPU and GPU cooling for your profile","Water cooling, pump and lighting controls","Live system telemetry","Keyboard backlight, lightbar and chassis logo lighting","Display brightness, webcam and hardware toggles","CPU, modules and device policies for every power source","Battery power and your NVIDIA processes","Preview and experimental settings under development","Build information, project origins and open-source acknowledgements"};
+    const QStringList descriptions={"Your system at a glance","Power, cooling and lighting in one profile","Shape CPU and GPU cooling for your profile","Water cooling, pump and lighting controls","Live system telemetry","Keyboard backlight, lightbar and chassis logo lighting","Display brightness, webcam and hardware toggles","CPU, modules and device policies for every power source","Battery power and your NVIDIA processes","Preview and experimental settings under development"};
     subtitle->setText(descriptions.value(row));
   };
   connect(navigation,&QListWidget::currentRowChanged,this,[this,showNavigationHeading](int row){
-    if(row<0 || row>10) return;
-    const int pages[]={0,1,2,2,3,4,5,6,7,8,9};
+    if(row<0 || row>9) return;
+    const int pages[]={0,1,2,2,3,4,5,6,7,8};
     if(row==3 && !m_waterCoolerSupported) return;
+    if(m_aboutNavButton) {
+      const QSignalBlocker blockAbout(m_aboutNavButton);
+      m_aboutNavButton->setChecked(false);
+    }
     if(m_fanControlTab && (row==2 || row==3)) {
       m_fanControlTab->setWaterCoolerMode(row==3);
       m_fanControlTab->findChild<QTabWidget *>("coolingPages")->setCurrentIndex(row-2);
     }
     const bool samePage=m_tabs->currentIndex()==pages[row];
     m_tabs->setCurrentIndex(pages[row]);showNavigationHeading(row);
+    if(row==2 || row==3) updateFanCrosshairs();
+    if(samePage) m_entrance->play();
+  });
+  connect(m_aboutNavButton,&QPushButton::clicked,this,[this,navigation,showNavigationHeading]{
+    const QSignalBlocker blockNav(navigation);
+    navigation->clearSelection();
+    navigation->setCurrentRow(-1);
+    if(m_aboutNavButton) {
+      const QSignalBlocker blockAbout(m_aboutNavButton);
+      m_aboutNavButton->setChecked(true);
+    }
+    const bool samePage=m_tabs->currentIndex()==9;
+    m_tabs->setCurrentIndex(9);showNavigationHeading(10);
     if(samePage) m_entrance->play();
   });
   connect(m_tabs,&QTabWidget::currentChanged,navigation,[this,navigation,showNavigationHeading](int index){
     if(index<0 || index>9) return;
+    if(index==9) {
+      const QSignalBlocker blockNav(navigation);
+      navigation->clearSelection();
+      navigation->setCurrentRow(-1);
+      if(m_aboutNavButton) {
+        const QSignalBlocker blockAbout(m_aboutNavButton);
+        m_aboutNavButton->setChecked(true);
+      }
+      showNavigationHeading(10);
+      m_entrance->play();
+      return;
+    }
+    if(m_aboutNavButton) {
+      const QSignalBlocker blockAbout(m_aboutNavButton);
+      m_aboutNavButton->setChecked(false);
+    }
     int row=index<3 ? index : index+1;
     if(index==2 && m_fanControlTab) row=2+m_fanControlTab->findChild<QTabWidget *>("coolingPages")->currentIndex();
     const QSignalBlocker blocked(navigation);navigation->setCurrentRow(row);showNavigationHeading(row);
@@ -1330,6 +1377,7 @@ void MainWindow::connectSignals()
   connect( m_systemMonitor.get(), &SystemMonitor::gpuFanSpeedChanged,          this, &MainWindow::updateFanCrosshairs );
   connect( m_systemMonitor.get(), &SystemMonitor::waterCoolerFanSpeedChanged,  this, &MainWindow::updateFanCrosshairs );
   connect( m_systemMonitor.get(), &SystemMonitor::waterCoolerPumpLevelChanged,  this, &MainWindow::updateFanCrosshairs );
+  connect( m_systemMonitor.get(), &SystemMonitor::metricsUpdated,              this, &MainWindow::updateFanCrosshairs );
 }
 
 void MainWindow::populateGovernorCombo()
@@ -1434,7 +1482,7 @@ void MainWindow::updateFanCrosshairs()
     if ( lvlStr == "Off" )       pumpLevel = 0;
     else if ( lvlStr == "Low" )  pumpLevel = 1;
     else if ( lvlStr == "Med" )  pumpLevel = 2;
-    else if ( lvlStr == "High" ) pumpLevel = 3;
+    else if ( lvlStr == "High" || lvlStr == "Max" ) pumpLevel = 3;
 
     if ( temp && pumpLevel >= 0 )
       m_fanControlTab->pumpEditor()->setCrosshair( *temp, pumpLevel );

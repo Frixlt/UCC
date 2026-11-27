@@ -98,7 +98,9 @@ void SystemMonitor::updateMetrics()
     const int gpu1 = fanValue(snapshot.value("GetFanDataGPU1"), "speed");
     const int gpu2 = fanValue(snapshot.value("GetFanDataGPU2"), "speed");
     const int gpuFan = gpu1 < 0 ? gpu2 : gpu2 < 0 ? gpu1 : (gpu1 + gpu2) / 2;
-    setText(m_cpuTemp, formatted(fanValue(cpuFan,"temp"), "°C"), &SystemMonitor::cpuTempChanged);
+    const int cpuTempVal = fanValue(cpuFan, "temp");
+    if (snapshot.contains("GetFanDataCPU") && (cpuTempVal >= 0 || m_cpuTemp == "--"))
+      setText(m_cpuTemp, formatted(cpuTempVal, "°C"), &SystemMonitor::cpuTempChanged);
     setText(m_cpuFrequency, formatted(snapshot.value("GetCpuFrequencyMHz",-1).toInt()," MHz"), &SystemMonitor::cpuFrequencyChanged);
     setText(m_cpuPower, formatted(numeric(cpu,"powerDraw")," W",1), &SystemMonitor::cpuPowerChanged);
     setText(m_gpuTemp, formatted(numeric(gpu,"temp"),"°C"), &SystemMonitor::gpuTempChanged);
@@ -107,17 +109,28 @@ void SystemMonitor::updateMetrics()
     setText(m_iGpuFrequency, formatted(numeric(igpu,"coreFrequency")," MHz"), &SystemMonitor::iGpuFrequencyChanged);
     setText(m_iGpuPower, formatted(numeric(igpu,"powerDraw")," W",1), &SystemMonitor::iGpuPowerChanged);
     setText(m_iGpuTemp, formatted(numeric(igpu,"temp"),"°C"), &SystemMonitor::iGpuTempChanged);
-    setText(m_fanSpeed, formatted(fanValue(cpuFan,"speed")," %"), &SystemMonitor::fanSpeedChanged);
-    setText(m_gpuFanSpeed, formatted(gpuFan," %"), &SystemMonitor::gpuFanSpeedChanged);
+    const int cpuSpeedVal = fanValue(cpuFan, "speed");
+    if (snapshot.contains("GetFanDataCPU") && (cpuSpeedVal >= 0 || m_fanSpeed == "--"))
+      setText(m_fanSpeed, formatted(cpuSpeedVal, " %"), &SystemMonitor::fanSpeedChanged);
+    if ((snapshot.contains("GetFanDataGPU1") || snapshot.contains("GetFanDataGPU2")) && (gpuFan >= 0 || m_gpuFanSpeed == "--"))
+      setText(m_gpuFanSpeed, formatted(gpuFan, " %"), &SystemMonitor::gpuFanSpeedChanged);
     setInt(m_dGpuComputeUtil, gpu.value("computeUtilPct").toInt(-1), &SystemMonitor::dGpuComputeUtilChanged);
     setInt(m_dGpuMemoryUtil, gpu.value("memoryUtilPct").toInt(-1), &SystemMonitor::dGpuMemoryUtilChanged);
     setInt(m_dGpuPstate, gpu.value("currentPstate").toInt(-1), &SystemMonitor::dGpuPstateChanged);
     setInt(m_dGpuGrClockOffset, gpu.value("grClockOffsetMHz").toInt(-999), &SystemMonitor::dGpuGrClockOffsetChanged);
     setInt(m_dGpuMemClockOffset, gpu.value("memClockOffsetMHz").toInt(-999), &SystemMonitor::dGpuMemClockOffsetChanged);
-    setText(m_waterCoolerFanSpeed, formatted(snapshot.value("GetWaterCoolerFanSpeed",-1).toInt()," %"), &SystemMonitor::waterCoolerFanSpeedChanged);
-    const int pump = snapshot.value("GetWaterCoolerPumpLevel",-1).toInt();
-    const QStringList levels = {"High", "Max", "Low", "Med", "Off"};
-    setText(m_waterCoolerPumpLevel, levels.value(pump,"--"), &SystemMonitor::waterCoolerPumpLevelChanged);
+    if (snapshot.contains("GetWaterCoolerFanSpeed")) {
+      const int wcSpeed = snapshot.value("GetWaterCoolerFanSpeed", -1).toInt();
+      if (wcSpeed >= 0 || m_waterCoolerFanSpeed == "--")
+        setText(m_waterCoolerFanSpeed, formatted(wcSpeed, " %"), &SystemMonitor::waterCoolerFanSpeedChanged);
+    }
+    if (snapshot.contains("GetWaterCoolerPumpLevel")) {
+      const int pump = snapshot.value("GetWaterCoolerPumpLevel", -1).toInt();
+      const QStringList levels = {"High", "Max", "Low", "Med", "Off"};
+      const QString lvl = levels.value(pump, "--");
+      if (lvl != "--" || m_waterCoolerPumpLevel == "--")
+        setText(m_waterCoolerPumpLevel, lvl, &SystemMonitor::waterCoolerPumpLevelChanged);
+    }
     if (!m_brightnessPending && brightnessRevision == m_brightnessRevision && snapshot.contains("GetDisplayBrightness"))
       setInt(m_displayBrightness, snapshot.value("GetDisplayBrightness").toInt(), &SystemMonitor::displayBrightnessChanged);
     if (snapshot.contains("GetWebcamSWStatus")) {
@@ -336,7 +349,7 @@ void SystemMonitor::setMonitoringActive( bool active )
     if ( active )
     {
       qDebug() << "[SystemMonitor] Starting asynchronous monitoring at 2000ms";
-      // Preserve the last snapshot while waiting for the next visible refresh.
+      updateMetrics();
       m_updateTimer->start();
       qDebug() << "[SystemMonitor] Timer started, first update in 2000ms. Timer active:" << m_updateTimer->isActive();
     }

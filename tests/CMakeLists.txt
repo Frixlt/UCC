@@ -173,6 +173,7 @@ if(DBUS_RUN_SESSION_EXECUTABLE AND BUILD_GUI)
     applyFailureDoesNotClaimSuccessOrSendWaterCooler
     asyncApplyAllowsImmediateWindowCloseWithoutLateWaterCooler
     prepareForSleepResumeSetsSidebarStatus
+    watercoolCrosshairsStayVisibleAcrossTabsAndPartialReads
     deviceSupportStatusDistinguishesOfflineFromUnsupported)
   add_test(NAME test_gui_audit_dashboard_cooling COMMAND ${DBUS_RUN_SESSION_EXECUTABLE} -- bash ${CMAKE_CURRENT_SOURCE_DIR}/run_gui_audit_test.sh $<TARGET_FILE:test_gui_audit>
     dashboardWaterCoolerSelectors
@@ -210,7 +211,8 @@ if(DBUS_RUN_SESSION_EXECUTABLE AND BUILD_GUI)
     renderReferencePages
     keyboardSelectionDoesNotChangeBacklight
     previewMustNotSaveLocalMonitorPreferences
-    previewMustBlockEveryWritePath)
+    previewMustBlockEveryWritePath
+    aboutTabStaysPinnedToSidebarBottom)
   add_executable(test_gui_instance test_gui_instance.cpp
     ../ucc-gui/src/GuiInstance.cpp ../ucc-gui/inc/GuiInstance.hpp)
   add_dependencies(test_gui_instance ucc-gui)

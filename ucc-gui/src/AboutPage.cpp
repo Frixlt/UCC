@@ -78,15 +78,15 @@ QWidget *createAboutPage(QWidget *parent) {
   layout->setContentsMargins(0,0,8,0);layout->setSpacing(16);
   auto *identity = card(layout);auto *hero = qobject_cast<QVBoxLayout*>(identity->layout());
   auto *heading = new QHBoxLayout;heading->setSpacing(16);
-  auto *mark = text("UCC","aboutMark");mark->setFixedSize(64,64);mark->setAlignment(Qt::AlignCenter);heading->addWidget(mark);
+  auto *mark = text("ucc-rs","aboutMark");mark->setFixedSize(64,64);mark->setAlignment(Qt::AlignCenter);heading->addWidget(mark);
   auto *intro = new QVBoxLayout;intro->setSpacing(6);intro->addWidget(text("ucc-rusted","sectionTitle"));
-  intro->addWidget(text("Rust system control daemon, CLI, tray, and standalone Qt6 interface for Uniwill, Clevo, and TUXEDO laptops.","subtitle"));heading->addLayout(intro,1);hero->addLayout(heading);
+  intro->addWidget(text("Rust system control suite (uccd, ucc-cli, ucc-desktop-tray, ucc-session-agent) paired with a native Qt 6 GUI for Uniwill, Clevo, and TUXEDO laptops.","subtitle"));heading->addLayout(intro,1);hero->addLayout(heading);
   auto *metadata = new QHBoxLayout;metadata->setSpacing(24);
   const QString revision = QString::fromUtf8(UCC_RELEASE);
-  const QString values[] = {QString::fromUtf8(UCC_VERSION),revision.isEmpty() ? QStringLiteral("Source archive") : revision,QString::fromLatin1(qVersion())};
-  const QString labels[] = {"Version","Build commit","Qt runtime"};
-  const char *names[] = {"aboutVersion","aboutCommit","aboutQtVersion"};
-  for (int i=0;i<3;++i) {
+  const QString values[] = {QString::fromUtf8(UCC_VERSION),revision.isEmpty() ? QStringLiteral("Source archive") : revision,QString::fromLatin1(qVersion()),QStringLiteral("Rust daemon · Qt 6")};
+  const QString labels[] = {"Version","Build commit","Qt runtime","Architecture"};
+  const char *names[] = {"aboutVersion","aboutCommit","aboutQtVersion","aboutArchitecture"};
+  for (int i=0;i<4;++i) {
     auto *column = new QVBoxLayout;column->setSpacing(5);column->addWidget(text(labels[i],"muted"));
     auto *value = text(values[i],"detailValue");value->setObjectName(names[i]);value->setProperty("aboutMetadata",true);column->addWidget(value);metadata->addLayout(column,1);
   }
@@ -102,21 +102,21 @@ QWidget *createAboutPage(QWidget *parent) {
 
   layout->addWidget(text("Project lineage","cardTitle"));
   auto *lineage = card(layout);auto *credits = qobject_cast<QVBoxLayout*>(lineage->layout());
-  credits->addWidget(text("Frixit's original ControlCenter","detailValue"));
-  credits->addWidget(text("Personal power/device policies, calibrated keyboard, lightbar animations, desktop behavior and configuration priority. Source snapshots are recorded in Project origins.","muted"));
+  credits->addWidget(text("ucc-rusted (Frixit)","detailValue"));
+  credits->addWidget(text("Rust daemon (uccd), CLI (ucc-cli), tray (ucc-desktop-tray), and session agent (ucc-session-agent) with per-mode device policies, calibrated keyboard layout, lightbar animations, per-profile lid policies, and standalone Qt 6 UI.","muted"));
   entry(credits,"UCC Revorked","Qt/C++ interface, profiles, monitoring, cooling and Mechrevo integration by noteMASTER11.","GPL-3.0-or-later","https://github.com/noteMASTER11/UCC-Revorked");
   entry(credits,"Uniwill Control Center","Original UCC project by nanomatters; the foundation of this fork.","GPL-3.0-or-later","https://github.com/nanomatters/ucc");
   auto *divider = new QFrame;divider->setFrameShape(QFrame::HLine);credits->addWidget(divider);
   entry(credits,"TUXEDO Control Center","TUXEDO IO hardware access layer. © 2019–2022 TUXEDO Computers GmbH.","GPL-3.0-or-later","https://github.com/tuxedocomputers/tuxedo-control-center");
   entry(credits,"tuxedo-drivers","Separately installed kernel drivers used for hardware control.","GPL-2.0-or-later","https://github.com/tuxedocomputers/tuxedo-drivers");
 
-  layout->addWidget(text("Open-source components","cardTitle"));
+  layout->addWidget(text("Architecture & open-source components","cardTitle"));
   auto *dependencies = card(layout);auto *components = qobject_cast<QVBoxLayout*>(dependencies->layout());
-  entry(components,"Qt 6","Native UI, D-Bus, Bluetooth and SVG infrastructure.","LGPL-3.0 / GPL options","https://www.qt.io/licensing/open-source-lgpl-obligations");
-  entry(components,"Qt Charts","Live monitoring and cooling-curve charts.","GPL-3.0","https://doc.qt.io/qt-6/qtcharts-index.html#licenses");
-  entry(components,"BlueZ","System Bluetooth service for the water cooler.","GPL-2.0+ / LGPL-2.1+","https://github.com/bluez/bluez");
-  entry(components,"systemd / libudev","System service lifecycle and device discovery.","libudev: LGPL-2.1+","https://github.com/systemd/systemd");
-  entry(components,"Polkit","Authorization between the desktop session and daemon.","LGPL-2.0-or-later","https://gitlab.freedesktop.org/polkit/polkit");
+  entry(components,"Rust / Tokio / zbus","System daemon (uccd), D-Bus IPC, CLI, tray applet, and Wayland session agent.","MIT / Apache-2.0","https://www.rust-lang.org/");
+  entry(components,"BlueZ & btleplug","Bluetooth Low Energy water cooler control managed directly inside uccd.","GPL-2.0+ / MIT / Apache-2.0","https://github.com/bluez/bluez");
+  entry(components,"Qt 6 & Qt Charts","Desktop interface (ucc-gui), live telemetry charts, and curve editors.","LGPL-3.0 / GPL-3.0","https://doc.qt.io/qt-6/qtcharts-index.html#licenses");
+  entry(components,"systemd / libudev","System service lifecycle, lid/sleep inhibition, and device discovery.","libudev: LGPL-2.1+","https://github.com/systemd/systemd");
+  entry(components,"Polkit","Authorization between desktop clients and uccd.","LGPL-2.0-or-later","https://gitlab.freedesktop.org/polkit/polkit");
 #ifdef UCC_HAS_X11_BLUR
   entry(components,"XCB","X11 window integration and compositor blur request.","MIT / X11","https://xcb.freedesktop.org/");
 #endif

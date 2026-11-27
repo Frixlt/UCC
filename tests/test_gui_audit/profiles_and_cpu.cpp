@@ -298,3 +298,22 @@ void GuiAudit::deviceSupportStatusDistinguishesOfflineFromUnsupported() {
     QVERIFY(daemon.waitForFinished());
     QTRY_COMPARE(client->checkDeviceSupport(&detail),ucc::DeviceSupportStatus::DaemonUnavailable);
   }
+void GuiAudit::watercoolCrosshairsStayVisibleAcrossTabsAndPartialReads() {
+    control("TestVisualFixture");
+    ucc::MainWindow window;window.resize(1280,900);window.show();
+    auto *navigation=window.findChild<QListWidget*>("navigation");QVERIFY(navigation);
+    navigation->setCurrentRow(3);
+    auto *wcFan=window.findChild<ucc::FanControlTab*>()->wcFanEditor();
+    auto *pump=window.findChild<ucc::FanControlTab*>()->pumpEditor();
+    QVERIFY(wcFan && pump);
+    QTRY_VERIFY_WITH_TIMEOUT(wcFan->crosshairVisible() && pump->crosshairVisible(), 3500);
+
+    // Switching Cooler Settings <-> Watercool Settings and transient read failures must not erase last valid crosshairs.
+    control("TestFailReads",{true});
+    navigation->setCurrentRow(2);QTest::qWait(80);
+    navigation->setCurrentRow(3);QTest::qWait(500);
+    QVERIFY(wcFan->crosshairVisible());
+    QVERIFY(pump->crosshairVisible());
+    window.hide();
+    QVERIFY(stats().value("writes").toArray().isEmpty());
+  }

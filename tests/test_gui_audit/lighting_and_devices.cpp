@@ -104,6 +104,19 @@ void GuiAudit::calibratedKeyboardKeepsPhysicalLedIdentities() {
     QCOMPARE(states[56].toObject()["blue"].toInt(),3);
     QCOMPARE(states[77].toObject()["red"].toInt(),255);
     QVERIFY(leds[21]->toolTip().contains("LED #21"));
+
+    // Verify vivid true-to-hardware colors in BOTH Light and Dark themes (not washed-out pastel)
+    QVERIFY(QMetaObject::invokeMethod(&keyboard,"onColorChanged",Qt::DirectConnection,Q_ARG(QColor,QColor("#EF00D8"))));
+    const QRegularExpression bgRe("background-color:\\s*(#[0-9a-fA-F]{6})");
+    for(auto theme:{ucc::FluentTheme::Mode::Light,ucc::FluentTheme::Mode::Dark}) {
+      ucc::FluentTheme::setMode(theme,false);
+      QCoreApplication::processEvents();
+      const auto m=bgRe.match(leds[21]->styleSheet());
+      QVERIFY(m.hasMatch());
+      const QColor rendered(m.captured(1));
+      QVERIFY2(rendered.hsvSaturation()>140, qPrintable(QString("Key color should stay vivid in theme %1, got %2 (sat=%3)").arg(int(theme)).arg(rendered.name()).arg(rendered.hsvSaturation())));
+    }
+    ucc::FluentTheme::setMode(ucc::FluentTheme::Mode::Light,false);
     const QString output=qEnvironmentVariable("UCC_SCREENSHOT_DIR");
     if(!output.isEmpty()) QVERIFY(keyboard.grab().save(output+"/personal-keyboard.png"));
   }

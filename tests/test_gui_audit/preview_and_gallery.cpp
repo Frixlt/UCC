@@ -2,7 +2,8 @@
 
 void GuiAudit::aboutLoggingPreferenceAndFolderAction() {
     control("TestVisualFixture");ucc::MainWindow window;window.resize(1024,768);window.show();
-    window.findChild<QListWidget*>("navigation")->setCurrentRow(10);
+    auto *aboutBtn=window.findChild<QPushButton*>("aboutNavigation");QVERIFY(aboutBtn);
+    QTest::mouseClick(aboutBtn,Qt::LeftButton);
     auto *page=window.findChild<QScrollArea*>("aboutPage");QVERIFY(page);page->verticalScrollBar()->setValue(page->verticalScrollBar()->maximum());QTest::qWait(300);
     auto *toggle=page->findChild<QCheckBox*>("saveApplicationLogs");auto *open=page->findChild<QPushButton*>("openLogsDirectory");QVERIFY(toggle);QVERIFY(open);
     QCOMPARE(toggle->parentWidget()->objectName(),QString("card"));
@@ -26,12 +27,16 @@ void GuiAudit::aboutLoggingPreferenceAndFolderAction() {
   }
 void GuiAudit::aboutBuildCreditsAndBundledLicense() {
     control("TestVisualFixture");ucc::MainWindow window;window.resize(1024,768);window.show();
-    auto *navigation=window.findChild<QListWidget*>("navigation");QCOMPARE(navigation->item(10)->text(),QString("About"));navigation->setCurrentRow(10);QTest::qWait(300);
+    auto *aboutBtn=window.findChild<QPushButton*>("aboutNavigation");QVERIFY(aboutBtn);
+    QCOMPARE(aboutBtn->text(),QString("About"));QTest::mouseClick(aboutBtn,Qt::LeftButton);QTest::qWait(300);
     auto *page=window.findChild<QScrollArea*>("aboutPage");QVERIFY(page);
+    QCOMPARE(window.findChild<QLabel*>("aboutMark")->text(),QString("ucc-rs"));
     QCOMPARE(window.findChild<QLabel*>("aboutVersion")->text(),QString(UCC_VERSION));
     QCOMPARE(window.findChild<QLabel*>("aboutCommit")->text(),QString(UCC_RELEASE).isEmpty() ? QString("Source archive") : QString(UCC_RELEASE));
     QCOMPARE(window.findChild<QLabel*>("aboutQtVersion")->text(),QString(qVersion()));
+    QCOMPARE(window.findChild<QLabel*>("aboutArchitecture")->text(),QString("Rust daemon · Qt 6"));
     QStringList urls;for(auto *button:page->findChildren<QPushButton*>()) urls<<button->property("sourceUrl").toString();
+    QVERIFY(urls.contains("https://www.rust-lang.org/"));
     QVERIFY(urls.contains("https://github.com/nanomatters/ucc"));
     QVERIFY(urls.contains("https://github.com/tuxedocomputers/tuxedo-control-center"));
     QVERIFY(urls.contains("https://github.com/tuxedocomputers/tuxedo-drivers"));
@@ -87,11 +92,13 @@ void GuiAudit::renderReleaseGallery() {
     control("TestVisualFixture");
     ucc::MainWindow window;window.resize(1440,1000);window.show();
     auto *navigation=window.findChild<QListWidget*>("navigation");QVERIFY(navigation);
+    auto *aboutBtn=window.findChild<QPushButton*>("aboutNavigation");QVERIFY(aboutBtn);
     auto *processes=window.findChild<ucc::SessionProcessesWidget*>();QVERIFY(processes);
     const QStringList names={"overview","profiles","cooler-settings","watercool-settings","monitor","lighting","hardware","power-devices","battery-processes","experimental","about"};
-    QCOMPARE(navigation->count(),names.size());
+    QCOMPARE(navigation->count(),10);
     for(int page=0;page<names.size();++page) {
-      navigation->setCurrentRow(page);QTest::qWait(page==0 || page==4 ? 2400 : 450);
+      if(page<10) navigation->setCurrentRow(page); else QTest::mouseClick(aboutBtn,Qt::LeftButton);
+      QTest::qWait(page==0 || page==4 ? 2400 : 450);
       if(page==8) {
         processes->monitor()->setActive(false);QTRY_VERIFY(!processes->monitor()->isBusy());
         processes->setSnapshot({{"batteries",QJsonArray{QJsonObject{{"name","BAT0"},{"capacity",76},{"status","Discharging"},{"powerWatts",12.5}}}},
@@ -115,6 +122,7 @@ void GuiAudit::renderReferencePages() {
     ucc::MainWindow window;
     window.resize(1280,900);window.show();QTest::qWait(2400);
     auto *navigation=window.findChild<QListWidget*>("navigation");QVERIFY(navigation);
+    auto *aboutBtn=window.findChild<QPushButton*>("aboutNavigation");QVERIFY(aboutBtn);
     auto *profilesCombo=window.findChild<QComboBox*>("profileName");QVERIFY(profilesCombo);QCOMPARE(profilesCombo->count(),3);
     auto *keyboard=window.findChild<ucc::KeyboardVisualizerWidget*>();QVERIFY(keyboard);
     QVERIFY(window.findChild<ucc::FanControlTab*>()->isWaterCoolerEnabled());
@@ -124,9 +132,9 @@ void GuiAudit::renderReferencePages() {
     const QString output=qEnvironmentVariable("UCC_SCREENSHOT_DIR");
     if(!output.isEmpty()) QVERIFY(QDir().mkpath(output));
     const QList<QPair<int,QString>> refPages={{0,"overview"},{1,"profiles"},{2,"cooler-settings"},{3,"watercool-settings"},{4,"monitor"},{5,"lighting"},{6,"hardware"},{10,"about"}};
-    for(const auto &[row,name]:refPages){navigation->setCurrentRow(row);QTest::qWait(row==3 ? 2400 : 400);if(row==2 || row==3){auto *cooling=window.findChild<QTabWidget *>("coolingPages");QVERIFY(cooling);QCOMPARE(cooling->currentIndex(),row-2);QVERIFY(!cooling->tabBar()->isVisible());}if(!output.isEmpty()) QVERIFY(window.grab().save(output+"/"+name+".png"));}
+    for(const auto &[row,name]:refPages){if(row<10) navigation->setCurrentRow(row);else QTest::mouseClick(aboutBtn,Qt::LeftButton);QTest::qWait(row==3 ? 2400 : 400);if(row==2 || row==3){auto *cooling=window.findChild<QTabWidget *>("coolingPages");QVERIFY(cooling);QCOMPARE(cooling->currentIndex(),row-2);QVERIFY(!cooling->tabBar()->isVisible());}if(!output.isEmpty()) QVERIFY(window.grab().save(output+"/"+name+".png"));}
     if(!output.isEmpty()) {
-      navigation->setCurrentRow(10);QTest::qWait(350);
+      QTest::mouseClick(aboutBtn,Qt::LeftButton);QTest::qWait(350);
       auto *about=window.findChild<QScrollArea*>("aboutPage");QVERIFY(about);
       about->verticalScrollBar()->setValue(about->verticalScrollBar()->maximum());
       QTest::qWait(80);QVERIFY(window.grab().save(output+"/about-bottom.png"));
@@ -171,7 +179,7 @@ void GuiAudit::renderReferencePages() {
       QVERIFY(window.grab().save(output+"/notifications-context.png"));center->hide();
     }
     window.resize(1024,768);
-    for(const auto &[row,name]:refPages){navigation->setCurrentRow(row);QTest::qWait(350);QVERIFY(window.width()<=1024);if(!output.isEmpty()) QVERIFY(window.grab().save(output+"/"+name+"-small.png"));}
+    for(const auto &[row,name]:refPages){if(row<10) navigation->setCurrentRow(row);else QTest::mouseClick(aboutBtn,Qt::LeftButton);QTest::qWait(350);QVERIFY(window.width()<=1024);if(!output.isEmpty()) QVERIFY(window.grab().save(output+"/"+name+"-small.png"));}
     window.hide();
     QVERIFY2(stats().value("writes").toArray().isEmpty(),"Rendering pages must not change hardware or profile settings");
   }
@@ -229,4 +237,42 @@ void GuiAudit::previewMustBlockEveryWritePath() {
     QVERIFY2(stats().value("writes").toArray().isEmpty(), "Read-only prototype must never dispatch hardware or settings writes");
     QCOMPARE(client->getWaterCoolerFanSpeed().value_or(-1),100);
     QVERIFY(stats().value("reads").toObject().value("GetWaterCoolerFanSpeed").toInt()>0);
+  }
+void GuiAudit::aboutTabStaysPinnedToSidebarBottom() {
+    control("TestVisualFixture");
+    ucc::MainWindow window;
+    window.resize(1024,768);
+    window.show();
+    QTest::qWait(50);
+    auto *navigation=window.findChild<QListWidget*>("navigation");
+    auto *aboutBtn=window.findChild<QPushButton*>("aboutNavigation");
+    auto *footer=window.findChild<QWidget*>("sidebarFooter");
+    auto *pages=window.findChild<QTabWidget*>("pages");
+    QVERIFY(navigation && aboutBtn && footer && pages);
+    QCOMPARE(navigation->count(),10);
+
+    const int ySmall=aboutBtn->mapTo(&window,QPoint(0,0)).y();
+    const int navBottomSmall=navigation->mapTo(&window,QPoint(0,navigation->height())).y();
+    const int footerTopSmall=footer->mapTo(&window,QPoint(0,0)).y();
+    QVERIFY2(ySmall>=navBottomSmall,"About button must sit below scrollable navigation list");
+    QVERIFY2(footerTopSmall-(ySmall+aboutBtn->height())<=24,"About button must be magnetized above sidebar footer");
+
+    window.resize(1280,1100);
+    QTest::qWait(50);
+    const int yLarge=aboutBtn->mapTo(&window,QPoint(0,0)).y();
+    const int footerTopLarge=footer->mapTo(&window,QPoint(0,0)).y();
+    QVERIFY2(yLarge>ySmall+200,"About button must track window bottom when height grows");
+    QVERIFY2(footerTopLarge-(yLarge+aboutBtn->height())<=24,"About button must stay pinned above footer at tall window size");
+
+    QTest::mouseClick(aboutBtn,Qt::LeftButton);
+    QCOMPARE(pages->currentIndex(),9);
+    QVERIFY(aboutBtn->isChecked());
+    QCOMPARE(navigation->currentRow(),-1);
+    QCOMPARE(window.findChild<QLabel*>("pageTitle")->text(),QString("About"));
+
+    navigation->setCurrentRow(0);
+    QCOMPARE(pages->currentIndex(),0);
+    QVERIFY(!aboutBtn->isChecked());
+    window.hide();
+    QVERIFY(stats().value("writes").toArray().isEmpty());
   }

@@ -30,6 +30,7 @@ public:
     void setCrosshair( double temp, double duty );
     /** Remove the crosshair from the display. */
     void clearCrosshair();
+    bool crosshairVisible() const { return m_crosshairVisible; }
 
 signals:
     void pointsChanged(const QVector<Point>&);

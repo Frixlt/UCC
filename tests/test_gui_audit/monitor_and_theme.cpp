@@ -106,18 +106,25 @@ void GuiAudit::monitorScrollsBetweenFetchesAndFreezesOnPause() {
 void GuiAudit::sidebarNavigationPreservesPages() {
     control("TestVisualFixture");
     ucc::MainWindow window;
+    auto *brand=window.findChild<QLabel*>("brand");QVERIFY(brand);
+    QCOMPARE(brand->text(),QString("ucc-rusted"));
     auto *navigation=window.findChild<QListWidget*>("navigation");
-    QVERIFY2(navigation,"Fluent shell must expose all eleven sections through sidebar navigation");
-    QCOMPARE(navigation->count(),11);
+    auto *aboutBtn=window.findChild<QPushButton*>("aboutNavigation");
+    QVERIFY2(navigation && aboutBtn,"Fluent shell must expose 10 top sections plus bottom-pinned About button");
+    QCOMPARE(navigation->count(),10);
     auto *pages=window.findChild<QTabWidget*>("pages");
     QVERIFY(pages);
     window.show();
-    const int pageIndices[]={0,1,2,2,3,4,5,6,7,8,9};
-    for(int index=0;index<11;++index) {
+    const int pageIndices[]={0,1,2,2,3,4,5,6,7,8};
+    for(int index=0;index<10;++index) {
       if (!(navigation->item(index)->flags() & Qt::ItemIsEnabled)) continue;
       navigation->setCurrentRow(index);
       QCOMPARE(pages->currentIndex(),pageIndices[index]);
+      QVERIFY(!aboutBtn->isChecked());
     }
+    QTest::mouseClick(aboutBtn,Qt::LeftButton);
+    QCOMPARE(pages->currentIndex(),9);
+    QVERIFY(aboutBtn->isChecked());
     QVERIFY(window.findChild<QWidget *>("experimentalPage"));
     QVERIFY(window.findChild<QLabel *>("experimentalBanner"));
     const QStringList iconNames={"Lighting","Hardware","Power & Devices","Battery & Processes","Experimental"};

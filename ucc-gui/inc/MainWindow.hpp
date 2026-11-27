@@ -169,6 +169,7 @@ namespace ucc
     // Tab widget
     QTabWidget *m_tabs = nullptr;
     QTabWidget *m_lightingTabs = nullptr;
+    QPushButton *m_aboutNavButton = nullptr;
     FluentEntrance *m_entrance = nullptr;
 
     // Dashboard tab

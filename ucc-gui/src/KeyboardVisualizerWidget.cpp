@@ -356,12 +356,32 @@ void ucc::KeyboardVisualizerWidget::updateKeyAppearance( QPushButton *button, co
 {
   QColor adjustedColor = applyBrightness( color, brightness );
   const auto c=FluentTheme::colors();
-  const double weight=FluentTheme::isDark() ? 0.18 : 0.12;
-  const auto blend=[&](const QColor &base,double fraction){return QColor(qRound(base.red()*(1-fraction)+adjustedColor.red()*fraction),qRound(base.green()*(1-fraction)+adjustedColor.green()*fraction),qRound(base.blue()*(1-fraction)+adjustedColor.blue()*fraction));};
-  const QColor tint=blend(c.inset,weight);
-  const QColor edge=blend(c.border,0.25);
+  const double ratio = ( m_maxBrightness > 0 )
+      ? std::clamp( static_cast<double>( brightness ) / static_cast<double>( m_maxBrightness ), 0.0, 1.0 )
+      : 1.0;
+  const bool lit = ( brightness > 0 ) && ( color.red() > 0 || color.green() > 0 || color.blue() > 0 );
+  QColor fill = c.inset;
+  QColor textColor = c.text;
+  QColor edge = c.border;
+  QColor hoverFill = c.hover;
+  if ( lit )
+  {
+    // Preserve hardware hue & saturation across both Light and Dark themes so key colors match the physical LEDs
+    const double visualIntensity = 0.60 + 0.40 * ratio;
+    const double weight = 0.88 * visualIntensity;
+    auto blendChannel = [weight]( int baseCh, int ledCh ) {
+      return std::clamp( qRound( baseCh * ( 1.0 - weight ) + ledCh * weight ), 0, 255 );
+    };
+    fill = QColor( blendChannel( c.inset.red(), color.red() ),
+                   blendChannel( c.inset.green(), color.green() ),
+                   blendChannel( c.inset.blue(), color.blue() ) );
+    const double luma = 0.299 * fill.red() + 0.587 * fill.green() + 0.114 * fill.blue();
+    textColor = ( luma > 148.0 ) ? QColor( "#181B22" ) : QColor( "#F8FAFC" );
+    edge = FluentTheme::isDark() ? fill.lighter( 130 ) : fill.darker( 125 );
+    hoverFill = ( luma > 148.0 ) ? fill.darker( 108 ) : fill.lighter( 116 );
+  }
   const QString border=m_selectedButtons.contains(button) ? "2px solid "+c.accent.name() : "1px solid "+edge.name();
-  const QString style=QString("QPushButton {background-color: %1; color: %2; border: %3; border-radius: 4px; padding: 2px;} QPushButton:hover {background-color: %4;}").arg(tint.name(),c.text.name(),border,FluentTheme::isDark() ? tint.lighter(120).name() : tint.darker(104).name());
+  const QString style=QString("QPushButton {background-color: %1; color: %2; border: %3; border-radius: 4px; padding: 2px;} QPushButton:hover {background-color: %4;}").arg(fill.name(),textColor.name(),border,hoverFill.name());
   if (button->property("ledId").isValid())
     button->setToolTip(QString("LED #%1 — %2 · %3").arg(button->property("ledId").toInt())
       .arg(button->property("physicalLabel").toString(), adjustedColor.name()));

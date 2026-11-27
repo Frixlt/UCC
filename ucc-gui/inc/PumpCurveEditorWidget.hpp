@@ -42,6 +42,7 @@ public:
     void setCrosshair( double temp, int level );
     /** Remove the crosshair from the display. */
     void clearCrosshair();
+    bool crosshairVisible() const { return m_crosshairVisible; }
 
     /// Pump level labels
     static QString levelLabel(int level);
