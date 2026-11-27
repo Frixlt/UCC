@@ -9,11 +9,11 @@ License:        GPL-3.0-or-later
 
 URL:            https://github.com/Frixlt/UCC
 Source0:        https://github.com/Frixlt/UCC/releases/download/v%{version}/ucc-rusted-%{version}.tar.gz
-Provides:       ucc-rusted = %{version}-%{release}
+Provides:       ucc-rusted = %{epoch}:%{version}-%{release}
 
 BuildRequires:  cmake >= 3.20
-BuildRequires:  cargo
-BuildRequires:  rust
+BuildRequires:  cargo >= 1.89
+BuildRequires:  rust >= 1.89
 BuildRequires:  gcc-c++
 BuildRequires:  nlohmann-json-devel
 BuildRequires:  qt6-qtbase-devel >= 6.0
@@ -71,14 +71,15 @@ mkdir -p %{buildroot}%{_sysconfdir}/ucc
 chmod 755 %{buildroot}%{_sysconfdir}/ucc
 
 %post
-%systemd_post uccd.service
+%systemd_post uccd.service uccd-sleep.service
 systemctl daemon-reload > /dev/null 2>&1 || true
 
 %preun
-%systemd_preun uccd.service
+%systemd_preun uccd.service uccd-sleep.service
 
 %postun
 %systemd_postun_with_restart uccd.service
+%systemd_postun uccd-sleep.service
 
 %files
 %license LICENSE

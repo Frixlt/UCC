@@ -124,7 +124,7 @@ deb: dist
 	@echo "Building Debian packages..."
 	@mkdir -p dist/deb
 	@cd dist/deb && tar xzf ../$(ARCHIVE)
-	@sed -i '1s/(.*)/($(VERSION)+$(RELEASE_TS))/' dist/deb/ucc-$(VERSION)/debian/changelog
+	@sed -i '1s/(\([^:)]*:\)\?[^)]*)/(\1$(VERSION)+$(RELEASE_TS))/' dist/deb/ucc-$(VERSION)/debian/changelog
 	@cd dist/deb/ucc-$(VERSION) && debuild -uc -us
 	@echo "Debian packages created in dist/"
 

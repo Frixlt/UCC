@@ -2,6 +2,7 @@
 pkgname=ucc-rusted
 pkgver=0.0.1
 pkgrel=1
+epoch=1
 pkgdesc='ucc-rusted: Rust system control daemon, CLI, tray, and Qt6 GUI for Uniwill/Clevo/TUXEDO laptops'
 arch=('x86_64')
 url='https://github.com/Frixlt/UCC'
@@ -13,7 +14,7 @@ optdepends=('tuxedo-drivers: hardware interface required by uccd'
             'bluez: Bluetooth water cooler'
             'kscreen: KDE refresh-rate offers'
             'qt6-wayland: native Wayland desktop clients')
-provides=("uniwill-control-center=$pkgver" "frixit-control-center=$pkgver")
+provides=("uniwill-control-center=$epoch:$pkgver" "frixit-control-center=$epoch:$pkgver")
 conflicts=('uniwill-control-center' 'uniwill-control-center-mechrevo' 'frixit-control-center')
 replaces=('frixit-control-center')
 options=('!debug')

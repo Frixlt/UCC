@@ -41,7 +41,7 @@ The deprecated Plasma C++/QML applet (`ucc-tray`) is excluded from packaged buil
 | Crate | Type | Role |
 | --- | --- | --- |
 | `ucc-core` | Library | Domain types, profiles, fan curves, telemetry structs, error definitions |
-| `ucc-config` | Library | `/etc/ucc/settings.json` and `~/.config/ucc/settings.json` persistence, atomic saves with `.bak` recovery, offline importer |
+| `ucc-config` | Library | `/etc/ucc/settings` (with `/etc/ucc/settings.json` fallback) and `~/.config/ucc/settings.json` persistence, atomic saves with `.bak` recovery, offline importer |
 | `ucc-hardware` | Library | DMI/platform detection, `tuxedo-drivers` ioctl, sysfs/procfs CPU/PCI/USB/ASPM/charging control, NVML (`libloading`), BlueZ GATT cooler |
 | `ucc-lighting` | Library | Per-key RGB keyboard state, Mechrevo physical LED mapping, front Lightbar state machine and 5 notification animations |
 | `ucc-dbus` | Library | `zbus` 5.5 D-Bus interface (`com.uniwill.uccd` + `de.uniwill.uccd`), typed client proxies, Polkit authorizer |
@@ -231,7 +231,7 @@ Inspect `ucc-gui` against an isolated fixture without touching `/etc/ucc` or liv
 
 ### Configuration Paths & Persistence
 
-- **System configuration**: `/etc/ucc/settings.json` (owned by `root`, created/imported locally; private settings and Bluetooth addresses are never shipped in packages).
+- **System configuration**: `/etc/ucc/settings` (primary path, with `/etc/ucc/settings.json` fallback; owned by `root`, created/imported locally; private settings and Bluetooth addresses are never shipped in packages).
 - **User preferences**: `~/.config/ucc/settings.json`.
 - **Atomic writes**: Configuration updates write to a temporary file, sync, and atomically rename into place while maintaining a `.bak` backup for automatic corruption recovery.
 

@@ -3,6 +3,7 @@ set -euo pipefail
 
 TEST_BIN="${1:?usage: run_rust_interop_test.sh <test-binary> <source-dir>}"
 SOURCE_DIR="${2:?usage: run_rust_interop_test.sh <test-binary> <source-dir>}"
+shift 2
 
 ORIG_HOME="${HOME:-}"
 if [[ -z "${CARGO_HOME:-}" && -n "$ORIG_HOME" ]]; then
@@ -46,4 +47,6 @@ if [[ ! -x "$DAEMON_BIN" ]]; then
 fi
 
 export UCC_INTEROP_DAEMON_BIN="$DAEMON_BIN"
-exec "$TEST_BIN"
+status=0
+"$TEST_BIN" "$@" || status=$?
+exit "$status"

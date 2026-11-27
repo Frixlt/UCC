@@ -55,9 +55,7 @@ in
   config = lib.mkIf cfg.enable {
     nixpkgs.overlays = lib.mkIf (overlay != null) [ overlay ];
 
-    # Add the package to the system profile so plasmashell can discover the
-    # Plasma applet .so (via QT_PLUGIN_PATH) and the QML module
-    # (com.uniwill.ucc.private, via QML2_IMPORT_PATH / QT_QML_IMPORT_PATH).
+    # Add the package to the system profile so desktop clients and CLI tools are on PATH.
     environment.systemPackages = [ cfg.package ];
 
     # Install the Polkit policy so that unprivileged GUI users can
@@ -84,8 +82,19 @@ in
     systemd.services.uccd = {
       description = "Uniwill Control Center Daemon";
       documentation = [ "man:uccd(8)" ];
-      after = [ "dbus.service" ];
+      after = [
+        "dbus.service"
+        "systemd-modules-load.service"
+      ];
       requires = [ "dbus.service" ];
+      conflicts = [
+        "tccd.service"
+        "tuxedo-power.service"
+      ];
+      before = [
+        "tccd.service"
+        "tuxedo-power.service"
+      ];
       wantedBy = [ "multi-user.target" ];
 
       serviceConfig = {
@@ -121,6 +130,23 @@ in
           "-/proc/sys/vm/dirty_writeback_centisecs"
           "-/sys/module/snd_hda_intel/parameters/power_save"
           "-/sys/module/pcie_aspm/parameters/policy"
+        ];
+        # Hardware controls use writable device sysfs (CPU, LEDs and charging).
+        ProtectKernelTunables = false;
+        ReadOnlyPaths = [
+          "/proc/sys"
+          "/proc/sysrq-trigger"
+          "/sys/firmware"
+        ];
+        ProtectKernelModules = true;
+        ProtectControlGroups = true;
+        RestrictNamespaces = true;
+        LockPersonality = true;
+        MemoryDenyWriteExecute = true;
+        CapabilityBoundingSet = [
+          "CAP_SYS_RAWIO"
+          "CAP_NET_ADMIN"
+          "CAP_SYS_ADMIN"
         ];
       };
     };

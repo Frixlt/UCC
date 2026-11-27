@@ -6,7 +6,7 @@
 use std::collections::{BTreeMap, BTreeSet};
 use std::fs;
 use std::io;
-use std::path::{Path, PathBuf};
+use std::path::{Component, Path, PathBuf};
 use std::process::Command;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
@@ -189,6 +189,55 @@ fn write_private_file(path: &Path, content: &str, mode: u32) -> Result<(), Strin
     }
     fs::rename(&tmp, path).map_err(|e| format!("Failed to replace {}: {e}", path.display()))?;
     Ok(())
+}
+
+#[cfg(unix)]
+const fn o_nofollow_flag() -> i32 {
+    #[cfg(all(
+        target_os = "linux",
+        any(
+            target_arch = "aarch64",
+            target_arch = "arm",
+            target_arch = "powerpc",
+            target_arch = "powerpc64"
+        )
+    ))]
+    {
+        0o100000
+    }
+    #[cfg(all(
+        target_os = "linux",
+        not(any(
+            target_arch = "aarch64",
+            target_arch = "arm",
+            target_arch = "powerpc",
+            target_arch = "powerpc64"
+        ))
+    ))]
+    {
+        0o400000
+    }
+    #[cfg(any(
+        target_os = "macos",
+        target_os = "freebsd",
+        target_os = "openbsd",
+        target_os = "netbsd",
+        target_os = "dragonfly"
+    ))]
+    {
+        0x0100
+    }
+    #[cfg(not(any(
+        target_os = "linux",
+        target_os = "macos",
+        target_os = "freebsd",
+        target_os = "openbsd",
+        target_os = "netbsd",
+        target_os = "dragonfly"
+    )))]
+    {
+        0
+    }
 }
 
 fn set_dir_mode(path: &Path, mode: u32) -> Result<(), String> {
@@ -736,7 +785,20 @@ pub fn prepare_deployment(
         return Err("Some original profiles remain unresolved".to_string());
     }
 
-    let import_check_bin = args.build_dir.join("bin/ucc-import-check");
+    let rust_target_dir = std::env::var_os("CARGO_TARGET_DIR")
+        .map(PathBuf::from)
+        .unwrap_or_else(|| repo_root.join("target"));
+    let rust_release_dir = rust_target_dir.join("release");
+    let cpp_import_check = args.build_dir.join("bin/ucc-import-check");
+    let import_check_bin = if cpp_import_check.is_file() {
+        cpp_import_check
+    } else if rust_release_dir.join("ucc-import-check").is_file() {
+        rust_release_dir.join("ucc-import-check")
+    } else if rust_target_dir.join("debug/ucc-import-check").is_file() {
+        rust_target_dir.join("debug/ucc-import-check")
+    } else {
+        rust_release_dir.join("ucc-import-check")
+    };
     let import_check_str = import_check_bin.display().to_string();
     let import_settings_str = import_dir.join("settings").display().to_string();
     let caps_path_str = bundle.join("capabilities.json").display().to_string();
@@ -756,16 +818,20 @@ pub fn prepare_deployment(
         &["--install", &build_str],
         &[("DESTDIR", &stage_str)],
     )?;
+    let manifest_path_str = repo_root.join("Cargo.toml").display().to_string();
     let stage_usr_str = stage.join("usr").display().to_string();
-    let rust_bin_str = repo_root.join("target/release").display().to_string();
+    let rust_bin_str = rust_release_dir.display().to_string();
     let runtime_out = run_checked(
         runner,
         "cargo",
         &[
             "run",
+            "--manifest-path",
+            &manifest_path_str,
             "-p",
             "xtask",
             "--locked",
+            "--offline",
             "--",
             "install-runtime",
             &stage_usr_str,
@@ -985,8 +1051,61 @@ impl<'a> DeploymentManager<'a> {
         })
     }
 
-    fn path(&self, abs_path: &str) -> PathBuf {
-        self.root.join(abs_path.trim_start_matches('/'))
+    fn sanitize_root_relative_path(abs_path: &str) -> Result<PathBuf, String> {
+        if abs_path.is_empty() || abs_path.contains('\0') {
+            return Err(format!("Invalid deployment path: {abs_path:?}"));
+        }
+        let stripped = abs_path.trim_start_matches('/');
+        let mut rel = PathBuf::new();
+        for comp in Path::new(stripped).components() {
+            match comp {
+                Component::Normal(seg) => rel.push(seg),
+                Component::CurDir => {}
+                Component::ParentDir | Component::RootDir | Component::Prefix(_) => {
+                    return Err(format!(
+                        "Path traversal or invalid component rejected in deployment path: {abs_path}"
+                    ));
+                }
+            }
+        }
+        if rel.as_os_str().is_empty() {
+            return Err(format!("Empty relative deployment path: {abs_path:?}"));
+        }
+        Ok(rel)
+    }
+
+    fn path(&self, abs_path: &str) -> Result<PathBuf, String> {
+        let rel = Self::sanitize_root_relative_path(abs_path)?;
+        let canonical_root = fs::canonicalize(&self.root).unwrap_or_else(|_| self.root.clone());
+        let mut cur = canonical_root.clone();
+        for comp in rel.components() {
+            cur.push(comp);
+            match fs::symlink_metadata(&cur) {
+                Ok(meta) => {
+                    if meta.file_type().is_symlink() {
+                        return Err(format!(
+                            "Refusing to follow symlink in deployment path: {abs_path} ({})",
+                            cur.display()
+                        ));
+                    }
+                }
+                Err(err) if err.kind() == io::ErrorKind::NotFound => {}
+                Err(err) => {
+                    return Err(format!("Failed inspecting path {}: {err}", cur.display()));
+                }
+            }
+        }
+        if cur.exists() {
+            let canonical_target = fs::canonicalize(&cur)
+                .map_err(|e| format!("Failed resolving path {}: {e}", cur.display()))?;
+            if !canonical_target.starts_with(&canonical_root) {
+                return Err(format!(
+                    "Deployment path escapes root {}: {abs_path}",
+                    canonical_root.display()
+                ));
+            }
+        }
+        Ok(cur)
     }
 
     fn save(&self) -> Result<(), String> {
@@ -1017,7 +1136,8 @@ impl<'a> DeploymentManager<'a> {
             .get("packageSha256")
             .and_then(Value::as_str)
             .ok_or("Missing packageSha256 in deployment.json")?;
-        if meta.file_type().is_symlink() || file_sha256(&package)? != expected_sha {
+        if meta.file_type().is_symlink() || !meta.is_file() || file_sha256(&package)? != expected_sha
+        {
             return Err("Package checksum mismatch".to_string());
         }
 
@@ -1034,7 +1154,15 @@ impl<'a> DeploymentManager<'a> {
                 .get("sha256")
                 .and_then(Value::as_str)
                 .ok_or("Missing input sha256")?;
-            if file_sha256(&self.path(path_str))? != expected {
+            let resolved_input = self.path(path_str)?;
+            let input_meta = fs::symlink_metadata(&resolved_input)
+                .map_err(|e| format!("Missing source configuration {path_str}: {e}"))?;
+            if input_meta.file_type().is_symlink() || !input_meta.is_file() {
+                return Err(format!(
+                    "Refusing symlink or non-regular input file: {path_str}"
+                ));
+            }
+            if file_sha256(&resolved_input)? != expected {
                 return Err(format!("Source configuration changed: {path_str}"));
             }
         }
@@ -1044,7 +1172,7 @@ impl<'a> DeploymentManager<'a> {
                 "This first-install tool refuses to overwrite an installed UCC package".to_string(),
             );
         }
-        if self.path("/usr/bin/uccd").exists() || self.path("/etc/ucc/settings").exists() {
+        if self.path("/usr/bin/uccd")?.exists() || self.path("/etc/ucc/settings")?.exists() {
             return Err(
                 "Existing unmanaged UCC installation requires a separate upgrade migration"
                     .to_string(),
@@ -1056,15 +1184,93 @@ impl<'a> DeploymentManager<'a> {
 
     pub fn install(&mut self) -> Result<PathBuf, String> {
         let (manifest, package) = self.verify_bundle()?;
+        let expected_pkg_sha = manifest
+            .get("packageSha256")
+            .and_then(Value::as_str)
+            .ok_or("Missing packageSha256 in deployment.json")?;
+        let pkg_filename = package.file_name().ok_or("Invalid package filename")?;
         let stamp = format_utc_stamp(unix_secs_now());
-        let short_hash: String = file_sha256(&package)?.chars().take(8).collect();
+        let short_hash: String = expected_pkg_sha.chars().take(8).collect();
         let backup = self
-            .path("/var/lib/ucc/deployments")
+            .path("/var/lib/ucc/deployments")?
             .join(format!("{stamp}-{short_hash}"));
         fs::create_dir_all(&backup)
             .map_err(|e| format!("Failed creating backup {}: {e}", backup.display()))?;
         set_dir_mode(&backup, 0o700)?;
         self.backup = Some(backup.clone());
+
+        let private_package = backup.join(pkg_filename);
+        let mut src_opts = fs::OpenOptions::new();
+        src_opts.read(true);
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::OpenOptionsExt;
+            src_opts.custom_flags(o_nofollow_flag());
+        }
+        let mut src_file = src_opts.open(&package).map_err(|e| {
+            format!(
+                "Failed opening package {} for private copy: {e}",
+                package.display()
+            )
+        })?;
+        let src_meta = src_file.metadata().map_err(|e| {
+            format!(
+                "Failed inspecting opened package {}: {e}",
+                package.display()
+            )
+        })?;
+        if !src_meta.is_file() {
+            return Err(format!(
+                "Refusing to copy non-regular package {}",
+                package.display()
+            ));
+        }
+
+        let _ = fs::remove_file(&private_package);
+        let mut dst_opts = fs::OpenOptions::new();
+        dst_opts.write(true).create_new(true);
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::OpenOptionsExt;
+            dst_opts.mode(0o600).custom_flags(o_nofollow_flag());
+        }
+        let mut dst_file = dst_opts.open(&private_package).map_err(|e| {
+            format!(
+                "Failed creating private package copy {}: {e}",
+                private_package.display()
+            )
+        })?;
+        if let Err(e) = io::copy(&mut src_file, &mut dst_file).and_then(|_| dst_file.sync_all()) {
+            let _ = fs::remove_file(&private_package);
+            return Err(format!(
+                "Failed copying package {} into private backup dir: {e}",
+                package.display()
+            ));
+        }
+        drop(dst_file);
+        drop(src_file);
+
+        let private_meta = fs::symlink_metadata(&private_package).map_err(|e| {
+            let _ = fs::remove_file(&private_package);
+            format!(
+                "Failed inspecting copied package {}: {e}",
+                private_package.display()
+            )
+        })?;
+        let copied_sha = match file_sha256(&private_package) {
+            Ok(sha) => sha,
+            Err(e) => {
+                let _ = fs::remove_file(&private_package);
+                return Err(e);
+            }
+        };
+        if private_meta.file_type().is_symlink()
+            || !private_meta.is_file()
+            || copied_sha != expected_pkg_sha
+        {
+            let _ = fs::remove_file(&private_package);
+            return Err("Copied package checksum mismatch".to_string());
+        }
 
         let mut units = BTreeMap::new();
         for unit in OLD_UNITS.iter().chain(NEW_UNITS.iter()) {
@@ -1090,19 +1296,57 @@ impl<'a> DeploymentManager<'a> {
         });
 
         for dir_abs in ["/etc/tcc", "/etc/ucc"] {
-            let source = self.path(dir_abs);
+            let source = self.path(dir_abs)?;
             if source.is_dir() {
                 copy_dir_recursive(&source, &backup.join(dir_abs.trim_start_matches('/')))?;
             }
         }
         if let Some(inputs) = manifest.get("inputs").and_then(Value::as_array) {
+            let backup_inputs_root = backup.join("inputs");
+            fs::create_dir_all(&backup_inputs_root)
+                .map_err(|e| format!("mkdir backup inputs failed: {e}"))?;
+            set_dir_mode(&backup_inputs_root, 0o700)?;
+            let canonical_inputs_root = fs::canonicalize(&backup_inputs_root).map_err(|e| {
+                format!(
+                    "Failed resolving backup inputs dir {}: {e}",
+                    backup_inputs_root.display()
+                )
+            })?;
             for item in inputs {
                 if let Some(p) = item.get("path").and_then(Value::as_str) {
-                    let src = self.path(p);
-                    let dst = backup.join("inputs").join(p.trim_start_matches('/'));
+                    let rel = Self::sanitize_root_relative_path(p)?;
+                    let src = self.path(p)?;
+                    let src_meta = fs::symlink_metadata(&src)
+                        .map_err(|e| format!("Stat failed for {}: {e}", src.display()))?;
+                    if src_meta.file_type().is_symlink() || !src_meta.is_file() {
+                        return Err(format!(
+                            "Refusing to back up non-regular or symlink input: {p}"
+                        ));
+                    }
+                    let dst = backup_inputs_root.join(&rel);
+                    let mut cur = canonical_inputs_root.clone();
+                    for comp in rel.components() {
+                        cur.push(comp);
+                        if let Ok(meta) = fs::symlink_metadata(&cur) {
+                            if meta.file_type().is_symlink() {
+                                return Err(format!(
+                                    "Refusing to write backup through symlink: {}",
+                                    cur.display()
+                                ));
+                            }
+                        }
+                    }
                     if let Some(parent) = dst.parent() {
                         fs::create_dir_all(parent)
                             .map_err(|e| format!("mkdir backup input failed: {e}"))?;
+                        let canonical_parent = fs::canonicalize(parent).map_err(|e| {
+                            format!("Failed resolving backup parent {}: {e}", parent.display())
+                        })?;
+                        if !canonical_parent.starts_with(&canonical_inputs_root) {
+                            return Err(format!(
+                                "Backup input destination escapes backup/inputs: {p}"
+                            ));
+                        }
                     }
                     fs::copy(&src, &dst)
                         .map_err(|e| format!("Backup copy failed for {}: {e}", src.display()))?;
@@ -1111,7 +1355,7 @@ impl<'a> DeploymentManager<'a> {
         }
         self.save()?;
 
-        let install_res = self.perform_install_steps(&package);
+        let install_res = self.perform_install_steps(&private_package);
         if let Err(err) = install_res {
             if let Err(rb_err) = self.rollback() {
                 return Err(format!("{err}; ROLLBACK ERROR: {rb_err}"));
@@ -1273,7 +1517,7 @@ impl<'a> DeploymentManager<'a> {
                 &["-R", "--noconfirm", PACKAGE_NAME],
                 &[],
             )?;
-            let settings_dir = self.path("/etc/ucc");
+            let settings_dir = self.path("/etc/ucc")?;
             if settings_dir.exists() {
                 fs::rename(&settings_dir, backup.join("retired-ucc-settings"))
                     .map_err(|e| format!("Failed retiring /etc/ucc during rollback: {e}"))?;

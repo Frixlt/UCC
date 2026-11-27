@@ -20,7 +20,7 @@ Hybrid Linux laptop control center: 10 Rust crates (`crates/`, MSRV `1.89`, Edit
 ## 2. Do Not Read / Do Not Edit (saves context tokens)
 
 - **Skip large generated/binary assets:** `Cargo.lock`, `flake.lock`, `screenshots/`, `icons/`, `nvidia_findings/*.txt`, `target/`, `artifacts/`.
-- **Legacy C++ (scheduled for deletion in M13.7+ — do NOT add features):** `uccd/src/*`, `uccd/inc/*`, `ucc-cli/*`, `ucc-tray/*` (retired per ADR-03), `ucc-session/*`, `ucc-gnome/*` (optional external GJS). Keep only `uccd/com.uniwill.uccd.{conf,policy,service}` and `uccd/uccd*.service`.
+- **Legacy C++ (scheduled for deletion in M13.7+ — do NOT add features):** `uccd/src/*`, `uccd/inc/*`, `ucc-cli/*`, `ucc-tray/*` (retired per ADR-03), `ucc-session/*`, `ucc-gnome/*` (optional external GJS). Keep only `uccd/com.uniwill.uccd.{conf,policy,service}`, `uccd/uccd*.service`, and `uccd/uccd.8`.
 
 ## 3. Hard Invariants (non-negotiable)
 

@@ -49,7 +49,7 @@ sudo apt-get update
 sudo apt-get install -y --no-install-recommends \
   debhelper cargo rustc cmake ninja-build g++ git pkgconf \
   nlohmann-json3-dev qt6-base-dev qt6-charts-dev qt6-svg-dev qt6-tools-dev \
-  libsystemd-dev libxrandr-dev libudev-dev libxcb1-dev dbus policykit-1
+  libsystemd-dev libxrandr-dev libudev-dev libxcb1-dev dbus polkitd
 ```
 
 **Fedora / RHEL** (соответствует `ucc.spec`):
@@ -153,7 +153,7 @@ make build
 | `BUILD_GUI` | `ON` | Сборка основного окна `ucc-gui` |
 | `BUILD_CLI` | `ON` | Сборка legacy C++ CLI (при `UCC_PACKAGE_RUST_RUNTIME=ON` и `BUILD_TESTS=OFF` пропускается) |
 | `BUILD_DESKTOP_TRAY` | `ON` | Поддержка `ucc-desktop-support` и установка `ucc-desktop-tray.desktop` |
-| `BUILD_TRAY` | `ON` | Устаревший Plasma-апплет (требует `ECM`/`KF6`/`Plasma`); для Rust runtime задавать `OFF` |
+| `BUILD_TRAY` | `OFF` | Устаревший Plasma-апплет (требует `ECM`/`KF6`/`Plasma`); отключён по умолчанию |
 | `BUILD_SESSION_AGENT` | `ON` | Установка `ucc-session-agent.desktop` (и C++-библиотеки для тестов) |
 | `BUILD_GNOME` | `ON` | Установка расширения GNOME Shell (`ucc@uniwill.com`) |
 | `BUILD_TESTS` | `OFF` | Включение CTest (`Qt6::Test`, C++/Python/GNOME/interop-тесты) |
@@ -188,8 +188,8 @@ cmake --build build-preview --target ucc-gui --parallel 2
 
 | Команда | Назначение |
 | --- | --- |
-| `cargo xtask dist [dest [bin-dir]]` | Стадирует полный Rust-комплект в `dest` (по умолчанию `target/dist`): 7 бинарников, man-страницу, completions, systemd/D-Bus/Polkit-файлы, симлинк `uccd-pre-sleep.service -> uccd-sleep.service`, а также `share/doc/ucc/RELEASE_MANIFEST.json` (SHA-256 всех бинарников) и CycloneDX 1.5 `share/doc/ucc/SBOM.json` |
-| `cargo xtask install-runtime <dest> <bin-dir>` | Устанавливает 7 Rust-бинарников в `<dest>/bin` и `<dest>/lib/ucc`, а также `ucc-cli.1` и shell completions (bash, zsh, fish). Используется в `PKGBUILD`, `debian/rules`, `ucc.spec`, `package.nix` |
+| `cargo xtask dist [dest [bin-dir]]` | Стадирует полный Rust-комплект в `dest` (по умолчанию `target/dist`): 7 бинарников, man-страницы (`ucc-cli.1`, `uccd.8`), completions, systemd/D-Bus/Polkit-файлы, симлинк `uccd-pre-sleep.service -> uccd-sleep.service`, а также `share/doc/ucc/RELEASE_MANIFEST.json` (SHA-256 всех бинарников) и CycloneDX 1.5 `share/doc/ucc/SBOM.json` |
+| `cargo xtask install-runtime <dest> <bin-dir>` | Устанавливает 7 Rust-бинарников в `<dest>/bin` и `<dest>/lib/ucc`, а также `ucc-cli.1`, `uccd.8` и shell completions (bash, zsh, fish). Используется в `PKGBUILD`, `debian/rules`, `ucc.spec`, `package.nix` |
 | `cargo xtask check-versions` | Проверяет строгое совпадение SemVer во всех 6 манифестах: `Cargo.toml`, `CMakeLists.txt`, `PKGBUILD`, `ucc.spec`, `package.nix`, `debian/changelog` |
 | `cargo xtask parser-check` | Проверяет паритет версий (6 манифестов), валидность и отсутствие дубликатов ключей в 11 служебных JSON-файлах, корректность CycloneDX SBOM и инварианты офлайн-импортёра в памяти |
 | `cargo xtask release <X.Y.Z[-pre]> [--dry-run]` | Обновляет версию во всех 6 манифестах (со сбросом `pkgrel=1` и `Release: 1%{?dist}`), при наличии `git-cliff` обновляет `CHANGELOG.md`; с `--dry-run` только выводит список проверяемых файлов |
@@ -316,6 +316,7 @@ sudo systemctl enable uccd-sleep.service
 | `/usr/share/applications/ucc-gui.desktop` | Ярлык приложения `ucc-gui` |
 | `/usr/share/icons/hicolor/{scalable,16x16..128x128}/apps/ucc-{gui,tray}.{svg,png}` | Иконки GUI и трея |
 | `/usr/share/man/man1/ucc-cli.1` | Man-страница CLI |
+| `/usr/share/man/man8/uccd.8` | Man-страница демона `uccd` |
 | `/usr/share/bash-completion/completions/ucc-cli` | Автодополнение Bash |
 | `/usr/share/zsh/site-functions/_ucc-cli` | Автодополнение Zsh |
 | `/usr/share/fish/vendor_completions.d/ucc-cli.fish` | Автодополнение Fish |

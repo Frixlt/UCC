@@ -55,11 +55,12 @@ add_compile_options(
   -Wpedantic
 )
 
-if(CMAKE_BUILD_TYPE STREQUAL "DEBUG")
+string(TOUPPER "${CMAKE_BUILD_TYPE}" _ucc_build_type_upper)
+if(_ucc_build_type_upper STREQUAL "DEBUG")
   add_compile_options(-O0 -g3)
-elseif(CMAKE_BUILD_TYPE STREQUAL "RELEASE")
+elseif(_ucc_build_type_upper STREQUAL "RELEASE")
   add_compile_options(-O3)
-elseif(CMAKE_BUILD_TYPE STREQUAL "RELWITHDEBINFO")
+elseif(_ucc_build_type_upper STREQUAL "RELWITHDEBINFO")
   add_compile_options(-O2 -g)
 endif()
 

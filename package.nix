@@ -118,6 +118,7 @@ stdenv.mkDerivation {
     substituteInPlace "$out/lib/systemd/system/uccd-sleep.service" \
       --replace-fail "/usr/lib/ucc/ucc-sleep" "$out/lib/ucc/ucc-sleep" \
       --replace-fail "[Service]" "$(printf '[Service]\nEnvironment=UCC_SYSTEMCTL=%s/bin/systemctl' "${systemd}")"
+    ln -sfn uccd-sleep.service "$out/lib/systemd/system/uccd-pre-sleep.service"
 
     if [ -f "$out/lib/systemd/system/uccd.service" ]; then
       if ! grep -q '^Type=dbus$' "$out/lib/systemd/system/uccd.service"; then

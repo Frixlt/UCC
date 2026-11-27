@@ -613,3 +613,275 @@ fn parser_check_rejects_duplicate_json_keys_and_passes_on_repo() {
     assert_eq!(report.json_files_checked, 11);
     assert!(report.importer_self_test);
 }
+
+#[test]
+fn deployment_rejects_path_traversal_and_symlinks_and_installs_private_package_copy() {
+    let tmp = TempDir::new().unwrap();
+    let root = tmp.path().join("sysroot");
+    fs::create_dir_all(root.join("etc/tcc")).unwrap();
+    fs::write(root.join("etc/tcc/settings"), b"{}").unwrap();
+
+    let outside_file = tmp.path().join("outside-secret.json");
+    fs::write(&outside_file, b"{\"secret\":true}").unwrap();
+    let outside_sha = sha256_hex(b"{\"secret\":true}");
+
+    let pkg_bytes = b"pkg-payload-v2";
+    let pkg_name = "ucc-rusted-0.0.1-1-x86_64.pkg.tar.zst";
+
+    // 1) Reject `..` path traversal in deployment.json inputs.
+    let traversal_bundle = tmp.path().join("bundle-traversal");
+    fs::create_dir_all(&traversal_bundle).unwrap();
+    fs::write(traversal_bundle.join(pkg_name), pkg_bytes).unwrap();
+    fs::write(
+        traversal_bundle.join("deployment.json"),
+        serde_json::to_string_pretty(&json!({
+            "package": pkg_name,
+            "packageSha256": sha256_hex(pkg_bytes),
+            "inputs": [{ "path": "/../outside-secret.json", "sha256": outside_sha }]
+        }))
+        .unwrap(),
+    )
+    .unwrap();
+    let runner = RecordingRunner::default();
+    let mgr = DeploymentManager::new(&traversal_bundle, &root, &runner);
+    let err = mgr.verify_bundle().unwrap_err();
+    assert!(
+        err.contains("traversal") || err.contains("invalid component"),
+        "expected path traversal rejection, got: {err}"
+    );
+
+    // 2) Reject symlink file and symlink ancestor directory escaping root.
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::symlink;
+
+        let sym_input = root.join("home/user/linked.json");
+        fs::create_dir_all(sym_input.parent().unwrap()).unwrap();
+        symlink(&outside_file, &sym_input).unwrap();
+
+        let sym_bundle = tmp.path().join("bundle-symlink-file");
+        fs::create_dir_all(&sym_bundle).unwrap();
+        fs::write(sym_bundle.join(pkg_name), pkg_bytes).unwrap();
+        fs::write(
+            sym_bundle.join("deployment.json"),
+            serde_json::to_string_pretty(&json!({
+                "package": pkg_name,
+                "packageSha256": sha256_hex(pkg_bytes),
+                "inputs": [{ "path": "/home/user/linked.json", "sha256": outside_sha }]
+            }))
+            .unwrap(),
+        )
+        .unwrap();
+        let sym_mgr = DeploymentManager::new(&sym_bundle, &root, &runner);
+        let sym_err = sym_mgr.verify_bundle().unwrap_err();
+        assert!(
+            sym_err.contains("symlink"),
+            "expected symlink file rejection, got: {sym_err}"
+        );
+
+        let outside_dir = tmp.path().join("outside-dir");
+        fs::create_dir_all(&outside_dir).unwrap();
+        fs::write(outside_dir.join("cfg.json"), b"{\"secret\":true}").unwrap();
+        symlink(&outside_dir, root.join("home/escape")).unwrap();
+
+        let dir_sym_bundle = tmp.path().join("bundle-symlink-dir");
+        fs::create_dir_all(&dir_sym_bundle).unwrap();
+        fs::write(dir_sym_bundle.join(pkg_name), pkg_bytes).unwrap();
+        fs::write(
+            dir_sym_bundle.join("deployment.json"),
+            serde_json::to_string_pretty(&json!({
+                "package": pkg_name,
+                "packageSha256": sha256_hex(pkg_bytes),
+                "inputs": [{ "path": "/home/escape/cfg.json", "sha256": outside_sha }]
+            }))
+            .unwrap(),
+        )
+        .unwrap();
+        let dir_sym_mgr = DeploymentManager::new(&dir_sym_bundle, &root, &runner);
+        let dir_sym_err = dir_sym_mgr.verify_bundle().unwrap_err();
+        assert!(
+            dir_sym_err.contains("symlink"),
+            "expected symlink ancestor rejection, got: {dir_sym_err}"
+        );
+    }
+
+    // 3) Verify install() copies package into private 0700 backup dir and passes that copy to pacman -U.
+    let valid_input = root.join("home/user/valid.json");
+    fs::create_dir_all(valid_input.parent().unwrap()).unwrap();
+    fs::write(&valid_input, b"{\"valid\":true}").unwrap();
+    let valid_sha = sha256_hex(b"{\"valid\":true}");
+
+    let bundle = tmp.path().join("bundle-private-copy");
+    fs::create_dir_all(&bundle).unwrap();
+    fs::write(bundle.join(pkg_name), pkg_bytes).unwrap();
+    fs::write(bundle.join("capabilities.json"), b"{}").unwrap();
+    fs::write(
+        bundle.join("deployment.json"),
+        serde_json::to_string_pretty(&json!({
+            "package": pkg_name,
+            "packageSha256": sha256_hex(pkg_bytes),
+            "inputs": [{ "path": "/home/user/valid.json", "sha256": valid_sha }]
+        }))
+        .unwrap(),
+    )
+    .unwrap();
+
+    let install_runner = RecordingRunner::default();
+    install_runner.push_reply("pacman", CmdOutput::fail(1, "not installed")); // -Q check
+    for _ in 0..5 {
+        install_runner.push_reply("systemctl", CmdOutput::ok("active\n"));
+        install_runner.push_reply("systemctl", CmdOutput::ok("enabled\n"));
+    }
+    install_runner.push_reply("pacman", CmdOutput::ok("installed")); // -U
+    install_runner.push_reply("/usr/lib/ucc/ucc-import-check", CmdOutput::ok(""));
+    install_runner.push_reply("systemd-analyze", CmdOutput::ok(""));
+    for _ in 0..7 {
+        install_runner.push_reply("systemctl", CmdOutput::ok(""));
+    }
+    install_runner.push_reply("busctl", CmdOutput::ok("b true\n"));
+    install_runner.push_reply(
+        "ucc-cli",
+        CmdOutput::ok(r#"{"current_mode":"ac","manual_mode":null}"#),
+    );
+    install_runner.push_reply("systemctl", CmdOutput::ok("active\n"));
+    install_runner.push_reply(
+        "ucc-cli",
+        CmdOutput::ok(r#"{"current_mode":"ac","manual_mode":"Balanced"}"#),
+    );
+    install_runner.push_reply("/usr/lib/ucc/ucc-sleep", CmdOutput::ok(""));
+    install_runner.push_reply("/usr/lib/ucc/ucc-sleep", CmdOutput::ok(""));
+    install_runner.push_reply("busctl", CmdOutput::ok("b true\n"));
+    install_runner.push_reply(
+        "ucc-cli",
+        CmdOutput::ok(r#"{"current_mode":"ac","manual_mode":"Balanced"}"#),
+    );
+    install_runner.push_reply("systemctl", CmdOutput::ok("active\n"));
+    install_runner.push_reply(
+        "ucc-cli",
+        CmdOutput::ok(r#"{"current_mode":"ac","manual_mode":"Balanced"}"#),
+    );
+
+    let mut install_mgr = DeploymentManager::new(&bundle, &root, &install_runner);
+    let backup = install_mgr.install().expect("install succeeds");
+
+    let expected_private_pkg = backup.join(pkg_name);
+    assert!(
+        expected_private_pkg.is_file(),
+        "private package copy must exist inside backup dir"
+    );
+    assert_eq!(fs::read(&expected_private_pkg).unwrap(), pkg_bytes);
+
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        let backup_mode = fs::metadata(&backup).unwrap().permissions().mode() & 0o777;
+        assert_eq!(backup_mode, 0o700, "backup dir must be mode 0700");
+        let pkg_mode = fs::metadata(&expected_private_pkg)
+            .unwrap()
+            .permissions()
+            .mode()
+            & 0o777;
+        assert_eq!(pkg_mode, 0o600, "private package copy must be mode 0600");
+    }
+
+    let pacman_u = install_runner
+        .calls()
+        .into_iter()
+        .find(|(prog, args, _)| prog == "pacman" && args.first().map(String::as_str) == Some("-U"))
+        .expect("pacman -U call recorded");
+    assert_eq!(
+        pacman_u.1,
+        vec![
+            "-U".to_string(),
+            "--noconfirm".to_string(),
+            expected_private_pkg.display().to_string(),
+        ],
+        "pacman -U must install from the private 0700 backup copy, not the untrusted bundle"
+    );
+}
+
+#[test]
+fn prepare_deployment_uses_offline_manifest_and_rust_import_check_fallback() {
+    let tmp = TempDir::new().unwrap();
+    let (data, tcc_dir, tcc_archive, sysfs_leds, build_dir, normal_tests, preview_tests) =
+        write_sample_inputs(tmp.path());
+    // Remove C++ ucc-import-check to exercise Rust fallback.
+    fs::remove_file(build_dir.join("bin/ucc-import-check")).unwrap();
+
+    let repo_root = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .parent()
+        .unwrap()
+        .parent()
+        .unwrap()
+        .to_path_buf();
+
+    let runner = RecordingRunner {
+        on_call: Some(Box::new(|prog, args, envs| match prog {
+            "cmake" => {
+                let dest = envs
+                    .iter()
+                    .find(|(k, _)| *k == "DESTDIR")
+                    .map(|(_, v)| PathBuf::from(v))
+                    .unwrap();
+                fs::create_dir_all(dest.join("usr/bin")).unwrap();
+                fs::write(dest.join("usr/bin/uccd"), b"elf").unwrap();
+                Some(CmdOutput::ok("installed"))
+            }
+            "git" => {
+                if args.iter().any(|a| a == "rev-parse") {
+                    Some(CmdOutput::ok("deadbeefcafebabe\n"))
+                } else {
+                    Some(CmdOutput::ok("42\n"))
+                }
+            }
+            "bsdtar" => {
+                let pkg_idx = args.iter().position(|a| a == "--file").unwrap() + 1;
+                fs::write(&args[pkg_idx], b"fake-zstd-pkg").unwrap();
+                Some(CmdOutput::ok(""))
+            }
+            "pacman" => Some(CmdOutput::ok("Name : ucc-rusted\n")),
+            _ => Some(CmdOutput::ok("")),
+        })),
+        ..Default::default()
+    };
+
+    let bundle_dir = tmp.path().join("bundle-rust-fallback");
+    let args = PrepareDeploymentArgs {
+        build_dir,
+        data_dir: data,
+        tcc_dir,
+        tcc_archive,
+        normal_tests,
+        preview_tests,
+        sysfs_leds,
+        allow_gui_audit_failure: false,
+        output_dir: bundle_dir,
+    };
+    prepare_deployment(&args, &repo_root, &runner, true).unwrap();
+
+    let calls = runner.calls();
+    let import_call = calls
+        .iter()
+        .find(|(prog, _, _)| prog.ends_with("ucc-import-check"))
+        .expect("ucc-import-check call recorded");
+    assert!(
+        !import_call.0.contains("/build/bin/ucc-import-check"),
+        "expected Rust ucc-import-check fallback, got: {}",
+        import_call.0
+    );
+
+    let cargo_call = calls
+        .iter()
+        .find(|(prog, _, _)| prog == "cargo")
+        .expect("cargo run call recorded");
+    assert!(
+        cargo_call.1.contains(&"--manifest-path".to_string()),
+        "cargo run must pass --manifest-path: {:?}",
+        cargo_call.1
+    );
+    assert!(
+        cargo_call.1.contains(&"--offline".to_string()),
+        "cargo run must pass --offline: {:?}",
+        cargo_call.1
+    );
+}
