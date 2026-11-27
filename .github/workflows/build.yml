@@ -26,9 +26,12 @@ jobs:
         uses: dtolnay/rust-toolchain@master
         with:
           toolchain: ${{ matrix.rust }}
-          components: clippy
+          components: clippy, rustfmt
       - name: Check manifest version parity
         run: cargo run -p xtask --locked -- check-versions
+      - name: Format check
+        if: matrix.rust == '1.99.1'
+        run: cargo fmt --all -- --check
       - name: Clippy
         if: matrix.rust == '1.99.1'
         run: cargo clippy --workspace --all-targets --locked -- -D warnings
@@ -127,7 +130,7 @@ jobs:
         working-directory: build
         run: |
           runuser -u ucc-ci -- env UCC_INTEROP_DAEMON_BIN="$GITHUB_WORKSPACE/ci-interop/interop_daemon" \
-            ctest --output-on-failure --parallel 1 -E '^test_gui_audit$'
+            ctest --output-on-failure --parallel 2
 
       - name: Verify standalone packaged Rust runtime build (BUILD_TRAY=OFF)
         if: matrix.build_type == 'RelWithDebInfo'
@@ -140,16 +143,7 @@ jobs:
           runuser -u ucc-ci -- cmake --build build-rust-runtime --parallel 2
           ! runuser -u ucc-ci -- ldd build-rust-runtime/bin/ucc-gui | grep -q 'not found'
           runuser -u ucc-ci -- env UCC_INTEROP_DAEMON_BIN="$GITHUB_WORKSPACE/ci-interop/interop_daemon" \
-            ctest --test-dir build-rust-runtime --output-on-failure --parallel 1 -E '^test_gui_audit$'
-
-      - name: Run focused GUI checks
-        run: |
-          runuser -u ucc-ci -- dbus-run-session -- bash tests/run_gui_audit_test.sh \
-            "$PWD/build/bin/test_gui_audit" \
-            displayBrightnessCommitsOnReleaseAndIgnoresMonitorDuringDrag \
-            dashboardShowsDriverFailureAndClearsAfterRecovery \
-            aboutBuildCreditsAndBundledLicense calibratedKeyboardKeepsPhysicalLedIdentities \
-            lightbarKeepsSourceValuesAndRejectsFailedCommands deviceMatrixKeepsThreeIndependentModes
+            ctest --test-dir build-rust-runtime --output-on-failure --parallel 2
 
       - name: Capture current GUI pages on an isolated bus
         run: runuser -u ucc-ci -- python3 contrib/frixit/capture-gallery.py --build build --output artifacts/ci-gallery

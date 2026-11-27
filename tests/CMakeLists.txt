@@ -86,7 +86,21 @@ if(TARGET ucc-session-support AND DBUS_RUN_SESSION_EXECUTABLE)
   add_test(NAME test_driver_alert COMMAND ${DBUS_RUN_SESSION_EXECUTABLE} -- bash ${CMAKE_CURRENT_SOURCE_DIR}/run_gui_audit_test.sh $<TARGET_FILE:test_driver_alert>)
   add_executable(test_refresh_advisor test_refresh_advisor.cpp)
   target_link_libraries(test_refresh_advisor PRIVATE ucc-session-support Qt6::Test)
-  add_test(NAME test_refresh_advisor COMMAND ${DBUS_RUN_SESSION_EXECUTABLE} -- bash ${CMAKE_CURRENT_SOURCE_DIR}/run_gui_audit_test.sh $<TARGET_FILE:test_refresh_advisor>)
+  add_test(NAME test_refresh_advisor_modes COMMAND ${DBUS_RUN_SESSION_EXECUTABLE} -- bash ${CMAKE_CURRENT_SOURCE_DIR}/run_gui_audit_test.sh $<TARGET_FILE:test_refresh_advisor>
+    modesKeepResolutionAndDiscoverNvidia
+    initialAndManualModesDoNotPrompt
+    profilesAutomaticallyApplyTheirOwnRateWithoutOffersEnabled
+    disabledProfileAndMissingProfileDoNotCancelPowerOffers
+    hyprlandOffersActualModeAndAppliesAfterConsent
+    hyprlandRestoresProfileWhenInternalPanelBecomesReady
+    powerNotificationsFollowPhysicalSourceOnAnyDesktop)
+  add_test(NAME test_refresh_advisor_lifecycle COMMAND ${DBUS_RUN_SESSION_EXECUTABLE} -- bash ${CMAKE_CURRENT_SOURCE_DIR}/run_gui_audit_test.sh $<TARGET_FILE:test_refresh_advisor>
+    appliesOnlyAfterActionAndVerifies
+    changedDisplayDiscardsConsent
+    successfulCommandWithoutModeChangeIsReportedAsFailure
+    sourceChangeAndSleepInvalidateActions
+    disabledOrPreviewNeverExecutes
+    loginSleepSignalsReachSessionAgent)
 endif()
 find_program(NODE_EXECUTABLE node)
 if(GJS_EXECUTABLE AND DBUS_RUN_SESSION_EXECUTABLE)
@@ -105,7 +119,7 @@ if(DBUS_RUN_SESSION_EXECUTABLE AND BUILD_GUI)
   target_link_libraries(test_fan_curve_editor PRIVATE Qt6::Widgets Qt6::Test)
   add_test(NAME test_fan_curve_editor COMMAND test_fan_curve_editor)
   set_tests_properties(test_fan_curve_editor PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
-  add_executable(test_gui_audit test_gui_audit.cpp
+  set(UCC_GUI_AUDIT_SOURCES
     ../ucc-gui/inc/CpuCoreSelectionWidget.hpp
     ../ucc-gui/src/FanControlTab.cpp ../ucc-gui/inc/FanControlTab.hpp
     ../ucc-gui/src/FanCurveEditorWidget.cpp ../ucc-gui/inc/FanCurveEditorWidget.hpp
@@ -113,8 +127,7 @@ if(DBUS_RUN_SESSION_EXECUTABLE AND BUILD_GUI)
     ../ucc-gui/src/ProfileManager.cpp ../ucc-gui/inc/ProfileManager.hpp
     ../ucc-gui/src/SystemMonitor.cpp ../ucc-gui/inc/SystemMonitor.hpp
     ../ucc-gui/src/DashboardTab.cpp ../ucc-gui/inc/DashboardTab.hpp
-    ../ucc-gui/src/MonitorTab.cpp ../ucc-gui/inc/MonitorTab.hpp)
-  target_sources(test_gui_audit PRIVATE
+    ../ucc-gui/src/MonitorTab.cpp ../ucc-gui/inc/MonitorTab.hpp
     ../ucc-gui/resources/fluent.qrc
     ../ucc-gui/resources/legal.qrc
     ../ucc-gui/src/AboutPage.cpp ../ucc-gui/inc/AboutPage.hpp
@@ -130,22 +143,85 @@ if(DBUS_RUN_SESSION_EXECUTABLE AND BUILD_GUI)
     ../ucc-gui/src/KeyboardVisualizerWidget.cpp ../ucc-gui/inc/KeyboardVisualizerWidget.hpp
     ../ucc-gui/src/HardwareTab.cpp ../ucc-gui/inc/HardwareTab.hpp
     ../ucc-gui/src/AssignKeyZones.cpp ../ucc-gui/src/DetectLayout.cpp)
+  add_executable(test_gui_audit test_gui_audit.cpp ${UCC_GUI_AUDIT_SOURCES})
   target_include_directories(test_gui_audit PRIVATE ../ucc-gui/inc ../include)
   target_link_libraries(test_gui_audit PRIVATE ucc-desktop-tray-support ucc-dbus Qt6::Widgets Qt6::Charts Qt6::Test)
   if(TARGET PkgConfig::UCC_XCB)
     target_link_libraries(test_gui_audit PRIVATE PkgConfig::UCC_XCB)
     target_compile_definitions(test_gui_audit PRIVATE UCC_HAS_X11_BLUR)
   endif()
-  add_test(NAME test_gui_audit COMMAND ${DBUS_RUN_SESSION_EXECUTABLE} -- bash ${CMAKE_CURRENT_SOURCE_DIR}/run_gui_audit_test.sh $<TARGET_FILE:test_gui_audit>)
+  add_dependencies(test_gui_audit ucc-gui)
+  add_test(NAME test_gui_audit_profiles_cpu COMMAND ${DBUS_RUN_SESSION_EXECUTABLE} -- bash ${CMAKE_CURRENT_SOURCE_DIR}/run_gui_audit_test.sh $<TARGET_FILE:test_gui_audit>
+    desktopPreferenceImportDoesNotContactTheDaemon
+    profileRefreshRateSavesAndChargingLivesOutsideProfiles
+    individualCpuSelectionSavesIdsAndPreservesKernelLockedCpu
+    profilesUseOneCompactSelector
+    profilePayloadPreservesManualWaterCoolerValues
+    batterySettingsRaisesWindowSetsEndBeforeStart
+    fanControlPumpComboFindsDiscreteIntCodes
+    displayBrightnessCommitsOnReleaseAndIgnoresMonitorDuringDrag)
+  add_test(NAME test_gui_audit_dashboard_cooling COMMAND ${DBUS_RUN_SESSION_EXECUTABLE} -- bash ${CMAKE_CURRENT_SOURCE_DIR}/run_gui_audit_test.sh $<TARGET_FILE:test_gui_audit>
+    dashboardWaterCoolerSelectors
+    dashboardSelectionsApplyImmediatelyFromAuto
+    displayingManualControlsMustNotStopCooling
+    waterPollingIsAsyncAndPreservesValuesOnFailure
+    dashboardBoundsOverlappingReads
+    dashboardShowsDriverFailureAndClearsAfterRecovery
+    powerPolicySignalReachesClientWithoutPolling)
+  add_test(NAME test_gui_audit_lighting_devices COMMAND ${DBUS_RUN_SESSION_EXECUTABLE} -- bash ${CMAKE_CURRENT_SOURCE_DIR}/run_gui_audit_test.sh $<TARGET_FILE:test_gui_audit>
+    standaloneTrayShowsModesAndHonorsCommandFailures
+    batteryAndProcessPageStaysReadOnlyUntilConfirmed
+    sessionAgentRelaysOnlyNotificationEvents
+    lightbarKeepsSourceValuesAndRejectsFailedCommands
+    calibratedKeyboardKeepsPhysicalLedIdentities
+    sparseKeyboardZonesKeepSavedPhysicalIndices
+    deviceMatrixKeepsThreeIndependentModes
+    rejectedPolicyCommandsAreNotReportedAsSuccessful)
+  add_test(NAME test_gui_audit_monitor_theme COMMAND ${DBUS_RUN_SESSION_EXECUTABLE} -- bash ${CMAKE_CURRENT_SOURCE_DIR}/run_gui_audit_test.sh $<TARGET_FILE:test_gui_audit>
+    themeCycleAndAutomaticScheme
+    themeChangesPreserveTelemetryAndKeyboardColors
+    chartBoundsOverlappingReadsAndHonorsPause
+    monitorScrollsBetweenFetchesAndFreezesOnPause
+    sidebarNavigationPreservesPages
+    overviewRowsAlignWithExtraGpuMetadata
+    monitorPowerAxisUsesLaptopRange
+    pageEntranceFinishesAfterRapidNavigation
+    pageEntranceUsesCurrentThemeCanvas
+    entranceCanBeDisabledAndPreservesEditorFocus)
+  add_test(NAME test_gui_audit_preview_gallery COMMAND ${DBUS_RUN_SESSION_EXECUTABLE} -- bash ${CMAKE_CURRENT_SOURCE_DIR}/run_gui_audit_test.sh $<TARGET_FILE:test_gui_audit>
+    aboutLoggingPreferenceAndFolderAction
+    aboutBuildCreditsAndBundledLicense
+    notificationHistoryAndReadControls
+    renderReleaseGallery
+    renderReferencePages
+    keyboardSelectionDoesNotChangeBacklight
+    previewMustNotSaveLocalMonitorPreferences
+    previewMustBlockEveryWritePath)
   add_executable(test_gui_instance test_gui_instance.cpp
     ../ucc-gui/src/GuiInstance.cpp ../ucc-gui/inc/GuiInstance.hpp)
+  add_dependencies(test_gui_instance ucc-gui)
   if(UCC_READ_ONLY_PREVIEW)
     target_compile_definitions(test_gui_instance PRIVATE UCC_READ_ONLY_PREVIEW)
+  endif()
+  if(UCC_PACKAGE_RUST_RUNTIME)
+    target_compile_definitions(test_gui_instance PRIVATE UCC_PACKAGE_RUST_RUNTIME)
   endif()
   target_include_directories(test_gui_instance PRIVATE ../ucc-gui/inc)
   target_link_libraries(test_gui_instance PRIVATE Qt6::Widgets Qt6::DBus Qt6::Test ucc-window-activation)
   add_test(NAME test_gui_instance COMMAND ${DBUS_RUN_SESSION_EXECUTABLE} -- $<TARGET_FILE:test_gui_instance>)
   set_tests_properties(test_gui_instance PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
+
+  add_executable(test_gui_rust_e2e test_gui_rust_e2e.cpp ${UCC_GUI_AUDIT_SOURCES})
+  target_include_directories(test_gui_rust_e2e PRIVATE ../ucc-gui/inc ../include ../libucc-dbus)
+  target_link_libraries(test_gui_rust_e2e PRIVATE ucc-desktop-support ucc-dbus Qt6::Widgets Qt6::Charts Qt6::Test ucc-window-activation)
+  if(TARGET PkgConfig::UCC_XCB)
+    target_link_libraries(test_gui_rust_e2e PRIVATE PkgConfig::UCC_XCB)
+    target_compile_definitions(test_gui_rust_e2e PRIVATE UCC_HAS_X11_BLUR)
+  endif()
+  add_test(
+    NAME test_gui_rust_e2e
+    COMMAND ${DBUS_RUN_SESSION_EXECUTABLE} -- bash ${CMAKE_CURRENT_SOURCE_DIR}/run_rust_interop_test.sh $<TARGET_FILE:test_gui_rust_e2e> ${CMAKE_SOURCE_DIR}
+  )
   add_executable(test_system_monitor test_system_monitor.cpp
     ../ucc-gui/src/SystemMonitor.cpp ../ucc-gui/inc/SystemMonitor.hpp)
   add_dependencies(test_system_monitor ucc-gui)
