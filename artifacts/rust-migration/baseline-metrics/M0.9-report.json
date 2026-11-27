@@ -52,10 +52,43 @@
       "uccd_legacy_pid_420936": 11632640,
       "ucc_desktop_tray_legacy_pid_3283": 14757888,
       "ucc_session_agent_legacy_pid_197874": 6660096
+    },
+    "live_hyprland_ui_metrics": {
+      "compositor": "Hyprland (wayland-1)",
+      "platform_theme": "qt6ct",
+      "preview_scale_1_25": {
+        "map_latency_ms": 404.8,
+        "window_size_px": [1600, 1125],
+        "rss_mib": 161.1,
+        "nvidia_dev_fds": 0,
+        "xdg_activation_focus_verified": true
+      },
+      "preview_scale_2_0": {
+        "map_latency_ms": 540.3,
+        "window_size_px": [2560, 1800],
+        "rss_mib": 200.5,
+        "nvidia_dev_fds": 0
+      }
+    },
+    "rust_runtime_metrics": {
+      "sample_window_seconds": 5,
+      "uccd_interop_rss_bytes": 22962176,
+      "uccd_interop_wakeups_per_s": 0.0,
+      "ucc_desktop_tray_rss_bytes": 7667712,
+      "ucc_desktop_tray_wakeups_per_s": 1.0,
+      "ucc_session_agent_rss_bytes": 7557120,
+      "ucc_session_agent_wakeups_per_s": 0.4,
+      "release_binaries_bytes": {
+        "uccd": 13527800,
+        "ucc-cli": 8169808,
+        "ucc-desktop-tray": 8942736,
+        "ucc-session-agent": 8000632,
+        "ucc-hardware": 1280544,
+        "ucc-sleep": 6093752,
+        "ucc-import-check": 1871816
+      }
     }
   },
-  "pending_measurements": {
-    "ui_frame_latency_ms": "requires live Wayland/Hyprland compositor frame capture on physical host"
-  },
-  "notes": "Live non-root /proc/<pid>/status RSS and context-switch wakeups captured for active baseline daemons over 5s; compositor UI frame latency remains pending."
+  "pending_measurements": {},
+  "notes": "Live non-root /proc/<pid>/status RSS, 5s wakeups, release Rust footprint, and real Hyprland Wayland UI map latencies (1.25x and 2.0x) captured cleanly."
 }

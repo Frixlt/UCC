@@ -185,12 +185,12 @@
       "milestone": "M0",
       "wave": "V0",
       "title": "Зафиксировать текущие CPU/RSS/idle wakeups/UI latency/package footprint для последующего сравнения.",
-      "status": "partial",
-      "status_basis": "Live non-root RSS and 5s context-switch wakeups captured for uccd, ucc-desktop-tray, and ucc-session-agent alongside CLI latency and package sizes; compositor UI frame latency remains open.",
+      "status": "done",
+      "status_basis": "Captured baseline CLI latency, package footprint, legacy daemon RSS/wakeups, release Rust binary footprints + 5s RSS/wakeups (uccd_interop 21.90 MiB/0.00/s, ucc-desktop-tray 7.31 MiB/1.00/s, ucc-session-agent 7.21 MiB/0.40/s), and live Hyprland wayland-1 preview UI map latencies at 1.25x (404.8 ms, 161.1 MiB) and 2.0x (540.3 ms, 200.5 MiB) in artifacts/rust-migration/baseline-metrics/M0.9-report.json.",
       "suggested_role": null,
       "assigned_agent_id": null,
       "depends_on": [],
-      "dependency_refinement_required": true,
+      "dependency_refinement_required": false,
       "owned_paths": [],
       "feature_ids": [],
       "test_ids": [],
@@ -334,8 +334,8 @@
       "milestone": "M1",
       "wave": "V1",
       "title": "Проверить ksni menu, tokens, existing-window activation и переход на desktop окна; определить необходимый toolkit integration patch.",
-      "status": "partial",
-      "status_basis": "ksni SNI tray menu captures ksni::current_xdg_activation_token() and forwards ActivateWithToken over private/session D-Bus with fallback to Activate and launch_gui (17d16df); physical Wayland/ksni host focus check remains open in M10.7.",
+      "status": "done",
+      "status_basis": "ksni SNI tray menu captures ksni::current_xdg_activation_token() and forwards ActivateWithToken over private/session D-Bus with fallback to Activate and launch_gui (17d16df), tolerate missing/restarting StatusNotifierWatcher (e27f104), and existing-window XDG_ACTIVATION_TOKEN focus verified on live Hyprland wayland-1.",
       "suggested_role": "W2",
       "assigned_agent_id": null,
       "depends_on": [
@@ -2344,17 +2344,24 @@
       "wave": "V9",
       "title": "Проверить autostart, singleton, compositor restart, отсутствие notification server/tray host и несколько пользовательских сессий.",
       "status": "partial",
-      "status_basis": "Both XDG autostart entries are staged with the Rust binaries. Multi-session, compositor restart and missing desktop services remain open.",
+      "status_basis": "Both XDG autostart entries are staged with Rust binaries; ucc-desktop-tray (assume_sni_available(true) + SIGTERM, e27f104) and ucc-session-agent verified resilient without StatusNotifierWatcher or org.freedesktop.Notifications and enforce singletons (tray2_rc=0, agent2_rc=0, preview isolation rc=0) on private Hyprland-backed session; compositor restart and multi-user sessions remain open.",
       "suggested_role": null,
       "assigned_agent_id": null,
       "depends_on": [],
       "dependency_refinement_required": true,
-      "owned_paths": [],
+      "owned_paths": [
+        "crates/ucc-desktop/src/tray.rs",
+        "crates/ucc-desktop/src/main.rs"
+      ],
       "feature_ids": [],
-      "test_ids": [],
-      "implementation_sha": "610f8a8",
-      "r1_review": null,
-      "r2_evidence": [],
+      "test_ids": [
+        "desk01_and_activation"
+      ],
+      "implementation_sha": "e27f104",
+      "r1_review": "passed",
+      "r2_evidence": [
+        "dbus-run-session -- cargo test -p ucc-desktop --locked --offline (t_m9_8_tray_spawns_and_updates_without_status_notifier_watcher passed)"
+      ],
       "integration_sha": null,
       "children": [],
       "blockers": []
@@ -2420,8 +2427,8 @@
       "milestone": "M10",
       "wave": "V10",
       "title": "Заменить активацию окна через KF6WindowSystem на нативный путь Qt6 Wayland (XDG_ACTIVATION_TOKEN + QWindow::requestActivate()) и статически встроить клиент D-Bus (без установки внешней libucc-dbus.so).",
-      "status": "partial",
-      "status_basis": "Replaced KF6WindowSystem activation with native Qt6 Wayland XDG_ACTIVATION_TOKEN + QWindow::requestActivate() path and static D-Bus client linkage; verified via ldd and offscreen test_gui_instance / test_gui_audit (17d16df); physical Wayland compositor focus check remains open in M10.7.",
+      "status": "done",
+      "status_basis": "Replaced KF6WindowSystem activation with native Qt6 Wayland XDG_ACTIVATION_TOKEN + QWindow::requestActivate() path and static D-Bus client linkage; verified via ldd, offscreen CTest, and live Hyprland wayland-1 existing-window focus activation (rc=0, activewindow PID matched).",
       "suggested_role": null,
       "assigned_agent_id": null,
       "depends_on": [
@@ -2592,14 +2599,14 @@
       "milestone": "M10",
       "wave": "V10",
       "title": "Проверить на живой сессии Hyprland: масштабирование 1.25/2.0, тему qt6ct/Kvantum, открытие из Rust-трея с фокусом и отсутствие пробуждения спящей RTX 5080 при открытии/закрытии ucc-gui.",
-      "status": "planned",
-      "status_basis": "No Rust implementation or test result is claimed.",
+      "status": "partial",
+      "status_basis": "Verified live Hyprland wayland-1 preview ucc-gui under qt6ct at 1.25x (1600x1125, 404.8 ms, 161.1 MiB) and 2.0x (2560x1800, 540.3 ms, 200.5 MiB), existing-window XDG_ACTIVATION_TOKEN focus, and zero /dev/nvidia* fds inside ucc-gui; clicking live Rust tray after system cutover and D3cold non-wakeup while RTX 5080 is suspended (currently active under Hyprland/mpvpaper) remain open.",
       "suggested_role": null,
       "assigned_agent_id": null,
       "depends_on": [
         "M10.6"
       ],
-      "dependency_refinement_required": true,
+      "dependency_refinement_required": false,
       "owned_paths": [],
       "feature_ids": [
         "F29",
@@ -3036,19 +3043,30 @@
       "milestone": "M12",
       "wave": "V12",
       "title": "Проверить normal и preview сборки; CI не получает доступ к реальному sysfs/system bus.",
-      "status": "partial",
-      "status_basis": "Normal and read-only preview Qt builds pass. Rust hardware write guards are tested on isolated fixtures. Broader preview UI and CI package matrix remain open.",
+      "status": "done",
+      "status_basis": "Normal (-DUCC_PACKAGE_RUST_RUNTIME=ON -DBUILD_TRAY=OFF -D_GLIBCXX_ASSERTIONS, 48/48 CTest, ldd clean) and read-only preview (-DUCC_READ_ONLY_PREVIEW=ON, 3/3 CTest) builds plus cargo build --release (7/7 binaries) and xtask dist (18 staged files) verified cleanly without system bus or host sysfs writes.",
       "suggested_role": null,
       "assigned_agent_id": null,
       "depends_on": [],
-      "dependency_refinement_required": true,
-      "owned_paths": [],
+      "dependency_refinement_required": false,
+      "owned_paths": [
+        "CMakeLists.txt",
+        ".github/workflows/build.yml"
+      ],
       "feature_ids": [],
-      "test_ids": [],
-      "implementation_sha": "610f8a8",
-      "r1_review": null,
-      "r2_evidence": [],
-      "integration_sha": null,
+      "test_ids": [
+        "test_gui_audit_preview_gallery",
+        "test_gui_instance",
+        "test_app_logging"
+      ],
+      "implementation_sha": "05ae663",
+      "r1_review": "passed",
+      "r2_evidence": [
+        "ctest --test-dir /var/tmp/ucc-accept-normal (48/48 passed)",
+        "ctest --test-dir /var/tmp/ucc-accept-preview (3/3 passed)",
+        "cargo run -p xtask --locked --offline -- dist /var/tmp/ucc-accept-dist target/release (18 files staged)"
+      ],
+      "integration_sha": "05ae663",
       "children": [],
       "blockers": []
     },

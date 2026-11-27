@@ -368,7 +368,7 @@ Pump code `0` — высокий режим 11V, `2` — 7V, `3` — 8V, `4` —
 - [x] M0.6 Снять XML D-Bus и обезличенные fixtures settings/profiles/telemetry/capabilities.
 - [x] M0.7 Зафиксировать reference images всех 10 разделов и driver-warning в обеих темах; существующая галерея содержит 22 изображения.
 - [x] M0.8 Создать реестр F01–F44 со статусами: обязательная функция, аппаратно недоступна, подтверждённый legacy defect, shell decision.
-- [ ] M0.9 *(частично выполнено — ждёт живого композитора для UI frame latency)* Зафиксировать текущие CPU/RSS/idle wakeups/UI latency/package footprint для последующего сравнения.
+- [x] M0.9 Зафиксировать текущие CPU/RSS/idle wakeups/UI latency/package footprint для последующего сравнения (дополнительно сняты живые Wayland map latency на Hyprland при 1.25x/2.0x и RSS/wakeups/размеры release Rust бинарников в `artifacts/rust-migration/baseline-metrics/M0.9-report.json`).
 
 **Выход:** любой разработчик воспроизводит базу; известные сбои и непроверенные аппаратные сценарии названы явно. Личные данные остаются в private fixture storage, публичные fixtures обезличены.
 
@@ -378,7 +378,7 @@ Pump code `0` — высокий режим 11V, `2` — 7V, `3` — 8V, `4` —
 - [x] M1.2 *(заменено ADR-01)* Iced prototype: Fluent shell, таблица устройств, curve canvas, keyboard canvas, live chart на полном horizon.
 - [x] M1.3 *(заменено ADR-01)* Проверить кириллицу/IME, keyboard navigation, focus, tooltips, DPI 100/125/150/200%, Light/Dark/Auto и доступность ключевых controls.
 - [x] M1.4 *(заменено ADR-01)* Проверить native Wayland KDE/Hyprland и X11; исключить неявный выбор NVIDIA renderer, который держит dGPU активной.
-- [ ] M1.5 *(частично выполнено — ждёт живого Wayland/ksni прогона)* Проверить ksni menu, tokens, existing-window activation и переход на desktop окна; определить необходимый toolkit integration patch.
+- [x] M1.5 Проверить ksni menu, tokens, existing-window activation и переход на desktop окна; определить необходимый toolkit integration patch (`ksni::current_xdg_activation_token()` + `ActivateWithToken` + проверка активации существующего окна в живой сессии Hyprland).
 - [x] M1.6 Проверить Rust ioctl ABI: request numbers/struct layouts против установленного driver ABI и C++ reference harness.
 - [x] M1.7 На fake BlueZ проверить GATT interface, уведомления, reconnect и выбор bluer/direct-zbus.
 - [x] M1.8 Проверить покрытие NVIDIA wrapper и возможную изоляцию native GPU calls отдельным процессом.
@@ -489,7 +489,7 @@ Pump code `0` — высокий режим 11V, `2` — 7V, `3` — 8V, `4` —
 - [ ] M9.5 *(отложено на сообщество)* Обеспечить X11 backend в пользовательской сессии и совместимый маршрут SetDisplayRefreshRate.
 - [ ] M9.6 *(частично выполнено)* Перенести tray icon/menu/process popup, command failures и адаптивный polling.
 - [x] M9.7 Реализовать GUI activation endpoint с token forwarding и отдельные service names preview.
-- [ ] M9.8 *(частично выполнено)* Проверить autostart, singleton, compositor restart, отсутствие notification server/tray host и несколько пользовательских сессий.
+- [ ] M9.8 *(частично выполнено — ждёт compositor restart и нескольких пользовательских сессий)* Проверить autostart, singleton, compositor restart, отсутствие notification server/tray host и несколько пользовательских сессий (подтверждены singleton `ucc-desktop-tray`/`ucc-session-agent` и работа без `StatusNotifierWatcher` / `Notifications`).
 - [ ] M9.9 *(частично выполнено)* Перенести `LidDisplayHandler` (DPMS только встроенной панели `eDP-*`/`LVDS-*`) и восстановление частоты после готовности DPMS в `ucc-session-agent`.
 
 **Выход:** tray и session agent работают без открытого главного окна и без Qt.
@@ -497,12 +497,12 @@ Pump code `0` — высокий режим 11V, `2` — 7V, `3` — 8V, `4` —
 ### M10 — автономный `Qt6::Widgets` GUI поверх Rust `uccd` (`ADR-01`)
 
 - [x] M10.1 Отвязать CMake-сборку `ucc-gui` от удаляемых C++-компонентов (`uccd`, `ucc-session`, `ucc-desktop-tray`, `ucc-tray`) и лишних зависимостей (`Qml`, `Quick`, `QuickControls2`, `Qt6::Bluetooth`, `KF6WindowSystem`, `KF6StatusNotifierItem`), оставив только `Qt6::{Core,Gui,Widgets,DBus,Charts}`.
-- [ ] M10.2 *(частично выполнено — ждёт проверки фокуса в живой Wayland-сессии)* Заменить активацию окна через `KF6WindowSystem` на нативный путь Qt6 Wayland (`XDG_ACTIVATION_TOKEN` + `QWindow::requestActivate()`) и статически встроить клиент D-Bus (без установки внешней `libucc-dbus.so`).
+- [x] M10.2 Заменить активацию окна через `KF6WindowSystem` на нативный путь Qt6 Wayland (`XDG_ACTIVATION_TOKEN` + `QWindow::requestActivate()`) и статически встроить клиент D-Bus (подтверждено на живой сессии Hyprland `wayland-1` и через `ldd ucc-gui`).
 - [x] M10.3 Перевести вкладку `Battery & Processes` на данные/команды Rust-стека (или изолированный легковесный Qt-виджет без `ucc-desktop-tray`), сохранив безопасное завершение пользовательских процессов NVIDIA и настройки глобальной зарядки.
 - [x] M10.4 Обеспечить жизненный цикл «0 МБ Qt в фоне»: закрытие окна `ucc-gui` полностью завершает процесс, а клик в Rust-трее `ucc-desktop-tray` мгновенно запускает или фокусирует `ucc-gui` с передачей Wayland activation token.
 - [x] M10.5 Исключить прототип `crates/ucc-gui` (`iced`/`wgpu`) из `Cargo.toml` и `Cargo.lock`, очистив Rust-workspace от графических зависимостей.
 - [x] M10.6 Прогнать полный `test_gui_audit` (все 10 разделов, включая карточку `Lid close action & sleep wakeup` `F45`, обе темы, `UCC_READ_ONLY_PREVIEW` и отказ команд без fake success) в связке с новым Rust-демоном `uccd` на изолированной шине.
-- [ ] M10.7 Проверить на живой сессии Hyprland: масштабирование `1.25`/`2.0`, тему `qt6ct`/Kvantum, открытие из Rust-трея с фокусом и отсутствие пробуждения спящей RTX 5080 при открытии/закрытии `ucc-gui`.
+- [ ] M10.7 *(частично выполнено — ждёт проверки с живого системного трея после переключения и при спящей RTX 5080)* Проверить на живой сессии Hyprland: масштабирование `1.25`/`2.0` (`404.8 ms` / `540.3 ms`), тему `qt6ct`, фокус по `XDG_ACTIVATION_TOKEN` и `0` `/dev/nvidia*` fds в `ucc-gui`; осталось открыть окно по клику из живого системного трея и проверить D3cold sleep, когда RTX 5080 не занята композитором/`mpvpaper`.
 - [x] M10.8 Дополировка GUI: добавить уникальные векторные иконки в `FluentTheme::icon()` для вкладок `Power & Devices`, `Lightbar` и `Battery & Processes` вместо fallback-иконки клавиатуры.
 - [x] M10.9 Добавить вкладку `Experimental` в `ucc-gui` с отдельной иконкой в сайдбаре, предупреждением о тестовом статусе и расширяемой структурой для будущих экспериментальных настроек.
 
@@ -528,7 +528,7 @@ Pump code `0` — высокий режим 11V, `2` — 7V, `3` — 8V, `4` —
 - [ ] M12.3 *(отложено на сообщество)* Обновить DEB/RPM/Nix recipes, services/dbus/polkit/autostart/icons/man/completions; проверить Nix-store helper paths.
 - [ ] M12.4 *(частично выполнено)* Сохранить enabled/disabled/masked sleep-hook state при upgrade, settings backup и private→public переход.
 - [x] M12.5 Настроить fmt/clippy/tests/contract tests/fuzz smoke/build/packaging/UI jobs под непривилегированным пользователем.
-- [ ] M12.6 *(частично выполнено)* Проверить normal и preview сборки; CI не получает доступ к реальному sysfs/system bus.
+- [x] M12.6 Проверить normal (`-DUCC_PACKAGE_RUST_RUNTIME=ON -DBUILD_TRAY=OFF`, 48/48 CTest) и read-only preview (`-DUCC_READ_ONLY_PREVIEW=ON`, 3/3 CTest) сборки, а также `xtask dist` (18 staged файлов) без доступа к системному `/sys` и system bus.
 - [x] M12.7 Проверить dependencies/runtime links: основным binaries не нужны Qt/libucc-dbus; ожидаемые системные/FFI библиотеки перечислены.
 - [x] M12.8 Сформировать license/dependency notices, CycloneDX SBOM и source archive (`docs/MIGRATION_AND_RECOVERY.md` перенесено в `M13.11`).
 - [ ] M12.9 Установить staged package на чистое окружение и обновить копию существующей установки; затем выполнить downgrade/rollback.
