@@ -160,6 +160,11 @@ void FanCurveEditorWidget::paintEvent(QPaintEvent*) {
     p.setFont(tickFont);
 
     // Y grid/ticks/labels (0-100% every 20%)
+    const double clampedCrossY = m_crosshairVisible
+        ? std::clamp(toWidget(Point{m_crosshairTemp, m_crosshairDuty}).y(),
+                     static_cast<double>(plotRect.top()),
+                     static_cast<double>(plotRect.bottom()))
+        : -1.0;
     for (int i = 0; i <= 5; ++i) {
         double frac = i / 5.0;
         qreal y = plotRect.top() + (1.0 - frac) * plotRect.height();
@@ -167,6 +172,9 @@ void FanCurveEditorWidget::paintEvent(QPaintEvent*) {
         // grid line
         p.setPen(gridColor);
         p.drawLine(QPointF(qRound(plotRect.left()) + 0.5, yy), QPointF(qRound(plotRect.right()) + 0.5, yy));
+        // Skip static tick label when live crosshair readout occupies the same vertical band.
+        if (m_crosshairVisible && std::abs(yy - clampedCrossY) < 16.0)
+            continue;
         // tick label
         int duty = i * 20;
         QString label = QString::number(duty) + "%";

@@ -935,3 +935,100 @@ fn ta_22_startup_activation_does_not_duplicate_charging_writes_or_fan_ticks() {
         "TA-22: startup must run initial fan tick once, not twice"
     );
 }
+
+#[test]
+fn custom_fan_profile_overrides_stale_embedded_pump_curve_and_syncs_on_save() {
+    let root = tempfile::tempdir().unwrap();
+    let settings_path = root.path().join("settings.json");
+    let custom_fan_id = "frixit-tcc-l287pgdbmxpmks8k9ai";
+    let mut ac_prof = default_high_performance_profile();
+    ac_prof.id = "frixit-ac".to_string();
+    ac_prof.name = "max perfomance".to_string();
+    ac_prof.fan.fan_profile = custom_fan_id.to_string();
+    ac_prof.fan.enable_water_cooler = true;
+    ac_prof.fan.auto_control_wc = true;
+    // Stale embedded pump threshold at 49C would command Off at 48C unless customFanProfiles overrides it.
+    ac_prof.fan.table_pump = vec![
+        ucc_core::PumpPoint { temp: 49, speed: 1 },
+        ucc_core::PumpPoint { temp: 65, speed: 2 },
+        ucc_core::PumpPoint { temp: 80, speed: 3 },
+    ];
+
+    let settings_json = serde_json::json!({
+        "stateMap": { "power_ac": "frixit-ac" },
+        "profiles": {
+            "frixit-ac": ac_prof
+        },
+        "customFanProfiles": {
+            custom_fan_id: {
+                "id": custom_fan_id,
+                "name": "max perfomance",
+                "json": {
+                    "tableCPU": [{ "temp": 0, "speed": 10 }, { "temp": 100, "speed": 100 }],
+                    "tableGPU": [{ "temp": 0, "speed": 10 }, { "temp": 100, "speed": 100 }],
+                    "tableWaterCoolerFan": [{ "temp": 20, "speed": 7 }, { "temp": 100, "speed": 100 }],
+                    "tablePump": [
+                        { "temp": 20, "speed": 1 },
+                        { "temp": 65, "speed": 2 },
+                        { "temp": 80, "speed": 3 }
+                    ]
+                }
+            }
+        }
+    });
+    std::fs::write(
+        &settings_path,
+        serde_json::to_string_pretty(&settings_json).unwrap(),
+    )
+    .unwrap();
+
+    let (backend, platform, _sysfs, _lighting) = build_test_backend(root.path());
+    platform.set_fan_temp(0, 48);
+    platform.set_fan_temp(1, 35);
+    backend.set_cooler_connected_state(true);
+    backend.enable_water_cooler(true);
+    backend.activate_hardware_and_prime();
+
+    // At 48C, authoritative customFanProfiles tablePump (20C->7V) drives 7V (code 2), NOT Off (code 4).
+    assert_eq!(backend.get_water_cooler_pump_level(), 2);
+
+    // Editing & saving custom fan profile updates both settings.profiles["frixit-ac"] and live pump level.
+    let updated_fan = serde_json::json!({
+        "tableCPU": [{ "temp": 0, "speed": 10 }, { "temp": 100, "speed": 100 }],
+        "tableGPU": [{ "temp": 0, "speed": 10 }, { "temp": 100, "speed": 100 }],
+        "tableWaterCoolerFan": [{ "temp": 20, "speed": 15 }, { "temp": 100, "speed": 100 }],
+        "tablePump": [
+            { "temp": 55, "speed": 1 },
+            { "temp": 70, "speed": 2 },
+            { "temp": 85, "speed": 3 }
+        ]
+    });
+    assert!(backend.save_custom_fan_profile(
+        custom_fan_id,
+        "max perfomance",
+        &updated_fan.to_string()
+    ));
+
+    // At 48C with threshold moved to 55C, live pump immediately becomes Off (code 4), and persisted profile matches.
+    assert_eq!(backend.get_water_cooler_pump_level(), 4);
+    let persisted: serde_json::Value =
+        serde_json::from_str(&backend.get_active_profile_json()).unwrap();
+    assert_eq!(persisted["fan"]["tablePump"][0]["temp"].as_i64(), Some(55));
+}
+
+#[test]
+fn late_activation_completion_recovers_startup_state_to_ready() {
+    let root = tempfile::tempdir().unwrap();
+    let (backend, _, _, _) = build_test_backend(root.path());
+    backend.mark_startup_degraded(true);
+    backend.set_activation_pending(true);
+    let health_degraded: serde_json::Value =
+        serde_json::from_str(&backend.get_driver_health_json()).unwrap();
+    assert_eq!(health_degraded["startupState"].as_str(), Some("degraded"));
+
+    backend.activate_hardware_and_prime();
+
+    let health_ready: serde_json::Value =
+        serde_json::from_str(&backend.get_driver_health_json()).unwrap();
+    assert_eq!(health_ready["startupState"].as_str(), Some("ready"));
+}

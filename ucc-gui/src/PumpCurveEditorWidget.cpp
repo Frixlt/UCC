@@ -151,6 +151,11 @@ void PumpCurveEditorWidget::paintEvent(QPaintEvent*) {
     p.setFont(tickFont);
 
     // Y grid/ticks/labels: pump levels Off, V7, V8, V11
+    const double clampedCrossY = m_crosshairVisible
+        ? std::clamp(toWidget(Point{m_crosshairTemp, m_crosshairLevel}).y(),
+                     static_cast<double>(plotRect.top()),
+                     static_cast<double>(plotRect.bottom()))
+        : -1.0;
     for (int lvl = 0; lvl <= 3; ++lvl) {
         double frac = lvl / 3.0;
         qreal y = plotRect.top() + (1.0 - frac) * plotRect.height();
@@ -158,6 +163,8 @@ void PumpCurveEditorWidget::paintEvent(QPaintEvent*) {
         p.setPen(gridColor);
         p.drawLine(QPointF(qRound(plotRect.left()) + 0.5, yy),
                    QPointF(qRound(plotRect.right()) + 0.5, yy));
+        if (m_crosshairVisible && std::abs(yy - clampedCrossY) < 16.0)
+            continue;
         p.setPen(labelColor);
         QRectF labelRect(0, yy - 12, left - 16, 24);
         p.drawText(labelRect, Qt::AlignRight | Qt::AlignVCenter, levelLabel(lvl));
@@ -249,12 +256,15 @@ void PumpCurveEditorWidget::paintEvent(QPaintEvent*) {
         }
         p.drawEllipse(r);
 
-        // Draw temperature label to the left of the point
+        // Draw temperature label next to the point without spilling into the Y axis margin
         p.setPen(labelColor);
         QPointF wp = toWidget(m_points[i]);
         QString tempLabel = QString::number(qRound(m_points[i].temp)) + QChar(0x00B0);
-        QRectF tLabelRect(wp.x() - 50, wp.y() + 6, 42, 16);
-        p.drawText(tLabelRect, Qt::AlignRight | Qt::AlignVCenter, tempLabel);
+        const bool placeRight = (wp.x() - plotRect.left()) < 48.0;
+        QRectF tLabelRect = placeRight
+            ? QRectF(wp.x() + 10, wp.y() + 6, 42, 16)
+            : QRectF(wp.x() - 50, wp.y() + 6, 42, 16);
+        p.drawText(tLabelRect, (placeRight ? Qt::AlignLeft : Qt::AlignRight) | Qt::AlignVCenter, tempLabel);
     }
 
     // Draw live crosshair overlay

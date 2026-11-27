@@ -513,6 +513,51 @@ pub fn load_saved_cooler_identity(path: &Path) -> Option<SavedCoolerIdentity> {
 }
 
 impl LiveUccdBackend {
+    fn is_builtin_fan_profile_key(&self, key: &str) -> bool {
+        let trimmed = key.trim();
+        if trimmed.is_empty() {
+            return false;
+        }
+        builtin_fan_profiles().iter().any(|fp| {
+            fp.id.eq_ignore_ascii_case(trimmed)
+                || fp.name.eq_ignore_ascii_case(trimmed)
+                || fp.id.strip_prefix("fan-").is_some_and(|short| {
+                    short.eq_ignore_ascii_case(trimmed)
+                        || format!("{short} [built-in]").eq_ignore_ascii_case(trimmed)
+                })
+        })
+    }
+
+    pub(super) fn resolve_custom_fan_profile(&self, key: &str) -> Option<FanProfile> {
+        let trimmed = key.trim();
+        if trimmed.is_empty() || self.is_builtin_fan_profile_key(trimmed) {
+            return None;
+        }
+        {
+            let settings = self.read_rw(&self.settings);
+            if let Some(entry) = settings.custom_fan_profiles.as_ref().and_then(|m| {
+                m.get(trimmed)
+                    .or_else(|| m.values().find(|e| e.name.eq_ignore_ascii_case(trimmed)))
+            }) {
+                if let Some((fp, _)) =
+                    normalize_and_parse_custom_fan_profile(&entry.id, &entry.name, &entry.json)
+                {
+                    return Some(fp);
+                }
+            }
+        }
+        let custom = self.read_rw(&self.custom_fan_profiles);
+        custom
+            .get(trimmed)
+            .or_else(|| {
+                custom
+                    .values()
+                    .find(|fp| fp.name.eq_ignore_ascii_case(trimmed))
+            })
+            .filter(|fp| !self.is_builtin_fan_profile_key(&fp.id))
+            .cloned()
+    }
+
     pub(super) fn resolve_named_fan_profile(&self, key: &str) -> Option<FanProfile> {
         let trimmed = key.trim();
         if trimmed.is_empty() {
@@ -535,45 +580,49 @@ impl LiveUccdBackend {
         }) {
             return Some(fp.clone());
         }
-        let custom = self.read_rw(&self.custom_fan_profiles);
-        if let Some(fp) = custom.get(trimmed).or_else(|| {
-            custom
-                .values()
-                .find(|fp| fp.name.eq_ignore_ascii_case(trimmed))
-        }) {
-            return Some(fp.clone());
+        self.resolve_custom_fan_profile(trimmed)
+    }
+
+    fn apply_fan_tables_to_profile(
+        out: &mut UccProfile,
+        preset: &FanProfile,
+        overwrite_non_empty: bool,
+    ) {
+        if !preset.table_cpu.is_empty() && (overwrite_non_empty || out.fan.table_cpu.is_empty()) {
+            out.fan.table_cpu = preset.table_cpu.clone();
         }
-        drop(custom);
-        let settings = self.read_rw(&self.settings);
-        let entry = settings.custom_fan_profiles.as_ref().and_then(|m| {
-            m.get(trimmed)
-                .or_else(|| m.values().find(|e| e.name.eq_ignore_ascii_case(trimmed)))
-        })?;
-        normalize_and_parse_custom_fan_profile(&entry.id, &entry.name, &entry.json)
-            .map(|(fp, _)| fp)
+        if !preset.table_gpu.is_empty() && (overwrite_non_empty || out.fan.table_gpu.is_empty()) {
+            out.fan.table_gpu = preset.table_gpu.clone();
+        }
+        if !preset.table_water_cooler_fan.is_empty()
+            && (overwrite_non_empty || out.fan.table_water_cooler_fan.is_empty())
+        {
+            out.fan.table_water_cooler_fan = preset.table_water_cooler_fan.clone();
+        }
+        if !preset.table_pump.is_empty() && (overwrite_non_empty || out.fan.table_pump.is_empty()) {
+            out.fan.table_pump = preset.table_pump.clone();
+        }
     }
 
     pub(super) fn resolve_profile_with_fan_preset(&self, p: &UccProfile) -> UccProfile {
         let mut out = p.clone();
-        if (out.fan.table_cpu.is_empty()
+        let fp_key = out.fan.fan_profile.trim().to_string();
+        if fp_key.is_empty() {
+            return out;
+        }
+        // User-defined custom fan profiles are authoritative over stale embedded curve tables
+        // inside saved UCC profiles (e.g. edited Watercool Settings curves saved after profile creation).
+        if let Some(custom) = self.resolve_custom_fan_profile(&fp_key) {
+            Self::apply_fan_tables_to_profile(&mut out, &custom, true);
+            return out;
+        }
+        if out.fan.table_cpu.is_empty()
             || out.fan.table_gpu.is_empty()
             || out.fan.table_water_cooler_fan.is_empty()
-            || out.fan.table_pump.is_empty())
-            && !out.fan.fan_profile.trim().is_empty()
+            || out.fan.table_pump.is_empty()
         {
-            if let Some(preset) = self.resolve_named_fan_profile(&out.fan.fan_profile) {
-                if out.fan.table_cpu.is_empty() {
-                    out.fan.table_cpu = preset.table_cpu;
-                }
-                if out.fan.table_gpu.is_empty() {
-                    out.fan.table_gpu = preset.table_gpu;
-                }
-                if out.fan.table_water_cooler_fan.is_empty() {
-                    out.fan.table_water_cooler_fan = preset.table_water_cooler_fan;
-                }
-                if out.fan.table_pump.is_empty() {
-                    out.fan.table_pump = preset.table_pump;
-                }
+            if let Some(preset) = self.resolve_named_fan_profile(&fp_key) {
+                Self::apply_fan_tables_to_profile(&mut out, &preset, false);
             }
         }
         out
@@ -1129,6 +1178,12 @@ impl LiveUccdBackend {
                             json: normalized_val,
                         },
                     );
+                for prof in s.profiles.values_mut() {
+                    let key = prof.fan.fan_profile.trim();
+                    if key.eq_ignore_ascii_case(id) || key.eq_ignore_ascii_case(&fp.name) {
+                        Self::apply_fan_tables_to_profile(prof, &fp, true);
+                    }
+                }
                 Some(())
             })
             .is_none()
@@ -1136,7 +1191,28 @@ impl LiveUccdBackend {
             return false;
         }
         self.write_rw(&self.custom_fan_profiles)
-            .insert(id.to_string(), fp);
+            .insert(id.to_string(), fp.clone());
+
+        let updated_active = {
+            let mut active = self.write_rw(&self.active_profile);
+            let key = active.fan.fan_profile.trim();
+            if key.eq_ignore_ascii_case(id) || key.eq_ignore_ascii_case(&fp.name) {
+                Self::apply_fan_tables_to_profile(&mut active, &fp, true);
+                Some(active.clone())
+            } else {
+                None
+            }
+        };
+        if let Some(updated) = updated_active {
+            *self.lock_mutex(&self.temporary_fan_curves) = None;
+            self.lock_mutex(&self.temporary_saved_fan_profile_id).take();
+            self.lock_mutex(&self.fan_controller)
+                .clear_temporary_curves();
+            let resolved = self.fan_profile_from_ucc_profile(&updated);
+            self.lock_mutex(&self.fan_controller).set_profile(resolved);
+            self.emit_profile_changed(&updated);
+            let _ = self.tick_fans_once();
+        }
         true
     }
 

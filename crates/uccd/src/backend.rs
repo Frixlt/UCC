@@ -898,6 +898,7 @@ impl LiveUccdBackend {
             let _ = self.tick_fans_once();
         }
         if !self.shutting_down.load(Ordering::SeqCst) {
+            self.mark_startup_degraded(false);
             self.set_activation_pending(false);
         }
         tracing::info!(

@@ -1,11 +1,14 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 
 use serde_json::json;
+use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
+use ucc_core::KeyboardBacklightState;
 use ucc_hardware::{MockSysfs, RealSysfs};
 use ucc_lighting::{
-    KeyboardCapabilities, LightbarCapabilities, LightbarController, LightbarPowerMode, LightingOp,
-    LightingTransport, MockLightingTransport, RgbColor, SysfsLedTransport,
+    KeyboardBacklightController, KeyboardCapabilities, LightbarCapabilities, LightbarController,
+    LightbarPowerMode, LightingError, LightingOp, LightingTransport, MockLightingTransport,
+    RgbColor, SysfsLedTransport,
 };
 
 #[test]
@@ -95,4 +98,103 @@ fn t_hw_14c_lightbar_reconfigure_resets_animation_state() {
     assert!(ops
         .iter()
         .any(|op| matches!(op, LightingOp::WriteLightbarBrightness(_))));
+}
+
+struct CountingTransport {
+    inner: MockLightingTransport,
+    color_reads: AtomicUsize,
+    brightness_reads: AtomicUsize,
+}
+
+impl LightingTransport for CountingTransport {
+    fn detect_keyboard(&self) -> Result<Option<KeyboardCapabilities>, LightingError> {
+        self.inner.detect_keyboard()
+    }
+    fn set_keyboard_buffer_input(&self, enabled: bool) -> Result<(), LightingError> {
+        self.inner.set_keyboard_buffer_input(enabled)
+    }
+    fn read_keyboard_brightness(&self) -> Result<Option<u32>, LightingError> {
+        self.brightness_reads.fetch_add(1, Ordering::SeqCst);
+        self.inner.read_keyboard_brightness()
+    }
+    fn write_keyboard_brightness(&self, brightness: u32) -> Result<(), LightingError> {
+        self.inner.write_keyboard_brightness(brightness)
+    }
+    fn write_keyboard_zones(&self, colors: &[RgbColor]) -> Result<(), LightingError> {
+        self.inner.write_keyboard_zones(colors)
+    }
+    fn read_keyboard_colors(&self) -> Result<Vec<RgbColor>, LightingError> {
+        self.color_reads.fetch_add(1, Ordering::SeqCst);
+        self.inner.read_keyboard_colors()
+    }
+    fn detect_lightbar(&self) -> Result<Option<LightbarCapabilities>, LightingError> {
+        self.inner.detect_lightbar()
+    }
+    fn write_lightbar_brightness(&self, brightness: u32) -> Result<(), LightingError> {
+        self.inner.write_lightbar_brightness(brightness)
+    }
+    fn write_lightbar_color(&self, rgb: RgbColor) -> Result<(), LightingError> {
+        self.inner.write_lightbar_color(rgb)
+    }
+}
+
+#[test]
+fn t_lighting_snapshot_uses_cached_states_without_hardware_readback() {
+    let inner = MockLightingTransport::new();
+    inner.set_keyboard_caps(Some(KeyboardCapabilities {
+        zones: 3,
+        max_brightness: 50,
+        max_red: 255,
+        max_green: 255,
+        max_blue: 255,
+        led_ids: vec![0, 1, 2],
+    }));
+    let transport = Arc::new(CountingTransport {
+        inner,
+        color_reads: AtomicUsize::new(0),
+        brightness_reads: AtomicUsize::new(0),
+    });
+
+    // Cold controller with empty current_states still falls back to hardware readback.
+    let mut cold = KeyboardBacklightController::new(transport.clone());
+    assert!(cold.snapshot_hardware_state().is_some());
+    assert_eq!(transport.color_reads.load(Ordering::SeqCst), 1);
+    assert_eq!(transport.brightness_reads.load(Ordering::SeqCst), 1);
+
+    // Warm controller after apply_states must serve snapshot from RAM with zero USB sysfs reads.
+    let states = vec![
+        KeyboardBacklightState {
+            brightness: 32,
+            red: 10,
+            green: 20,
+            blue: 30,
+        },
+        KeyboardBacklightState {
+            brightness: 32,
+            red: 40,
+            green: 50,
+            blue: 60,
+        },
+        KeyboardBacklightState {
+            brightness: 32,
+            red: 70,
+            green: 80,
+            blue: 90,
+        },
+    ];
+    cold.apply_states(&states).unwrap();
+    transport.color_reads.store(0, Ordering::SeqCst);
+    transport.brightness_reads.store(0, Ordering::SeqCst);
+    let snap = cold.snapshot_hardware_state().unwrap();
+    assert_eq!(transport.color_reads.load(Ordering::SeqCst), 0);
+    assert_eq!(transport.brightness_reads.load(Ordering::SeqCst), 0);
+    assert_eq!(snap.brightness, Some(32));
+    assert_eq!(
+        snap.colors,
+        vec![
+            RgbColor::new(10, 20, 30),
+            RgbColor::new(40, 50, 60),
+            RgbColor::new(70, 80, 90),
+        ]
+    );
 }

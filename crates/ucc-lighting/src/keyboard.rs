@@ -173,8 +173,15 @@ impl KeyboardBacklightController {
         if !self.is_available() {
             let _ = self.init();
         }
-        if !self.is_available() {
-            return None;
+        let caps = self.capabilities.as_ref().filter(|c| c.zones > 0)?;
+        if !self.current_states.is_empty() && self.current_states.len() >= caps.zones {
+            let colors = map_states_by_led_id(caps, &self.current_states);
+            let brightness = self.current_states.first().map(|s| s.brightness as u32);
+            return Some(KeyboardHardwareSnapshot {
+                colors,
+                brightness,
+                states: self.current_states.clone(),
+            });
         }
         let colors = self.transport.read_keyboard_colors().unwrap_or_default();
         let brightness = self
