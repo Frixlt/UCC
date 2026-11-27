@@ -4,10 +4,12 @@
 //! parser-check workflows ported to pure Rust (`M11.1–M11.4`).
 
 use std::collections::{BTreeMap, BTreeSet};
+use std::ffi::OsString;
 use std::fs;
 use std::io;
 use std::path::{Component, Path, PathBuf};
 use std::process::Command;
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use serde::{Deserialize, Serialize};
@@ -174,6 +176,80 @@ fn read_json_value(path: &Path) -> Result<Value, String> {
     serde_json::from_str(&content).map_err(|e| format!("Invalid JSON in {}: {e}", path.display()))
 }
 
+fn unique_temp_path(path: &Path) -> PathBuf {
+    static TMP_COUNTER: AtomicU64 = AtomicU64::new(0);
+    let seq = TMP_COUNTER.fetch_add(1, Ordering::Relaxed);
+    let mut name = OsString::from(".");
+    if let Some(file_name) = path.file_name() {
+        name.push(file_name);
+    } else {
+        name.push("ucc");
+    }
+    name.push(format!(".tmp.{}.{seq}", std::process::id()));
+    path.with_file_name(name)
+}
+
+fn copy_regular_file_atomic(src: &Path, dst: &Path) -> Result<(), String> {
+    let mut src_opts = fs::OpenOptions::new();
+    src_opts.read(true);
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::OpenOptionsExt;
+        src_opts.custom_flags(o_nofollow_flag());
+    }
+    let mut src_file = src_opts
+        .open(src)
+        .map_err(|e| format!("Failed opening {} for restore copy: {e}", src.display()))?;
+    let src_meta = src_file
+        .metadata()
+        .map_err(|e| format!("Failed inspecting opened {}: {e}", src.display()))?;
+    if !src_meta.is_file() {
+        return Err(format!(
+            "Refusing to copy non-regular file {}",
+            src.display()
+        ));
+    }
+    #[cfg(unix)]
+    let mode = {
+        use std::os::unix::fs::PermissionsExt;
+        src_meta.permissions().mode() & 0o777
+    };
+
+    if let Some(parent) = dst.parent() {
+        fs::create_dir_all(parent).map_err(|e| format!("mkdir restore failed: {e}"))?;
+    }
+    let tmp = unique_temp_path(dst);
+    let mut dst_opts = fs::OpenOptions::new();
+    dst_opts.write(true).create_new(true);
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::OpenOptionsExt;
+        dst_opts.mode(mode).custom_flags(o_nofollow_flag());
+    }
+    let mut dst_file = dst_opts
+        .open(&tmp)
+        .map_err(|e| format!("Failed creating {}: {e}", tmp.display()))?;
+    let copy_res = (|| -> io::Result<()> {
+        io::copy(&mut src_file, &mut dst_file)?;
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            dst_file.set_permissions(fs::Permissions::from_mode(mode))?;
+        }
+        dst_file.sync_all()
+    })();
+    if let Err(e) = copy_res {
+        let _ = fs::remove_file(&tmp);
+        return Err(format!("Restore copy failed for {}: {e}", dst.display()));
+    }
+    drop(dst_file);
+    if let Err(e) = fs::rename(&tmp, dst) {
+        let _ = fs::remove_file(&tmp);
+        return Err(format!("Restore replace failed for {}: {e}", dst.display()));
+    }
+    Ok(())
+}
+
 fn write_private_file(path: &Path, content: &str, mode: u32) -> Result<(), String> {
     use std::io::Write as _;
 
@@ -181,8 +257,7 @@ fn write_private_file(path: &Path, content: &str, mode: u32) -> Result<(), Strin
         fs::create_dir_all(parent)
             .map_err(|e| format!("Failed to create {}: {e}", parent.display()))?;
     }
-    let tmp = path.with_extension(format!("tmp.{}", std::process::id()));
-    let _ = fs::remove_file(&tmp);
+    let tmp = unique_temp_path(path);
     let mut opts = fs::OpenOptions::new();
     opts.write(true).create_new(true);
     #[cfg(unix)]
@@ -1789,26 +1864,41 @@ impl<'a> DesktopTransition<'a> {
         stop_args.extend(DESKTOP_STOP_UNITS);
         let _ = run_unchecked(self.runner, "systemctl", &stop_args);
 
+        let canonical_home = fs::canonicalize(&self.home).unwrap_or_else(|_| self.home.clone());
         for (relative, existed) in &state.files {
             if relative.starts_with('/') {
                 return Err(format!("Absolute transition path rejected: {relative}"));
             }
             let safe_rel = sanitize_root_relative_path(relative)?;
-            let target = self.home.join(&safe_rel);
-            if let Ok(meta) = fs::symlink_metadata(&target) {
-                if meta.file_type().is_symlink() {
+            let mut target = canonical_home.clone();
+            for comp in safe_rel.components() {
+                target.push(comp);
+                match fs::symlink_metadata(&target) {
+                    Ok(meta) if meta.file_type().is_symlink() => {
+                        return Err(format!(
+                            "Refusing to restore desktop file through symlink: {}",
+                            target.display()
+                        ));
+                    }
+                    Ok(_) => {}
+                    Err(e) if e.kind() == io::ErrorKind::NotFound => {}
+                    Err(e) => {
+                        return Err(format!("Failed inspecting {}: {e}", target.display()));
+                    }
+                }
+            }
+            if target.exists() {
+                let canonical_target = fs::canonicalize(&target)
+                    .map_err(|e| format!("Failed resolving {}: {e}", target.display()))?;
+                if !canonical_target.starts_with(&canonical_home) {
                     return Err(format!(
-                        "Refusing to restore desktop file over symlink: {}",
-                        target.display()
+                        "Desktop restore path escapes home {}: {relative}",
+                        canonical_home.display()
                     ));
                 }
             }
             if *existed {
-                if let Some(parent) = target.parent() {
-                    fs::create_dir_all(parent).map_err(|e| format!("mkdir restore failed: {e}"))?;
-                }
-                fs::copy(self.directory.join("files").join(&safe_rel), &target)
-                    .map_err(|e| format!("Restore copy failed for {}: {e}", target.display()))?;
+                copy_regular_file_atomic(&self.directory.join("files").join(&safe_rel), &target)?;
             } else {
                 match fs::remove_file(&target) {
                     Ok(()) => {}

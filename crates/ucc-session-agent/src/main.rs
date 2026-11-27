@@ -27,11 +27,19 @@ use ucc_session_agent::{
 use zbus::Connection;
 
 fn acquire_single_instance_lock() -> Option<std::fs::File> {
+    #[cfg(unix)]
+    let euid = unsafe { nix::libc::geteuid() };
     let lock_path = match std::env::var("XDG_RUNTIME_DIR") {
         Ok(dir) if !dir.trim().is_empty() => PathBuf::from(dir).join("ucc-session-agent.lock"),
         _ => {
-            let uid = unsafe { nix::libc::geteuid() };
-            PathBuf::from(format!("/tmp/ucc-session-agent-{uid}.lock"))
+            #[cfg(unix)]
+            {
+                PathBuf::from(format!("/tmp/ucc-session-agent-{euid}.lock"))
+            }
+            #[cfg(not(unix))]
+            {
+                std::env::temp_dir().join("ucc-session-agent.lock")
+            }
         }
     };
     let mut opts = OpenOptions::new();
@@ -39,11 +47,22 @@ fn acquire_single_instance_lock() -> Option<std::fs::File> {
     #[cfg(unix)]
     {
         use std::os::unix::fs::OpenOptionsExt;
-        opts.mode(0o600).custom_flags(nix::libc::O_NOFOLLOW);
+        opts.mode(0o600)
+            .custom_flags(nix::libc::O_NOFOLLOW | nix::libc::O_NONBLOCK);
     }
     let file = opts.open(lock_path).ok()?;
-    if !file.metadata().is_ok_and(|m| m.is_file()) {
+    let meta = file.metadata().ok()?;
+    if !meta.is_file() {
         return None;
+    }
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::{MetadataExt, PermissionsExt};
+        if meta.uid() != euid {
+            return None;
+        }
+        file.set_permissions(std::fs::Permissions::from_mode(0o600))
+            .ok()?;
     }
     let rc = unsafe { nix::libc::flock(file.as_raw_fd(), nix::libc::LOCK_EX | nix::libc::LOCK_NB) };
     if rc == 0 {
