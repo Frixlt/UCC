@@ -11,8 +11,15 @@ DAEMON_BIN="${UCC_INTEROP_DAEMON_BIN:-$SOURCE_DIR/target/debug/examples/interop_
 if [[ ! -x "$DAEMON_BIN" ]]; then
   export PATH="$HOME/.cargo/bin:$PATH"
   if command -v cargo >/dev/null 2>&1; then
-    RUSTUP_TOOLCHAIN="${RUSTUP_TOOLCHAIN:-stable}" \
-      cargo build --manifest-path "$SOURCE_DIR/Cargo.toml" -p uccd --example interop_daemon --locked --offline
+    if ! RUSTUP_TOOLCHAIN="${RUSTUP_TOOLCHAIN:-stable}" \
+      cargo build --manifest-path "$SOURCE_DIR/Cargo.toml" -p uccd --example interop_daemon --locked --offline; then
+      echo "Offline cargo build of interop_daemon failed (possibly an empty CARGO_HOME cache)." >&2
+      echo "Provide a prebuilt binary via UCC_INTEROP_DAEMON_BIN=/path/to/interop_daemon or pre-populate Cargo cache." >&2
+      exit 1
+    fi
+  else
+    echo "Cargo not found and no prebuilt UCC_INTEROP_DAEMON_BIN provided." >&2
+    exit 1
   fi
 fi
 
