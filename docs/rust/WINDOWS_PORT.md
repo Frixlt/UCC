@@ -62,7 +62,7 @@ Mapped Uniwill EC registers (`ec_reg`):
 | Capability | Driverless (`root\WMI` `AcpiTest_MULong` / `wmiacpi.sys`) | Signed KMDF (`UWACPIDriver.sys`, EV/WHQL) |
 |---|---|---|
 | Performance modes (`0x0752`) | Supported | Supported |
-| Manual fan duty & Fan Boost (`0x0751`, `0x1804`, `0x1809`) | Supported | Supported |
+| Manual fan duty & Fan Boost (`0x0751`, `0x1804`, `0x1809`, `0x0753`) | Supported | Supported |
 | EC CPU/GPU temperatures (`0x043E`, `0x044F`) | Supported | Supported |
 | TDP limits `PL1`/`PL2`/`PL4` (`0x0740`–`0x0742`) | Supported (within EC register bounds) | Supported |
 | Battery charge thresholds, Fn/Win Lock, Lightbar EC power (`0x0780`, `ec_reg::LIGHTBAR_POWER`) | Supported where firmware exposes EC R/W via `AcpiTest_MULong` | Supported |
@@ -81,7 +81,7 @@ Driverless WMI is the default Windows path; any feature requiring `SMRW`, `PWUP`
   - Maximum frequency cap (MHz): `GUID_PROCESSOR_FREQUENCY_MAXIMUM` (`75b0ae3f-bce0-45a7-8c89-c9611c25e100`);
   - Turbo / Boost mode: `GUID_PROCESSOR_PERF_BOOST_MODE` (`be337238-0d82-4146-a960-4f3749d470c7`).
 - **Display Refresh Rate & Brightness:**
-  - Refresh rate enumeration and mode switches use `EnumDisplaySettingsW` / `ChangeDisplaySettingsExW` (`DEVMODEW::dmDisplayFrequency`) with test-first (`CDS_TEST`) validation before applying.
+  - Refresh rate enumeration and mode switches use `EnumDisplaySettingsExW` / `ChangeDisplaySettingsExW` (`DEVMODEW::dmDisplayFrequency`) with test-first (`CDS_TEST`) validation before applying.
   - Internal panel brightness control uses WMI `root\WMI` `WmiMonitorBrightness` (read) and `WmiMonitorBrightnessMethods::WmiSetBrightness` (write).
 - **Lid Switch Notifications:** Service and session power callbacks register via `RegisterPowerSettingNotification` for `GUID_LIDSWITCH_STATE_CHANGE` (`ba3e0f4d-b817-4094-a2d1-d56379e6a0f3`), translating `0` (closed) / `1` (open) into the same lid-policy state machine used on Linux.
 
@@ -145,7 +145,7 @@ Workflow definition: [`.github/workflows/windows-check.yml`](../../.github/workf
 2. **Linux-hosted Windows GNU cross-compilation check:**
    ```bash
    rustup target add x86_64-pc-windows-gnu
-   cargo check -p ucc-core -p ucc-config --target x86_64-pc-windows-gnu
+   cargo check -p ucc-core -p ucc-config -p ucc-dbus --target x86_64-pc-windows-gnu
    ```
 
 3. **Native Windows MSVC check:**
