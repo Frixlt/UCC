@@ -1,100 +1,45 @@
-name: Release
+name: Release Staging
 
 on:
   push:
-    tags: ['v*']
-
-permissions:
-  contents: read
-
-concurrency:
-  group: release-${{ github.ref }}
-  cancel-in-progress: false
+    tags:
+      - 'v*.*.*'
+  workflow_dispatch:
 
 jobs:
-  arch-package:
+  verify-and-dist:
+    name: Verify versions, workspace tests, and source archive
     runs-on: ubuntu-24.04
-    container: archlinux:base-devel
-    timeout-minutes: 45
     steps:
-      - name: Install build and test dependencies
-        run: |
-          pacman -Syu --noconfirm
-          pacman -S --needed --noconfirm git cmake ninja pkgconf nlohmann-json rust \
-            qt6-base qt6-charts qt6-connectivity qt6-declarative qt6-wayland \
-            systemd-libs dbus polkit hicolor-icon-theme libxcb \
-            kwindowsystem kstatusnotifieritem python gjs nodejs ttf-dejavu
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
-      - name: Check tag matches project version
-        shell: bash
-        run: |
-          test "${GITHUB_REF_TYPE}" = tag
-          python3 - <<'PY'
-          import os, re
-          from pathlib import Path
-          version = re.search(r'VERSION\s+(\d+\.\d+\.\d+)', Path('CMakeLists.txt').read_text())[1]
-          assert os.environ['GITHUB_REF_NAME'] == 'v' + version
-          assert 'pkgver=' + version in Path('PKGBUILD').read_text()
-          PY
-      - name: Build and test public package as unprivileged user
-        shell: bash
-        run: |
-          useradd -m builder
-          chown -R builder:builder "$GITHUB_WORKSPACE"
-          runuser -u builder -- env UCC_SOURCE_DIR="$GITHUB_WORKSPACE" makepkg --nodeps --noconfirm
-      - name: Verify packaged Rust binaries and desktop autostart
-        shell: bash
-        run: |
-          stage=$(mktemp -d)
-          tar -xf frixit-control-center-*.pkg.tar.zst -C "$stage"
-          for path in usr/bin/uccd usr/bin/ucc-cli usr/bin/ucc-desktop-tray usr/bin/ucc-session-agent usr/lib/ucc/ucc-hardware usr/lib/ucc/ucc-sleep usr/lib/ucc/ucc-import-check; do
-            test -x "$stage/$path"
-            dynamic=$(readelf -d "$stage/$path")
-            if grep -Eq 'NEEDED.*(libQt|libucc-dbus)' <<< "$dynamic"; then
-              echo "Unexpected legacy runtime dependency in $path" >&2
-              exit 1
-            fi
-          done
-          test -f "$stage/etc/xdg/autostart/ucc-desktop-tray.desktop"
-          test -f "$stage/etc/xdg/autostart/ucc-session-agent.desktop"
-      - name: Create source archive, evidence and checksums
-        shell: bash
-        run: |
-          git config --global --add safe.directory "$GITHUB_WORKSPACE"
-          mkdir release-assets
-          version=${GITHUB_REF_NAME#v}
-          git archive --format=tar --prefix="ucc-$version/" "$GITHUB_SHA" | tar -x -C release-assets
-          bash contrib/package-rust-vendor.sh "release-assets/ucc-$version"
-          tar -czf "release-assets/frixit-control-center-$version.tar.gz" -C release-assets "ucc-$version"
-          rm -r "release-assets/ucc-$version"
-          cp frixit-control-center-*.pkg.tar.zst release-assets/
-          cp src/build/Testing/Temporary/LastTest.log release-assets/ctest.log
-          cp docs/releases/0.3.0.md release-assets/RELEASE-NOTES.md
-          cd release-assets
-          sha256sum *.pkg.tar.zst *.tar.gz ctest.log RELEASE-NOTES.md > SHA256SUMS
-      - uses: actions/upload-artifact@v4
-        with:
-          name: release-assets
-          path: release-assets/*
-          if-no-files-found: error
 
-  publish:
-    needs: arch-package
-    runs-on: ubuntu-24.04
-    permissions:
-      contents: write
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/download-artifact@v4
+      - name: Install D-Bus runtime
+        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends dbus
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@master
         with:
-          name: release-assets
-          path: release-assets
-      - name: Publish tested release
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          gh release create "$GITHUB_REF_NAME" release-assets/* \
-            --verify-tag --title "Frixit Control Center ${GITHUB_REF_NAME#v}" \
-            --notes-file docs/releases/0.3.0.md
+          toolchain: "1.89.0"
+          components: clippy
+
+      - name: Verify version parity across all manifests
+        run: cargo run -p xtask --locked -- check-versions
+
+      - name: Run Clippy
+        run: cargo clippy --workspace --all-targets --locked -- -D warnings
+
+      - name: Run workspace tests
+        run: dbus-run-session -- cargo test --workspace --locked --no-fail-fast
+
+      - name: Build vendored release source archive
+        run: make dist
+
+      - name: Upload source tarball artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: source-dist
+          path: |
+            dist/*.tar.gz
+            dist/*.tar.gz.sha256
