@@ -641,7 +641,7 @@ impl LiveUccdBackend {
         if self.water_cooler_enabled.load(Ordering::SeqCst) {
             if let Some(max_temp) = tick.temps_c.iter().flatten().copied().max() {
                 let active_prof = self.read_rw(&self.active_profile).clone();
-                let fan_profile = self.fan_profile_from_ucc_profile(&active_prof);
+                let fan_profile = self.effective_fan_profile_for_ucc_profile(&active_prof);
                 let mut cooler = self.lock_mutex(&self.cooler_controller);
                 if cooler.mode() == CoolerMode::Auto {
                     let _ = cooler.apply_profile_temperature(&fan_profile, max_temp);
@@ -686,6 +686,38 @@ impl LiveUccdBackend {
             .unwrap_or(50)
     }
 
+    fn effective_fan_profile_for_ucc_profile(&self, profile: &UccProfile) -> FanProfile {
+        let mut fan_profile = self.fan_profile_from_ucc_profile(profile);
+        if let Some(ref curves) = *self.lock_mutex(&self.temporary_fan_curves) {
+            if !curves.cpu.is_empty() {
+                fan_profile.table_cpu = curves.cpu.clone();
+            }
+            if !curves.gpu.is_empty() {
+                fan_profile.table_gpu = curves.gpu.clone();
+            }
+            if !curves.water_cooler_fan.is_empty() {
+                fan_profile.table_water_cooler_fan = curves.water_cooler_fan.clone();
+            }
+            if !curves.pump.is_empty() {
+                fan_profile.table_pump = curves.pump.clone();
+            }
+        }
+        fan_profile
+    }
+
+    fn apply_lid_blank_to_wc_if_closed_locked(&self, cooler: &mut ucc_hardware::CoolerController) {
+        if self.is_lid_closed() && self.effective_lid_lighting_policy().1 {
+            let current_rgb = cooler.desired_rgb_target();
+            if current_rgb != ucc_hardware::RgbTarget::Off {
+                let mut saved = self.lock_mutex(&self.lid_saved_wc_rgb);
+                if saved.is_none() {
+                    *saved = Some(current_rgb);
+                }
+                let _ = cooler.turn_off_led();
+            }
+        }
+    }
+
     /// Evaluates active WC curve/manual targets and queues hardware packets deterministically (`M5.9`).
     pub(super) fn apply_active_cooler_targets_locked(
         &self,
@@ -693,8 +725,9 @@ impl LiveUccdBackend {
         profile: &UccProfile,
     ) {
         let temp_c = self.current_wc_control_temp_c();
-        let fan_profile = self.fan_profile_from_ucc_profile(profile);
+        let fan_profile = self.effective_fan_profile_for_ucc_profile(profile);
         let _ = cooler.apply_profile_temperature(&fan_profile, temp_c);
+        self.apply_lid_blank_to_wc_if_closed_locked(cooler);
         cooler.force_reapply_active_targets();
     }
 
@@ -799,10 +832,7 @@ impl LiveUccdBackend {
             return false;
         };
         let state = rgb_state_from_mode(mode_val);
-        if self.is_lid_closed()
-            && self.effective_lid_lighting_policy().1
-            && self.is_water_cooler_connected_now()
-        {
+        if self.is_lid_closed() && self.effective_lid_lighting_policy().1 {
             *self.lock_mutex(&self.lid_saved_wc_rgb) = Some(ucc_hardware::RgbTarget::Color {
                 red: r,
                 green: g,
@@ -1028,6 +1058,12 @@ impl LiveUccdBackend {
         if let Some(fp_id) = fan_profile_id {
             let updated = {
                 let mut active = self.write_rw(&self.active_profile);
+                {
+                    let mut saved = self.lock_mutex(&self.temporary_saved_fan_profile_id);
+                    if saved.is_none() {
+                        *saved = Some(active.fan.fan_profile.clone());
+                    }
+                }
                 active.fan.fan_profile = fp_id;
                 active.clone()
             };
@@ -1045,6 +1081,15 @@ impl LiveUccdBackend {
         *self.lock_mutex(&self.temporary_fan_curves) = None;
         self.lock_mutex(&self.fan_controller)
             .clear_temporary_curves();
+        if let Some(orig_fp_id) = self.lock_mutex(&self.temporary_saved_fan_profile_id).take() {
+            let updated = {
+                let mut active = self.write_rw(&self.active_profile);
+                active.fan.fan_profile = orig_fp_id;
+                active.clone()
+            };
+            self.emit_profile_changed(&updated);
+        }
+        let _ = self.tick_fans_once();
         true
     }
 
@@ -1119,6 +1164,7 @@ impl LiveUccdBackend {
             .store(connected, Ordering::SeqCst);
         let mut cooler = self.lock_mutex(&self.cooler_controller);
         if connected {
+            self.apply_lid_blank_to_wc_if_closed_locked(&mut cooler);
             cooler.on_connected();
         } else {
             cooler.on_disconnected();

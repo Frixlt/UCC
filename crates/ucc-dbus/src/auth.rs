@@ -128,10 +128,14 @@ struct SenderAuthGuard {
 struct SenderQueueSlot {
     sender_key: String,
     sem: Arc<Semaphore>,
+    transferred: bool,
 }
 
 impl Drop for SenderQueueSlot {
     fn drop(&mut self) {
+        if self.transferred {
+            return;
+        }
         let mut map = sender_inflight_auth()
             .lock()
             .unwrap_or_else(|e| e.into_inner());
@@ -162,7 +166,7 @@ impl SenderAuthGuard {
             });
         }
 
-        let queue_slot = {
+        let mut queue_slot = {
             let mut map = sender_inflight_auth()
                 .lock()
                 .unwrap_or_else(|e| e.into_inner());
@@ -174,6 +178,7 @@ impl SenderAuthGuard {
             SenderQueueSlot {
                 sender_key: sender_key.to_string(),
                 sem: Arc::clone(&entry.read_sem),
+                transferred: false,
             }
         };
 
@@ -186,8 +191,10 @@ impl SenderAuthGuard {
             Ok(Ok(permit)) => permit,
             _ => return None,
         };
-        // Transfer queue slot cleanup to SenderAuthGuard::drop alongside the semaphore permit.
-        std::mem::forget(queue_slot);
+        // Mark ownership transferred so SenderQueueSlot drops cleanly (freeing String + Arc)
+        // while SenderAuthGuard::drop decrements `read_queued` alongside `_read_permit` (`TA-17`).
+        queue_slot.transferred = true;
+        drop(queue_slot);
         Some(Self {
             sender: sender_key.to_string(),
             interactive: false,
@@ -466,5 +473,79 @@ impl Authorizer for TrackingAuthorizer {
         }
         let allow = self.allow;
         Box::pin(async move { allow })
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::sync::Weak;
+
+    #[tokio::test]
+    async fn ta_17_sender_auth_guard_drops_semaphore_and_map_entry_without_leaking() {
+        let sender_key = format!("test-leak-{}", std::process::id());
+        let mut weak_sem: Option<Weak<Semaphore>> = None;
+
+        for iter in 0..100 {
+            let guard = SenderAuthGuard::acquire(&sender_key, false)
+                .await
+                .expect("read auth guard acquire must succeed");
+            if iter == 0 {
+                let map = sender_inflight_auth().lock().unwrap();
+                let entry = map
+                    .get(&sender_key)
+                    .expect("active sender must have map entry");
+                weak_sem = Some(Arc::downgrade(&entry.read_sem));
+                assert_eq!(entry.read_queued, 1);
+            }
+            drop(guard);
+        }
+
+        let map = sender_inflight_auth().lock().unwrap();
+        assert!(
+            !map.contains_key(&sender_key),
+            "map entry must be removed after all guards drop"
+        );
+        assert!(
+            weak_sem.expect("weak captured").upgrade().is_none(),
+            "Arc<Semaphore> must be fully released (not leaked by mem::forget)"
+        );
+    }
+
+    #[tokio::test]
+    async fn ta_16_read_burst_succeeds_within_per_sender_cap_while_interactive_stays_capped() {
+        let sender_key = format!("test-burst-{}", std::process::id());
+        let mut tasks = Vec::new();
+        for _ in 0..8 {
+            let key = sender_key.clone();
+            tasks.push(tokio::spawn(async move {
+                let guard = SenderAuthGuard::acquire(&key, false).await;
+                if let Some(_g) = guard {
+                    tokio::time::sleep(Duration::from_millis(20)).await;
+                    true
+                } else {
+                    false
+                }
+            }));
+        }
+        let mut ok_count = 0usize;
+        for t in tasks {
+            if t.await.unwrap() {
+                ok_count += 1;
+            }
+        }
+        assert_eq!(
+            ok_count, 8,
+            "8 concurrent read auth checks must all succeed within per-sender cap"
+        );
+
+        let g1 = SenderAuthGuard::acquire(&sender_key, true).await;
+        let g2 = SenderAuthGuard::acquire(&sender_key, true).await;
+        let g3 = SenderAuthGuard::acquire(&sender_key, true).await;
+        assert!(g1.is_some() && g2.is_some());
+        assert!(
+            g3.is_none(),
+            "interactive auth limit ({MAX_PER_SENDER_INTERACTIVE_AUTH}) must stay enforced"
+        );
     }
 }

@@ -373,7 +373,7 @@ impl LiveUccdBackend {
         if blank_wc_led_on_lid_close && self.is_water_cooler_connected_now() {
             let mut cooler = self.lock_mutex(&self.cooler_controller);
             let current_rgb = cooler.desired_rgb_target();
-            if matches!(current_rgb, RgbTarget::Color { .. }) {
+            if current_rgb != RgbTarget::Off {
                 {
                     let mut saved = self.lock_mutex(&self.lid_saved_wc_rgb);
                     if saved.is_none() {
@@ -409,16 +409,23 @@ impl LiveUccdBackend {
                 }
             }
         }
-        if let Some(RgbTarget::Color {
-            red,
-            green,
-            blue,
-            state,
-        }) = self.lock_mutex(&self.lid_saved_wc_rgb).take()
-        {
-            if self.is_water_cooler_connected_now() {
-                let mut cooler = self.lock_mutex(&self.cooler_controller);
-                let _ = cooler.set_rgb(red, green, blue, state);
+        if let Some(saved_wc_rgb) = self.lock_mutex(&self.lid_saved_wc_rgb).take() {
+            let mut cooler = self.lock_mutex(&self.cooler_controller);
+            match saved_wc_rgb {
+                RgbTarget::Color {
+                    red,
+                    green,
+                    blue,
+                    state,
+                } => {
+                    // Always restore `desired_rgb` even if BLE is currently disconnected so
+                    // `CoolerController::on_connected()` replays the saved color on reconnect (`TA-06`).
+                    let _ = cooler.set_rgb(red, green, blue, state);
+                }
+                RgbTarget::Unset => {
+                    cooler.clear_desired_rgb_if_off();
+                }
+                RgbTarget::Off => {}
             }
         }
     }

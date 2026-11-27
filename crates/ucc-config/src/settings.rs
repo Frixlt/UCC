@@ -351,12 +351,38 @@ impl UccSettings {
         }
     }
 
-    /// Returns the active profile assigned to a given system power state ("power_ac", "power_bat", "power_type_c", "power_wc").
-    /// In accordance with F06, if Type-C has no explicit profile assigned, it falls back to AC.
-    pub fn get_active_profile_for_mode(&self, mode: &str) -> Option<&UccProfile> {
+    /// Returns the active profile assigned to a given system power state ("power_ac", "power_bat", "power_type_c", "power_wc"),
+    /// falling back to `physical_fallback` (e.g. underlying `"power_ac"`/`"power_type_c"`/`"power_bat"`) when `"power_wc"` is unmapped (`TA-07`),
+    /// and from `"power_type_c"` to `"power_ac"` per F06.
+    pub fn get_active_profile_for_mode_with_fallback(
+        &self,
+        mode: &str,
+        physical_fallback: Option<&str>,
+    ) -> Option<&UccProfile> {
         if let Some(profile_id) = self.state_map.get(mode) {
             if let Some(profile) = self.get_profile(profile_id) {
                 return Some(profile);
+            }
+        }
+
+        if mode == "power_wc" {
+            if let Some(phys_mode) = physical_fallback {
+                if let Some(phys_id) = self.state_map.get(phys_mode) {
+                    if let Some(profile) = self.get_profile(phys_id) {
+                        return Some(profile);
+                    }
+                }
+                if phys_mode == "power_type_c" {
+                    if let Some(ac_id) = self.state_map.get("power_ac") {
+                        if let Some(profile) = self.get_profile(ac_id) {
+                            return Some(profile);
+                        }
+                    }
+                }
+            } else if let Some(ac_id) = self.state_map.get("power_ac") {
+                if let Some(profile) = self.get_profile(ac_id) {
+                    return Some(profile);
+                }
             }
         }
 
@@ -371,6 +397,12 @@ impl UccSettings {
 
         // Fallback to Office / Balanced profile
         self.get_profile(PROFILE_ID_OFFICE)
+    }
+
+    /// Returns the active profile assigned to a given system power state ("power_ac", "power_bat", "power_type_c", "power_wc").
+    /// In accordance with F06, if Type-C has no explicit profile assigned, it falls back to AC.
+    pub fn get_active_profile_for_mode(&self, mode: &str) -> Option<&UccProfile> {
+        self.get_active_profile_for_mode_with_fallback(mode, None)
     }
 
     /// Sets the assigned profile ID for a power supply state.
@@ -556,5 +588,53 @@ mod tests {
 
         let count = json.matches("\"keyboardBacklightStates\"").count();
         assert_eq!(count, 1, "Must never emit duplicate keys (DIFF-01)");
+    }
+
+    #[test]
+    fn ta_07_power_wc_missing_or_deleted_falls_back_to_physical_mode() {
+        let mut settings = create_default_settings();
+        let mut custom_ac = default_office_profile();
+        custom_ac.id = "frixit-ac".to_string();
+        custom_ac.name = "max perfomance".to_string();
+        settings.profiles.insert("frixit-ac".to_string(), custom_ac);
+
+        let mut custom_bat = default_quiet_profile();
+        custom_bat.id = "frixit-bat".to_string();
+        custom_bat.name = "powersave".to_string();
+        settings
+            .profiles
+            .insert("frixit-bat".to_string(), custom_bat);
+
+        settings
+            .state_map
+            .insert("power_ac".to_string(), "frixit-ac".to_string());
+        settings
+            .state_map
+            .insert("power_bat".to_string(), "frixit-bat".to_string());
+        settings.state_map.remove("power_wc");
+
+        assert_eq!(
+            settings
+                .get_active_profile_for_mode_with_fallback("power_wc", Some("power_ac"))
+                .map(|p| p.id.as_str()),
+            Some("frixit-ac")
+        );
+        assert_eq!(
+            settings
+                .get_active_profile_for_mode_with_fallback("power_wc", Some("power_bat"))
+                .map(|p| p.id.as_str()),
+            Some("frixit-bat")
+        );
+
+        // Deleted target under power_wc also falls back to physical mode
+        settings
+            .state_map
+            .insert("power_wc".to_string(), "deleted-wc-id".to_string());
+        assert_eq!(
+            settings
+                .get_active_profile_for_mode_with_fallback("power_wc", Some("power_ac"))
+                .map(|p| p.id.as_str()),
+            Some("frixit-ac")
+        );
     }
 }

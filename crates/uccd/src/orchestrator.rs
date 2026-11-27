@@ -187,6 +187,15 @@ fn startup_prime_timeout() -> Duration {
     Duration::from_millis(1500)
 }
 
+fn startup_activate_timeout() -> Duration {
+    if let Ok(raw) = std::env::var("UCC_ACTIVATE_TIMEOUT_MS") {
+        if let Ok(ms) = raw.trim().parse::<u64>() {
+            return Duration::from_millis(ms.max(20));
+        }
+    }
+    Duration::from_millis(10_000)
+}
+
 fn spawn_periodic_worker(
     thread_name: &'static str,
     interval: Duration,
@@ -607,6 +616,7 @@ impl DaemonRuntime {
             }
         };
 
+        let activate_timeout = startup_activate_timeout();
         let activate_backend = Arc::clone(&backend);
         tokio::select! {
             biased;
@@ -614,19 +624,35 @@ impl DaemonRuntime {
                 abort_startup(connection, bus_name, backend, true).await;
                 return Ok(None);
             }
-            act_res = run_detached_blocking("uccd-activate", move || {
-                let _ = activate_backend.load_sleep_state_read_only();
-                activate_backend.seed_inherited_cpu_defaults(inherited_cpu_defaults);
-                activate_backend.activate_hardware();
-                activate_backend.clear_consumed_sleep_state();
-            }) => {
-                if let Err(err) = act_res {
-                    unregister_uccd_paths(&connection).await;
-                    let _ = connection.release_name(bus_name.as_str()).await;
-                    backend.set_activation_pending(false);
-                    return Err(zbus::Error::Failure(format!(
-                        "Daemon hardware activation failed: {err}"
-                    )));
+            act_res = tokio::time::timeout(
+                activate_timeout,
+                run_detached_blocking("uccd-activate", move || {
+                    let _ = activate_backend.load_sleep_state_read_only();
+                    activate_backend.seed_inherited_cpu_defaults(inherited_cpu_defaults);
+                    activate_backend.activate_hardware();
+                    activate_backend.clear_consumed_sleep_state();
+                }),
+            ) => {
+                match act_res {
+                    Ok(Ok(())) => {}
+                    Ok(Err(err)) => {
+                        unregister_uccd_paths(&connection).await;
+                        let _ = connection.release_name(bus_name.as_str()).await;
+                        backend.set_activation_pending(false);
+                        return Err(zbus::Error::Failure(format!(
+                            "Daemon hardware activation failed: {err}"
+                        )));
+                    }
+                    Err(_) => {
+                        backend.mark_startup_degraded(true);
+                        if !backend.is_shutting_down() {
+                            backend.set_activation_pending(false);
+                        }
+                        warn!(
+                            "Startup hardware activation exceeded {:?}; continuing in degraded startupState",
+                            activate_timeout
+                        );
+                    }
                 }
             }
         }

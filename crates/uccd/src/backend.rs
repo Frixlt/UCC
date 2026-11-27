@@ -230,6 +230,7 @@ pub struct LiveUccdBackend {
 
     pub(super) fan_controller: Arc<Mutex<FanController>>,
     pub(super) temporary_fan_curves: Mutex<Option<TemporaryFanCurves>>,
+    pub(super) temporary_saved_fan_profile_id: Mutex<Option<String>>,
     pub(super) latest_fans: RwLock<Option<FanTickSnapshot>>,
     pub(super) fan_control_enabled: AtomicBool,
 
@@ -254,9 +255,11 @@ pub struct LiveUccdBackend {
     pub(super) shutting_down: AtomicBool,
     pub(super) shutdown_wait_expired: AtomicBool,
     pub(super) prime_degraded: AtomicBool,
+    pub(super) startup_degraded: AtomicBool,
     pub(super) telemetry_poll_in_flight: AtomicBool,
     pub(super) hardware_activation_pending: AtomicBool,
     pub(super) hardware_activated: AtomicBool,
+    pub(super) activation_wait: Arc<(Mutex<bool>, Condvar)>,
     pub(super) in_flight_ops_wait: Arc<(Mutex<usize>, Condvar)>,
     pub(super) nvml: Option<Arc<NvmlWrapper>>,
     pub(super) nvidia_default_power_limit_w: Mutex<Option<(String, f64)>>,
@@ -405,6 +408,7 @@ impl LiveUccdBackend {
             latest_telemetry: RwLock::new(None),
             fan_controller,
             temporary_fan_curves: Mutex::new(None),
+            temporary_saved_fan_profile_id: Mutex::new(None),
             latest_fans: RwLock::new(None),
             fan_control_enabled: AtomicBool::new(fan_enabled),
             cooler_controller: Arc::new(Mutex::new(cooler_ctrl)),
@@ -426,9 +430,11 @@ impl LiveUccdBackend {
             shutting_down: AtomicBool::new(false),
             shutdown_wait_expired: AtomicBool::new(false),
             prime_degraded: AtomicBool::new(false),
+            startup_degraded: AtomicBool::new(false),
             telemetry_poll_in_flight: AtomicBool::new(false),
             hardware_activation_pending: AtomicBool::new(false),
             hardware_activated: AtomicBool::new(false),
+            activation_wait: Arc::new((Mutex::new(false), Condvar::new())),
             in_flight_ops_wait: Arc::new((Mutex::new(0), Condvar::new())),
             nvml,
             nvidia_default_power_limit_w: Mutex::new(None),
@@ -566,6 +572,29 @@ impl LiveUccdBackend {
     /// Marks the backend as shutting down so periodic/late RPC hardware writes abort cleanly.
     pub fn begin_shutdown(&self) {
         self.shutting_down.store(true, Ordering::SeqCst);
+        let (_, cvar) = &*self.activation_wait;
+        cvar.notify_all();
+    }
+
+    pub fn is_shutting_down(&self) -> bool {
+        self.shutting_down.load(Ordering::SeqCst)
+    }
+
+    /// Records whether startup hardware activation timed out (`TA-04`).
+    pub fn mark_startup_degraded(&self, degraded: bool) {
+        self.startup_degraded.store(degraded, Ordering::SeqCst);
+    }
+
+    /// Returns the daemon's current startup readiness state (`starting`, `degraded`, or `ready`).
+    pub fn startup_state_label(&self) -> &'static str {
+        if self.startup_degraded.load(Ordering::SeqCst) || self.prime_degraded.load(Ordering::SeqCst)
+        {
+            "degraded"
+        } else if self.hardware_activation_pending.load(Ordering::SeqCst) {
+            "starting"
+        } else {
+            "ready"
+        }
     }
 
     /// Marks that `DaemonRuntime::shutdown` timed out waiting for in-flight hardware work.
@@ -616,11 +645,37 @@ impl LiveUccdBackend {
     pub fn set_activation_pending(&self, pending: bool) {
         self.hardware_activation_pending
             .store(pending, Ordering::SeqCst);
+        let (lock, cvar) = &*self.activation_wait;
+        *self.lock_mutex(lock) = pending;
+        cvar.notify_all();
     }
 
     pub(super) fn enter_hardware_op(&self) -> Option<HardwareOpGuard> {
         if ucc_config::is_read_only_preview() {
             return None;
+        }
+        // When `activate_hardware()` is actively running during daemon startup, briefly wait
+        // (without holding `in_flight_ops_wait`) for startup activation to finish rather than
+        // failing incoming client mutations with a silent `false` (`TA-04`).
+        if self.hardware_activation_pending.load(Ordering::SeqCst)
+            && self.hardware_activated.load(Ordering::SeqCst)
+        {
+            let (lock, cvar) = &*self.activation_wait;
+            let deadline = Instant::now() + std::time::Duration::from_secs(5);
+            let mut pending = self.lock_mutex(lock);
+            while *pending && !self.shutting_down.load(Ordering::SeqCst) {
+                let remaining = deadline.saturating_duration_since(Instant::now());
+                if remaining.is_zero() {
+                    break;
+                }
+                let (guard, wait_res) = cvar
+                    .wait_timeout(pending, remaining)
+                    .unwrap_or_else(|e| e.into_inner());
+                pending = guard;
+                if wait_res.timed_out() {
+                    break;
+                }
+            }
         }
         let mut count = self.lock_mutex(&self.in_flight_ops_wait.0);
         if self.shutting_down.load(Ordering::SeqCst)
@@ -754,14 +809,14 @@ impl LiveUccdBackend {
     /// Applies saved lighting, initial profile, charging settings, wakeup policy, and fan control
     /// AFTER exclusive D-Bus name ownership. Runs strictly passive when `DeviceVendor::Unsupported`.
     pub fn activate_hardware(&self) {
+        let total_started = Instant::now();
         if ucc_config::is_read_only_preview() || self.is_vendor_unsupported() {
             self.hardware_activated.store(true, Ordering::SeqCst);
             if !self.is_prime_degraded() && !self.is_telemetry_poll_in_flight() {
                 self.prime_read_only();
             }
             if !self.shutting_down.load(Ordering::SeqCst) {
-                self.hardware_activation_pending
-                    .store(false, Ordering::SeqCst);
+                self.set_activation_pending(false);
             }
             return;
         }
@@ -771,9 +826,12 @@ impl LiveUccdBackend {
         self.hardware_activated.store(true, Ordering::SeqCst);
         self.capture_initial_cpu_defaults();
         self.capture_initial_tdp_defaults();
+
+        let prime_started = Instant::now();
         if !self.is_prime_degraded() && !self.is_telemetry_poll_in_flight() {
             self.prime_read_only();
         }
+        let prime_ms = prime_started.elapsed().as_millis();
 
         let (kb_states, lb_val, pd_val) = {
             let s = self.read_rw(&self.settings);
@@ -784,48 +842,73 @@ impl LiveUccdBackend {
             )
         };
 
+        let kbd_started = Instant::now();
         {
             let mut kb = self.lock_mutex(&self.keyboard_ctrl);
             let _ = kb.init();
             if let Some(ref states) = kb_states {
-                if !states.is_empty() && kb.is_available() && !self.shutting_down.load(Ordering::SeqCst) {
+                if !states.is_empty()
+                    && kb.is_available()
+                    && !self.shutting_down.load(Ordering::SeqCst)
+                {
                     let _ = kb.apply_states(states);
                 }
             }
-            if !self.shutting_down.load(Ordering::SeqCst) {
+            if !self.shutting_down.load(Ordering::SeqCst) && kb.current_states().is_empty() {
                 kb.hydrate_from_hardware();
             }
         }
+        let kbd_ms = kbd_started.elapsed().as_millis();
         if self.shutting_down.load(Ordering::SeqCst) {
             return;
         }
 
+        let lightbar_started = Instant::now();
         if let Some(ref lb_cfg) = lb_val {
             let mut lb = self.lock_mutex(&self.lightbar_ctrl);
             let _ = lb.configure(lb_cfg);
         }
+        let lightbar_ms = lightbar_started.elapsed().as_millis();
         if self.shutting_down.load(Ordering::SeqCst) {
             return;
         }
 
+        let wakeup_started = Instant::now();
         if let Some(ref pd) = pd_val {
             self.apply_wakeup_policy_from_settings(pd);
         }
+        let wakeup_ms = wakeup_started.elapsed().as_millis();
         if self.shutting_down.load(Ordering::SeqCst) {
             return;
         }
 
-        self.reconcile_power_state(true);
+        let reconcile_started = Instant::now();
+        let applied_profile = self.reconcile_power_state_checked(true);
+        let reconcile_ms = reconcile_started.elapsed().as_millis();
         if self.shutting_down.load(Ordering::SeqCst) {
             return;
         }
-        let active_now = self.read_rw(&self.active_profile).clone();
-        self.apply_charging_settings_for_profile(&active_now);
-        let _ = self.tick_fans_once();
-        if !self.shutting_down.load(Ordering::SeqCst) {
-            self.hardware_activation_pending
-                .store(false, Ordering::SeqCst);
+
+        // Only run fallback charging + fan tick when the startup profile transaction itself did
+        // not already apply them (`TA-22`).
+        if !applied_profile {
+            let active_now = self.read_rw(&self.active_profile).clone();
+            self.apply_charging_settings_for_profile(&active_now);
+            let _ = self.tick_fans_once();
         }
+        if !self.shutting_down.load(Ordering::SeqCst) {
+            self.set_activation_pending(false);
+        }
+        tracing::info!(
+            prime_ms,
+            kbd_ms,
+            lightbar_ms,
+            wakeup_ms,
+            reconcile_ms,
+            applied_profile,
+            total_ms = total_started.elapsed().as_millis(),
+            "Hardware activation completed"
+        );
     }
 
     pub fn activate_hardware_and_prime(&self) {

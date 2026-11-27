@@ -785,3 +785,154 @@ fn performance_governor_epp_ebusy_does_not_trigger_repeated_reapply() {
         "EPP EBUSY under performance governor must not keep reapplying CPU sysfs: {extra_cpu_writes:?}"
     );
 }
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 3)]
+async fn ta_04_startup_state_and_no_silent_rejection_during_activation() {
+    let root = tempfile::tempdir().unwrap();
+    let (backend, _, _, _) = build_test_backend(root.path());
+    let health_before: serde_json::Value =
+        serde_json::from_str(&backend.get_driver_health_json()).unwrap();
+    assert_eq!(health_before["startupState"], "ready");
+
+    let runtime = start_runtime(
+        Arc::clone(&backend),
+        "org.test.uccd.ta04_startup_state",
+        false,
+    )
+    .await;
+    let health_ready: serde_json::Value =
+        serde_json::from_str(&backend.get_driver_health_json()).unwrap();
+    assert_eq!(health_ready["startupState"], "ready");
+
+    // Simulate active startup window while a caller mutates a setting: must wait & succeed instead of silent false.
+    backend.set_activation_pending(true);
+    let b_setter = Arc::clone(&backend);
+    let setter = tokio::task::spawn_blocking(move || b_setter.set_water_cooler_fan_speed(42));
+    tokio::time::sleep(Duration::from_millis(60)).await;
+    backend.set_activation_pending(false);
+    assert!(
+        setter.await.unwrap(),
+        "TA-04: mutation arriving during active startup must wait and succeed cleanly"
+    );
+
+    runtime.shutdown(Duration::from_secs(1)).await;
+}
+
+#[tokio::test]
+async fn ta_07_wc_connect_without_power_wc_mapping_preserves_ac_profile() {
+    let root = tempfile::tempdir().unwrap();
+    let mut cfg = create_default_settings();
+    let mut ac_prof = default_high_performance_profile();
+    ac_prof.id = "frixit-ac".to_string();
+    ac_prof.name = "max perfomance".to_string();
+    ac_prof.odm_profile_name = None;
+    ac_prof.odm_power_limits = vec![45, 65, 85];
+    cfg.profiles.insert(ac_prof.id.clone(), ac_prof.clone());
+    cfg.state_map.insert("power_ac".to_string(), ac_prof.id.clone());
+    cfg.state_map.remove("power_wc");
+    ConfigManager::with_custom_path(root.path().join("settings.json"))
+        .save(&cfg)
+        .unwrap();
+
+    let (backend, _, _, _) = build_test_backend(root.path());
+    backend.activate_hardware_and_prime();
+
+    backend.set_cooler_connected_state(true);
+    backend.reconcile_power_state(false);
+    let active: serde_json::Value =
+        serde_json::from_str(&backend.get_active_profile_json()).unwrap();
+    assert_eq!(
+        active["id"], "frixit-ac",
+        "TA-07: missing power_wc mapping must fall back to physical power_ac profile, not High Performance"
+    );
+}
+
+#[test]
+fn ta_22_startup_activation_does_not_duplicate_charging_writes_or_fan_ticks() {
+    let root = tempfile::tempdir().unwrap();
+    let bat = root.path().join("sys/class/power_supply/BAT0");
+    let end_path = bat.join("charge_control_end_threshold");
+
+    let mut cfg = create_default_settings();
+    cfg.profiles.values_mut().for_each(|p| {
+        p.charging.start_threshold = Some(40);
+        p.charging.end_threshold = Some(80);
+    });
+    ConfigManager::with_custom_path(root.path().join("settings.json"))
+        .save(&cfg)
+        .unwrap();
+
+    let sysfs = Arc::new(MockSysfs::new());
+    sysfs.set_file(
+        root.path().join("sys/devices/system/cpu/cpu0/cpufreq/scaling_cur_freq"),
+        "3200000",
+    );
+    sysfs.set_file(
+        root.path().join("sys/class/power_supply/AC/type"),
+        "Mains",
+    );
+    sysfs.set_file(root.path().join("sys/class/power_supply/AC/online"), "1");
+    sysfs.set_file(bat.join("type"), "Battery");
+    sysfs.set_file(bat.join("charge_control_start_threshold"), "0");
+    sysfs.set_file(&end_path, "100");
+
+    let caps = PlatformCapabilities {
+        backend: PlatformBackendKind::Mock,
+        device: DeviceCapabilities {
+            vendor: DeviceVendor::Uniwill,
+            number_of_fans: 2,
+            fans_min_speed: 20,
+            fans_off_available: true,
+            fan_control: true,
+            charging_thresholds: true,
+            tdp_control: true,
+            ..Default::default()
+        },
+        tdp_channels: 3,
+        perf_profiles_available: 3,
+    };
+    let platform = Arc::new(MockPlatformBackend::new(caps));
+    platform.set_fan_temp(0, 65);
+    platform.set_fan_temp(1, 65);
+    platform.set_tdp_limits(0, (15, 90));
+    platform.set_tdp_limits(1, (20, 120));
+    platform.set_tdp_limits(2, (25, 140));
+
+    let backend = Arc::new(LiveUccdBackend::new(UccdDependencies {
+        device_name: "DedupTest".into(),
+        platform: platform.clone(),
+        sysfs: sysfs.clone(),
+        lighting_transport: Arc::new(MockLightingTransport::new()),
+        config_manager: ConfigManager::with_custom_path(root.path().join("settings.json")),
+        sys_root: root.path().to_path_buf(),
+        telemetry_config: TelemetryConfig {
+            sys_root: root.path().to_path_buf(),
+            ..Default::default()
+        },
+        power_devices: PowerDeviceController::default(),
+        lid_policy: LidPolicyConfig::default(),
+    }));
+    platform.clear_journal();
+    sysfs.clear_journal();
+
+    backend.activate_hardware_and_prime();
+
+    let end_writes = sysfs
+        .journal()
+        .into_iter()
+        .filter(|w| w.path == end_path)
+        .count();
+    let fan0_writes = platform
+        .journal()
+        .into_iter()
+        .filter(|w| matches!(w, PlatformWrite::SetFanSpeed { fan_idx: 0, .. }))
+        .count();
+    assert_eq!(
+        end_writes, 1,
+        "TA-22: startup must write charge_control_end_threshold once, not twice"
+    );
+    assert_eq!(
+        fan0_writes, 1,
+        "TA-22: startup must run initial fan tick once, not twice"
+    );
+}

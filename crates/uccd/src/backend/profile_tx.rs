@@ -402,6 +402,7 @@ impl LiveUccdBackend {
             .store(fan_enabled, Ordering::SeqCst);
         {
             *self.lock_mutex(&self.temporary_fan_curves) = None;
+            *self.lock_mutex(&self.temporary_saved_fan_profile_id) = None;
             let mut fc = self.lock_mutex(&self.fan_controller);
             fc.clear_temporary_curves();
             fc.set_same_speed(profile.fan.same_speed);
@@ -2125,15 +2126,22 @@ impl LiveUccdBackend {
     /// Reconciles active profile, `PowerDeviceController`, `LightbarController`, and D-Bus signals
     /// with physical power supply and `PowerPolicy` state (`M8-RECHECK-04`, `09`, `M8-PROD-09`).
     pub fn reconcile_power_state(&self, force_apply: bool) {
+        let _ = self.reconcile_power_state_checked(force_apply);
+    }
+
+    /// Runs power-state reconciliation and returns `true` if a full profile transaction was
+    /// applied cleanly (meaning charging and initial fan tick already ran inside the transaction) (`TA-22`).
+    pub(super) fn reconcile_power_state_checked(&self, force_apply: bool) -> bool {
         if self.shutting_down.load(Ordering::SeqCst)
             || ucc_config::is_read_only_preview()
             || self.is_vendor_unsupported()
         {
-            return;
+            return false;
         }
         let decision = self.current_decision();
         let state_str = decision.profile_state.as_str().to_string();
         let effective_mode = decision.effective;
+        let physical_fallback_mode = effective_mode.as_str().to_string();
         let policy_json = decision.status.to_string();
         let pd_rev = self.power_devices.revision();
 
@@ -2180,12 +2188,24 @@ impl LiveUccdBackend {
                 if self.shutting_down.load(Ordering::SeqCst) {
                     break;
                 }
-                let apply_state = self.current_decision().profile_state.as_str().to_string();
+                let dec = self.current_decision();
+                let apply_state = dec.profile_state.as_str().to_string();
+                let phys_fallback = dec.effective.as_str().to_string();
                 let (target_profile, expected_stored) = {
                     let s = self.read_rw(&self.settings);
-                    match s.get_active_profile_for_mode(&apply_state) {
+                    match s.get_active_profile_for_mode_with_fallback(
+                        &apply_state,
+                        Some(&phys_fallback),
+                    ) {
                         Some(p) => (p.clone(), Some(p.clone())),
-                        None => (default_high_performance_profile(), None),
+                        None => {
+                            let cur = self.read_rw(&self.active_profile).clone();
+                            if s.profiles.contains_key(&cur.id) {
+                                (cur.clone(), Some(cur))
+                            } else {
+                                (default_high_performance_profile(), None)
+                            }
+                        }
                     }
                 };
                 match self.apply_profile_internal(
@@ -2200,8 +2220,13 @@ impl LiveUccdBackend {
                         let decision_matches =
                             self.current_decision().profile_state.as_str() == apply_state;
                         let stored_matches = expected_stored.as_ref().is_none_or(|exp| {
+                            let dec_now = self.current_decision();
+                            let phys_now = dec_now.effective.as_str();
                             self.read_rw(&self.settings)
-                                .get_active_profile_for_mode(&apply_state)
+                                .get_active_profile_for_mode_with_fallback(
+                                    &apply_state,
+                                    Some(phys_now),
+                                )
                                 .is_some_and(|cur| cur == exp)
                         });
                         if decision_matches && stored_matches {
@@ -2230,9 +2255,10 @@ impl LiveUccdBackend {
         }
 
         if self.shutting_down.load(Ordering::SeqCst) {
-            return;
+            return applied_profile_now;
         }
 
+        let _ = physical_fallback_mode;
         if force_apply || effective_changed || pd_changed || cpu_overlay_pending {
             if force_apply || effective_changed || pd_changed {
                 self.power_devices.apply(effective_mode.mode_name());
@@ -2245,7 +2271,7 @@ impl LiveUccdBackend {
             }
             if !applied_profile_now || cpu_overlay_pending {
                 if self.shutting_down.load(Ordering::SeqCst) {
-                    return;
+                    return applied_profile_now;
                 }
                 let current_active = self.read_rw(&self.active_profile).clone();
                 match self.apply_cpu_settings(&current_active) {
@@ -2266,6 +2292,7 @@ impl LiveUccdBackend {
                 self.emit_signal(DbusSignalEvent::PowerPolicyChanged { json: policy_json });
             }
         }
+        applied_profile_now
     }
 
     pub(super) fn persist_or_reapply_custom_profile(

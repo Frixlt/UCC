@@ -903,6 +903,15 @@ impl CoolerController {
         self.queue.enqueue(CoolerCommand::TurnOffLed)
     }
 
+    /// Resets `desired_rgb` back to `RgbTarget::Unset` if it is currently `RgbTarget::Off` (`TA-05`).
+    ///
+    /// Used when restoring lid lighting after closing while the cooler LED state was `Unset`.
+    pub fn clear_desired_rgb_if_off(&mut self) {
+        if self.desired_rgb == RgbTarget::Off {
+            self.desired_rgb = RgbTarget::Unset;
+        }
+    }
+
     /// Marks the cooler connected, clears stale queued items, and re-enqueues active
     /// fan/pump/RGB targets, including explicit `Off` states (`W1-04`, `M5.7`).
     pub fn on_connected(&mut self) {

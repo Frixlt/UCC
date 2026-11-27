@@ -789,3 +789,78 @@ fn ta_02_rejected_wc_fan_or_pump_command_keeps_auto_control_active() {
         "Auto WC loop must still drive pump voltage at 95°C after rejected manual requests"
     );
 }
+
+#[test]
+fn ta_08_ta_09_temporary_wc_curves_drive_wc_auto_and_revert_restores_fan_profile_id() {
+    let tmp = tempfile::tempdir().unwrap();
+    let (backend, platform, _, _) =
+        build_backend_with_caps(tmp.path(), default_uniwill_caps(), |_| {}, |_| {});
+    let mut rx = backend.subscribe_signals();
+
+    assert!(backend.enable_water_cooler(true));
+    backend.set_cooler_connected_state(true);
+    let initial_active: Value = serde_json::from_str(&backend.get_active_profile_json()).unwrap();
+    let orig_fp_id = initial_active["fan"]["fanProfile"]
+        .as_str()
+        .unwrap()
+        .to_string();
+
+    platform.set_fan_temp(0, 60);
+    platform.set_fan_temp(1, 60);
+
+    // TA-08: Apply temporary WC fan & pump curves and verify WC Auto controller follows them
+    let temp_json = json!({
+        "waterCoolerFan": [{"temp": 20, "speed": 90}, {"temp": 100, "speed": 90}],
+        "pump": [{"temp": 20, "speed": 3}, {"temp": 100, "speed": 3}],
+        "fanProfileId": "fan-freezy"
+    })
+    .to_string();
+    assert!(backend.apply_fan_profiles(&temp_json));
+    assert_eq!(
+        backend.get_water_cooler_fan_speed(),
+        90,
+        "TA-08: temporary WC fan curve must drive WC Auto fan speed"
+    );
+    assert_eq!(
+        backend.get_water_cooler_pump_level(),
+        0, // discrete 0 = 11V
+        "TA-08: temporary WC pump curve must drive WC Auto pump voltage"
+    );
+
+    // Reconnect replay also retains temporary WC curves while active
+    backend.replay_active_cooler_profile();
+    assert_eq!(backend.get_water_cooler_fan_speed(), 90);
+    assert_eq!(backend.get_water_cooler_pump_level(), 0);
+
+    let switched: Value = serde_json::from_str(&backend.get_active_profile_json()).unwrap();
+    assert_eq!(switched["fan"]["fanProfile"], "fan-freezy");
+
+    while rx.try_recv().is_ok() {}
+
+    // TA-09: RevertFanProfiles restores original fanProfile ID, emits ProfileChanged, and reverts WC Auto targets
+    assert!(backend.revert_fan_profiles());
+    let reverted: Value = serde_json::from_str(&backend.get_active_profile_json()).unwrap();
+    assert_eq!(
+        reverted["fan"]["fanProfile"].as_str(),
+        Some(orig_fp_id.as_str()),
+        "TA-09: RevertFanProfiles must restore original fanProfile ID"
+    );
+    assert_ne!(
+        backend.get_water_cooler_fan_speed(),
+        90,
+        "TA-08: RevertFanProfiles must restore WC fan target to active profile curve"
+    );
+
+    let mut emitted_orig_fp = false;
+    while let Ok(evt) = rx.try_recv() {
+        if let DbusSignalEvent::ProfileChanged { fan_profile_id, .. } = evt {
+            if fan_profile_id == orig_fp_id {
+                emitted_orig_fp = true;
+            }
+        }
+    }
+    assert!(
+        emitted_orig_fp,
+        "TA-09: RevertFanProfiles must emit ProfileChanged with restored fanProfile ID"
+    );
+}

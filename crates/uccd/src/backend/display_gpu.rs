@@ -1636,6 +1636,7 @@ impl LiveUccdBackend {
             "kernel": kernel,
             "issues": issues,
             "message": message,
+            "startupState": self.startup_state_label(),
         })
         .to_string()
     }
