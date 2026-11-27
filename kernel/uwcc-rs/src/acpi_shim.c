@@ -77,7 +77,9 @@ static bool uwcc_has_ecrr;
 static bool uwcc_has_ecrw;
 static bool uwcc_has_smrw;
 static bool uwcc_has_pwup;
+#if IS_ENABLED(CONFIG_ACPI_WMI)
 static bool uwcc_wmi_registered;
+#endif
 static bool uwcc_misc_registered;
 static struct device *uwcc_hwmon_dev;
 

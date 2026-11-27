@@ -84,18 +84,21 @@ impl WmiRingBuffer {
     }
 
     /// Returns `true` when the buffer is at capacity.
+    #[cfg(test)]
     #[inline]
     pub const fn is_full(&self) -> bool {
         self.len == WMI_RING_CAPACITY
     }
 
     /// Returns the number of queued unread events.
+    #[cfg(test)]
     #[inline]
     pub const fn len(&self) -> usize {
         self.len
     }
 
     /// Returns the total number of overwritten events since initialization.
+    #[cfg(test)]
     #[inline]
     pub const fn dropped_count(&self) -> u64 {
         self.dropped
