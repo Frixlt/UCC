@@ -176,8 +176,14 @@ void GuiAudit::deviceMatrixKeepsThreeIndependentModes() {
     QVERIFY(!payload["lid"]["turnOffWaterCoolerLedOnLidClose"].toBool());
 #endif
     QTest::qWait(80);
+    verifyWindowFitsLayout(window, QSize(1280,900), "power-devices-1280x900");
+    if(QTest::currentTestFailed()) return;
     const QString output=qEnvironmentVariable("UCC_SCREENSHOT_DIR");
     if(!output.isEmpty()) QVERIFY(window.grab().save(output+"/power-devices.png"));
+    window.resize(1024,768);
+    QTest::qWait(100);
+    verifyWindowFitsLayout(window, QSize(1024,768), "power-devices-1024x768");
+    if(QTest::currentTestFailed()) return;
   }
 void GuiAudit::rejectedPolicyCommandsAreNotReportedAsSuccessful() {
     control("TestFailControl",{true});

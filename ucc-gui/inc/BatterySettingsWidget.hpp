@@ -26,6 +26,7 @@ public:
     m_mode=new QComboBox;m_mode->setObjectName("globalChargingProfile");
     m_priority=new QComboBox;m_priority->setObjectName("globalChargingPriority");
     m_limit=new QComboBox;m_limit->setObjectName("globalChargeLimit");
+    for(auto* combo:{m_mode,m_priority,m_limit}) {combo->setSizeAdjustPolicy(QComboBox::AdjustToMinimumContentsLengthWithIcon);combo->setMinimumContentsLength(10);}
     m_limit->addItem("Full capacity (100%)","full");m_limit->addItem("Reduced (60–90%)","reduced");m_limit->addItem("Stationary (40–80%)","stationary");
     form->addRow("Charging mode",m_mode);form->addRow("USB-C priority",m_priority);form->addRow("Charge limit",m_limit);
     m_apply=new QPushButton("Save and apply");m_apply->setObjectName("saveBatterySettings");m_apply->setProperty("primary",true);m_apply->setEnabled(false);

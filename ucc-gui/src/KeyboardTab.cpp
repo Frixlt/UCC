@@ -87,6 +87,8 @@ void MainWindow::setupKeyboardBacklightPage( QTabWidget *targetTabs )
   m_keyboardProfileCombo = new QComboBox();
   m_keyboardProfileCombo->setEditable( true );
   m_keyboardProfileCombo->setInsertPolicy( QComboBox::NoInsert );
+  m_keyboardProfileCombo->setSizeAdjustPolicy( QComboBox::AdjustToMinimumContentsLengthWithIcon );
+  m_keyboardProfileCombo->setMinimumContentsLength( 10 );
 
   // Add custom keyboard profiles from settings
   for ( const auto &v : m_profileManager->customKeyboardProfilesData() )
@@ -140,7 +142,7 @@ void MainWindow::setupKeyboardBacklightPage( QTabWidget *targetTabs )
         m_keyboardBrightnessValueLabel->setMinimumWidth( 40 );
 
         brightnessLayout->addWidget( brightnessLabel );
-        brightnessLayout->addWidget( m_keyboardBrightnessSlider );
+        brightnessLayout->addWidget( m_keyboardBrightnessSlider, 1 );
         brightnessLayout->addWidget( m_keyboardBrightnessValueLabel );
         FluentTheme::styleSliderRow(brightnessLayout,m_keyboardBrightnessValueLabel);
 

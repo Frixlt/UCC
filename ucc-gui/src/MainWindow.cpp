@@ -252,8 +252,10 @@ void MainWindow::updateMonitoringActivity()
   m_systemMonitor->setMonitoringActive(visible && (index == 0 || index == fanIndex));
   if (m_monitorTab)
     m_monitorTab->setMonitoringActive(visible && index == m_tabs->indexOf(m_monitorTab));
-  if(auto *processes=findChild<SessionProcessesWidget*>())
-    processes->monitor()->setActive(visible && index==m_tabs->indexOf(processes->parentWidget()));
+  if(auto *processes=findChild<SessionProcessesWidget*>()) {
+    QWidget *currentTab = m_tabs->widget(index);
+    processes->monitor()->setActive(visible && currentTab && currentTab->isAncestorOf(processes));
+  }
 }
 
 void MainWindow::setupUI()
@@ -373,7 +375,7 @@ void MainWindow::setupUI()
     FluentTheme::setMode(next);
   });
   connect(FluentTheme::events(),&FluentTheme::ThemeEvents::changed,this,refreshTheme);refreshTheme();
-  auto *subtitle=new QLabel("Your system at a glance",content);subtitle->setObjectName("subtitle");contentLayout->addWidget(subtitle);
+  auto *subtitle=new QLabel("Your system at a glance",content);subtitle->setObjectName("subtitle");subtitle->setWordWrap(true);contentLayout->addWidget(subtitle);
   contentLayout->addWidget(m_tabs,1);shellLayout->addWidget(content,1);setCentralWidget(shell);
   m_entrance=new FluentEntrance(content);
   auto showNavigationHeading=[heading,subtitle,labels](int row) {
@@ -475,15 +477,17 @@ void MainWindow::setupUI()
   auto *powerDevices=new PowerDevicesTab(m_UccdClient.get(),this);
   connect(powerDevices,&PowerDevicesTab::message,statusBar(),[this](const QString &text){statusBar()->showMessage(text);});
   m_tabs->addTab(powerDevices,"Power & Devices");
+  auto *desktopScroll=new QScrollArea;desktopScroll->setWidgetResizable(true);desktopScroll->setFrameShape(QFrame::NoFrame);
   auto *desktopPage=new QWidget;auto *desktopLayout=new QVBoxLayout(desktopPage);desktopLayout->setContentsMargins(0,0,0,0);
   auto *minimized=new QCheckBox("Start Control Center minimized");minimized->setObjectName("startMinimized");minimized->setChecked(startMinimizedPreference());minimized->setEnabled(!readOnlyPreview);desktopLayout->addWidget(minimized);
   connect(minimized,&QCheckBox::toggled,this,[](bool value){if(!readOnlyPreview) QSettings("UniwillControlCenter","desktop").setValue("startMinimized",value);});
   auto *refreshHints=new QCheckBox("Offer display refresh changes on KDE / Hyprland");refreshHints->setObjectName("refreshRateNotifications");refreshHints->setChecked(readOnlyPreview || QSettings("UniwillControlCenter","desktop").value("refreshRateNotifications",true).toBool());refreshHints->setEnabled(!readOnlyPreview);desktopLayout->addWidget(refreshHints);
   connect(refreshHints,&QCheckBox::toggled,this,[](bool value){if(!readOnlyPreview) QSettings("UniwillControlCenter","desktop").setValue("refreshRateNotifications",value);});
   desktopLayout->addWidget(new BatterySettingsWidget(m_UccdClient.get(),desktopPage));
-  auto *processes=new SessionProcessesWidget({},nullptr,desktopPage);desktopLayout->addWidget(processes,1);
+  auto *processes=new SessionProcessesWidget({},nullptr,desktopPage);processes->setMinimumHeight(260);desktopLayout->addWidget(processes,1);
   connect(processes,&SessionProcessesWidget::message,statusBar(),[this](const QString &text){statusBar()->showMessage(text);});
-  m_tabs->addTab(desktopPage,"Battery & Processes");
+  desktopScroll->setWidget(desktopPage);
+  m_tabs->addTab(desktopScroll,"Battery & Processes");
   auto *experimentalPage=new QWidget;experimentalPage->setObjectName("experimentalPage");
   auto *experimentalLayout=new QVBoxLayout(experimentalPage);experimentalLayout->setContentsMargins(0,0,0,0);experimentalLayout->setSpacing(12);
   auto *experimentalWarningCard=FluentTheme::createCard();experimentalWarningCard->setObjectName("experimentalWarningCard");
@@ -702,6 +706,8 @@ void MainWindow::setupProfilesPage()
   selectLayout->setSpacing(8);
   auto *profileLabel=new QLabel("Profile");profileLabel->setObjectName("muted");
   selectLayout->addWidget(profileLabel);
+  m_profileCombo->setSizeAdjustPolicy(QComboBox::AdjustToMinimumContentsLengthWithIcon);
+  m_profileCombo->setMinimumContentsLength(10);
   m_profileCombo->setMinimumWidth(180);
   m_profileCombo->setMaximumWidth(360);
   selectLayout->addWidget(m_profileCombo,1);
@@ -747,7 +753,6 @@ void MainWindow::setupProfilesPage()
   m_batteryButton->setCheckable( true );
   m_waterCoolerButton = new QPushButton( "Water Cooler" );
   m_waterCoolerButton->setCheckable( true );
-  m_waterCoolerButton->setCheckable( true );
   m_mainsButton->setMaximumWidth( 100 );
   m_batteryButton->setMaximumWidth( 100 );
   m_waterCoolerButton->setMinimumWidth(120);
@@ -782,6 +787,8 @@ void MainWindow::setupProfilesPage()
 
   QLabel *keyboardProfileLabel = new QLabel( "Keyboard profile" );
   m_profileKeyboardProfileCombo = new QComboBox();
+  m_profileKeyboardProfileCombo->setSizeAdjustPolicy( QComboBox::AdjustToMinimumContentsLengthWithIcon );
+  m_profileKeyboardProfileCombo->setMinimumContentsLength( 10 );
 
   for ( const auto &v : m_profileManager->customKeyboardProfilesData() )
   {
@@ -816,6 +823,8 @@ void MainWindow::setupProfilesPage()
 
   m_profileRefreshRate = new QComboBox();
   m_profileRefreshRate->setObjectName("profileRefreshRate");
+  m_profileRefreshRate->setSizeAdjustPolicy( QComboBox::AdjustToMinimumContentsLengthWithIcon );
+  m_profileRefreshRate->setMinimumContentsLength( 10 );
   rebuildRefreshRateCombo( 0 );
   m_profileRefreshRate->setToolTip("Applies automatically when this profile becomes active. Keeps the current resolution and uses only modes supported by the internal display.");
   detailsLayout->addWidget(new QLabel("Display refresh rate"), row, 0);
@@ -836,6 +845,8 @@ void MainWindow::setupProfilesPage()
 
   m_profileLidCloseAction = new QComboBox();
   m_profileLidCloseAction->setObjectName("profileLidCloseAction");
+  m_profileLidCloseAction->setSizeAdjustPolicy( QComboBox::AdjustToMinimumContentsLengthWithIcon );
+  m_profileLidCloseAction->setMinimumContentsLength( 10 );
   m_profileLidCloseAction->addItem("Default (global)", QString());
   m_profileLidCloseAction->addItem("Turn off screen (keep running)", QStringLiteral("screen_off"));
   m_profileLidCloseAction->addItem("Ignore", QStringLiteral("ignore"));
@@ -860,6 +871,8 @@ void MainWindow::setupProfilesPage()
 
   QLabel *fanProfileLabel = new QLabel( "Fan profile" );
   m_profileFanProfileCombo = new QComboBox();
+  m_profileFanProfileCombo->setSizeAdjustPolicy( QComboBox::AdjustToMinimumContentsLengthWithIcon );
+  m_profileFanProfileCombo->setMinimumContentsLength( 10 );
   // Add built-in fan profiles from daemon (id + name)
   for ( const auto &v : m_profileManager->builtinFanProfilesData() )
   {
@@ -1028,12 +1041,18 @@ void MainWindow::setupProfilesPage()
 
   QLabel *maxPerfLabel = new QLabel( "CPU Governor" );
   m_governorCombo = new QComboBox();
+  m_governorCombo->setSizeAdjustPolicy( QComboBox::AdjustToMinimumContentsLengthWithIcon );
+  m_governorCombo->setMinimumContentsLength( 10 );
+  m_governorCombo->setMinimumWidth( 160 );
   detailsLayout->addWidget( maxPerfLabel, row, 0 );
   detailsLayout->addWidget( m_governorCombo, row, 1, Qt::AlignLeft );
   row++;
 
   QLabel *eppLabel = new QLabel( "Energy Performance Preference" );
   m_eppCombo = new QComboBox();
+  m_eppCombo->setSizeAdjustPolicy( QComboBox::AdjustToMinimumContentsLengthWithIcon );
+  m_eppCombo->setMinimumContentsLength( 10 );
+  m_eppCombo->setMinimumWidth( 180 );
   detailsLayout->addWidget( eppLabel, row, 0 );
   detailsLayout->addWidget( m_eppCombo, row, 1, Qt::AlignLeft );
   row++;

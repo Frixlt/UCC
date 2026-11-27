@@ -6,6 +6,7 @@
 #include <QHBoxLayout>
 #include <QGridLayout>
 #include <QHeaderView>
+#include <QScrollArea>
 #include <QSpinBox>
 #include <QComboBox>
 #include <QJsonDocument>
@@ -83,7 +84,11 @@ void tableStyle(QTableWidget *table) {
 }
 
 PowerDevicesTab::PowerDevicesTab(UccdClient *client,QWidget *parent) : QWidget(parent),m_client(client) {
-  auto *layout=new QVBoxLayout(this);layout->setContentsMargins(0,0,0,0);layout->setSpacing(12);
+  auto *outer=new QVBoxLayout(this);outer->setContentsMargins(0,0,0,0);
+  auto *scroll=new QScrollArea(this);scroll->setWidgetResizable(true);scroll->setFrameShape(QFrame::NoFrame);
+  outer->addWidget(scroll);
+  auto *body=new QWidget;scroll->setWidget(body);
+  auto *layout=new QVBoxLayout(body);layout->setContentsMargins(0,0,0,0);layout->setSpacing(12);
   auto *description=new QLabel("Choose each device's behavior on AC, USB-C power and battery. These policies follow the effective power mode, including manual overrides.");
   description->setWordWrap(true);description->setObjectName("muted");layout->addWidget(description);
   m_enabled=new QCheckBox("Enable per-mode CPU and device policies");m_enabled->setObjectName("powerDevicesEnabled");
@@ -145,7 +150,7 @@ PowerDevicesTab::PowerDevicesTab(UccdClient *client,QWidget *parent) : QWidget(p
 
   auto *toolbar=new QHBoxLayout;
   toolbar->setSpacing(8);
-  m_search=new QLineEdit;m_search->setPlaceholderText("Filter devices by name or path");toolbar->addWidget(m_search,1);
+  m_search=new QLineEdit;m_search->setPlaceholderText("Filter devices by name or path");m_search->setMinimumWidth(100);m_search->setSizePolicy(QSizePolicy::Expanding,QSizePolicy::Fixed);toolbar->addWidget(m_search,1);
   auto *reloadButton=new QPushButton("Reload");toolbar->addWidget(reloadButton);
   m_scan=new QPushButton("Re-scan hardware");m_scan->setObjectName("scanPowerDevices");toolbar->addWidget(m_scan);
   m_save=new QPushButton("Save and apply");m_save->setObjectName("savePowerDevices");m_save->setProperty("primary",true);toolbar->addWidget(m_save);
@@ -157,6 +162,9 @@ PowerDevicesTab::PowerDevicesTab(UccdClient *client,QWidget *parent) : QWidget(p
 
   m_devices=new QTableWidget(0,5);m_devices->setObjectName("powerDeviceTable");
   m_devices->setHorizontalHeaderLabels({"Device","AC","Type-C","Battery","Last application"});tableStyle(m_devices);
+  m_devices->setMinimumHeight(220);
+  m_devices->setTextElideMode(Qt::ElideRight);
+  m_devices->horizontalHeader()->setMinimumSectionSize(72);
   m_devices->horizontalHeader()->setSectionResizeMode(0,QHeaderView::Stretch);
   for(int column=1;column<5;++column) m_devices->horizontalHeader()->setSectionResizeMode(column,QHeaderView::ResizeToContents);
   layout->addWidget(m_devices,1);
@@ -227,10 +235,16 @@ void PowerDevicesTab::reload() {
         else if(type=="service") {combo->setItemText(0,"Enabled");combo->setItemText(1,"Disabled");}
         else if(turbo) {combo->setItemText(0,"Enabled");combo->setItemText(1,"Disabled");}
         else if(watchdog) {combo->setItemText(0,"Disabled");combo->setItemText(1,"Enabled");}
+        combo->setSizeAdjustPolicy(QComboBox::AdjustToMinimumContentsLengthWithIcon);
+        combo->setMinimumContentsLength(8);
+        combo->setMinimumWidth(92);
+        combo->setMaximumWidth(132);
+        combo->setSizePolicy(QSizePolicy::Ignored,QSizePolicy::Fixed);
         m_devices->setCellWidget(row,column,combo);
       }
       else {
         auto *spin=new ValueSpin;spin->setRange(0,path.contains("dirty_writeback") ? 60000 : path.contains("power_save") ? 3600 : 1);
+        spin->setMinimumWidth(84);spin->setMaximumWidth(132);
         if(path.contains("dirty_writeback")) spin->setSuffix(" cs");
         else if(path.contains("power_save")) {spin->setSuffix(" s");spin->setSpecialValueText("Off");}
         spin->setValue(value.toInt());m_devices->setCellWidget(row,column,spin);

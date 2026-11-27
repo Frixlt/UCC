@@ -132,7 +132,37 @@ void GuiAudit::renderReferencePages() {
     const QString output=qEnvironmentVariable("UCC_SCREENSHOT_DIR");
     if(!output.isEmpty()) QVERIFY(QDir().mkpath(output));
     const QList<QPair<int,QString>> refPages={{0,"overview"},{1,"profiles"},{2,"cooler-settings"},{3,"watercool-settings"},{4,"monitor"},{5,"lighting"},{9,"about"}};
-    for(const auto &[row,name]:refPages){if(row<9) navigation->setCurrentRow(row);else QTest::mouseClick(aboutBtn,Qt::LeftButton);QTest::qWait(row==3 ? 2400 : 400);if(row==2 || row==3){auto *cooling=window.findChild<QTabWidget *>("coolingPages");QVERIFY(cooling);QCOMPARE(cooling->currentIndex(),row-2);QVERIFY(!cooling->tabBar()->isVisible());}if(!output.isEmpty()) QVERIFY(window.grab().save(output+"/"+name+".png"));}
+    const QList<QPair<int,QString>> allPages={{0,"overview"},{1,"profiles"},{2,"cooler-settings"},{3,"watercool-settings"},{4,"monitor"},{5,"lighting"},{6,"power-devices"},{7,"battery-processes"},{8,"experimental"},{9,"about"}};
+    auto auditAllPages = [&](const QSize &targetSize, const QString &suffix, bool captureRef) {
+      window.resize(targetSize);
+      QTest::qWait(80);
+      for(const auto &[row,name]:allPages) {
+        if(row<9) navigation->setCurrentRow(row); else QTest::mouseClick(aboutBtn,Qt::LeftButton);
+        const bool isRef = std::any_of(refPages.cbegin(), refPages.cend(), [row](const auto &p){return p.first==row;});
+        QTest::qWait(captureRef && row==3 ? 2400 : (isRef ? 350 : 120));
+        if(row==2 || row==3){auto *cooling=window.findChild<QTabWidget *>("coolingPages");QVERIFY(cooling);QCOMPARE(cooling->currentIndex(),row-2);QVERIFY(!cooling->tabBar()->isVisible());}
+        verifyWindowFitsLayout(window, targetSize, name + "-" + suffix);
+        if(QTest::currentTestFailed()) return;
+        if(row==5) {
+          auto *segBar=window.findChild<QFrame*>("lightingSegmentedBar");
+          QVERIFY(segBar);
+          const auto segButtons=segBar->findChildren<QPushButton*>("lightingSegmentButton");
+          QCOMPARE(segButtons.size(),3);
+          for(qsizetype sub=1;sub<segButtons.size();++sub) {
+            QTest::mouseClick(segButtons[sub],Qt::LeftButton);QTest::qWait(80);
+            verifyWindowFitsLayout(window, targetSize, QString("lighting-sub%1-%2").arg(sub).arg(suffix));
+            if(QTest::currentTestFailed()) return;
+          }
+          QTest::mouseClick(segButtons[0],Qt::LeftButton);QTest::qWait(60);
+        }
+        if(!output.isEmpty() && isRef) {
+          const QString file = captureRef ? (output+"/"+name+".png") : (output+"/"+name+"-small.png");
+          QVERIFY(window.grab().save(file));
+        }
+      }
+    };
+    auditAllPages(QSize(1280,900), "1280x900", true);
+    if(QTest::currentTestFailed()) return;
     if(!output.isEmpty()) {
       QTest::mouseClick(aboutBtn,Qt::LeftButton);QTest::qWait(350);
       auto *about=window.findChild<QScrollArea*>("aboutPage");QVERIFY(about);
@@ -178,8 +208,8 @@ void GuiAudit::renderReferencePages() {
       QVERIFY(center->grab().save(output+"/notifications.png"));
       QVERIFY(window.grab().save(output+"/notifications-context.png"));center->hide();
     }
-    window.resize(1024,768);
-    for(const auto &[row,name]:refPages){if(row<9) navigation->setCurrentRow(row);else QTest::mouseClick(aboutBtn,Qt::LeftButton);QTest::qWait(350);QVERIFY(window.width()<=1024);if(!output.isEmpty()) QVERIFY(window.grab().save(output+"/"+name+"-small.png"));}
+    auditAllPages(QSize(1024,768), "1024x768", false);
+    if(QTest::currentTestFailed()) return;
     window.hide();
     QVERIFY2(stats().value("writes").toArray().isEmpty(),"Rendering pages must not change hardware or profile settings");
   }

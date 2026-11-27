@@ -458,6 +458,7 @@ void MonitorTab::setupUI()
   // Pause indicator (hidden by default, shown when spacebar pauses updates)
   m_pauseLabel = new QLabel;
   m_pauseLabel->setObjectName("monitorStatus");
+  m_pauseLabel->setWordWrap(true);
   updateMonitorStatus();
   connect(m_client, &UccdClient::connectionStatusChanged, this, [this](bool connected) {
     updateMonitorStatus();

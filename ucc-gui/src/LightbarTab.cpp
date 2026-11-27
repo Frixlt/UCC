@@ -6,6 +6,7 @@
 #include <QHBoxLayout>
 #include <QFormLayout>
 #include <QTabWidget>
+#include <QScrollArea>
 #include <QJsonArray>
 #include <QJsonDocument>
 #include <QColorDialog>
@@ -18,7 +19,11 @@ class Selector:public QComboBox {public:using QComboBox::QComboBox;protected:voi
 class Brightness:public QSpinBox {public:using QSpinBox::QSpinBox;protected:void wheelEvent(QWheelEvent *e) override {e->ignore();}};
 }
 LightbarTab::LightbarTab(UccdClient *client,QWidget *parent):QWidget(parent),m_client(client) {
-  auto *layout=new QVBoxLayout(this);layout->setContentsMargins(0,0,0,0);layout->setSpacing(16);
+  auto *outer=new QVBoxLayout(this);outer->setContentsMargins(0,0,0,0);
+  auto *scroll=new QScrollArea(this);scroll->setWidgetResizable(true);scroll->setFrameShape(QFrame::NoFrame);
+  outer->addWidget(scroll);
+  auto *body=new QWidget;scroll->setWidget(body);
+  auto *layout=new QVBoxLayout(body);layout->setContentsMargins(0,0,0,0);layout->setSpacing(16);
   auto *description=new QLabel("Front lightbar settings follow the effective power mode. Notifications animate the lightbar while the UCC session agent is running.");
   description->setWordWrap(true);description->setObjectName("muted");layout->addWidget(description);
   m_managed=new QCheckBox("Enable UCC lightbar control");m_managed->setObjectName("lightbarManaged");layout->addWidget(m_managed);
@@ -27,9 +32,9 @@ LightbarTab::LightbarTab(UccdClient *client,QWidget *parent):QWidget(parent),m_c
   for(int i=0;i<3;++i) {
     auto &mode=m_modes[static_cast<size_t>(i)];auto *page=new QWidget;auto *form=new QFormLayout(page);form->setContentsMargins(16,20,16,20);form->setSpacing(20);
     mode.enabled=new QCheckBox("Enable in this mode");mode.enabled->setObjectName("lightbarEnabled_"+modes[i]);form->addRow(mode.enabled);
-    mode.animation=new Selector;mode.animation->addItems(animations);mode.animation->setObjectName("lightbarAnimation_"+modes[i]);form->addRow("Notification animation",mode.animation);
+    mode.animation=new Selector;mode.animation->setSizeAdjustPolicy(QComboBox::AdjustToMinimumContentsLengthWithIcon);mode.animation->setMinimumContentsLength(12);mode.animation->addItems(animations);mode.animation->setObjectName("lightbarAnimation_"+modes[i]);form->addRow("Notification animation",mode.animation);
     mode.brightness=new Brightness;mode.brightness->setRange(0,255);mode.brightness->setObjectName("lightbarBrightness_"+modes[i]);form->addRow("Brightness (0–255)",mode.brightness);
-    mode.color=new Selector;mode.color->setObjectName("lightbarColor_"+modes[i]);mode.color->addItem("Auto (majority keyboard color)","Auto");
+    mode.color=new Selector;mode.color->setSizeAdjustPolicy(QComboBox::AdjustToMinimumContentsLengthWithIcon);mode.color->setMinimumContentsLength(12);mode.color->setObjectName("lightbarColor_"+modes[i]);mode.color->addItem("Auto (majority keyboard color)","Auto");
     const QStringList names={"Red","Green","Blue","White","Cyan","Magenta","Yellow"};
     const QList<QColor> colors={Qt::red,Qt::green,Qt::blue,Qt::white,Qt::cyan,Qt::magenta,Qt::yellow};
     for(int n=0;n<names.size();++n) mode.color->addItem(names[n],colors[n].name());

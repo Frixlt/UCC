@@ -234,14 +234,14 @@ void DashboardTab::setupUI()
   layout->addLayout(metrics);
   m_waterCoolerHeader=title("Water cooler");m_waterCoolerHeader->setVisible(m_waterCoolerSupported);
   m_waterCoolerStatusLabel=new QLabel("Disconnected");
-  m_waterCoolerEnableCheckBox=new FluentToggle("Enabled");m_waterCoolerEnableCheckBox->setObjectName("waterCoolerEnabledToggle");m_waterCoolerEnableCheckBox->setFixedWidth(140);m_waterCoolerEnableCheckBox->setAccessibleName("Water cooler enabled");m_waterCoolerEnableCheckBox->setChecked(WATER_COOLER_INITIAL_STATE);
-  auto *water=FluentTheme::createCard();auto *waterLayout=new QHBoxLayout(water);waterLayout->setContentsMargins(20,16,20,16);waterLayout->setSpacing(16);
+  m_waterCoolerEnableCheckBox=new FluentToggle("Enabled");m_waterCoolerEnableCheckBox->setObjectName("waterCoolerEnabledToggle");m_waterCoolerEnableCheckBox->setFixedWidth(124);m_waterCoolerEnableCheckBox->setAccessibleName("Water cooler enabled");m_waterCoolerEnableCheckBox->setChecked(WATER_COOLER_INITIAL_STATE);
+  auto *water=FluentTheme::createCard();auto *waterLayout=new QHBoxLayout(water);waterLayout->setContentsMargins(16,16,16,16);waterLayout->setSpacing(12);
   auto *waterText=new QVBoxLayout;waterText->addWidget(m_waterCoolerHeader);waterText->addWidget(m_waterCoolerStatusLabel);waterLayout->addLayout(waterText,1);
   auto *waterValues=new QWidget;auto *waterValuesLayout=new QHBoxLayout(waterValues);waterValuesLayout->setContentsMargins(0,0,0,0);
   waterValuesLayout->setSpacing(12);
   auto makeSelector=[&](const QString &name,const QString &caption){
     auto *column=new QVBoxLayout;column->setSpacing(4);column->addWidget(muted(caption));
-    auto *combo=FluentTheme::createSelector();combo->setObjectName(name);combo->setFixedWidth(100);
+    auto *combo=FluentTheme::createSelector();combo->setObjectName(name);combo->setFixedWidth(92);
     // Display exact telemetry even when it is not one of the requested presets.
     combo->setEditable(true);combo->lineEdit()->setReadOnly(true);combo->lineEdit()->setFocusPolicy(Qt::NoFocus);
     column->addWidget(combo);waterValuesLayout->addLayout(column);return combo;

@@ -204,7 +204,9 @@ void GuiAudit::pageEntranceFinishesAfterRapidNavigation() {
     QCOMPARE(animation->state(),QAbstractAnimation::Stopped);
     QCOMPARE(window.findChild<QTabWidget*>("pages")->currentIndex(),4);
     navigation->setCurrentRow(1);QTest::qWait(35);window.resize(1024,768);
-    QTest::qWait(350);QVERIFY(!overlay->isVisible());QVERIFY(window.width()<=1024);
+    QTest::qWait(350);QVERIFY(!overlay->isVisible());
+    verifyWindowFitsLayout(window, QSize(1024,768), "profiles-after-entrance");
+    if(QTest::currentTestFailed()) return;
     QVERIFY(stats().value("writes").toArray().isEmpty());
   }
 void GuiAudit::pageEntranceUsesCurrentThemeCanvas() {
