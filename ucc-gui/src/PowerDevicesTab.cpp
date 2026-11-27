@@ -115,8 +115,9 @@ PowerDevicesTab::PowerDevicesTab(UccdClient *client,QWidget *parent) : QWidget(p
     for(int col=0;col<3;++col) {
       auto *combo=new ValueSelector(cpuGridHost);
       combo->setSizeAdjustPolicy(QComboBox::AdjustToMinimumContentsLengthWithIcon);
-      combo->setMinimumContentsLength(10);
-      combo->setSizePolicy(QSizePolicy::Expanding,QSizePolicy::Fixed);
+      combo->setMinimumContentsLength(6);
+      combo->setMinimumWidth(96);
+      combo->setSizePolicy(QSizePolicy::Ignored,QSizePolicy::Fixed);
       m_cpuCombos[static_cast<size_t>(row)][static_cast<size_t>(col)]=combo;
       cpuGrid->addWidget(combo,row+1,col+1);
     }
