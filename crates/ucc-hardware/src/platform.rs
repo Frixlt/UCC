@@ -1,10 +1,9 @@
 //! Domain-level platform backend seam decoupling control logic from `/dev/tuxedo_io`.
 //!
 //! Defines [`PlatformBackend`] covering core EC fan, TDP, and performance profile operations
-//! (`M4.9`), currently backed by [`TuxedoIoBackend`] (`/dev/tuxedo_io`) and
-//! [`MockPlatformBackend`]. Extended controls (battery charging thresholds, webcam/Fn-Lock
-//! switches, extended EC register access, and WMI event streams) extend this seam alongside
-//! `uccd` integration (`M8`) and the native Rust `UwccBackend` (`/dev/uwcc`, `M14` / `ADR-05`).
+//! (`M4.9`), currently backed by [`TuxedoIoBackend`] (`/dev/tuxedo_io`),
+//! [`crate::uwcc::UwccBackend`] (`/dev/uwcc`, `M14` / `ADR-05`),
+//! [`crate::windows_wmi::WindowsWmiEcBackend`], and [`MockPlatformBackend`].
 
 use crate::detection::{
     detect_device_capabilities, probe_uniwill_tdp_channels, DeviceCapabilities, DeviceVendor,
@@ -17,8 +16,8 @@ use crate::ioctl::{
     set_uniwill_tdp, IoctlError,
 };
 use crate::traits::{HardwareIo, Sysfs};
-use std::collections::HashMap;
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::collections::{HashMap, VecDeque};
+use std::sync::atomic::{AtomicBool, AtomicU8, Ordering};
 use std::sync::{Arc, Mutex};
 use thiserror::Error;
 
@@ -67,6 +66,15 @@ pub enum PlatformWrite {
     SetModeEnable(bool),
     SetMode(i32),
     SetWebcam(bool),
+    SetTccOffset(u8),
+    SetPwup { enable: bool, level: u32 },
+    SetLightbarPower(bool),
+    SetFnLock(bool),
+    SetWinLock(bool),
+    SetUsbSleepCharging(bool),
+    SetChargeThresholds { start: u8, end: u8 },
+    SetFanBoost(bool),
+    ApplyRamFanCurve(Box<crate::uwcc::RamFanCurve>),
 }
 
 /// High-level domain abstraction over laptop EC/TDP/fan hardware.
@@ -85,6 +93,11 @@ pub trait PlatformBackend: Send + Sync {
 
     /// Reads current fan duty percentage (`0..=100`) for the given fan index.
     fn read_fan_speed_percent(&self, fan_idx: usize) -> Result<u8, PlatformError>;
+
+    /// Reads real tachometer fan speed in RPM when supported by the backend.
+    fn read_fan_rpm(&self, _fan_idx: usize) -> Result<u32, PlatformError> {
+        Err(PlatformError::Unsupported("Reading fan RPM unsupported"))
+    }
 
     /// Sets manual fan duty percentage (`0..=100`) for the given fan index.
     fn set_fan_speed_percent(&self, fan_idx: usize, percent: u8) -> Result<(), PlatformError>;
@@ -125,6 +138,91 @@ pub trait PlatformBackend: Send + Sync {
     /// Sets the firmware webcam hardware switch state (`true` = enabled).
     fn set_webcam(&self, _enabled: bool) -> Result<(), PlatformError> {
         Err(PlatformError::Unsupported("Webcam switch unsupported"))
+    }
+
+    /// Reads CPU TCC temperature offset (`0..=63` °C) when supported.
+    fn read_tcc_offset(&self) -> Result<u8, PlatformError> {
+        Err(PlatformError::Unsupported("CPU TCC offset unsupported"))
+    }
+
+    /// Sets CPU TCC temperature offset (`0..=63` °C) when supported.
+    fn set_tcc_offset(&self, _offset_c: u8) -> Result<(), PlatformError> {
+        Err(PlatformError::Unsupported("CPU TCC offset unsupported"))
+    }
+
+    /// Configures water-cooler power-up boost (`PWUP`) when supported.
+    fn set_pwup(&self, _enable: bool, _level: u32) -> Result<(), PlatformError> {
+        Err(PlatformError::Unsupported("PWUP unsupported"))
+    }
+
+    /// Controls EC lightbar / chassis LED power rail (`0x767`/`0x768`) when supported.
+    fn set_lightbar_power(&self, _enabled: bool) -> Result<(), PlatformError> {
+        Err(PlatformError::Unsupported(
+            "Lightbar EC power switch unsupported",
+        ))
+    }
+
+    /// Reads EC Fn-Lock state when supported.
+    fn read_fn_lock(&self) -> Result<bool, PlatformError> {
+        Err(PlatformError::Unsupported("Fn Lock switch unsupported"))
+    }
+
+    /// Sets EC Fn-Lock state when supported.
+    fn set_fn_lock(&self, _enabled: bool) -> Result<(), PlatformError> {
+        Err(PlatformError::Unsupported("Fn Lock switch unsupported"))
+    }
+
+    /// Reads EC Win-Lock state when supported.
+    fn read_win_lock(&self) -> Result<bool, PlatformError> {
+        Err(PlatformError::Unsupported("Win Lock switch unsupported"))
+    }
+
+    /// Sets EC Win-Lock state when supported.
+    fn set_win_lock(&self, _enabled: bool) -> Result<(), PlatformError> {
+        Err(PlatformError::Unsupported("Win Lock switch unsupported"))
+    }
+
+    /// Reads EC USB sleep-charging switch state when supported.
+    fn read_usb_sleep_charging(&self) -> Result<bool, PlatformError> {
+        Err(PlatformError::Unsupported(
+            "USB sleep charging switch unsupported",
+        ))
+    }
+
+    /// Sets EC USB sleep-charging switch state when supported.
+    fn set_usb_sleep_charging(&self, _enabled: bool) -> Result<(), PlatformError> {
+        Err(PlatformError::Unsupported(
+            "USB sleep charging switch unsupported",
+        ))
+    }
+
+    /// Reads battery `(start, end)` charging thresholds (`20..=100%`) when supported.
+    fn read_charge_thresholds(&self) -> Result<(u8, u8), PlatformError> {
+        Err(PlatformError::Unsupported(
+            "Battery charge thresholds unsupported",
+        ))
+    }
+
+    /// Sets battery `(start, end)` charging thresholds (`20 <= start < end <= 100`) when supported.
+    fn set_charge_thresholds(&self, _start: u8, _end: u8) -> Result<(), PlatformError> {
+        Err(PlatformError::Unsupported(
+            "Battery charge thresholds unsupported",
+        ))
+    }
+
+    /// Enables or disables `Fan Boost` maximum fan override when supported.
+    fn set_fan_boost(&self, _enabled: bool) -> Result<(), PlatformError> {
+        Err(PlatformError::Unsupported("Fan Boost unsupported"))
+    }
+
+    /// Uploads a native 16-point `RamFan 1.5` CPU/GPU curve to EC RAM when supported.
+    fn apply_ramfan_curve(&self, _curve: &crate::uwcc::RamFanCurve) -> Result<(), PlatformError> {
+        Err(PlatformError::Unsupported("RamFan 1.5 unsupported"))
+    }
+
+    /// Non-blocking poll for the next hardware WMI event when supported.
+    fn poll_wmi_event(&self) -> Result<Option<crate::uwcc::UwccWmiEvent>, PlatformError> {
+        Err(PlatformError::Unsupported("WMI event polling unsupported"))
     }
 }
 
@@ -566,12 +664,22 @@ pub struct MockPlatformBackend {
     available: AtomicBool,
     fail_writes: AtomicBool,
     webcam_enabled: AtomicBool,
+    tcc_offset: AtomicU8,
+    lightbar_power: AtomicBool,
+    fn_lock: AtomicBool,
+    win_lock: AtomicBool,
+    usb_sleep_charging: AtomicBool,
+    fan_boost: AtomicBool,
     capabilities: Mutex<PlatformCapabilities>,
     fan_temps: Mutex<HashMap<usize, Result<i32, ()>>>,
     fan_speeds: Mutex<HashMap<usize, u8>>,
+    fan_rpms: Mutex<HashMap<usize, u32>>,
     tdp_values: Mutex<HashMap<usize, i32>>,
     tdp_limits: Mutex<HashMap<usize, (i32, i32)>>,
     perf_profile: Mutex<Option<i32>>,
+    charge_thresholds: Mutex<(u8, u8)>,
+    ramfan_curve: Mutex<Option<crate::uwcc::RamFanCurve>>,
+    wmi_events: Mutex<VecDeque<crate::uwcc::UwccWmiEvent>>,
     journal: Arc<Mutex<Vec<PlatformWrite>>>,
 }
 
@@ -582,12 +690,22 @@ impl MockPlatformBackend {
             available: AtomicBool::new(true),
             fail_writes: AtomicBool::new(false),
             webcam_enabled: AtomicBool::new(true),
+            tcc_offset: AtomicU8::new(0),
+            lightbar_power: AtomicBool::new(true),
+            fn_lock: AtomicBool::new(false),
+            win_lock: AtomicBool::new(false),
+            usb_sleep_charging: AtomicBool::new(false),
+            fan_boost: AtomicBool::new(false),
             capabilities: Mutex::new(capabilities),
             fan_temps: Mutex::new(HashMap::new()),
             fan_speeds: Mutex::new(HashMap::new()),
+            fan_rpms: Mutex::new(HashMap::new()),
             tdp_values: Mutex::new(HashMap::new()),
             tdp_limits: Mutex::new(HashMap::new()),
             perf_profile: Mutex::new(None),
+            charge_thresholds: Mutex::new((60, 80)),
+            ramfan_curve: Mutex::new(None),
+            wmi_events: Mutex::new(VecDeque::new()),
             journal: Arc::new(Mutex::new(Vec::new())),
         }
     }
@@ -615,6 +733,8 @@ impl MockPlatformBackend {
         backend.set_fan_temp(1, 40);
         backend.set_fan_speed(0, 30);
         backend.set_fan_speed(1, 30);
+        backend.set_fan_rpm(0, 2400);
+        backend.set_fan_rpm(1, 2100);
         for idx in 0..3 {
             backend.set_tdp_limits(idx, (15, 115));
             backend.set_tdp_value(idx, 55);
@@ -658,40 +778,117 @@ impl MockPlatformBackend {
     }
 
     pub fn set_capabilities(&self, capabilities: PlatformCapabilities) {
-        *self.capabilities.lock().unwrap() = capabilities;
+        *self.capabilities.lock().unwrap_or_else(|e| e.into_inner()) = capabilities;
     }
 
     pub fn set_fan_temp(&self, fan_idx: usize, temp_c: i32) {
-        self.fan_temps.lock().unwrap().insert(fan_idx, Ok(temp_c));
+        self.fan_temps
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .insert(fan_idx, Ok(temp_c));
     }
 
     pub fn set_fan_temp_error(&self, fan_idx: usize) {
-        self.fan_temps.lock().unwrap().insert(fan_idx, Err(()));
+        self.fan_temps
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .insert(fan_idx, Err(()));
     }
 
     pub fn set_fan_speed(&self, fan_idx: usize, percent: u8) {
-        self.fan_speeds.lock().unwrap().insert(fan_idx, percent);
+        self.fan_speeds
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .insert(fan_idx, percent);
+    }
+
+    pub fn set_fan_rpm(&self, fan_idx: usize, rpm: u32) {
+        self.fan_rpms
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .insert(fan_idx, rpm);
     }
 
     pub fn set_tdp_value(&self, index: usize, watts: i32) {
-        self.tdp_values.lock().unwrap().insert(index, watts);
+        self.tdp_values
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .insert(index, watts);
     }
 
     pub fn set_tdp_limits(&self, index: usize, limits: (i32, i32)) {
-        self.tdp_limits.lock().unwrap().insert(index, limits);
+        self.tdp_limits
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .insert(index, limits);
         self.tdp_values
             .lock()
-            .unwrap()
+            .unwrap_or_else(|e| e.into_inner())
             .entry(index)
             .or_insert(limits.1);
     }
 
+    pub fn set_mock_tcc_offset(&self, offset_c: u8) {
+        self.tcc_offset.store(offset_c, Ordering::SeqCst);
+    }
+
+    pub fn set_mock_lightbar_power(&self, enabled: bool) {
+        self.lightbar_power.store(enabled, Ordering::SeqCst);
+    }
+
+    pub fn mock_lightbar_power(&self) -> bool {
+        self.lightbar_power.load(Ordering::SeqCst)
+    }
+
+    pub fn set_mock_fn_lock(&self, enabled: bool) {
+        self.fn_lock.store(enabled, Ordering::SeqCst);
+    }
+
+    pub fn set_mock_win_lock(&self, enabled: bool) {
+        self.win_lock.store(enabled, Ordering::SeqCst);
+    }
+
+    pub fn set_mock_usb_sleep_charging(&self, enabled: bool) {
+        self.usb_sleep_charging.store(enabled, Ordering::SeqCst);
+    }
+
+    pub fn set_mock_charge_thresholds(&self, start: u8, end: u8) {
+        *self
+            .charge_thresholds
+            .lock()
+            .unwrap_or_else(|e| e.into_inner()) = (start, end);
+    }
+
+    pub fn mock_fan_boost(&self) -> bool {
+        self.fan_boost.load(Ordering::SeqCst)
+    }
+
+    pub fn mock_ramfan_curve(&self) -> Option<crate::uwcc::RamFanCurve> {
+        self.ramfan_curve
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .clone()
+    }
+
+    pub fn push_wmi_event(&self, event: crate::uwcc::UwccWmiEvent) {
+        self.wmi_events
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .push_back(event);
+    }
+
     pub fn journal(&self) -> Vec<PlatformWrite> {
-        self.journal.lock().unwrap().clone()
+        self.journal
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .clone()
     }
 
     pub fn clear_journal(&self) {
-        self.journal.lock().unwrap().clear();
+        self.journal
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .clear();
     }
 
     fn ensure_write_ready(&self) -> Result<(), PlatformError> {
@@ -704,7 +901,10 @@ impl MockPlatformBackend {
 
 impl PlatformBackend for MockPlatformBackend {
     fn kind(&self) -> PlatformBackendKind {
-        self.capabilities.lock().unwrap().backend
+        self.capabilities
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .backend
     }
 
     fn is_available(&self) -> bool {
@@ -712,14 +912,23 @@ impl PlatformBackend for MockPlatformBackend {
     }
 
     fn capabilities(&self) -> PlatformCapabilities {
-        self.capabilities.lock().unwrap().clone()
+        self.capabilities
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .clone()
     }
 
     fn read_fan_temp(&self, fan_idx: usize) -> Result<i32, PlatformError> {
         if !self.is_available() {
             return Err(PlatformError::Unavailable);
         }
-        match self.fan_temps.lock().unwrap().get(&fan_idx).copied() {
+        match self
+            .fan_temps
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .get(&fan_idx)
+            .copied()
+        {
             Some(Ok(temp)) => Ok(temp),
             _ => Err(PlatformError::SensorUnavailable(fan_idx)),
         }
@@ -731,7 +940,19 @@ impl PlatformBackend for MockPlatformBackend {
         }
         self.fan_speeds
             .lock()
-            .unwrap()
+            .unwrap_or_else(|e| e.into_inner())
+            .get(&fan_idx)
+            .copied()
+            .ok_or(PlatformError::SensorUnavailable(fan_idx))
+    }
+
+    fn read_fan_rpm(&self, fan_idx: usize) -> Result<u32, PlatformError> {
+        if !self.is_available() {
+            return Err(PlatformError::Unavailable);
+        }
+        self.fan_rpms
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
             .get(&fan_idx)
             .copied()
             .ok_or(PlatformError::SensorUnavailable(fan_idx))
@@ -748,19 +969,23 @@ impl PlatformBackend for MockPlatformBackend {
                 "Fan speed percentage must be 0..=100",
             ));
         }
-        self.fan_speeds.lock().unwrap().insert(fan_idx, percent);
+        self.fan_speeds
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .insert(fan_idx, percent);
         self.journal
             .lock()
-            .unwrap()
+            .unwrap_or_else(|e| e.into_inner())
             .push(PlatformWrite::SetFanSpeed { fan_idx, percent });
         Ok(())
     }
 
     fn set_fans_auto(&self) -> Result<(), PlatformError> {
         self.ensure_write_ready()?;
+        self.fan_boost.store(false, Ordering::SeqCst);
         self.journal
             .lock()
-            .unwrap()
+            .unwrap_or_else(|e| e.into_inner())
             .push(PlatformWrite::SetFansAuto);
         Ok(())
     }
@@ -778,7 +1003,7 @@ impl PlatformBackend for MockPlatformBackend {
         }
         self.tdp_values
             .lock()
-            .unwrap()
+            .unwrap_or_else(|e| e.into_inner())
             .get(&index)
             .copied()
             .ok_or(PlatformError::Unavailable)
@@ -797,7 +1022,7 @@ impl PlatformBackend for MockPlatformBackend {
         }
         self.tdp_limits
             .lock()
-            .unwrap()
+            .unwrap_or_else(|e| e.into_inner())
             .get(&index)
             .copied()
             .ok_or(PlatformError::Unavailable)
@@ -811,10 +1036,13 @@ impl PlatformBackend for MockPlatformBackend {
                 "TDP wattage outside hardware limits",
             ));
         }
-        self.tdp_values.lock().unwrap().insert(index, watts);
+        self.tdp_values
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .insert(index, watts);
         self.journal
             .lock()
-            .unwrap()
+            .unwrap_or_else(|e| e.into_inner())
             .push(PlatformWrite::SetTdp { index, watts });
         Ok(())
     }
@@ -825,7 +1053,7 @@ impl PlatformBackend for MockPlatformBackend {
         }
         self.perf_profile
             .lock()
-            .unwrap()
+            .unwrap_or_else(|e| e.into_inner())
             .ok_or(PlatformError::Unavailable)
     }
 
@@ -837,10 +1065,10 @@ impl PlatformBackend for MockPlatformBackend {
             caps.perf_profiles_available,
             profile_code,
         )?;
-        *self.perf_profile.lock().unwrap() = Some(profile_code);
+        *self.perf_profile.lock().unwrap_or_else(|e| e.into_inner()) = Some(profile_code);
         self.journal
             .lock()
-            .unwrap()
+            .unwrap_or_else(|e| e.into_inner())
             .push(PlatformWrite::SetPerfProfile(profile_code));
         Ok(())
     }
@@ -854,7 +1082,7 @@ impl PlatformBackend for MockPlatformBackend {
         }
         self.journal
             .lock()
-            .unwrap()
+            .unwrap_or_else(|e| e.into_inner())
             .push(PlatformWrite::SetModeEnable(enable));
         Ok(())
     }
@@ -873,7 +1101,7 @@ impl PlatformBackend for MockPlatformBackend {
         }
         self.journal
             .lock()
-            .unwrap()
+            .unwrap_or_else(|e| e.into_inner())
             .push(PlatformWrite::SetMode(mode));
         Ok(())
     }
@@ -896,8 +1124,170 @@ impl PlatformBackend for MockPlatformBackend {
         self.webcam_enabled.store(enabled, Ordering::SeqCst);
         self.journal
             .lock()
-            .unwrap()
+            .unwrap_or_else(|e| e.into_inner())
             .push(PlatformWrite::SetWebcam(enabled));
         Ok(())
+    }
+
+    fn read_tcc_offset(&self) -> Result<u8, PlatformError> {
+        if !self.is_available() {
+            return Err(PlatformError::Unavailable);
+        }
+        Ok(self.tcc_offset.load(Ordering::SeqCst))
+    }
+
+    fn set_tcc_offset(&self, offset_c: u8) -> Result<(), PlatformError> {
+        self.ensure_write_ready()?;
+        if offset_c > crate::uwcc::MAX_TCC_OFFSET_C {
+            return Err(PlatformError::InvalidArgument(
+                "CPU TCC offset must be 0..=63 C",
+            ));
+        }
+        self.tcc_offset.store(offset_c, Ordering::SeqCst);
+        self.journal
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .push(PlatformWrite::SetTccOffset(offset_c));
+        Ok(())
+    }
+
+    fn set_pwup(&self, enable: bool, level: u32) -> Result<(), PlatformError> {
+        self.ensure_write_ready()?;
+        if level > 3 || (!enable && level != 0) {
+            return Err(PlatformError::InvalidArgument(
+                "PWUP level must be 0..=3 (and 0 when disabled)",
+            ));
+        }
+        self.journal
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .push(PlatformWrite::SetPwup { enable, level });
+        Ok(())
+    }
+
+    fn set_lightbar_power(&self, enabled: bool) -> Result<(), PlatformError> {
+        self.ensure_write_ready()?;
+        self.lightbar_power.store(enabled, Ordering::SeqCst);
+        self.journal
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .push(PlatformWrite::SetLightbarPower(enabled));
+        Ok(())
+    }
+
+    fn read_fn_lock(&self) -> Result<bool, PlatformError> {
+        if !self.is_available() {
+            return Err(PlatformError::Unavailable);
+        }
+        Ok(self.fn_lock.load(Ordering::SeqCst))
+    }
+
+    fn set_fn_lock(&self, enabled: bool) -> Result<(), PlatformError> {
+        self.ensure_write_ready()?;
+        self.fn_lock.store(enabled, Ordering::SeqCst);
+        self.journal
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .push(PlatformWrite::SetFnLock(enabled));
+        Ok(())
+    }
+
+    fn read_win_lock(&self) -> Result<bool, PlatformError> {
+        if !self.is_available() {
+            return Err(PlatformError::Unavailable);
+        }
+        Ok(self.win_lock.load(Ordering::SeqCst))
+    }
+
+    fn set_win_lock(&self, enabled: bool) -> Result<(), PlatformError> {
+        self.ensure_write_ready()?;
+        self.win_lock.store(enabled, Ordering::SeqCst);
+        self.journal
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .push(PlatformWrite::SetWinLock(enabled));
+        Ok(())
+    }
+
+    fn read_usb_sleep_charging(&self) -> Result<bool, PlatformError> {
+        if !self.is_available() {
+            return Err(PlatformError::Unavailable);
+        }
+        Ok(self.usb_sleep_charging.load(Ordering::SeqCst))
+    }
+
+    fn set_usb_sleep_charging(&self, enabled: bool) -> Result<(), PlatformError> {
+        self.ensure_write_ready()?;
+        self.usb_sleep_charging.store(enabled, Ordering::SeqCst);
+        self.journal
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .push(PlatformWrite::SetUsbSleepCharging(enabled));
+        Ok(())
+    }
+
+    fn read_charge_thresholds(&self) -> Result<(u8, u8), PlatformError> {
+        if !self.is_available() {
+            return Err(PlatformError::Unavailable);
+        }
+        Ok(*self
+            .charge_thresholds
+            .lock()
+            .unwrap_or_else(|e| e.into_inner()))
+    }
+
+    fn set_charge_thresholds(&self, start: u8, end: u8) -> Result<(), PlatformError> {
+        self.ensure_write_ready()?;
+        if !(crate::uwcc::MIN_CHARGE_THRESHOLD_PCT..=crate::uwcc::MAX_CHARGE_THRESHOLD_PCT)
+            .contains(&start)
+            || !(crate::uwcc::MIN_CHARGE_THRESHOLD_PCT..=crate::uwcc::MAX_CHARGE_THRESHOLD_PCT)
+                .contains(&end)
+            || start >= end
+        {
+            return Err(PlatformError::InvalidArgument(
+                "Charge thresholds must satisfy 20 <= start < end <= 100",
+            ));
+        }
+        *self
+            .charge_thresholds
+            .lock()
+            .unwrap_or_else(|e| e.into_inner()) = (start, end);
+        self.journal
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .push(PlatformWrite::SetChargeThresholds { start, end });
+        Ok(())
+    }
+
+    fn set_fan_boost(&self, enabled: bool) -> Result<(), PlatformError> {
+        self.ensure_write_ready()?;
+        self.fan_boost.store(enabled, Ordering::SeqCst);
+        self.journal
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .push(PlatformWrite::SetFanBoost(enabled));
+        Ok(())
+    }
+
+    fn apply_ramfan_curve(&self, curve: &crate::uwcc::RamFanCurve) -> Result<(), PlatformError> {
+        self.ensure_write_ready()?;
+        curve.validate()?;
+        *self.ramfan_curve.lock().unwrap_or_else(|e| e.into_inner()) = Some(curve.clone());
+        self.journal
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .push(PlatformWrite::ApplyRamFanCurve(Box::new(curve.clone())));
+        Ok(())
+    }
+
+    fn poll_wmi_event(&self) -> Result<Option<crate::uwcc::UwccWmiEvent>, PlatformError> {
+        if !self.is_available() {
+            return Err(PlatformError::Unavailable);
+        }
+        Ok(self
+            .wmi_events
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .pop_front())
     }
 }
