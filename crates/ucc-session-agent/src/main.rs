@@ -417,17 +417,22 @@ async fn main() {
     let mut monitor_state = spawn_monitor();
     let mut restart_at: Option<tokio::time::Instant> = None;
     let mut buf = [0u8; 4096];
+    let mut sigterm =
+        tokio::signal::unix::signal(tokio::signal::unix::SignalKind::terminate()).ok();
 
     loop {
         tokio::select! {
             _ = tokio::signal::ctrl_c() => {
-                info!("Shutting down ucc-session-agent");
-                if let Some(t) = state.refresh_task.take() {
-                    t.abort();
+                info!("Shutting down ucc-session-agent (SIGINT)");
+                break;
+            }
+            _ = async {
+                match sigterm.as_mut() {
+                    Some(s) => s.recv().await,
+                    None => std::future::pending().await,
                 }
-                if let Some(t) = state.lid_task.take() {
-                    t.abort();
-                }
+            } => {
+                info!("Shutting down ucc-session-agent (SIGTERM)");
                 break;
             }
             Some(ev) = comp_rx.recv() => {
@@ -636,6 +641,13 @@ async fn main() {
                 }
             }
         }
+    }
+
+    if let Some(t) = state.refresh_task.take() {
+        t.abort();
+    }
+    if let Some(t) = state.lid_task.take() {
+        t.abort();
     }
 }
 

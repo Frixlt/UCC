@@ -645,3 +645,60 @@ async fn deep_04_hung_hyprctl_does_not_delay_driver_health_notification_and_is_r
 
     let _ = agent.kill().await;
 }
+
+#[tokio::test]
+async fn sigterm_exits_cleanly_with_status_zero_and_drops_monitor() {
+    let (bus_dir, bus_addr, mut _dbus_child) = spawn_isolated_dbus().await;
+    let runtime_dir = bus_dir.path().join("runtime");
+    let drm_dir = bus_dir.path().join("drm");
+    std::fs::create_dir_all(&runtime_dir).unwrap();
+    std::fs::create_dir_all(&drm_dir).unwrap();
+
+    let uccd_state = Arc::new(FakeUccdState::new("ac", 60, false));
+    let svc_name = "org.test.uccd.session.sigterm";
+    let _uccd_conn = zbus::connection::Builder::address(bus_addr.as_str())
+        .unwrap()
+        .name(svc_name)
+        .unwrap()
+        .serve_at("/com/uniwill/uccd", FakeUccd(Arc::clone(&uccd_state)))
+        .unwrap()
+        .build()
+        .await
+        .unwrap();
+
+    let exe = env!("CARGO_BIN_EXE_ucc-session-agent");
+    let mut agent = Command::new(exe)
+        .env("DBUS_SESSION_BUS_ADDRESS", &bus_addr)
+        .env("UCCD_DBUS_SERVICE", svc_name)
+        .env("UCC_LID_BUS_SESSION", "1")
+        .env("UCC_DRM_ROOT", &drm_dir)
+        .env("XDG_RUNTIME_DIR", &runtime_dir)
+        .stdin(Stdio::null())
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .kill_on_drop(true)
+        .spawn()
+        .unwrap();
+
+    assert!(
+        poll_until(Duration::from_secs(2), || {
+            runtime_dir.join("ucc-session-agent.lock").exists()
+        })
+        .await,
+        "ucc-session-agent never acquired its singleton lock"
+    );
+    tokio::time::sleep(Duration::from_millis(150)).await;
+
+    let pid = nix::unistd::Pid::from_raw(agent.id().unwrap() as i32);
+    nix::sys::signal::kill(pid, nix::sys::signal::Signal::SIGTERM).unwrap();
+
+    let status = tokio::time::timeout(Duration::from_secs(3), agent.wait())
+        .await
+        .expect("ucc-session-agent did not exit within 3s after SIGTERM")
+        .unwrap();
+    assert_eq!(
+        status.code(),
+        Some(0),
+        "SIGTERM should exit cleanly with status 0, got {status:?}"
+    );
+}
