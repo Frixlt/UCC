@@ -3,13 +3,13 @@
 // (N02, N07, N08, N09, N10, N11, N12, N13, N26, N28, N31, P0-14, P0-15, M-GUI-05).
 //
 // Drop-in CMake usage (in tests/CMakeLists.txt alongside test_gui_audit):
-//   add_executable(test_repro_1d07126_gui test_repro_1d07126_gui.cpp ${UCC_GUI_AUDIT_SOURCES})
-//   target_include_directories(test_repro_1d07126_gui PRIVATE ../ucc-gui/inc ../include ../libucc-dbus)
-//   target_link_libraries(test_repro_1d07126_gui PRIVATE ucc-desktop-tray-support ucc-dbus
+//   add_executable(test_gui_regressions test_gui_regressions.cpp ${UCC_GUI_AUDIT_SOURCES})
+//   target_include_directories(test_gui_regressions PRIVATE ../ucc-gui/inc ../include ../libucc-dbus)
+//   target_link_libraries(test_gui_regressions PRIVATE ucc-desktop-tray-support ucc-dbus
 //     Qt6::Widgets Qt6::Charts Qt6::Test ucc-window-activation)
-//   add_test(NAME test_repro_1d07126_gui
+//   add_test(NAME test_gui_regressions
 //     COMMAND ${DBUS_RUN_SESSION_EXECUTABLE} -- bash ${CMAKE_CURRENT_SOURCE_DIR}/run_gui_audit_test.sh
-//       $<TARGET_FILE:test_repro_1d07126_gui>)
+//       $<TARGET_FILE:test_gui_regressions>)
 
 #include <QtTest>
 #include <QApplication>
@@ -927,4 +927,4 @@ int main(int argc, char **argv) {
   return QTest::qExec(&test, argc, argv);
 }
 
-#include "test_repro_1d07126_gui.moc"
+#include "test_gui_regressions.moc"

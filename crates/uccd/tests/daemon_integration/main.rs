@@ -2,14 +2,14 @@
 
 mod commit;
 mod common;
-mod deep_audit;
+mod profile_edge_cases;
 mod followup_and_outcomes;
-mod full_recheck;
+mod power_reconciliation;
 mod handoff;
 mod lid_cooler_and_sleep;
 mod lifecycle;
-mod prod;
-mod recheck;
-mod review;
+mod production_paths;
+mod fan_and_cpu_guards;
+mod lid_and_wakeup_policy;
 mod sysfs_gate_common;
 mod transactions;

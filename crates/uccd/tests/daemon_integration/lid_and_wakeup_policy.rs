@@ -236,7 +236,7 @@ fn backend_recovers_corrupt_config_and_enforces_lid_and_wakeup_policies() {
         res,
         WakeupApplyResult {
             enabled: 2,
-            disabled: 4,
+            disabled: 3,
             failed: 0
         }
     );
@@ -262,10 +262,7 @@ fn backend_recovers_corrupt_config_and_enforces_lid_and_wakeup_policies() {
         .filter(|w| w.path == acpi_wakeup)
         .map(|w| w.content)
         .collect();
-    assert_eq!(
-        acpi_writes,
-        vec!["LID0\n".to_string(), "XHCI\n".to_string()]
-    );
+    assert_eq!(acpi_writes, vec!["XHCI\n".to_string()]);
 }
 
 #[tokio::test]

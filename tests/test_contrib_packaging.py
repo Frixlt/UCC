@@ -243,8 +243,8 @@ class Repro1d07126ContribTest(unittest.TestCase):
                 'R19: run_rust_interop_test.sh forced RUSTUP_TOOLCHAIN=stable instead of respecting rust-toolchain.toml',
             )
 
-    def test_r18_verify_3f4_sysfs_does_not_silently_skip(self):
-        rs_path = SOURCE / 'crates/ucc-hardware/tests/verify_3f4_sysfs.rs'
+    def test_r18_sysfs_path_containment_does_not_silently_skip(self):
+        rs_path = SOURCE / 'crates/ucc-hardware/tests/sysfs_path_containment.rs'
         content = rs_path.read_text(encoding='utf-8')
         # A silent `if !shim_active { ... return; }` makes `cargo test` report `ok`
         # without ever exercising the symlink-swap race assertion.
@@ -255,7 +255,7 @@ class Repro1d07126ContribTest(unittest.TestCase):
         )
         self.assertIsNone(
             silent_skip,
-            'R18: verify_3f4_sysfs.rs silently returns ok when LD_PRELOAD shim is inactive',
+            'R18: sysfs_path_containment.rs silently returns ok when LD_PRELOAD shim is inactive',
         )
 
 

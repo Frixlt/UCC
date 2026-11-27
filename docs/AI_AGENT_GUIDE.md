@@ -69,7 +69,7 @@
 
 ### Шаг 7. Контрактные и интеграционные тесты
 - Обновите `crates/ucc-dbus/tests/contract_tests/mock_backend.rs`, `rpc_groups.rs` и `introspection_and_auth.rs` (проверка XML-интроспекции и матрицы Polkit Allow/Deny).
-- При изменении состава методов актуализируйте `docs/rust/execution/dbus-status.json` и тесты безопасности в `crates/ucc-dbus/tests/audit_security_regressions.rs`.
+- При изменении состава методов актуализируйте `docs/rust/execution/dbus-status.json` и тесты безопасности в `crates/ucc-dbus/tests/dbus_security_limits.rs`.
 - Добавьте интеграционный сценарий в `crates/uccd/tests/daemon_integration/` и прогоните:
   ```bash
   export PATH="$HOME/.cargo/bin:$PATH"

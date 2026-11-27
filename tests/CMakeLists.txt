@@ -221,17 +221,17 @@ if(DBUS_RUN_SESSION_EXECUTABLE AND BUILD_GUI)
     previewMustNotSaveLocalMonitorPreferences
     previewMustBlockEveryWritePath
     aboutTabStaysPinnedToSidebarBottom)
-  add_executable(test_repro_1d07126_gui test_repro_1d07126_gui.cpp ${UCC_GUI_AUDIT_SOURCES})
-  target_include_directories(test_repro_1d07126_gui PRIVATE ../ucc-gui/inc ../include ../libucc-dbus)
-  target_link_libraries(test_repro_1d07126_gui PRIVATE ucc-desktop-tray-support ucc-dbus Qt6::Widgets Qt6::Charts Qt6::Test ucc-window-activation)
+  add_executable(test_gui_regressions test_gui_regressions.cpp ${UCC_GUI_AUDIT_SOURCES})
+  target_include_directories(test_gui_regressions PRIVATE ../ucc-gui/inc ../include ../libucc-dbus)
+  target_link_libraries(test_gui_regressions PRIVATE ucc-desktop-tray-support ucc-dbus Qt6::Widgets Qt6::Charts Qt6::Test ucc-window-activation)
   if(TARGET PkgConfig::UCC_XCB)
-    target_link_libraries(test_repro_1d07126_gui PRIVATE PkgConfig::UCC_XCB)
-    target_compile_definitions(test_repro_1d07126_gui PRIVATE UCC_HAS_X11_BLUR)
+    target_link_libraries(test_gui_regressions PRIVATE PkgConfig::UCC_XCB)
+    target_compile_definitions(test_gui_regressions PRIVATE UCC_HAS_X11_BLUR)
   endif()
   if(UCC_READ_ONLY_PREVIEW)
     add_test(
-      NAME test_repro_1d07126_gui
-      COMMAND ${DBUS_RUN_SESSION_EXECUTABLE} -- bash ${CMAKE_CURRENT_SOURCE_DIR}/run_gui_audit_test.sh $<TARGET_FILE:test_repro_1d07126_gui>
+      NAME test_gui_regressions
+      COMMAND ${DBUS_RUN_SESSION_EXECUTABLE} -- bash ${CMAKE_CURRENT_SOURCE_DIR}/run_gui_audit_test.sh $<TARGET_FILE:test_gui_regressions>
         n12_mainwindow_ctor_avoids_sync_dbus_capability_calls
         n13_keyboard_visualizer_avoids_blocking_detect_layout_in_ctor
         n26_preview_mode_allows_readonly_webcam_sw_available
@@ -243,8 +243,8 @@ if(DBUS_RUN_SESSION_EXECUTABLE AND BUILD_GUI)
     )
   else()
     add_test(
-      NAME test_repro_1d07126_gui
-      COMMAND ${DBUS_RUN_SESSION_EXECUTABLE} -- bash ${CMAKE_CURRENT_SOURCE_DIR}/run_gui_audit_test.sh $<TARGET_FILE:test_repro_1d07126_gui>
+      NAME test_gui_regressions
+      COMMAND ${DBUS_RUN_SESSION_EXECUTABLE} -- bash ${CMAKE_CURRENT_SOURCE_DIR}/run_gui_audit_test.sh $<TARGET_FILE:test_gui_regressions>
     )
   endif()
   add_executable(test_gui_instance test_gui_instance.cpp
@@ -311,15 +311,15 @@ endif()
 find_program( PYTHON3_EXECUTABLE python3 )
 if( PYTHON3_EXECUTABLE )
   add_test(
-    NAME test_repro_1d07126_contrib
-    COMMAND ${PYTHON3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/test_repro_1d07126_contrib.py
+    NAME test_contrib_packaging
+    COMMAND ${PYTHON3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/test_contrib_packaging.py
   )
 endif()
 
 find_program( NODE_EXECUTABLE node )
 if( NODE_EXECUTABLE )
   add_test(
-    NAME test_repro_1d07126_gnome
-    COMMAND ${NODE_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/test_repro_1d07126_gnome.cjs
+    NAME test_gnome_extension_contracts
+    COMMAND ${NODE_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/test_gnome_extension_contracts.cjs
   )
 endif()

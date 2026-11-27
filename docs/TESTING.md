@@ -31,16 +31,16 @@ dbus-run-session -- cargo test --workspace --locked --offline
 
 | Крейт | Ключевые тестовые наборы |
 | --- | --- |
-| `ucc-core` | `domain_validation`, `dto_mapping`, `property_invariants`, `audit_core_regressions` |
-| `ucc-config` | `config_persistence`, `corruption_recovery`, `offline_import`, `settings_manager_tests`, `audit_config_regressions` |
+| `ucc-core` | `domain_validation`, `dto_mapping`, `property_invariants`, `core_validation_rules` |
+| `ucc-config` | `config_persistence`, `corruption_recovery`, `offline_import`, `settings_manager_tests`, `config_security` |
 | `ucc-hardware` | `ioctl_abi`, `ioctl_preconditions`, `cooling_engine`, `cpu_topology_and_control`, `power_devices_and_tunables`, `sysfs_failure_matrix`, `nvml_guard`, `fake_bluez_cooler`, `cooler_protocol`, `cooler_stress_tests`, `vendor_detection`, `telemetry_suite` |
-| `ucc-dbus` | `auth_tests`, `audit_security_regressions`, `contract_tests`, `dbus_skeleton`, `ipc_framing` |
-| `uccd` | `daemon_integration`, `fault_matrix`, `import_check_corpus`, `audit_daemon_regressions` |
-| `ucc-cli` | `cli_tests`, `cli_daemon_integration`, `audit_cli_regressions` |
-| `ucc-desktop` | `tray_menu`, `desk01_and_activation`, `audit_desktop_regressions` |
+| `ucc-dbus` | `auth_tests`, `dbus_security_limits`, `contract_tests`, `dbus_skeleton`, `ipc_framing` |
+| `uccd` | `daemon_integration`, `fault_matrix`, `import_check_corpus`, `daemon_security` |
+| `ucc-cli` | `cli_tests`, `cli_daemon_integration`, `cli_security` |
+| `ucc-desktop` | `tray_menu`, `window_activation`, `tray_security` |
 | `ucc-session-agent` | `session_agent_integration` |
-| `ucc-lighting` | `lighting_tests`, `hid_transport`, `audit_lighting_regressions` |
-| `xtask` | `audit_packaging_regressions`, `build_verification`, `maintenance_workflows` |
+| `ucc-lighting` | `lighting_tests`, `hid_transport`, `lighting_safety` |
+| `xtask` | `packaging_contracts`, `build_verification`, `maintenance_workflows` |
 
 ---
 
@@ -114,7 +114,7 @@ ctest --test-dir build-preview \
 
 ### Кросс-языковые тесты (`test_rust_uccd_interop` и `test_gui_rust_e2e`)
 
-Запускаются через `dbus-run-session -- bash tests/run_rust_interop_test.sh <test-binary> <source-dir>`:
+Запускаются через `dbus-run-session -- bash tests/run_rust_interop_test.sh <test-binary> <source-dir> [args...]`:
 - `test_rust_uccd_interop`: проверяет совместимость C++ `UccdClient` (`libucc-dbus`) с живым Rust `interop_daemon` (JSON-контракты, сигналы, управление профилями и политиками, временная директория `UCC_INTEROP_CONFIG_DIR`).
 - `test_gui_rust_e2e`: запускает полный Qt6 `MainWindow` против Rust `LiveUccdBackend` (`interop_daemon`), проверяет все 11 разделов сайдбара, переключение Light/Dark-тем, запись профилей и политик крышки (`F45 Lid`), отклонение невалидных команд без ложного подтверждения успеха и блокировку записей при `UCC_READ_ONLY_PREVIEW=1`.
 
@@ -130,7 +130,7 @@ ctest --test-dir build-preview \
 dbus-run-session -- bash tests/run_private_system_bus.sh <команда>
 ```
 
-Устанавливаемые переменные: `DBUS_SYSTEM_BUS_ADDRESS="$DBUS_SESSION_BUS_ADDRESS"`, `GIO_USE_VFS=local`. Обёртка `tests/run_rust_interop_test.sh` дополнительно создаёт изолированный временный `HOME` и `XDG_{CONFIG,DATA,STATE,CACHE}_HOME` с автоматической очисткой через `trap`.
+Устанавливаемые переменные: `DBUS_SYSTEM_BUS_ADDRESS="$DBUS_SESSION_BUS_ADDRESS"`, `GIO_USE_VFS=local`. Обёртка `tests/run_rust_interop_test.sh` дополнительно создаёт изолированный временный `HOME` и `XDG_{CONFIG,DATA,STATE,CACHE}_HOME`, запускает `<test-binary>` дочерним процессом (без `exec`) с передачей дополнительных аргументов и кода возврата, гарантируя очистку временного каталога через `trap ... EXIT`.
 
 ### C-фикстуры `LD_PRELOAD` (`stand-fixtures/`, `extra-fixtures/`)
 
