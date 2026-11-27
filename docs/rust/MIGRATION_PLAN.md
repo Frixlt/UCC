@@ -572,11 +572,13 @@ Pump code `0` — высокий режим 11V, `2` — 7V, `3` — 8V, `4` —
 
 ### M15 — порт на Windows (после M14)
 
-- [ ] M15.1 Абстрагировать IPC-слой (D-Bus на Linux / Named Pipes + ACL/SID на Windows) и сервисную обёртку (`systemd` / `windows-service`) для кроссплатформенного запуска `uccd`.
-- [ ] M15.2 Исследовать и реализовать Windows `PlatformBackend` поверх ACPI WMI (`root\WMI`, `INOU0000`): оценить покрытие TDP/ODM/RamFan/зарядки/Fn-Lock без неподписанного KMDF-драйвера и зафиксировать границы требований EV/WHQL.
-- [ ] M15.3 Реализовать Windows-бэкенды телеметрии, питания, дисплея и крышки: `nvml.dll`, Windows Power Management API (EPP/частоты/turbo), `ChangeDisplaySettingsExW`/`WmiMonitorBrightnessMethods`, `RegisterPowerSettingNotification` (`GUID_LIDSWITCH_STATE_CHANGE`).
-- [ ] M15.4 Реализовать Windows-транспорты периферии: WinRT BLE GATT для СЖО (взамен BlueZ) и прямой USB HID (`hidapi`/`HidD_SetFeature`) для клавиатуры `048D:600B`, Lightbar и логотипа крышки (`logo`) `048D:7001` / `048D:7000`.
-- [ ] M15.5 Адаптировать трей и GUI под Windows: нативный `Shell_NotifyIconW` / `tray-icon`, сборка автономного `Qt6::Widgets` `ucc-gui` под MSVC/MinGW.
+Сводная инженерная спецификация реализации, матрица возможностей `wmiacpi.sys` vs EV/WHQL и команды проверки: [`docs/rust/WINDOWS_PORT.md`](./WINDOWS_PORT.md) (`ADR-06`).
+
+- [ ] M15.1 *(фундамент реализован — ждёт проверки на Windows 11)* Абстрагировать IPC-слой (D-Bus на Linux / Named Pipes `\\.\pipe\ucc-rusted` + лимит 256 KiB + SDDL ACL `SY`/`BA`/`IU` и `PIPE_REJECT_REMOTE_CLIENTS` на Windows), кроссплатформенные пути (`ucc-config::platform_paths`) и сервисную обёртку (`systemd` / `windows-service`) для запуска `uccd`.
+- [ ] M15.2 *(фундамент реализован — ждёт проверки на Windows 11)* Исследовать и реализовать Windows `PlatformBackend` (`WindowsWmiEcBackend` / `WmiEcTransport`) поверх ACPI WMI (`root\WMI` `AcpiTest_MULong`, `wmiacpi.sys`, `INOU0000`): зафиксирована матрица покрытия driverless WMI vs EV/WHQL KMDF (`UWACPIDriver.sys` `PWUP`/`SMRW`) в [`WINDOWS_PORT.md`](./WINDOWS_PORT.md).
+- [ ] M15.3 *(фундамент реализован — ждёт проверки на Windows 11)* Реализовать Windows-бэкенды телеметрии, питания, дисплея и крышки: `nvml.dll`, Windows Power Management API GUIDs (EPP/throttle/частоты/boost), `ChangeDisplaySettingsExW`/`WmiMonitorBrightnessMethods`, `RegisterPowerSettingNotification` (`GUID_LIDSWITCH_STATE_CHANGE`).
+- [ ] M15.4 *(фундамент реализован — ждёт проверки на Windows 11)* Реализовать Windows-транспорты периферии: WinRT BLE GATT (Nordic UART, запрет pump code `1`) для СЖО (взамен BlueZ) и прямой USB HID (`UniwillHidTransport` / `HidD_SetFeature`, usage page `>= 0xFF00`) для клавиатуры `048D:600B`, Lightbar и логотипа крышки (`logo`) `048D:7001` / `048D:7000`.
+- [ ] M15.5 *(CI, документация и контрактные тесты готовы — ждёт нативной сборки GUI/tray на Windows)* Адаптировать трей и GUI под Windows (`Shell_NotifyIconW` / `tray-icon`, автономный `Qt6::Widgets` `ucc-gui` под MSVC/MinGW); добавлены workflow [`.github/workflows/windows-check.yml`](../../.github/workflows/windows-check.yml), [`docs/rust/WINDOWS_PORT.md`](./WINDOWS_PORT.md) и контрактные тесты `crates/ucc-config/tests/windows_platform_paths.rs`.
 - [ ] M15.6 Собрать и проверить Windows-инсталлятор (MSI через WiX или Inno Setup), сценарий установки службы, обновления и удаления (`winget` manifest).
 
 **Выход:** `uccd`, CLI и `Qt6::Widgets` GUI работают на Windows 11 через WMI/WinRT/HID без Linux-зависимостей; функции, требующие прямого EC I/O сверх ACPI WMI, явно ограничены наличием EV/WHQL-подписанного KMDF-драйвера.
