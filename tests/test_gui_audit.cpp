@@ -580,17 +580,25 @@ private slots:
     control("TestVisualFixture");
     ucc::MainWindow window;
     auto *navigation=window.findChild<QListWidget*>("navigation");
-    QVERIFY2(navigation,"Fluent shell must expose all ten sections through sidebar navigation");
-    QCOMPARE(navigation->count(),10);
+    QVERIFY2(navigation,"Fluent shell must expose all eleven sections through sidebar navigation");
+    QCOMPARE(navigation->count(),11);
     auto *pages=window.findChild<QTabWidget*>("pages");
     QVERIFY(pages);
     window.show();
-    const int pageIndices[]={0,1,2,2,3,4,5,6,7,8};
-    for(int index=0;index<10;++index) {
+    const int pageIndices[]={0,1,2,2,3,4,5,6,7,8,9};
+    for(int index=0;index<11;++index) {
       if (!(navigation->item(index)->flags() & Qt::ItemIsEnabled)) continue;
       navigation->setCurrentRow(index);
       QCOMPARE(pages->currentIndex(),pageIndices[index]);
     }
+    QVERIFY(window.findChild<QWidget *>("experimentalPage"));
+    QVERIFY(window.findChild<QLabel *>("experimentalBanner"));
+    const QStringList iconNames={"Keyboard & Hardware","Power & Devices","Lightbar","Battery & Processes","Experimental"};
+    QList<QImage> renderedIcons;
+    for(const auto &name:iconNames) renderedIcons.append(ucc::FluentTheme::icon(name).pixmap(24,24).toImage());
+    for(int i=0;i<renderedIcons.size();++i)
+      for(int j=i+1;j<renderedIcons.size();++j)
+        QVERIFY2(renderedIcons[i]!=renderedIcons[j],qPrintable(QString("Duplicate sidebar icon between '%1' and '%2'").arg(iconNames[i],iconNames[j])));
     QVERIFY(!window.statusBar()->isVisible());
     auto *footer=window.findChild<QWidget *>("sidebarFooter");QVERIFY(footer);
     window.statusBar()->showMessage("Keyboard profile 'Main' saved");
@@ -878,7 +886,7 @@ private slots:
     ucc::MainWindow window;window.resize(1440,1000);window.show();
     auto *navigation=window.findChild<QListWidget*>("navigation");QVERIFY(navigation);
     auto *processes=window.findChild<ucc::SessionProcessesWidget*>();QVERIFY(processes);
-    const QStringList names={"overview","profiles","cooler-settings","watercool-settings","monitor","keyboard-hardware","about","power-devices","lightbar","battery-processes"};
+    const QStringList names={"overview","profiles","cooler-settings","watercool-settings","monitor","keyboard-hardware","about","power-devices","lightbar","battery-processes","experimental"};
     QCOMPARE(navigation->count(),names.size());
     for(int page=0;page<names.size();++page) {
       navigation->setCurrentRow(page);QTest::qWait(page==0 || page==4 ? 2400 : 450);

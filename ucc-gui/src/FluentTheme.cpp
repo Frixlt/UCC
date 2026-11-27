@@ -107,6 +107,25 @@ QIcon icon(const QString &name) {
   } else if(name=="Fan Control" || name=="Cooler Settings") {
     p.drawEllipse(QPointF(12,12),2,2);
     for(int i=0;i<4;++i){p.save();p.translate(12,12);p.rotate(i*90);p.drawEllipse(QRectF(1,-9,6,7));p.restore();}
+  } else if(name=="Power & Devices") {
+    p.drawPolyline(QPolygonF{{13,3},{6,13},{11,13},{10,21},{18,11},{13,11},{13,3}});
+  } else if(name=="Lightbar") {
+    p.drawRoundedRect(QRectF(3,10,18,4),2,2);
+    for(int x : {7,12,17}) {
+      p.drawLine(x,x==12 ? 5 : 6,x,8);
+      p.drawLine(x,16,x,x==12 ? 19 : 18);
+    }
+  } else if(name=="Battery & Processes") {
+    p.drawRoundedRect(QRectF(3,6,16,12),2,2);
+    p.drawLine(21,9,21,15);
+    p.drawLine(7,9,7,15);
+    p.drawLine(11,9,11,15);
+  } else if(name=="Experimental") {
+    p.drawLine(9,3,15,3);
+    p.drawLine(10,3,10,9);
+    p.drawLine(14,3,14,9);
+    p.drawPolyline(QPolygonF{{10,9},{4,19},{5,21},{19,21},{20,19},{14,9}});
+    p.drawLine(7,16,17,16);
   } else {
     p.drawRoundedRect(QRectF(2,5,20,14),2,2);
     for(int y:{9,13}) for(int x:{6,10,14,18}) p.drawPoint(x,y);

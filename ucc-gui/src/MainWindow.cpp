@@ -254,7 +254,7 @@ void MainWindow::setupUI()
   sideLayout->addWidget(device);sideLayout->addSpacing(20);
   auto *navigation=new QListWidget(sidebar);navigation->setObjectName("navigation");
   navigation->setIconSize(QSize(24,24));
-  const QStringList labels={"Overview","Profiles","Cooler Settings","Watercool Settings","Monitor","Keyboard & Hardware","About","Power & Devices","Lightbar","Battery & Processes"};
+  const QStringList labels={"Overview","Profiles","Cooler Settings","Watercool Settings","Monitor","Keyboard & Hardware","About","Power & Devices","Lightbar","Battery & Processes","Experimental"};
   for(const auto &label:labels) new QListWidgetItem(FluentTheme::icon(label),label,navigation);
   sideLayout->addWidget(navigation,1);
   auto *footer=new QWidget(sidebar);footer->setObjectName("sidebarFooter");
@@ -340,12 +340,12 @@ void MainWindow::setupUI()
   auto showNavigationHeading=[heading,subtitle,labels](int row) {
     if(row<0 || row>=labels.size()) return;
     heading->setText(labels[row]);
-    const QStringList descriptions={"Your system at a glance","Power, cooling and lighting in one profile","Shape CPU and GPU cooling for your profile","Water cooling, pump and lighting controls","Live system telemetry","Backlight and device controls","Build information, project origins and open-source acknowledgements","CPU, modules and device policies for every power source","Front lighting and notification animations","Battery power and your NVIDIA processes"};
+    const QStringList descriptions={"Your system at a glance","Power, cooling and lighting in one profile","Shape CPU and GPU cooling for your profile","Water cooling, pump and lighting controls","Live system telemetry","Backlight and device controls","Build information, project origins and open-source acknowledgements","CPU, modules and device policies for every power source","Front lighting and notification animations","Battery power and your NVIDIA processes","Preview and experimental settings under development"};
     subtitle->setText(descriptions.value(row));
   };
   connect(navigation,&QListWidget::currentRowChanged,this,[this,showNavigationHeading](int row){
-    if(row<0 || row>9) return;
-    const int pages[]={0,1,2,2,3,4,5,6,7,8};
+    if(row<0 || row>10) return;
+    const int pages[]={0,1,2,2,3,4,5,6,7,8,9};
     if(row==3 && !m_waterCoolerSupported) return;
     if(m_fanControlTab && (row==2 || row==3)) m_fanControlTab->findChild<QTabWidget *>("coolingPages")->setCurrentIndex(row-2);
     const bool samePage=m_tabs->currentIndex()==pages[row];
@@ -353,7 +353,7 @@ void MainWindow::setupUI()
     if(samePage) m_entrance->play();
   });
   connect(m_tabs,&QTabWidget::currentChanged,navigation,[this,navigation,showNavigationHeading](int index){
-    if(index<0 || index>8) return;
+    if(index<0 || index>9) return;
     int row=index<3 ? index : index+1;
     if(index==2 && m_fanControlTab) row=2+m_fanControlTab->findChild<QTabWidget *>("coolingPages")->currentIndex();
     const QSignalBlocker blocked(navigation);navigation->setCurrentRow(row);showNavigationHeading(row);
@@ -409,6 +409,19 @@ void MainWindow::setupUI()
   auto *processes=new SessionProcessesWidget({},nullptr,desktopPage);desktopLayout->addWidget(processes,1);
   connect(processes,&SessionProcessesWidget::message,statusBar(),[this](const QString &text){statusBar()->showMessage(text);});
   m_tabs->addTab(desktopPage,"Battery & Processes");
+  auto *experimentalPage=new QWidget;experimentalPage->setObjectName("experimentalPage");
+  auto *experimentalLayout=new QVBoxLayout(experimentalPage);experimentalLayout->setContentsMargins(0,0,0,0);experimentalLayout->setSpacing(12);
+  auto *experimentalWarningCard=FluentTheme::createCard();experimentalWarningCard->setObjectName("experimentalWarningCard");
+  auto *experimentalWarningLayout=new QVBoxLayout(experimentalWarningCard);
+  auto *experimentalTitle=new QLabel("Experimental features");experimentalTitle->setObjectName("cardTitle");experimentalWarningLayout->addWidget(experimentalTitle);
+  auto *experimentalBanner=new QLabel("Options added here are experimental, may change between releases, and are disabled by default until promoted to stable tabs.");experimentalBanner->setObjectName("experimentalBanner");experimentalBanner->setWordWrap(true);experimentalLayout->addWidget(experimentalWarningCard);experimentalWarningLayout->addWidget(experimentalBanner);
+  auto *experimentalOptionsCard=FluentTheme::createCard();experimentalOptionsCard->setObjectName("experimentalOptionsCard");
+  auto *experimentalOptionsLayout=new QVBoxLayout(experimentalOptionsCard);
+  auto *experimentalOptionsTitle=new QLabel("Staged toggles");experimentalOptionsTitle->setObjectName("cardTitle");experimentalOptionsLayout->addWidget(experimentalOptionsTitle);
+  auto *experimentalEmpty=new QLabel("No active experimental toggles are configured for this build.");experimentalEmpty->setObjectName("muted");experimentalEmpty->setWordWrap(true);experimentalOptionsLayout->addWidget(experimentalEmpty);
+  experimentalLayout->addWidget(experimentalOptionsCard);
+  experimentalLayout->addStretch(1);
+  m_tabs->addTab(experimentalPage,"Experimental");
   if(!m_waterCoolerSupported) {navigation->item(3)->setFlags(navigation->item(3)->flags() & ~Qt::ItemIsEnabled);navigation->item(3)->setToolTip("Water cooling is not supported by this device.");}
   navigation->setCurrentRow(0);
 }
