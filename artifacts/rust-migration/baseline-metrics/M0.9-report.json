@@ -1,0 +1,64 @@
+{
+  "task_id": "M0.9",
+  "status": "repaired_and_verified",
+  "measured_metrics": {
+    "cli_help_latency_ms": {
+      "command": "./build-baseline-normal/bin/ucc-cli --help",
+      "samples_ms": [
+        3.214,
+        2.856,
+        2.472,
+        2.518,
+        2.478,
+        2.24,
+        2.384,
+        2.228,
+        2.413,
+        2.45
+      ],
+      "mean_ms": 2.53,
+      "min_ms": 2.228,
+      "max_ms": 3.214,
+      "stddev_ms": 0.28
+    },
+    "package_footprint": {
+      "arch_zst_bytes": 1533000,
+      "arch_zst_mb": 1.5
+    },
+    "compiled_binaries_bytes": {
+      "ucc-hardware": 71424,
+      "ucc-sleep": 59776,
+      "ucc-cli": 200552,
+      "ucc-import-check": 429224,
+      "ucc-desktop-tray": 269936,
+      "ucc-session-agent": 215208,
+      "ucc-gui": 1866504,
+      "uccd": 1645264
+    },
+    "compiled_libraries_bytes": {
+      "libucc-dbus.so.0.3.0": 226976,
+      "libucc-dbus.so.0": 226976,
+      "libucc-dbus.so": 226976,
+      "libucc-session-support.a": 205624,
+      "libucc-desktop-support.a": 392988
+    }
+  },
+  "pending_measurements": {
+    "idle_wakeups_per_second": {
+      "sample_window_seconds": 5,
+      "uccd_legacy_pid_420936": 1.0,
+      "ucc_desktop_tray_legacy_pid_3283": 0.0,
+      "ucc_session_agent_legacy_pid_197874": 0.0
+    },
+    "daemon_rss_bytes": {
+      "uccd_legacy_pid_420936": 11632640,
+      "ucc_desktop_tray_legacy_pid_3283": 14757888,
+      "ucc_session_agent_legacy_pid_197874": 6660096
+    },
+    "ui_frame_latency_ms": "baseline_measurement_pending (requires live compositor frame capture)"
+  },
+  "pending_measurements": {
+    "ui_frame_latency_ms": "requires live Wayland/Hyprland compositor frame capture on physical host"
+  },
+  "notes": "Live non-root /proc/<pid>/status RSS and context-switch wakeups captured for active baseline daemons over 5s; compositor UI frame latency remains pending."
+}

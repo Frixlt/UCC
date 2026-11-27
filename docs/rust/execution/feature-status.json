@@ -1196,7 +1196,7 @@
     {
       "id": "F46",
       "area": "Собственный Rust uwcc backend (ADR-05, M14)",
-      "requirement": "Доменный PlatformBackend (TuxedoIoBackend <-> UwccBackend), собственный Rust-модуль ядра /dev/uwcc (ECRR/ECRW/SMRW/PWUP/WMI events), EC-менеджер 0x1A (RamFan 1.5, SMRW, TCC лимит температуры CPU, PWUP, зарядка и переключатели через EC), uinput для WMI-клавиш, прямой USB hidraw для 048D:600B и 048D:7001, взаимоисключение с tuxedo-drivers и откат",
+      "requirement": "Доменный PlatformBackend (TuxedoIoBackend <-> UwccBackend), собственный Rust-модуль ядра /dev/uwcc (ECRR/ECRW/SMRW/PWUP/WMI events), EC-менеджер 0x1A (RamFan 1.5, SMRW, TCC лимит температуры CPU, PWUP, зарядка и переключатели через EC), uinput для WMI-клавиш, прямой USB hidraw для 048D:600B и 048D:7001/048D:7000 (Lightbar и логотип крышки logo), взаимоисключение с tuxedo-drivers и откат",
       "baseline_references": "ADR-05, открытая спецификация EC/ACPI 0x1A (без proprietary/ и oem/)",
       "scope": "required",
       "implementation_status": "partial",

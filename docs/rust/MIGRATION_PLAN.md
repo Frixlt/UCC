@@ -368,7 +368,7 @@ Pump code `0` — высокий режим 11V, `2` — 7V, `3` — 8V, `4` —
 - [x] M0.6 Снять XML D-Bus и обезличенные fixtures settings/profiles/telemetry/capabilities.
 - [x] M0.7 Зафиксировать reference images всех 10 разделов и driver-warning в обеих темах; существующая галерея содержит 22 изображения.
 - [x] M0.8 Создать реестр F01–F44 со статусами: обязательная функция, аппаратно недоступна, подтверждённый legacy defect, shell decision.
-- [x] M0.9 Зафиксировать текущие CPU/RSS/idle wakeups/UI latency/package footprint для последующего сравнения.
+- [ ] M0.9 *(частично выполнено — ждёт живого композитора для UI frame latency)* Зафиксировать текущие CPU/RSS/idle wakeups/UI latency/package footprint для последующего сравнения.
 
 **Выход:** любой разработчик воспроизводит базу; известные сбои и непроверенные аппаратные сценарии названы явно. Личные данные остаются в private fixture storage, публичные fixtures обезличены.
 
@@ -378,7 +378,7 @@ Pump code `0` — высокий режим 11V, `2` — 7V, `3` — 8V, `4` —
 - [x] M1.2 *(заменено ADR-01)* Iced prototype: Fluent shell, таблица устройств, curve canvas, keyboard canvas, live chart на полном horizon.
 - [x] M1.3 *(заменено ADR-01)* Проверить кириллицу/IME, keyboard navigation, focus, tooltips, DPI 100/125/150/200%, Light/Dark/Auto и доступность ключевых controls.
 - [x] M1.4 *(заменено ADR-01)* Проверить native Wayland KDE/Hyprland и X11; исключить неявный выбор NVIDIA renderer, который держит dGPU активной.
-- [x] M1.5 Проверить ksni menu, tokens, existing-window activation и переход на desktop окна; определить необходимый toolkit integration patch.
+- [ ] M1.5 *(частично выполнено — ждёт живого Wayland/ksni прогона)* Проверить ksni menu, tokens, existing-window activation и переход на desktop окна; определить необходимый toolkit integration patch.
 - [x] M1.6 Проверить Rust ioctl ABI: request numbers/struct layouts против установленного driver ABI и C++ reference harness.
 - [x] M1.7 На fake BlueZ проверить GATT interface, уведомления, reconnect и выбор bluer/direct-zbus.
 - [x] M1.8 Проверить покрытие NVIDIA wrapper и возможную изоляцию native GPU calls отдельным процессом.
@@ -422,7 +422,7 @@ Pump code `0` — высокий режим 11V, `2` — 7V, `3` — 8V, `4` —
 - [x] M4.5 Перенести governor/EPP/min-max/turbo/HWP, defaults/reapply/restore и ошибки записи.
 - [x] M4.6 Перенести devices scan/merge, whitelist paths/values, отсутствующие devices и независимые три колонки.
 - [x] M4.7 Перенести ASPM/Wi-Fi/system tunables/nvidia-powerd/persistence ordering без shell interpolation.
-- [x] M4.8 Прогнать fake sysfs/procfs failure matrix; после этого провести ограниченные аппаратные read/write проверки.
+- [ ] M4.8 *(частично выполнено — ждёт аппаратных read/write на хосте)* Прогнать fake sysfs/procfs failure matrix; после этого провести ограниченные аппаратные read/write проверки.
 - [x] M4.9 Ввести доменный трейт `PlatformBackend` поверх `HardwareIo`/`Sysfs`, изолирующий `TuxedoIoBackend` от логики демона и готовящий плавный переход к `UwccBackend` (`ADR-05`).
 
 **Выход:** CPU/device actions соответствуют fixture journal и подтверждаемому readback; неподдержанное оборудование не получает guessed writes.
@@ -448,7 +448,7 @@ Pump code `0` — высокий режим 11V, `2` — 7V, `3` — 8V, `4` —
 - [x] M6.3 Реализовать brightness scaling и buffered RGB writes; guard восстанавливает buffer_input и при ошибке.
 - [x] M6.4 Перенести Lightbar discovery/settings, power modes, majority color, defaults и все 5 frame functions.
 - [x] M6.5 Реализовать таймер анимации без sleep в event loop, no overlap, proper idle/Flash, Welcome/Silent/Test.
-- [x] M6.6 Проверить private fixture цвета и аппаратный readback, изменения профиля и power mode, отказ записи и resume без повторного welcome.
+- [ ] M6.6 *(частично выполнено — ждёт физического LED readback и resume)* Проверить private fixture цвета и аппаратный readback, изменения профиля и power mode, отказ записи и resume без повторного welcome.
 - [x] M6.7 Отделить логику клавиатуры и Lightbar от способа доставки (`LightingTransport`: `SysfsLedTransport` для `M6–M13` и точка подключения `HidrawTransport` для `M14`).
 
 **Выход:** старые цвета/яркость и physical mapping сохранены; idle и error states воспроизводимы.
@@ -497,7 +497,7 @@ Pump code `0` — высокий режим 11V, `2` — 7V, `3` — 8V, `4` —
 ### M10 — автономный `Qt6::Widgets` GUI поверх Rust `uccd` (`ADR-01`)
 
 - [x] M10.1 Отвязать CMake-сборку `ucc-gui` от удаляемых C++-компонентов (`uccd`, `ucc-session`, `ucc-desktop-tray`, `ucc-tray`) и лишних зависимостей (`Qml`, `Quick`, `QuickControls2`, `Qt6::Bluetooth`, `KF6WindowSystem`, `KF6StatusNotifierItem`), оставив только `Qt6::{Core,Gui,Widgets,DBus,Charts}`.
-- [x] M10.2 Заменить активацию окна через `KF6WindowSystem` на нативный путь Qt6 Wayland (`XDG_ACTIVATION_TOKEN` + `QWindow::requestActivate()`) и статически встроить клиент D-Bus (без установки внешней `libucc-dbus.so`).
+- [ ] M10.2 *(частично выполнено — ждёт проверки фокуса в живой Wayland-сессии)* Заменить активацию окна через `KF6WindowSystem` на нативный путь Qt6 Wayland (`XDG_ACTIVATION_TOKEN` + `QWindow::requestActivate()`) и статически встроить клиент D-Bus (без установки внешней `libucc-dbus.so`).
 - [x] M10.3 Перевести вкладку `Battery & Processes` на данные/команды Rust-стека (или изолированный легковесный Qt-виджет без `ucc-desktop-tray`), сохранив безопасное завершение пользовательских процессов NVIDIA и настройки глобальной зарядки.
 - [x] M10.4 Обеспечить жизненный цикл «0 МБ Qt в фоне»: закрытие окна `ucc-gui` полностью завершает процесс, а клик в Rust-трее `ucc-desktop-tray` мгновенно запускает или фокусирует `ucc-gui` с передачей Wayland activation token.
 - [x] M10.5 Исключить прототип `crates/ucc-gui` (`iced`/`wgpu`) из `Cargo.toml` и `Cargo.lock`, очистив Rust-workspace от графических зависимостей.
@@ -530,7 +530,7 @@ Pump code `0` — высокий режим 11V, `2` — 7V, `3` — 8V, `4` —
 - [x] M12.5 Настроить fmt/clippy/tests/contract tests/fuzz smoke/build/packaging/UI jobs под непривилегированным пользователем.
 - [ ] M12.6 *(частично выполнено)* Проверить normal и preview сборки; CI не получает доступ к реальному sysfs/system bus.
 - [x] M12.7 Проверить dependencies/runtime links: основным binaries не нужны Qt/libucc-dbus; ожидаемые системные/FFI библиотеки перечислены.
-- [x] M12.8 Сформировать license/dependency notices, SBOM/source archive и migration/recovery guide.
+- [ ] M12.8 *(частично выполнено — ждёт живого прогона установки/отката и публикации release assets)* Сформировать license/dependency notices, SBOM/source archive и migration/recovery guide.
 - [ ] M12.9 Установить staged package на чистое окружение и обновить копию существующей установки; затем выполнить downgrade/rollback.
 - [x] M12.10 Закрепить единый code style, commit convention и алгоритм релизов: `rustfmt.toml`, `.editorconfig`, `cargo fmt --check` в CI, `CONTRIBUTING.md`, устранение хардкода `docs/releases/0.3.0.md` в `.github/workflows/release.yml`, синхронная проверка/обновление версий (`Cargo.toml`, `CMakeLists.txt`, `PKGBUILD`, `ucc.spec`, `package.nix`) и генерация `CHANGELOG`.
 
@@ -547,7 +547,7 @@ Pump code `0` — высокий режим 11V, `2` — 7V, `3` — 8V, `4` —
 - [ ] M13.7 Удалить C++/Qt runtime из active build/install; старый код остаётся в Git/tag/archive для истории.
 - [ ] M13.8 Удалить временные compatibility bridges, source-extraction tests и старые package dependencies после переноса проверок.
 - [ ] M13.9 Обновить README/BUILDING/TESTING/COMPARISON/origins и выпустить проверенный release.
-- [x] M13.10 Переименовать проект из `Frixit Control Center` в выбранное Rust-ориентированное имя во всех пользовательских поверхностях (GUI, tray, CLI, desktop-файлы, PKGBUILD, документация) с сохранением совместимости D-Bus/миграции (`ucc-rusted`, без `M13.11` до финального этапа).
+- [x] M13.10 Переименовать проект из `Frixit Control Center` в выбранное Rust-ориентированное имя во всех пользовательских runtime-поверхностях (GUI, tray, CLI, desktop-файлы, PKGBUILD, packaging-метаданные) с сохранением совместимости D-Bus/миграции (`ucc-rusted`; документация `README.md`, `README.ru.md`, `docs/BUILDING.md` вынесена в `M13.11`).
 - [ ] M13.11 Подготовить строгую техническую документацию без маркетинга и нейрослопа (`наш` и т.п.): `README.md` (EN), `README.ru.md` (RU), архитектуру, справочники D-Bus API и CLI, матрицу железа и объективное сравнение в `docs/COMPARISON.md` с [`open-uniwill-cc`](https://github.com/aspidovss/open-uniwill-cc/blob/main/README.ru.md), upstream `UCC Revorked`, `TUXEDO Control Center`, `Clevo Control Center`, `LCT`, `CoreCtrl` и `asusctl` (полностью убрать упоминание «Личный Python ControlCenter»).
 
 **Выход:** достигается определение готовности из раздела 16. Наличие незавершённого hardware test или несогласованной потери embedded shell UI оставляет соответствующий пункт открытым.

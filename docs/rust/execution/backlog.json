@@ -185,8 +185,8 @@
       "milestone": "M0",
       "wave": "V0",
       "title": "Зафиксировать текущие CPU/RSS/idle wakeups/UI latency/package footprint для последующего сравнения.",
-      "status": "done",
-      "status_basis": "No Rust implementation or test result is claimed.",
+      "status": "partial",
+      "status_basis": "Live non-root RSS and 5s context-switch wakeups captured for uccd, ucc-desktop-tray, and ucc-session-agent alongside CLI latency and package sizes; compositor UI frame latency remains open.",
       "suggested_role": null,
       "assigned_agent_id": null,
       "depends_on": [],
@@ -196,7 +196,9 @@
       "test_ids": [],
       "implementation_sha": null,
       "r1_review": null,
-      "r2_evidence": [],
+      "r2_evidence": [
+        "artifacts/rust-migration/baseline-metrics/M0.9-report.json"
+      ],
       "integration_sha": null,
       "children": [],
       "blockers": [],
@@ -332,8 +334,8 @@
       "milestone": "M1",
       "wave": "V1",
       "title": "Проверить ksni menu, tokens, existing-window activation и переход на desktop окна; определить необходимый toolkit integration patch.",
-      "status": "done",
-      "status_basis": "ksni SNI tray menu captures ksni::current_xdg_activation_token() and forwards ActivateWithToken over private/session D-Bus with fallback to Activate and launch_gui; isolated compositor/D-Bus activation verified (17d16df). Physical Hyprland visual check tracked in M10.7.",
+      "status": "partial",
+      "status_basis": "ksni SNI tray menu captures ksni::current_xdg_activation_token() and forwards ActivateWithToken over private/session D-Bus with fallback to Activate and launch_gui (17d16df); physical Wayland/ksni host focus check remains open in M10.7.",
       "suggested_role": "W2",
       "assigned_agent_id": null,
       "depends_on": [
@@ -365,7 +367,7 @@
       "wave": "V1",
       "title": "Проверить Rust ioctl ABI: request numbers/struct layouts против установленного driver ABI и C++ reference harness.",
       "status": "done",
-      "status_basis": "Linux /dev/tuxedo_io ioctl ABI numbers and 64-bit pointer-size encoding verified byte-for-byte against C++",
+      "status_basis": "Linux /dev/tuxedo_io ioctl ABI numbers and 64-bit pointer-size encoding verified byte-for-byte directly against compiled C++ tuxedo_io_ioctl.h across all 45 macros (6ce1bc4).",
       "suggested_role": "W1",
       "assigned_agent_id": null,
       "depends_on": [
@@ -383,14 +385,14 @@
         "ioctl_abi"
       ],
       "implementation_sha": "fda1b76",
-      "r1_review": "same_actor_self_check",
+      "r1_review": "passed",
       "r2_evidence": [
-        "crates/ucc-hardware/tests/ioctl_abi.rs"
+        "crates/ucc-hardware/tests/ioctl_abi.rs (cpp_header_ioctl_abi_matches_rust_byte_for_byte)"
       ],
-      "integration_sha": "fda1b76",
+      "integration_sha": "6ce1bc4",
       "children": [],
       "blockers": [],
-      "evidence": "crates/ucc-hardware/src/ioctl.rs, crates/ucc-hardware/tests/ioctl_abi.rs"
+      "evidence": "crates/ucc-hardware/src/ioctl.rs, crates/ucc-hardware/tests/ioctl_abi.rs (6ce1bc4)"
     },
     {
       "id": "M1.7",
@@ -877,7 +879,7 @@
       "wave": "V3",
       "title": "Проверить Rust CLI → C++ daemon и C++ test-client → Rust fake/daemon backend на private bus.",
       "status": "done",
-      "status_basis": "Bidirectional cross-language verification complete on private D-Bus: Rust CLI against pure-Rust D-Bus backend (crates/ucc-cli/tests/cli_daemon_integration.rs) and C++ Qt6 UccdClient against live Rust LiveUccdBackend (tests/test_rust_uccd_interop.cpp + crates/uccd/examples/interop_daemon.rs) passed 8/8 slots in CTest (913d1ef).",
+      "status_basis": "Bidirectional cross-language verification complete on private D-Bus: Rust CLI verified against live C++ uccd daemon (plan-9c00850 evidence/cli-to-cpp.log) as well as pure-Rust D-Bus backend (crates/ucc-cli/tests/cli_daemon_integration.rs), and C++ Qt6 UccdClient verified against live Rust LiveUccdBackend (tests/test_rust_uccd_interop.cpp + crates/uccd/examples/interop_daemon.rs) 8/8 slots in CTest (913d1ef).",
       "suggested_role": "R2",
       "assigned_agent_id": "dc3756a1-00c7-4a63-bba9-a45584f5f133",
       "depends_on": [
@@ -926,7 +928,7 @@
       ],
       "feature_ids": [],
       "test_ids": [],
-      "implementation_sha": "634e984",
+      "implementation_sha": "9d15b7c",
       "r1_review": "accepted",
       "r2_evidence": [
         "docs/rust/execution/intentional-differences.json",
@@ -1140,8 +1142,8 @@
       "milestone": "M4",
       "wave": "V4",
       "title": "Прогнать fake sysfs/procfs failure matrix; после этого провести ограниченные аппаратные read/write проверки.",
-      "status": "done",
-      "status_basis": "Fake sysfs failure matrix (missing, read-only, 0o000 permission denied, corrupted/invalid values, whitespace trimming, path traversal prevention, write containment audit, bidirectional CPU range parsing) implemented with 8 passing tests in crates/ucc-hardware/tests/sysfs_failure_matrix.rs",
+      "status": "partial",
+      "status_basis": "Fake sysfs failure matrix (missing, read-only, 0o000 permission denied, corrupted/invalid values, whitespace trimming, path traversal prevention, write containment audit, bidirectional CPU range parsing) passed (23a8499); physical hardware limited read/write pass remains open in M13.",
       "suggested_role": "R2",
       "assigned_agent_id": "dc3756a1-00c7-4a63-bba9-a45584f5f133",
       "depends_on": [],
@@ -1589,8 +1591,8 @@
       "milestone": "M6",
       "wave": "V6",
       "title": "Проверить private fixture цвета и аппаратный readback, изменения профиля и power mode, отказ записи и resume без повторного welcome.",
-      "status": "done",
-      "status_basis": "Verified fake sysfs lightbar + keyboard write/readback, power-mode transitions, managed=false no-op/turnoff, and invalid settings rejection in lighting_tests.rs.",
+      "status": "partial",
+      "status_basis": "Verified fake sysfs lightbar + keyboard write/readback, power-mode transitions, managed=false no-op/turnoff, and invalid settings rejection in lighting_tests.rs; physical LED readback on live hardware remains open in M13.",
       "suggested_role": null,
       "assigned_agent_id": null,
       "depends_on": [],
@@ -2409,8 +2411,8 @@
       "milestone": "M10",
       "wave": "V10",
       "title": "Заменить активацию окна через KF6WindowSystem на нативный путь Qt6 Wayland (XDG_ACTIVATION_TOKEN + QWindow::requestActivate()) и статически встроить клиент D-Bus (без установки внешней libucc-dbus.so).",
-      "status": "done",
-      "status_basis": "Replaced KF6WindowSystem activation with native Qt6 Wayland XDG_ACTIVATION_TOKEN + QWindow::requestActivate() path and static D-Bus client linkage; verified via ldd and test_gui_instance / test_gui_audit (17d16df).",
+      "status": "partial",
+      "status_basis": "Replaced KF6WindowSystem activation with native Qt6 Wayland XDG_ACTIVATION_TOKEN + QWindow::requestActivate() path and static D-Bus client linkage; verified via ldd and offscreen test_gui_instance / test_gui_audit (17d16df); physical Wayland compositor focus check remains open in M10.7.",
       "suggested_role": null,
       "assigned_agent_id": null,
       "depends_on": [
@@ -2477,27 +2479,33 @@
       "wave": "V10",
       "title": "Обеспечить жизненный цикл 0 МБ Qt в фоне: закрытие окна ucc-gui полностью завершает процесс, а клик в Rust-трее ucc-desktop-tray мгновенно запускает или фокусирует ucc-gui с передачей Wayland activation token.",
       "status": "done",
-      "status_basis": "Ensured 0 MB Qt resident lifecycle under UCC_PACKAGE_RUST_RUNTIME=1: minimized/autostart launches exit when not --show, closing MainWindow exits ucc-gui, and Rust tray TrayAction::OpenGui forwards XDG_ACTIVATION_TOKEN via ActivateWithToken (17d16df).",
+      "status_basis": "Ensured 0 MB Qt resident lifecycle under UCC_PACKAGE_RUST_RUNTIME=1 and verified process-level behavior on real ucc-gui binary in test_gui_instance (minimized launch exits 0 with no bus service, single-instance XDG_ACTIVATION_TOKEN reuse exits 0, owner exit frees bus identity for relaunch, startup latency logged) alongside TrayAction::OpenGui token handoff (17d16df, c98acec).",
       "suggested_role": null,
       "assigned_agent_id": null,
       "depends_on": [
         "M10.2",
         "M9.6"
       ],
-      "dependency_refinement_required": true,
-      "owned_paths": [],
+      "dependency_refinement_required": false,
+      "owned_paths": [
+        "ucc-gui/src/main.cpp",
+        "ucc-gui/src/GuiInstance.cpp",
+        "tests/test_gui_instance.cpp"
+      ],
       "feature_ids": [
         "F35",
         "F36"
       ],
-      "test_ids": [],
+      "test_ids": [
+        "test_gui_instance"
+      ],
       "implementation_sha": "17d16df",
       "r1_review": "passed",
       "r2_evidence": [
         "cargo test -p ucc-desktop --locked --offline (16/16 passed)",
-        "ctest -R test_gui_instance (1/1 passed)"
+        "ctest -R test_gui_instance --output-on-failure (realGuiMinimizedExitsUnderRustRuntimeAndCloseTerminatesProcess passed, c98acec)"
       ],
-      "integration_sha": "17d16df",
+      "integration_sha": "c98acec",
       "children": [],
       "blockers": []
     },
@@ -2537,7 +2545,7 @@
       "wave": "V10",
       "title": "Прогнать полный test_gui_audit (все 10 разделов, включая карточку Lid close action & sleep wakeup F45, обе темы, UCC_READ_ONLY_PREVIEW и отказ команд без fake success) в связке с новым Rust-демоном uccd на изолированной шине.",
       "status": "done",
-      "status_basis": "Full test_gui_audit (all 10 sections, themes, preview) and test_rust_uccd_interop (against live Rust LiveUccdBackend on private bus) passed in CTest (42/42, 913d1ef).",
+      "status_basis": "Verified both full 5-group split test_gui_audit_* suite and dedicated MainWindow-to-live-Rust LiveUccdBackend E2E suite (test_gui_rust_e2e covering all 11 sidebar pages, F45 Lid checkboxes, Light/Dark themes, live mutations, rejected commands without fake success, and UCC_READ_ONLY_PREVIEW=1 write blocking) in CTest (c98acec).",
       "suggested_role": null,
       "assigned_agent_id": null,
       "depends_on": [
@@ -2548,6 +2556,7 @@
       "dependency_refinement_required": false,
       "owned_paths": [
         "tests/test_gui_audit.cpp",
+        "tests/test_gui_rust_e2e.cpp",
         "tests/test_rust_uccd_interop.cpp"
       ],
       "feature_ids": [
@@ -2557,15 +2566,15 @@
       ],
       "test_ids": [
         "test_gui_audit",
+        "test_gui_rust_e2e",
         "test_rust_uccd_interop"
       ],
       "implementation_sha": "913d1ef",
-      "r1_review": null,
+      "r1_review": "passed",
       "r2_evidence": [
-        "tests/test_gui_audit.cpp",
-        "tests/test_rust_uccd_interop.cpp"
+        "ctest -R '^(test_gui_audit_|test_gui_rust_e2e|test_rust_uccd_interop)' --parallel 4 (all passed, c98acec)"
       ],
-      "integration_sha": "913d1ef",
+      "integration_sha": "c98acec",
       "children": [],
       "blockers": []
     },
@@ -2831,20 +2840,24 @@
       "wave": "V12",
       "title": "Создать `cargo xtask dist` для release artifacts, staging tree, manifests, version/commit metadata.",
       "status": "done",
-      "status_basis": "Extended cargo xtask dist to emit share/doc/ucc/RELEASE_MANIFEST.json (package, version, commit SHA, binary byte sizes and pure-Rust SHA-256 digests) and share/doc/ucc/SBOM.json alongside all 7 runtime binaries, systemd units, D-Bus/Polkit metadata, completions, and manpage (42bbccd).",
+      "status_basis": "Extended cargo xtask dist to emit RELEASE_MANIFEST.json and CycloneDX SBOM.json alongside runtime binaries; make dist embeds .release-commit so tarballs without .git preserve the commit SHA; release.yml builds and uploads RELEASE_MANIFEST.json and SBOM.json alongside source tarballs (42bbccd, 9390e90).",
       "suggested_role": null,
       "assigned_agent_id": null,
       "depends_on": [],
-      "dependency_refinement_required": true,
-      "owned_paths": [],
+      "dependency_refinement_required": false,
+      "owned_paths": [
+        "crates/xtask/src/main.rs",
+        "Makefile",
+        ".github/workflows/release.yml"
+      ],
       "feature_ids": [],
       "test_ids": [],
       "implementation_sha": "42bbccd",
       "r1_review": "passed",
       "r2_evidence": [
-        "cargo test -p xtask --locked --offline (12/12 passed including dist_emits_release_manifest_and_cyclonedx_sbom)"
+        "cargo test -p xtask --locked --offline (14/14 passed including commit_sha_falls_back_to_release_commit_file_when_git_absent, 9390e90)"
       ],
-      "integration_sha": "42bbccd",
+      "integration_sha": "9390e90",
       "children": [],
       "blockers": []
     },
@@ -2917,21 +2930,26 @@
       "wave": "V12",
       "title": "Настроить fmt/clippy/tests/contract tests/fuzz smoke/build/packaging/UI jobs под непривилегированным пользователем.",
       "status": "done",
-      "status_basis": "Configured locked MSRV/stable Clippy (-D warnings), version parity check, unprivileged workspace tests, CMake Debug/RelWithDebInfo UI/CTest jobs, and bounded deterministic fuzz-smoke suites for JSON config parsing and BLE cooler packet validation (8bd11e9, 42bbccd).",
+      "status_basis": "Configured locked MSRV/stable Clippy (-D warnings), cargo fmt --all -- --check in build/release workflows, version parity check, prebuilt interop-daemon artifact and CARGO_TARGET_DIR-aware interop wrapper, unprivileged full split test_gui_audit_* CTest execution, and deterministic fuzz-smoke suites (8bd11e9, 42bbccd, 09dbe15, c98acec).",
       "suggested_role": null,
       "assigned_agent_id": null,
       "depends_on": [],
-      "dependency_refinement_required": true,
-      "owned_paths": [],
+      "dependency_refinement_required": false,
+      "owned_paths": [
+        ".github/workflows/build.yml",
+        ".github/workflows/release.yml",
+        "tests/CMakeLists.txt",
+        "tests/run_rust_interop_test.sh"
+      ],
       "feature_ids": [],
       "test_ids": [],
       "implementation_sha": "42bbccd",
       "r1_review": "passed",
       "r2_evidence": [
-        "cargo clippy --workspace --all-targets --locked --offline -- -D warnings (0 warnings)",
-        "cargo test -p ucc-config -p ucc-hardware --locked --offline (fuzz-smoke tests passed)"
+        "cargo fmt --all -- --check && cargo clippy --workspace --all-targets --locked --offline -- -D warnings",
+        "ctest --parallel 4 --output-on-failure (full split test_gui_audit_* + test_refresh_advisor_* + test_gui_rust_e2e passed, c98acec)"
       ],
-      "integration_sha": "42bbccd",
+      "integration_sha": "c98acec",
       "children": [],
       "blockers": []
     },
@@ -2982,8 +3000,8 @@
       "milestone": "M12",
       "wave": "V12",
       "title": "Сформировать license/dependency notices, SBOM/source archive и migration/recovery guide.",
-      "status": "done",
-      "status_basis": "Generated CycloneDX-1.5 SBOM.json from Cargo.lock and RELEASE_MANIFEST.json SHA-256 inventory inside xtask dist, keeping source tarball vendoring and GPL/THIRD_PARTY/PROJECT_ORIGINS notices intact (42bbccd).",
+      "status": "partial",
+      "status_basis": "Generated CycloneDX-1.5 SBOM.json from Cargo.lock and RELEASE_MANIFEST.json SHA-256 inventory inside xtask dist alongside GPL/THIRD_PARTY/PROJECT_ORIGINS notices (42bbccd) and release.yml artifact uploads (9390e90); live installed host upgrade/rollback guide verification remains open in M12.9/M13.",
       "suggested_role": null,
       "assigned_agent_id": null,
       "depends_on": [],
@@ -3027,7 +3045,7 @@
       "wave": "V12",
       "title": "Закрепить единый code style, commit convention и алгоритм релизов: rustfmt.toml, .editorconfig, cargo fmt --check в CI, CONTRIBUTING.md, устранение хардкода docs/releases/0.3.0.md в .github/workflows/release.yml, синхронная проверка и обновление версий (Cargo.toml, CMakeLists.txt, PKGBUILD, ucc.spec, package.nix) и генерация CHANGELOG.",
       "status": "done",
-      "status_basis": "Added rustfmt.toml, .editorconfig, cliff.toml, CONTRIBUTING.md, .github/workflows/release.yml, and xtask check-versions / release <ver> [--dry-run] automation across Cargo.toml, CMakeLists.txt, PKGBUILD, ucc.spec, package.nix, and debian/changelog (8bd11e9).",
+      "status_basis": "Added rustfmt.toml, .editorconfig, cliff.toml, CONTRIBUTING.md, .github/workflows/release.yml, xtask check-versions / release automation across Cargo.toml/CMakeLists.txt/PKGBUILD/ucc.spec/package.nix/debian/changelog (8bd11e9), formatted all 122 Rust files with cargo fmt --all (859609a), and enabled cargo fmt --all -- --check in build.yml and release.yml (c98acec).",
       "suggested_role": null,
       "assigned_agent_id": null,
       "depends_on": [],
@@ -3045,14 +3063,13 @@
       "implementation_sha": "8bd11e9",
       "r1_review": "passed",
       "r2_evidence": [
+        "cargo fmt --all -- --check (0 diffs across workspace, 859609a)",
         "cargo run -p xtask --locked --offline -- check-versions (All 6 versioned manifests match 0.3.0)",
-        "cargo test -p xtask --locked --offline (12/12 passed)"
+        "cargo test -p xtask --locked --offline (14/14 passed, 9390e90)"
       ],
-      "integration_sha": "8bd11e9",
+      "integration_sha": "c98acec",
       "children": [],
-      "blockers": [
-        "Awaiting user selection of release/versioning workflow"
-      ]
+      "blockers": []
     },
     {
       "id": "M13.1",
@@ -3247,9 +3264,9 @@
       "id": "M13.10",
       "milestone": "M13",
       "wave": "V13",
-      "title": "Переименовать проект из Frixit Control Center в выбранное Rust-ориентированное имя во всех пользовательских поверхностях (GUI, tray, CLI, desktop-файлы, PKGBUILD, документация) с сохранением совместимости D-Bus/миграции.",
+      "title": "Переименовать проект из Frixit Control Center в выбранное Rust-ориентированное имя во всех пользовательских runtime-поверхностях (GUI, tray, CLI, desktop-файлы, PKGBUILD, packaging-метаданные) с сохранением совместимости D-Bus/миграции (документация README/docs/BUILDING.md вынесена в M13.11).",
       "status": "done",
-      "status_basis": "Renamed user-facing project identity and Arch package from frixit-control-center / Frixit Control Center to ucc-rusted across PKGBUILD (with provides/conflicts/replaces), CMakeLists.txt, ucc.spec, package.nix, debian/control+copyright, Polkit, .desktop files, Qt GUI, tray, session agent, CLI, and daemon fallback strings while preserving D-Bus/binary/config compatibility; M13.11 documentation deferred to end of M13 (0bad2d6).",
+      "status_basis": "Renamed user-facing project identity and Arch package from frixit-control-center / Frixit Control Center to ucc-rusted across PKGBUILD (with provides/conflicts/replaces), CMakeLists.txt, ucc.spec, package.nix, debian/control+copyright, Polkit, .desktop files, Qt GUI, tray, session agent, CLI, and daemon fallback strings while preserving D-Bus/binary/config compatibility; M13.11 documentation overhaul deferred to end of M13 (0bad2d6).",
       "suggested_role": null,
       "assigned_agent_id": null,
       "depends_on": [],
@@ -3265,9 +3282,7 @@
       ],
       "integration_sha": "0bad2d6",
       "children": [],
-      "blockers": [
-        "Awaiting user selection of new project name"
-      ]
+      "blockers": []
     },
     {
       "id": "M13.11",
