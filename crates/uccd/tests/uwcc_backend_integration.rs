@@ -21,7 +21,8 @@ use ucc_hardware::{
 use ucc_lighting::MockLightingTransport;
 use uccd::{
     has_ite_sysfs_leds, resolve_platform_backend_choice, select_lighting_transport,
-    select_platform_backend_with_openers, LidPolicyConfig, LiveUccdBackend, UccdDependencies,
+    select_lighting_transport_with_platform, select_platform_backend_with_openers,
+    LidPolicyConfig, LiveUccdBackend, UccdDependencies,
 };
 use zbus::zvariant::OwnedValue;
 
@@ -244,13 +245,17 @@ fn lighting_transport_selection_prefers_hidraw_on_uwcc_and_preserves_sysfs_on_tu
     // Both branches construct valid LightingTransport instances without panicking.
     let _hid_uwcc = select_lighting_transport(PlatformBackendKind::Uwcc, &sysfs, root);
     let _sysfs_tuxedo = select_lighting_transport(PlatformBackendKind::TuxedoIo, &sysfs, root);
+
+    let uwcc_platform: Arc<dyn PlatformBackend> = make_mock_platform(PlatformBackendKind::Uwcc);
+    let _hid_uwcc_wired =
+        select_lighting_transport_with_platform(&uwcc_platform, &sysfs, root);
 }
 
 #[test]
 fn uwcc_backend_reports_real_rpm_tcc_offset_and_backend_kind_without_breaking_dbus_schema() {
     let tmp = tempfile::tempdir().expect("tempdir");
     let sysfs = Arc::new(MockSysfs::new());
-    sysfs.set_file(tmp.path().join("sys/module/uwcc/version"), "0.1.0");
+    sysfs.set_file(tmp.path().join("sys/module/uwcc_rs/version"), "0.1.0");
     sysfs.set_file(tmp.path().join("dev/uwcc"), "");
 
     let platform = make_mock_platform(PlatformBackendKind::Uwcc);
@@ -283,6 +288,30 @@ fn uwcc_backend_reports_real_rpm_tcc_offset_and_backend_kind_without_breaking_db
         serde_json::from_str(&backend.get_driver_health_json()).expect("valid driver health json");
     assert_eq!(health["platformBackend"], "uwcc");
     assert_eq!(health["healthy"], true);
+}
+
+#[test]
+fn uwcc_driver_health_reports_missing_dev_node_when_uwcc_rs_module_is_loaded() {
+    let tmp = tempfile::tempdir().expect("tempdir");
+    let sysfs = Arc::new(MockSysfs::new());
+    sysfs.set_file(tmp.path().join("sys/module/uwcc_rs/version"), "0.1.0");
+
+    // Simulate /dev/uwcc missing at startup so backend degrades to Unsupported.
+    let platform = make_mock_platform(PlatformBackendKind::Unsupported);
+    let backend = build_backend_with_platform(tmp.path(), platform, sysfs);
+
+    let health: Value =
+        serde_json::from_str(&backend.get_driver_health_json()).expect("valid driver health json");
+    assert_eq!(health["healthy"], false);
+    let message = health["message"].as_str().unwrap_or_default();
+    assert!(
+        message.contains("/dev/uwcc"),
+        "expected UWCC /dev/uwcc diagnostic, got: {message}"
+    );
+    assert!(
+        !message.contains("TUXEDO"),
+        "must not misdiagnose UWCC failure as TUXEDO: {message}"
+    );
 }
 
 #[test]

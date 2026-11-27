@@ -1573,11 +1573,22 @@ impl LiveUccdBackend {
 
     pub(super) fn get_driver_health_json_impl(&self) -> String {
         let mut issues = Vec::<String>::new();
-        let is_uwcc = self.platform.kind() == ucc_hardware::PlatformBackendKind::Uwcc;
+        let uwcc_module_exists = self.sysfs.exists(&self.sys_root.join("sys/module/uwcc_rs"))
+            || self.sysfs.exists(&self.sys_root.join("sys/module/uwcc"));
+        let uwcc_dev_exists = self.sys_root.join("dev/uwcc").exists()
+            || self.sysfs.exists(&self.sys_root.join("dev/uwcc"));
+        let configured_uwcc = {
+            let settings_choice = self.read_rw(&self.settings).platform_backend.clone();
+            let env_override = std::env::var(super::ENV_PLATFORM_BACKEND).ok();
+            super::resolve_platform_backend_choice(
+                env_override.as_deref(),
+                settings_choice.as_deref(),
+            ) == ucc_hardware::PlatformBackendSelection::Uwcc
+        };
+        let is_uwcc = self.platform.kind() == ucc_hardware::PlatformBackendKind::Uwcc
+            || (self.platform.kind() == ucc_hardware::PlatformBackendKind::Unsupported
+                && (uwcc_module_exists || uwcc_dev_exists || configured_uwcc));
         if is_uwcc {
-            let uwcc_module_exists = self.sysfs.exists(&self.sys_root.join("sys/module/uwcc"));
-            let uwcc_dev_exists = self.sys_root.join("dev/uwcc").exists()
-                || self.sysfs.exists(&self.sys_root.join("dev/uwcc"));
             if self.sys_root == Path::new("/") && !uwcc_module_exists && !uwcc_dev_exists {
                 issues.push(
                     "Не загружен аппаратный драйвер UWCC (/dev/uwcc): датчики и управление вентиляторами недоступны."

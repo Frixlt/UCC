@@ -10,7 +10,8 @@ pub mod sleep_state;
 
 pub use backend::{
     build_default_custom_fan_catalog, has_ite_sysfs_leds, parse_platform_backend_choice,
-    resolve_platform_backend_choice, select_lighting_transport, select_platform_backend,
+    resolve_platform_backend_choice, select_lighting_transport,
+    select_lighting_transport_with_platform, select_platform_backend,
     select_platform_backend_with_openers, DbusSignalEvent, LiveUccdBackend, UccdDependencies,
     ENV_PLATFORM_BACKEND,
 };

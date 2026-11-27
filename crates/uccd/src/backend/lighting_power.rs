@@ -16,9 +16,13 @@ use std::sync::Arc;
 use ucc_config::UccSettings;
 use ucc_core::{KeyboardBacklightState, PolicyDecision, ProfileState, UccProfile};
 use ucc_dbus::UccdBackend;
-use ucc_hardware::{CoolerState, PlatformBackendKind, PowerDeviceController, RgbTarget, Sysfs};
+use ucc_hardware::{
+    CoolerState, PlatformBackend, PlatformBackendKind, PlatformError, PowerDeviceController,
+    RgbTarget, Sysfs,
+};
 use ucc_lighting::{
-    HidrawDeviceTransport, LightingTransport, SysfsLedTransport, UniwillHidTransport,
+    EcLightbarPowerHook, HidrawDeviceTransport, LightingError, LightingTransport,
+    SysfsLedTransport, UniwillHidTransport,
 };
 
 /// Checks whether `tuxedo-drivers` / `ite_8291` sysfs LED class nodes are present under `sys_root`.
@@ -55,6 +59,30 @@ pub fn select_lighting_transport(
         Arc::new(UniwillHidTransport::new(Arc::new(
             HidrawDeviceTransport::new(),
         )))
+    } else {
+        Arc::new(SysfsLedTransport::default())
+    }
+}
+
+/// Selects the lighting transport and wires the EC Lightbar power rail hook (`0x767`/`0x768`)
+/// to `platform` when using direct USB `hidraw` (`M14.6` / `ADR-05`).
+pub fn select_lighting_transport_with_platform(
+    platform: &Arc<dyn PlatformBackend>,
+    sysfs: &dyn Sysfs,
+    sys_root: &Path,
+) -> Arc<dyn LightingTransport> {
+    if platform.kind() == PlatformBackendKind::Uwcc || !has_ite_sysfs_leds(sysfs, sys_root) {
+        let platform_ref = Arc::clone(platform);
+        let ec_power_hook: EcLightbarPowerHook = Arc::new(move |enabled: bool| {
+            match platform_ref.set_lightbar_power(enabled) {
+                Ok(()) | Err(PlatformError::Unsupported(_)) => Ok(()),
+                Err(err) => Err(LightingError::WriteFailed(err.to_string())),
+            }
+        });
+        Arc::new(
+            UniwillHidTransport::new(Arc::new(HidrawDeviceTransport::new()))
+                .with_ec_lightbar_power_hook(ec_power_hook),
+        )
     } else {
         Arc::new(SysfsLedTransport::default())
     }

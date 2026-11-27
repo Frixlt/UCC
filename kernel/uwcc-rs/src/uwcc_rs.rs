@@ -20,7 +20,8 @@ use core::mem::size_of;
 
 use kernel::prelude::*;
 
-use ring_buffer::{WmiEvent, WmiRingBuffer};
+pub use ring_buffer::WmiEvent;
+use ring_buffer::WmiRingBuffer;
 use validation::{validate_ec_read, validate_ec_write, validate_pwup, validate_smrw};
 
 // ---------------------------------------------------------------------------
@@ -59,10 +60,10 @@ pub struct UwccPwup {
 #[repr(C)]
 #[derive(Copy, Clone)]
 pub struct UwccInfo {
-    api_version: u32,
-    project_id: u32,
-    ec_version: u32,
-    flags: u32,
+    pub api_version: u32,
+    pub project_id: u32,
+    pub ec_version: u32,
+    pub flags: u32,
 }
 
 const _: () = assert!(size_of::<UwccEcReg>() == 4);

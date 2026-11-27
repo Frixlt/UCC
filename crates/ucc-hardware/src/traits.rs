@@ -277,6 +277,10 @@ impl MockSysfs {
         self.files.lock().unwrap().get(path.as_ref()).cloned()
     }
 
+    pub fn remove_file(&self, path: impl AsRef<Path>) -> Option<String> {
+        self.files.lock().unwrap().remove(path.as_ref())
+    }
+
     pub fn set_read_error(&self, path: impl AsRef<Path>) {
         self.fail_reads
             .lock()

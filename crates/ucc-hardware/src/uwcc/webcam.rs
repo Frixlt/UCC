@@ -9,7 +9,7 @@
 use crate::platform::PlatformError;
 use crate::traits::Sysfs;
 use std::path::{Path, PathBuf};
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 
 /// Linux sysfs root directory for USB devices and interfaces.
 pub const USB_DEVICES_ROOT: &str = "/sys/bus/usb/devices";
@@ -31,6 +31,7 @@ pub struct UsbWebcamController {
     sysfs: Arc<dyn Sysfs>,
     usb_root: PathBuf,
     vid_pid_filter: Option<(String, String)>,
+    cached_devices: Mutex<Vec<UsbWebcamDevice>>,
 }
 
 impl UsbWebcamController {
@@ -40,6 +41,7 @@ impl UsbWebcamController {
             sysfs,
             usb_root: PathBuf::from(USB_DEVICES_ROOT),
             vid_pid_filter: None,
+            cached_devices: Mutex::new(Vec::new()),
         }
     }
 
@@ -135,6 +137,45 @@ impl UsbWebcamController {
                 product_name,
             });
         }
+
+        // Retain previously discovered UVC parent devices while deauthorized (`authorized == "0"`),
+        // because Linux `usb_deauthorize_device` unregisters `<parent>:<iface>` child entries from
+        // sysfs while keeping `<parent>/authorized`, `idVendor`, and `idProduct`.
+        let mut cache = self
+            .cached_devices
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
+        for cached in cache.iter() {
+            if webcams.iter().any(|w| w.device_path == cached.device_path) {
+                continue;
+            }
+            if !self.sysfs.exists(&cached.device_path.join("authorized")) {
+                continue;
+            }
+            let current_vid = self
+                .sysfs
+                .read(&cached.device_path.join("idVendor"))
+                .unwrap_or_default()
+                .trim()
+                .to_ascii_lowercase();
+            let current_pid = self
+                .sysfs
+                .read(&cached.device_path.join("idProduct"))
+                .unwrap_or_default()
+                .trim()
+                .to_ascii_lowercase();
+            if current_vid != cached.vendor_id || current_pid != cached.product_id {
+                continue;
+            }
+            if let Some((ref expected_vid, ref expected_pid)) = self.vid_pid_filter {
+                if &current_vid != expected_vid || &current_pid != expected_pid {
+                    continue;
+                }
+            }
+            webcams.push(cached.clone());
+        }
+        webcams.sort_by(|a, b| a.device_path.cmp(&b.device_path));
+        *cache = webcams.clone();
 
         Ok(webcams)
     }

@@ -341,6 +341,12 @@ fn uwcc_backend_toggles_only_usb_uvc_rgb_ir_webcam_over_mock_sysfs() {
 
     assert!(backend.read_webcam().unwrap());
     backend.set_webcam(false).unwrap();
+
+    // Simulate Linux `usb_deauthorize_device` unregistering child UVC interfaces from sysfs.
+    sysfs.remove_file("/sys/bus/usb/devices/1-6:1.0/bInterfaceClass");
+    sysfs.remove_file("/sys/bus/usb/devices/1-6:1.1/bInterfaceClass");
+    sysfs.remove_file("/sys/bus/usb/devices/1-6:1.2/bInterfaceClass");
+
     assert!(!backend.read_webcam().unwrap());
     assert_eq!(
         sysfs.get_file("/sys/bus/usb/devices/1-6/authorized").as_deref(),

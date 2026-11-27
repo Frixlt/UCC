@@ -11,7 +11,9 @@ mod lighting_power;
 mod profile_tx;
 
 pub use cooling::{build_default_custom_fan_catalog, run_water_cooler_ble_loop};
-pub use lighting_power::{has_ite_sysfs_leds, select_lighting_transport};
+pub use lighting_power::{
+    has_ite_sysfs_leds, select_lighting_transport, select_lighting_transport_with_platform,
+};
 
 use crate::lid::{LidController, LidPolicyConfig};
 use crate::sleep_state::SleepStateStore;
@@ -602,7 +604,7 @@ impl LiveUccdBackend {
             &sysfs,
         );
         let lighting_transport =
-            select_lighting_transport(platform.kind(), sysfs.as_ref(), Path::new("/"));
+            select_lighting_transport_with_platform(&platform, sysfs.as_ref(), Path::new("/"));
 
         let manufacturer = classify_manufacturer(&dmi.sys_vendor, &dmi.board_vendor);
         let model =

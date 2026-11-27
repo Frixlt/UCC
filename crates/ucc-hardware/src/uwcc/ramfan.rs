@@ -7,8 +7,7 @@
 
 use crate::platform::PlatformError;
 use crate::uwcc::uapi::UwccTransport;
-use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::Arc;
+use std::sync::{Arc, Mutex, MutexGuard};
 
 /// Number of temperature/duty breakpoints per fan in `RamFan 1.5`.
 pub const RAMFAN_POINTS: usize = 16;
@@ -133,11 +132,16 @@ fn validate_curve_points(points: &[RamFanPoint; RAMFAN_POINTS]) -> Result<(), Pl
     Ok(())
 }
 
+#[derive(Debug, Default)]
+struct RamFanState {
+    custom_active: bool,
+    fan_boost: bool,
+}
+
 /// Stateful `RamFan 1.5` controller with drop-safe restoration to firmware auto mode.
 pub struct RamFanController {
     transport: Arc<dyn UwccTransport>,
-    custom_active: AtomicBool,
-    fan_boost: AtomicBool,
+    state: Mutex<RamFanState>,
 }
 
 impl RamFanController {
@@ -145,25 +149,40 @@ impl RamFanController {
     pub fn new(transport: Arc<dyn UwccTransport>) -> Self {
         Self {
             transport,
-            custom_active: AtomicBool::new(false),
-            fan_boost: AtomicBool::new(false),
+            state: Mutex::new(RamFanState::default()),
         }
+    }
+
+    fn lock_state(&self) -> MutexGuard<'_, RamFanState> {
+        self.state.lock().unwrap_or_else(|e| e.into_inner())
     }
 
     /// Returns `true` if a custom `RamFan 1.5` curve is currently active.
     pub fn is_custom_active(&self) -> bool {
-        self.custom_active.load(Ordering::SeqCst)
+        self.lock_state().custom_active
     }
 
     /// Returns `true` if `Fan Boost` is currently enabled.
     pub fn is_fan_boost_enabled(&self) -> bool {
-        self.fan_boost.load(Ordering::SeqCst)
+        self.lock_state().fan_boost
+    }
+
+    fn restore_firmware_auto_locked(&self, state: &mut RamFanState) -> Result<(), PlatformError> {
+        if !self.transport.is_available() {
+            return Err(PlatformError::Unavailable);
+        }
+        self.transport.ec_write(reg::CTRL, 0x00)?;
+        self.transport.ec_write(reg::COMMIT, 0x00)?;
+        state.custom_active = false;
+        state.fan_boost = false;
+        Ok(())
     }
 
     /// Validates and uploads a 16-point CPU & GPU curve into EC RAM (`0x0F00..=0x0F5C`),
     /// enabling `CUME | UFME`. On partial write failure, attempts fail-safe firmware auto restore.
     pub fn apply_curve(&self, curve: &RamFanCurve) -> Result<(), PlatformError> {
         curve.validate()?;
+        let mut state = self.lock_state();
         if !self.transport.is_available() {
             return Err(PlatformError::Unavailable);
         }
@@ -186,7 +205,7 @@ impl RamFanController {
             }
 
             let mut ctrl = flags::CUME | flags::UFME;
-            if self.fan_boost.load(Ordering::SeqCst) {
+            if state.fan_boost {
                 ctrl |= flags::FAN_BOOST;
             }
             self.transport.ec_write(reg::CTRL, ctrl)?;
@@ -195,20 +214,21 @@ impl RamFanController {
         })();
 
         if let Err(err) = write_result {
-            let _ = self.restore_firmware_auto();
+            let _ = self.restore_firmware_auto_locked(&mut state);
             return Err(err);
         }
 
-        self.custom_active.store(true, Ordering::SeqCst);
+        state.custom_active = true;
         Ok(())
     }
 
     /// Enables or disables `Fan Boost` (`FLAG_FAN_BOOST` in `0x0F00`).
     pub fn set_fan_boost(&self, enabled: bool) -> Result<(), PlatformError> {
+        let mut state = self.lock_state();
         if !self.transport.is_available() {
             return Err(PlatformError::Unavailable);
         }
-        let mut ctrl = if self.custom_active.load(Ordering::SeqCst) {
+        let mut ctrl = if state.custom_active {
             flags::CUME | flags::UFME
         } else {
             0
@@ -219,27 +239,22 @@ impl RamFanController {
         self.transport.ec_write(reg::CTRL, ctrl)?;
         self.transport
             .ec_write(reg::COMMIT, u8::from(ctrl != 0))?;
-        self.fan_boost.store(enabled, Ordering::SeqCst);
+        state.fan_boost = enabled;
         Ok(())
     }
 
     /// Clears `CUME`, `UFME`, and `FAN_BOOST` flags, restoring EC firmware automatic fan control.
     pub fn restore_firmware_auto(&self) -> Result<(), PlatformError> {
-        self.custom_active.store(false, Ordering::SeqCst);
-        self.fan_boost.store(false, Ordering::SeqCst);
-        if !self.transport.is_available() {
-            return Err(PlatformError::Unavailable);
-        }
-        self.transport.ec_write(reg::CTRL, 0x00)?;
-        self.transport.ec_write(reg::COMMIT, 0x00)?;
-        Ok(())
+        let mut state = self.lock_state();
+        self.restore_firmware_auto_locked(&mut state)
     }
 }
 
 impl Drop for RamFanController {
     fn drop(&mut self) {
-        if self.custom_active.load(Ordering::SeqCst) || self.fan_boost.load(Ordering::SeqCst) {
-            let _ = self.restore_firmware_auto();
+        let mut state = self.lock_state();
+        if state.custom_active || state.fan_boost {
+            let _ = self.restore_firmware_auto_locked(&mut state);
         }
     }
 }
