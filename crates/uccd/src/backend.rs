@@ -109,8 +109,11 @@ pub(super) struct CommittedProfileRecord {
     pub(super) profile: UccProfile,
     pub(super) hw_tdps: Vec<Option<i32>>,
     pub(super) hw_odm: Option<i32>,
+    pub(super) hw_ctgp: Option<i32>,
+    pub(super) hw_kb: Option<lighting_power::KeyboardRollbackSnapshot>,
 }
 
+#[derive(Default)]
 pub(super) struct SupersededUndo<'a> {
     pub(super) hw_odm_prev: Option<i32>,
     pub(super) wrote_odm: bool,
@@ -118,6 +121,10 @@ pub(super) struct SupersededUndo<'a> {
     pub(super) tdps_written: usize,
     pub(super) cpu_rollback: Vec<(PathBuf, String)>,
     pub(super) charging_rb: Option<&'a display_gpu::ChargingRollback>,
+    pub(super) prev_ctgp: Option<i32>,
+    pub(super) wrote_ctgp: bool,
+    pub(super) prev_kb: Option<&'a lighting_power::KeyboardRollbackSnapshot>,
+    pub(super) wrote_kb: bool,
 }
 
 pub(super) struct InFlightTxGuard<'a> {
@@ -137,8 +144,20 @@ impl Drop for InFlightTxGuard<'_> {
             .lock_mutex(&self.backend.in_flight_odm_baselines);
         odms.retain(|(id, _)| *id != self.tx_id);
         drop(odms);
+        let mut ctgps = self
+            .backend
+            .lock_mutex(&self.backend.in_flight_ctgp_baselines);
+        ctgps.retain(|(id, _)| *id != self.tx_id);
+        drop(ctgps);
+        let mut kbs = self
+            .backend
+            .lock_mutex(&self.backend.in_flight_kb_baselines);
+        kbs.retain(|(id, _)| *id != self.tx_id);
+        drop(kbs);
         self.backend.tdp_write_seq.fetch_add(1, Ordering::SeqCst);
         self.backend.odm_write_seq.fetch_add(1, Ordering::SeqCst);
+        self.backend.ctgp_write_seq.fetch_add(1, Ordering::SeqCst);
+        self.backend.kb_write_seq.fetch_add(1, Ordering::SeqCst);
     }
 }
 
@@ -248,6 +267,8 @@ pub struct LiveUccdBackend {
     pub(super) cpu_reapply_attempts: AtomicU32,
     pub(super) in_flight_tdp_baselines: Mutex<Vec<(u64, usize, i32)>>,
     pub(super) in_flight_odm_baselines: Mutex<Vec<(u64, i32)>>,
+    pub(super) in_flight_ctgp_baselines: Mutex<Vec<(u64, i32)>>,
+    pub(super) in_flight_kb_baselines: Mutex<Vec<(u64, lighting_power::KeyboardRollbackSnapshot)>>,
     pub(super) latest_committed_profile: Mutex<Option<CommittedProfileRecord>>,
     pub(super) hw_reconcile_lock: Mutex<()>,
     pub(super) disconnected_senders: Mutex<(HashSet<String>, VecDeque<String>)>,
@@ -413,6 +434,8 @@ impl LiveUccdBackend {
             cpu_reapply_attempts: AtomicU32::new(0),
             in_flight_tdp_baselines: Mutex::new(Vec::new()),
             in_flight_odm_baselines: Mutex::new(Vec::new()),
+            in_flight_ctgp_baselines: Mutex::new(Vec::new()),
+            in_flight_kb_baselines: Mutex::new(Vec::new()),
             latest_committed_profile: Mutex::new(None),
             hw_reconcile_lock: Mutex::new(()),
             disconnected_senders: Mutex::new((HashSet::new(), VecDeque::new())),

@@ -6211,3 +6211,124 @@ fn full_27_04_delete_active_custom_profile_preserves_disk_when_fallback_fails() 
         serde_json::from_str(&backend.get_custom_profiles_json()).unwrap();
     assert!(!custom_list_after.iter().any(|p| p["id"] == "cust-active"));
 }
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 3)]
+async fn unmanaged_ctgp_and_keyboard_do_not_inherit_superseded_settings() {
+    use ucc_lighting::{LightingTransport, RgbColor};
+    let root = tempfile::tempdir().unwrap();
+    let bat = root.path().join("sys/class/power_supply/BAT0");
+    let end_path = bat.join("charge_control_end_threshold");
+    let start_path = bat.join("charge_control_start_threshold");
+    let ctgp_path = root
+        .path()
+        .join("sys/devices/platform/tuxedo_nvidia_power_ctrl/ctgp_offset");
+
+    let ctrl = Arc::new(SysfsGateControl::default());
+    let (started_tx, started_rx) = std::sync::mpsc::channel();
+    let (release_tx, release_rx) = std::sync::mpsc::channel();
+    *ctrl.gate.lock().unwrap() = Some((
+        "charge_control_end_threshold".to_string(),
+        "70".to_string(),
+        started_tx,
+        release_rx,
+    ));
+
+    let (backend, _, sysfs, lighting) = build_backend_with_sysfs_gate(
+        root.path(),
+        Arc::clone(&ctrl),
+        |sysfs| {
+            sysfs.set_file(bat.join("type"), "Battery");
+            sysfs.set_file(&start_path, "30");
+            sysfs.set_file(&end_path, "80");
+            sysfs.set_file(&ctgp_path, "0");
+        },
+        |p| p,
+    );
+
+    assert!(backend.save_custom_keyboard_profile(
+        "kb-stale",
+        "KB Stale Red",
+        r#"[{"brightness":255,"red":255,"green":0,"blue":0}]"#,
+    ));
+    assert!(backend.save_custom_keyboard_profile(
+        "kb-winner",
+        "KB Winner Green",
+        r#"[{"brightness":255,"red":0,"green":255,"blue":0}]"#,
+    ));
+
+    let mut stale = default_quiet_profile();
+    stale.id = "stale-70".into();
+    stale.name = "Stale 70".into();
+    stale.charging.end_threshold = Some(70);
+    stale.nvidia_ctgp_offset = Some(5);
+    stale.keyboard.keyboard_profile_id = "kb-stale".into();
+
+    let mut winner = default_high_performance_profile();
+    winner.id = "winner-85".into();
+    winner.name = "Winner 85".into();
+    winner.charging.end_threshold = Some(85);
+    winner.nvidia_ctgp_offset = None;
+    winner.keyboard.keyboard_profile_id.clear();
+    winner.selected_keyboard_profile = None;
+    let before = RgbColor { r: 0, g: 0, b: 255 };
+    lighting.write_keyboard_zones(&[before]).unwrap();
+
+    let b1 = Arc::clone(&backend);
+    let stale_json = serde_json::to_string(&stale).unwrap();
+    let stale_handle = tokio::task::spawn_blocking(move || b1.apply_profile(&stale_json));
+
+    started_rx
+        .recv_timeout(Duration::from_secs(3))
+        .expect("stale thread should reach charging threshold gate");
+
+    let winner_json = serde_json::to_string(&winner).unwrap();
+    assert!(
+        backend.apply_profile(&winner_json),
+        "winning profile should commit cleanly"
+    );
+
+    let _ = release_tx.send(());
+    let _ = stale_handle.await.unwrap();
+
+    let active: serde_json::Value =
+        serde_json::from_str(&backend.get_active_profile_json()).unwrap();
+    assert_eq!(active["id"], "winner-85");
+    assert_eq!(sysfs.get_file(&end_path).as_deref(), Some("85"));
+    assert_eq!(sysfs.get_file(&ctgp_path).as_deref(), Some("0"));
+    assert_eq!(lighting.read_keyboard_colors().unwrap(), vec![before]);
+}
+
+#[tokio::test]
+async fn rejected_settings_save_restores_ctgp_and_keyboard_state() {
+    use ucc_lighting::{LightingTransport, RgbColor};
+    let root = tempfile::tempdir().unwrap();
+    let ctgp_path = root
+        .path()
+        .join("sys/devices/platform/tuxedo_nvidia_power_ctrl/ctgp_offset");
+    let (backend, _, sysfs, lighting) = build_backend_with_sysfs_gate(
+        root.path(),
+        Arc::new(SysfsGateControl::default()),
+        |sysfs| sysfs.set_file(&ctgp_path, "0"),
+        |p| p,
+    );
+    let before = RgbColor { r: 0, g: 0, b: 255 };
+    lighting.write_keyboard_zones(&[before]).unwrap();
+    assert!(backend.save_custom_keyboard_profile(
+        "red-kb",
+        "Red KB",
+        r#"[{"brightness":255,"red":255,"green":0,"blue":0}]"#,
+    ));
+    let mut attempted = default_quiet_profile();
+    attempted.id = "unsavable-profile".to_string();
+    attempted.odm_profile_name = None;
+    attempted.nvidia_ctgp_offset = Some(5);
+    attempted.keyboard.keyboard_profile_id = "red-kb".into();
+    assert!(backend.save_custom_profile(&serde_json::to_string(&attempted).unwrap()));
+    let cfg = root.path().join("settings.json");
+    std::fs::remove_file(&cfg).unwrap();
+    std::fs::create_dir(&cfg).unwrap();
+
+    assert!(!backend.set_active_profile(&attempted.id));
+    assert_eq!(sysfs.get_file(&ctgp_path).as_deref(), Some("0"));
+    assert_eq!(lighting.read_keyboard_colors().unwrap(), vec![before]);
+}

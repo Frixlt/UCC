@@ -261,6 +261,104 @@ impl LiveUccdBackend {
             .or_else(|| self.platform.read_perf_profile().ok())
     }
 
+    pub(super) fn record_in_flight_ctgp_baseline(&self, tx_id: u64, prev_offset: i32) {
+        let mut guard = self.lock_mutex(&self.in_flight_ctgp_baselines);
+        if !guard.iter().any(|(id, _)| *id == tx_id) {
+            guard.push((tx_id, prev_offset));
+        }
+        self.ctgp_write_seq.fetch_add(1, Ordering::SeqCst);
+    }
+
+    pub(super) fn lookup_other_in_flight_ctgp(&self, tx_id: u64) -> Option<i32> {
+        let guard = self.lock_mutex(&self.in_flight_ctgp_baselines);
+        guard
+            .iter()
+            .filter(|(id, _)| *id != tx_id)
+            .min_by_key(|(id, _)| *id)
+            .map(|(_, offset)| *offset)
+    }
+
+    pub(super) fn snapshot_unmanaged_ctgp_baseline(&self, tx_id: u64) -> Option<i32> {
+        for _ in 0..4 {
+            let seq_before = self.ctgp_write_seq.load(Ordering::SeqCst);
+            if let Some(offset) = self.lookup_other_in_flight_ctgp(tx_id) {
+                return Some(offset);
+            }
+            let live = self.read_ctgp_baseline();
+            if let Some(offset) = self.lookup_other_in_flight_ctgp(tx_id) {
+                return Some(offset);
+            }
+            if self.ctgp_write_seq.load(Ordering::SeqCst) == seq_before {
+                return live;
+            }
+        }
+        self.lookup_other_in_flight_ctgp(tx_id)
+            .or_else(|| self.read_ctgp_baseline())
+    }
+
+    pub(super) fn record_in_flight_kb_baseline(
+        &self,
+        tx_id: u64,
+        prev_kb: &super::lighting_power::KeyboardRollbackSnapshot,
+    ) {
+        let mut guard = self.lock_mutex(&self.in_flight_kb_baselines);
+        if !guard.iter().any(|(id, _)| *id == tx_id) {
+            guard.push((tx_id, prev_kb.clone()));
+        }
+        self.kb_write_seq.fetch_add(1, Ordering::SeqCst);
+    }
+
+    pub(super) fn lookup_other_in_flight_kb(
+        &self,
+        tx_id: u64,
+    ) -> Option<super::lighting_power::KeyboardRollbackSnapshot> {
+        let guard = self.lock_mutex(&self.in_flight_kb_baselines);
+        guard
+            .iter()
+            .filter(|(id, _)| *id != tx_id)
+            .min_by_key(|(id, _)| *id)
+            .map(|(_, snap)| snap.clone())
+    }
+
+    pub(super) fn snapshot_unmanaged_kb_baseline(
+        &self,
+        tx_id: u64,
+    ) -> Option<super::lighting_power::KeyboardRollbackSnapshot> {
+        for _ in 0..4 {
+            let seq_before = self.kb_write_seq.load(Ordering::SeqCst);
+            if let Some(snap) = self.lookup_other_in_flight_kb(tx_id) {
+                return Some(snap);
+            }
+            let live = self.snapshot_keyboard_rollback();
+            if let Some(snap) = self.lookup_other_in_flight_kb(tx_id) {
+                return Some(snap);
+            }
+            if self.kb_write_seq.load(Ordering::SeqCst) == seq_before {
+                return live;
+            }
+        }
+        self.lookup_other_in_flight_kb(tx_id)
+            .or_else(|| self.snapshot_keyboard_rollback())
+    }
+
+    pub(super) fn restore_ctgp_and_kb_writes(
+        &self,
+        prev_ctgp: Option<i32>,
+        wrote_ctgp: bool,
+        prev_kb: Option<&super::lighting_power::KeyboardRollbackSnapshot>,
+        wrote_kb: bool,
+        start_epoch: Option<u64>,
+    ) {
+        if wrote_kb {
+            if let Some(snap) = prev_kb {
+                let _ = self.restore_keyboard_rollback(snap, start_epoch);
+            }
+        }
+        if wrote_ctgp {
+            let _ = self.restore_ctgp_baseline(prev_ctgp, start_epoch);
+        }
+    }
+
     pub(super) fn sync_active_profile_from_hw_readback(&self) {
         let mut active = self.read_rw(&self.active_profile).clone();
         Self::populate_profile_from_hw_readback(
@@ -361,6 +459,7 @@ impl LiveUccdBackend {
                 tdps_written: tdp_count,
                 cpu_rollback: cpu_rb.take().unwrap_or_default(),
                 charging_rb: None,
+                ..Default::default()
             });
             false
         };
@@ -694,8 +793,18 @@ impl LiveUccdBackend {
         }
         if let Some(offset) = latest.profile.nvidia_ctgp_offset {
             let _ = self.set_nvidia_power_offset_impl(offset);
+        } else if undo.wrote_ctgp {
+            if let Some(prev) = latest.hw_ctgp.or(undo.prev_ctgp) {
+                let _ = self.restore_ctgp_baseline(Some(prev), None);
+            }
         }
-        self.apply_profile_keyboard(&latest.profile);
+        if Self::profile_has_keyboard(&latest.profile) {
+            self.apply_profile_keyboard(&latest.profile);
+        } else if undo.wrote_kb {
+            if let Some(prev) = latest.hw_kb.as_ref().or(undo.prev_kb) {
+                let _ = self.restore_keyboard_rollback(prev, None);
+            }
+        }
         self.apply_fan_and_device_state_locked(&latest.profile, true);
 
         if repair_ok {
@@ -900,6 +1009,7 @@ impl LiveUccdBackend {
                     tdps_written: 0,
                     cpu_rollback: Vec::new(),
                     charging_rb: None,
+                    ..Default::default()
                 });
             }
             return ApplyOutcome::Failed;
@@ -926,6 +1036,7 @@ impl LiveUccdBackend {
                 tdps_written: 0,
                 cpu_rollback: cpu_res.rollback,
                 charging_rb: None,
+                ..Default::default()
             });
         }
 
@@ -987,6 +1098,7 @@ impl LiveUccdBackend {
                         tdps_written: idx + 1,
                         cpu_rollback: cpu_res.rollback,
                         charging_rb: None,
+                        ..Default::default()
                     };
                     if set_ok {
                         return self.reconcile_to_latest_committed(undo);
@@ -1054,6 +1166,7 @@ impl LiveUccdBackend {
                         tdps_written: wrote_tdps,
                         cpu_rollback: cpu_res.rollback,
                         charging_rb: None,
+                        ..Default::default()
                     };
                     if odm_ok {
                         return self.reconcile_to_latest_committed(undo);
@@ -1114,6 +1227,7 @@ impl LiveUccdBackend {
                             tdps_written: prev_tdps.len(),
                             cpu_rollback: cpu_res.rollback,
                             charging_rb: None,
+                            ..Default::default()
                         };
                         if set_ok {
                             return self.reconcile_to_latest_committed(undo);
@@ -1181,6 +1295,7 @@ impl LiveUccdBackend {
                         tdps_written: prev_tdps.len(),
                         cpu_rollback: cpu_res.rollback,
                         charging_rb: None,
+                        ..Default::default()
                     };
                     if odm_ok {
                         return self.reconcile_to_latest_committed(undo);
@@ -1243,6 +1358,7 @@ impl LiveUccdBackend {
                             tdps_written: if wrote_odm { prev_tdps.len() } else { idx + 1 },
                             cpu_rollback: cpu_res.rollback,
                             charging_rb: None,
+                            ..Default::default()
                         };
                         if set_ok {
                             return self.reconcile_to_latest_committed(undo);
@@ -1299,6 +1415,7 @@ impl LiveUccdBackend {
                 tdps_written,
                 cpu_rollback: cpu_res.rollback,
                 charging_rb: None,
+                ..Default::default()
             });
         }
 
@@ -1409,6 +1526,7 @@ impl LiveUccdBackend {
                             tdps_written,
                             cpu_rollback: cpu_res.rollback,
                             charging_rb: None,
+                            ..Default::default()
                         });
                     }
                     self.restore_device_writes(
@@ -1430,12 +1548,16 @@ impl LiveUccdBackend {
                 }
             };
         let post_phase2_charging_seq = self.charging_write_seq.load(Ordering::SeqCst);
-        if let Some(offset) = committed_profile.nvidia_ctgp_offset {
-            let _ = self.set_nvidia_power_offset_impl(offset);
-        }
-        let post_phase2_ctgp_seq = self.ctgp_write_seq.load(Ordering::SeqCst);
-        self.apply_profile_keyboard(&committed_profile);
-        let post_phase2_kb_seq = self.kb_write_seq.load(Ordering::SeqCst);
+        let prev_ctgp = committed_profile
+            .nvidia_ctgp_offset
+            .and_then(|_| self.read_ctgp_baseline());
+        let mut wrote_ctgp = false;
+        let prev_kb = if Self::profile_has_keyboard(&committed_profile) {
+            self.snapshot_keyboard_rollback()
+        } else {
+            None
+        };
+        let mut wrote_kb = false;
 
         if self.shutting_down.load(Ordering::SeqCst) {
             let _ = self.restore_charging_rollback(&charging_rb, None);
@@ -1466,6 +1588,106 @@ impl LiveUccdBackend {
                 tdps_written,
                 cpu_rollback: cpu_res.rollback,
                 charging_rb: Some(&charging_rb),
+                ..Default::default()
+            });
+        }
+
+        if let Some(offset) = committed_profile.nvidia_ctgp_offset {
+            if let Some(base) = prev_ctgp {
+                self.record_in_flight_ctgp_baseline(tx_id, base);
+            }
+            if self.set_nvidia_power_offset_impl(offset) {
+                wrote_ctgp = true;
+            }
+        }
+        let post_phase2_ctgp_seq = self.ctgp_write_seq.load(Ordering::SeqCst);
+
+        if self.shutting_down.load(Ordering::SeqCst) {
+            self.restore_ctgp_and_kb_writes(prev_ctgp, wrote_ctgp, prev_kb.as_ref(), false, None);
+            let _ = self.restore_charging_rollback(&charging_rb, None);
+            return self.abort_apply_on_shutdown(
+                prev_brightness,
+                wrote_brightness,
+                prev_webcam,
+                wrote_webcam,
+                hw_odm_prev,
+                wrote_odm,
+                &prev_tdps,
+                tdps_written,
+                cpu_res.rollback,
+            );
+        }
+        if self.profile_commit_epoch.load(Ordering::SeqCst) != start_epoch {
+            self.restore_device_writes(
+                prev_brightness,
+                wrote_brightness,
+                prev_webcam,
+                wrote_webcam,
+                Some(start_epoch),
+            );
+            return self.reconcile_to_latest_committed(SupersededUndo {
+                hw_odm_prev,
+                wrote_odm,
+                prev_tdps: &prev_tdps,
+                tdps_written,
+                cpu_rollback: cpu_res.rollback,
+                charging_rb: Some(&charging_rb),
+                prev_ctgp,
+                wrote_ctgp,
+                prev_kb: None,
+                wrote_kb: false,
+            });
+        }
+
+        if Self::profile_has_keyboard(&committed_profile) {
+            if let Some(ref snap) = prev_kb {
+                self.record_in_flight_kb_baseline(tx_id, snap);
+            }
+            self.apply_profile_keyboard(&committed_profile);
+            wrote_kb = prev_kb.is_some();
+        }
+        let post_phase2_kb_seq = self.kb_write_seq.load(Ordering::SeqCst);
+
+        if self.shutting_down.load(Ordering::SeqCst) {
+            self.restore_ctgp_and_kb_writes(
+                prev_ctgp,
+                wrote_ctgp,
+                prev_kb.as_ref(),
+                wrote_kb,
+                None,
+            );
+            let _ = self.restore_charging_rollback(&charging_rb, None);
+            return self.abort_apply_on_shutdown(
+                prev_brightness,
+                wrote_brightness,
+                prev_webcam,
+                wrote_webcam,
+                hw_odm_prev,
+                wrote_odm,
+                &prev_tdps,
+                tdps_written,
+                cpu_res.rollback,
+            );
+        }
+        if self.profile_commit_epoch.load(Ordering::SeqCst) != start_epoch {
+            self.restore_device_writes(
+                prev_brightness,
+                wrote_brightness,
+                prev_webcam,
+                wrote_webcam,
+                Some(start_epoch),
+            );
+            return self.reconcile_to_latest_committed(SupersededUndo {
+                hw_odm_prev,
+                wrote_odm,
+                prev_tdps: &prev_tdps,
+                tdps_written,
+                cpu_rollback: cpu_res.rollback,
+                charging_rb: Some(&charging_rb),
+                prev_ctgp,
+                wrote_ctgp,
+                prev_kb: prev_kb.as_ref(),
+                wrote_kb,
             });
         }
 
@@ -1474,6 +1696,13 @@ impl LiveUccdBackend {
             let guard = self.lock_mutex(&self.hw_reconcile_lock);
             if self.shutting_down.load(Ordering::SeqCst) {
                 drop(guard);
+                self.restore_ctgp_and_kb_writes(
+                    prev_ctgp,
+                    wrote_ctgp,
+                    prev_kb.as_ref(),
+                    wrote_kb,
+                    None,
+                );
                 let _ = self.restore_charging_rollback(&charging_rb, None);
                 return self.abort_apply_on_shutdown(
                     prev_brightness,
@@ -1503,6 +1732,10 @@ impl LiveUccdBackend {
                     tdps_written,
                     cpu_rollback: cpu_res.rollback,
                     charging_rb: Some(&charging_rb),
+                    prev_ctgp,
+                    wrote_ctgp,
+                    prev_kb: prev_kb.as_ref(),
+                    wrote_kb,
                 });
             }
 
@@ -1517,6 +1750,13 @@ impl LiveUccdBackend {
                     };
                     if !odm_ok {
                         drop(guard);
+                        self.restore_ctgp_and_kb_writes(
+                            prev_ctgp,
+                            wrote_ctgp,
+                            prev_kb.as_ref(),
+                            wrote_kb,
+                            Some(start_epoch),
+                        );
                         let _ = self.restore_charging_rollback(&charging_rb, Some(start_epoch));
                         self.restore_device_writes(
                             prev_brightness,
@@ -1543,6 +1783,13 @@ impl LiveUccdBackend {
                         && !self.write_tdp_verified(idx, target_w)
                     {
                         drop(guard);
+                        self.restore_ctgp_and_kb_writes(
+                            prev_ctgp,
+                            wrote_ctgp,
+                            prev_kb.as_ref(),
+                            wrote_kb,
+                            Some(start_epoch),
+                        );
                         let _ = self.restore_charging_rollback(&charging_rb, Some(start_epoch));
                         self.restore_device_writes(
                             prev_brightness,
@@ -1569,6 +1816,13 @@ impl LiveUccdBackend {
                     .is_err()
             {
                 drop(guard);
+                self.restore_ctgp_and_kb_writes(
+                    prev_ctgp,
+                    wrote_ctgp,
+                    prev_kb.as_ref(),
+                    wrote_kb,
+                    Some(start_epoch),
+                );
                 let _ = self.restore_charging_rollback(&charging_rb, Some(start_epoch));
                 self.restore_device_writes(
                     prev_brightness,
@@ -1590,10 +1844,16 @@ impl LiveUccdBackend {
             if self.ctgp_write_seq.load(Ordering::SeqCst) != post_phase2_ctgp_seq {
                 if let Some(offset) = committed_profile.nvidia_ctgp_offset {
                     let _ = self.set_nvidia_power_offset_impl(offset);
+                } else if let Some(base) = self.snapshot_unmanaged_ctgp_baseline(tx_id) {
+                    let _ = self.restore_ctgp_baseline(Some(base), Some(start_epoch));
                 }
             }
             if self.kb_write_seq.load(Ordering::SeqCst) != post_phase2_kb_seq {
-                self.apply_profile_keyboard(&committed_profile);
+                if Self::profile_has_keyboard(&committed_profile) {
+                    self.apply_profile_keyboard(&committed_profile);
+                } else if let Some(ref kb) = self.snapshot_unmanaged_kb_baseline(tx_id) {
+                    let _ = self.restore_keyboard_rollback(kb, Some(start_epoch));
+                }
             }
 
             if persist_state_updates.is_some()
@@ -1668,6 +1928,13 @@ impl LiveUccdBackend {
 
                 if txn_res.is_none() {
                     drop(guard);
+                    self.restore_ctgp_and_kb_writes(
+                        prev_ctgp,
+                        wrote_ctgp,
+                        prev_kb.as_ref(),
+                        wrote_kb,
+                        Some(start_epoch),
+                    );
                     let _ = self.restore_charging_rollback(&charging_rb, Some(start_epoch));
                     self.restore_device_writes(
                         prev_brightness,
@@ -1714,6 +1981,22 @@ impl LiveUccdBackend {
             } else {
                 self.snapshot_unmanaged_odm_baseline(tx_id)
             };
+            let hw_ctgp = if committed_profile.nvidia_ctgp_offset.is_some() {
+                let mut inflight = self.lock_mutex(&self.in_flight_ctgp_baselines);
+                inflight.retain(|(id, _)| *id == tx_id);
+                drop(inflight);
+                self.read_ctgp_baseline()
+            } else {
+                self.snapshot_unmanaged_ctgp_baseline(tx_id)
+            };
+            let hw_kb = if Self::profile_has_keyboard(&committed_profile) {
+                let mut inflight = self.lock_mutex(&self.in_flight_kb_baselines);
+                inflight.retain(|(id, _)| *id == tx_id);
+                drop(inflight);
+                self.snapshot_keyboard_rollback()
+            } else {
+                self.snapshot_unmanaged_kb_baseline(tx_id)
+            };
             let _new_epoch = self
                 .profile_commit_epoch
                 .fetch_add(1, Ordering::SeqCst)
@@ -1722,6 +2005,8 @@ impl LiveUccdBackend {
                 profile: committed_profile.clone(),
                 hw_tdps,
                 hw_odm,
+                hw_ctgp,
+                hw_kb,
             });
         }
 

@@ -103,6 +103,13 @@ pub fn map_states_by_led_id(
     }
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct KeyboardHardwareSnapshot {
+    pub colors: Vec<RgbColor>,
+    pub brightness: Option<u32>,
+    pub states: Vec<KeyboardBacklightState>,
+}
+
 /// Synchronous keyboard backlight controller matching `KeyboardBacklightController.hpp`.
 pub struct KeyboardBacklightController {
     transport: Arc<dyn LightingTransport>,
@@ -129,6 +136,55 @@ impl KeyboardBacklightController {
         self.capabilities
             .as_ref()
             .is_some_and(|caps| caps.zones > 0)
+    }
+
+    pub fn snapshot_hardware_state(&mut self) -> Option<KeyboardHardwareSnapshot> {
+        if !self.is_available() {
+            let _ = self.init();
+        }
+        if !self.is_available() {
+            return None;
+        }
+        let colors = self.transport.read_keyboard_colors().unwrap_or_default();
+        let brightness = self.current_states.first().map(|s| s.brightness as u32);
+        Some(KeyboardHardwareSnapshot {
+            colors,
+            brightness,
+            states: self.current_states.clone(),
+        })
+    }
+
+    pub fn restore_hardware_state(
+        &mut self,
+        snapshot: &KeyboardHardwareSnapshot,
+    ) -> Result<(), LightingError> {
+        if !self.is_available() {
+            let _ = self.init();
+        }
+        let caps = self
+            .capabilities
+            .as_ref()
+            .filter(|c| c.zones > 0)
+            .ok_or(LightingError::Unavailable)?
+            .clone();
+
+        let buffer_guard = BufferInputGuard::acquire(Arc::clone(&self.transport))?;
+        let write_res = (|| -> Result<(), LightingError> {
+            if let Some(brightness) = snapshot.brightness {
+                self.transport
+                    .write_keyboard_brightness(brightness.min(caps.max_brightness))?;
+            }
+            if caps.max_red > 0 && !snapshot.colors.is_empty() {
+                self.transport.write_keyboard_zones(&snapshot.colors)?;
+            }
+            Ok(())
+        })();
+        let release_res = buffer_guard.release();
+        write_res?;
+        release_res?;
+
+        self.current_states = snapshot.states.clone();
+        Ok(())
     }
 
     pub fn capabilities(&self) -> Option<&KeyboardCapabilities> {

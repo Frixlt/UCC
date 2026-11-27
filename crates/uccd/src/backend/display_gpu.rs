@@ -1478,6 +1478,42 @@ impl LiveUccdBackend {
         false
     }
 
+    pub(super) fn read_ctgp_baseline(&self) -> Option<i32> {
+        if let Some(ctgp_path) = self.nvidia_ctgp_sysfs_path() {
+            if let Ok(raw) = self.sysfs.read(&ctgp_path) {
+                if let Ok(val) = raw.trim().parse::<i32>() {
+                    return Some(val);
+                }
+            }
+        }
+        if let Some(val) = *self.lock_mutex(&self.nvidia_power_offset) {
+            return Some(val);
+        }
+        let dgpu = self
+            .read_rw(&self.latest_telemetry)
+            .as_ref()
+            .and_then(|s| s.dgpu.clone())?;
+        let base_w = dgpu.default_power_limit_w.or(dgpu.max_power_limit_w)?;
+        let cur_w = dgpu.enforced_power_limit_w?;
+        Some((cur_w - base_w).round() as i32)
+    }
+
+    pub(super) fn restore_ctgp_baseline(
+        &self,
+        prev: Option<i32>,
+        start_epoch: Option<u64>,
+    ) -> bool {
+        let superseded =
+            start_epoch.is_some_and(|e| self.profile_commit_epoch.load(Ordering::SeqCst) != e);
+        if self.shutdown_wait_expired.load(Ordering::SeqCst) || superseded {
+            return false;
+        }
+        let Some(prev_offset) = prev else {
+            return false;
+        };
+        self.set_nvidia_power_offset_impl(prev_offset)
+    }
+
     pub(super) fn get_charge_start_available_thresholds_impl(&self) -> String {
         let Some(bat) = self.discover_battery_dir() else {
             return "[]".to_string();

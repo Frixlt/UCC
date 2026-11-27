@@ -15,8 +15,8 @@ pub use hid_transport::{
 };
 
 pub use keyboard::{
-    map_states_by_led_id, BufferInputGuard, KeyboardBacklightController, MECHREVO_ENTER_LED_ID,
-    MECHREVO_EXPECTED_ZONES, MECHREVO_LCTRL_LED_ID, MECHREVO_LSHIFT_LED_ID,
+    map_states_by_led_id, BufferInputGuard, KeyboardBacklightController, KeyboardHardwareSnapshot,
+    MECHREVO_ENTER_LED_ID, MECHREVO_EXPECTED_ZONES, MECHREVO_LCTRL_LED_ID, MECHREVO_LSHIFT_LED_ID,
     MECHREVO_PHYSICAL_KEY_COUNT,
 };
 pub use lightbar::{

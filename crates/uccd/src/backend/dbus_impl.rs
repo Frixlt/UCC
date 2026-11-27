@@ -1065,7 +1065,10 @@ impl UccdBackend for LiveUccdBackend {
                 d.default_power_limit_w
                     .filter(|w| w.is_finite() && *w > 0.0)
                     .or_else(|| d.max_power_limit_w.filter(|w| w.is_finite() && *w > 0.0))
-                    .or_else(|| d.enforced_power_limit_w.filter(|w| w.is_finite() && *w > 0.0))
+                    .or_else(|| {
+                        d.enforced_power_limit_w
+                            .filter(|w| w.is_finite() && *w > 0.0)
+                    })
             })
             .map(|w| w.round() as i32)
             .unwrap_or(0)
@@ -1088,7 +1091,10 @@ impl UccdBackend for LiveUccdBackend {
             .read_rw(&self.latest_telemetry)
             .as_ref()
             .and_then(|s| s.dgpu.as_ref())
-            .is_some_and(|d| d.max_power_limit_w.is_some_and(|w| w.is_finite() && w > 0.0));
+            .is_some_and(|d| {
+                d.max_power_limit_w
+                    .is_some_and(|w| w.is_finite() && w > 0.0)
+            });
         has_nvml_limit || self.nvidia_ctgp_sysfs_path().is_some()
     }
 

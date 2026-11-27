@@ -5,6 +5,11 @@
 use super::{DbusSignalEvent, LiveUccdBackend};
 use crate::lid::{parse_lid_policy_from_json, LidSourcePolicy, WakeupPolicy};
 use serde_json::Value;
+
+pub(super) type KeyboardRollbackSnapshot = (
+    ucc_lighting::KeyboardHardwareSnapshot,
+    Option<Vec<ucc_core::KeyboardBacklightState>>,
+);
 use std::path::Path;
 use std::sync::atomic::Ordering;
 use std::sync::Arc;
@@ -153,6 +158,51 @@ impl LiveUccdBackend {
     ) -> Option<(Vec<KeyboardBacklightState>, Option<String>)> {
         let val: Value = serde_json::from_str(json_str).ok()?;
         Self::parse_keyboard_states_value(&val)
+    }
+
+    pub(super) fn profile_has_keyboard(profile: &UccProfile) -> bool {
+        profile
+            .selected_keyboard_profile
+            .as_deref()
+            .map(str::trim)
+            .filter(|s| !s.is_empty())
+            .is_some_and(|_| true)
+            || !profile.keyboard.keyboard_profile_id.trim().is_empty()
+    }
+
+    pub(super) fn snapshot_keyboard_rollback(&self) -> Option<KeyboardRollbackSnapshot> {
+        if self.is_vendor_unsupported() || ucc_config::is_read_only_preview() {
+            return None;
+        }
+        let hw = {
+            let mut ctrl = self.lock_mutex(&self.keyboard_ctrl);
+            ctrl.snapshot_hardware_state()
+        }?;
+        let lid_saved = self.lock_mutex(&self.lid_saved_keyboard_states).clone();
+        Some((hw, lid_saved))
+    }
+
+    pub(super) fn restore_keyboard_rollback(
+        &self,
+        snap: &KeyboardRollbackSnapshot,
+        start_epoch: Option<u64>,
+    ) -> bool {
+        let superseded =
+            start_epoch.is_some_and(|e| self.profile_commit_epoch.load(Ordering::SeqCst) != e);
+        if self.shutdown_wait_expired.load(Ordering::SeqCst) || superseded {
+            return false;
+        }
+        self.kb_write_seq.fetch_add(1, Ordering::SeqCst);
+        let ok = {
+            let mut ctrl = self.lock_mutex(&self.keyboard_ctrl);
+            ctrl.restore_hardware_state(&snap.0).is_ok()
+        };
+        *self.lock_mutex(&self.lid_saved_keyboard_states) = snap.1.clone();
+        self.kb_write_seq.fetch_add(1, Ordering::SeqCst);
+        if ok {
+            self.lock_mutex(&self.lightbar_ctrl).keyboard_changed();
+        }
+        ok
     }
 
     pub(super) fn apply_profile_keyboard(&self, profile: &UccProfile) {
