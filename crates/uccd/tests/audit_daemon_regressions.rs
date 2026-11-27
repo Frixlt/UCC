@@ -747,3 +747,45 @@ fn t_daemon_20_lightbar_reconfigure_resets_animation_timer() {
         "Reconfiguring lightbar to unmanaged must reset animating state"
     );
 }
+
+#[test]
+fn ta_02_rejected_wc_fan_or_pump_command_keeps_auto_control_active() {
+    let tmp = tempfile::tempdir().unwrap();
+    let (backend, platform, _, _) =
+        build_backend_with_caps(tmp.path(), default_uniwill_caps(), |_| {}, |_| {});
+
+    assert!(backend.enable_water_cooler(true));
+    assert!(backend.is_water_cooler_auto_control_enabled());
+
+    for invalid_fan in [-1, 101, 255, 256] {
+        assert!(
+            !backend.set_water_cooler_fan_speed(invalid_fan),
+            "out-of-range WC fan speed {invalid_fan} must be rejected"
+        );
+        assert!(
+            backend.is_water_cooler_auto_control_enabled(),
+            "rejected WC fan speed {invalid_fan} must NOT disable Auto mode"
+        );
+    }
+
+    assert!(!backend.set_water_cooler_pump_voltage(1)); // 12V forbidden
+    assert!(
+        backend.is_water_cooler_auto_control_enabled(),
+        "rejected 12V pump voltage must NOT disable Auto mode"
+    );
+
+    let active: Value = serde_json::from_str(&backend.get_active_profile_json()).unwrap();
+    assert_eq!(active["fan"]["autoControlWC"], true);
+
+    platform.set_fan_temp(0, 95);
+    platform.set_fan_temp(1, 95);
+    let _ = backend.tick_fans_once();
+    assert!(
+        backend.get_water_cooler_fan_speed() > 0,
+        "Auto WC loop must still drive fan speed at 95°C after rejected manual requests"
+    );
+    assert!(
+        backend.get_water_cooler_pump_level() >= 0,
+        "Auto WC loop must still drive pump voltage at 95°C after rejected manual requests"
+    );
+}

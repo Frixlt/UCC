@@ -333,33 +333,52 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         }
     };
 
+    // Register SIGINT/SIGTERM BEFORE startup initialization so early termination during slow
+    // hardware activation still performs bounded hardware cleanup and fan-auto restoration (`TA-03`).
+    let mut sigint = tokio::signal::unix::signal(tokio::signal::unix::SignalKind::interrupt())?;
+    let mut sigterm = tokio::signal::unix::signal(tokio::signal::unix::SignalKind::terminate())?;
+    let (early_stop_tx, early_stop_rx) = tokio::sync::watch::channel(false);
+    let signal_watcher = tokio::spawn(async move {
+        tokio::select! {
+            _ = sigint.recv() => {
+                info!("Received SIGINT, initiating bounded shutdown");
+            }
+            _ = sigterm.recv() => {
+                info!("Received SIGTERM, initiating bounded shutdown");
+            }
+        }
+        let _ = early_stop_tx.send(true);
+    });
+
     let backend = Arc::new(LiveUccdBackend::new_production());
     let authorizer: Arc<dyn ucc_dbus::Authorizer> = Arc::new(PolkitAuthorizer::new());
 
-    let runtime = DaemonRuntime::start_on_connection(
+    let mut shutdown_wait = early_stop_rx.clone();
+    let runtime = match DaemonRuntime::start_on_connection_cancellable(
         connection,
         "com.uniwill.uccd",
         backend,
         authorizer,
         true,
+        async move {
+            let _ = shutdown_wait.wait_for(|&stopped| stopped).await;
+        },
     )
-    .await?;
+    .await?
+    {
+        Some(rt) => rt,
+        None => {
+            info!("uccd daemon stopped during startup initialization");
+            return Ok(());
+        }
+    };
     info!(
         "Registered D-Bus interfaces on /com/uniwill/uccd and /de/uniwill/uccd ({bus_label} bus)"
     );
 
-    // Wait for shutdown signal (SIGINT or SIGTERM)
-    let mut sigint = tokio::signal::unix::signal(tokio::signal::unix::SignalKind::interrupt())?;
-    let mut sigterm = tokio::signal::unix::signal(tokio::signal::unix::SignalKind::terminate())?;
-
-    tokio::select! {
-        _ = sigint.recv() => {
-            info!("Received SIGINT, initiating bounded shutdown");
-        }
-        _ = sigterm.recv() => {
-            info!("Received SIGTERM, initiating bounded shutdown");
-        }
-    }
+    let mut run_stop_rx = early_stop_rx;
+    let _ = run_stop_rx.wait_for(|&stopped| stopped).await;
+    let _ = signal_watcher.await;
 
     runtime.shutdown(Duration::from_secs(5)).await;
     info!("uccd daemon stopped");

@@ -215,13 +215,15 @@ impl FanController {
 
         self.was_control_enabled = true;
 
-        // Fail-safe check (`W1-03`): if any active sensor lacks a curve OR no sensor is valid,
-        // fall back the entire fan bank to firmware auto rather than borrowing 0% from another channel.
+        // Fail-safe check (`W1-03`, `TA-01`): if ANY fan channel's sensor failed/is out-of-range
+        // or lacks a curve, fall back the entire fan bank to firmware auto rather than commanding
+        // 0% to an unmonitored channel or borrowing another channel's cold temperature.
+        let has_failed_sensor = temps_c.iter().any(Option::is_none);
         let has_missing_curve = temps_c
             .iter()
             .zip(calculated_speeds.iter())
             .any(|(t, s)| t.is_some() && s.is_none());
-        let highest_speed = if has_missing_curve {
+        let highest_speed = if has_failed_sensor || has_missing_curve {
             None
         } else {
             calculated_speeds.iter().flatten().copied().max()

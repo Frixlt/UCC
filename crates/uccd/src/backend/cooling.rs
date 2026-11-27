@@ -744,13 +744,15 @@ impl LiveUccdBackend {
         let Some(_op_guard) = self.enter_hardware_op() else {
             return false;
         };
+        if !(0..=100).contains(&duty_cycle_percent) {
+            return false;
+        }
         let Ok(pct) = u8::try_from(duty_cycle_percent) else {
             return false;
         };
         let ok = {
             let mut ctrl = self.lock_mutex(&self.cooler_controller);
-            ctrl.set_mode(CoolerMode::Manual);
-            ctrl.set_fan_speed(pct).is_ok()
+            ctrl.set_manual_fan_speed(pct).is_ok()
         };
         if ok {
             self.mark_wc_manual_targets_and_emit(Some(pct), None);
@@ -774,8 +776,7 @@ impl LiveUccdBackend {
         };
         let ok = {
             let mut ctrl = self.lock_mutex(&self.cooler_controller);
-            ctrl.set_mode(CoolerMode::Manual);
-            ctrl.set_pump_voltage(hw_v).is_ok()
+            ctrl.set_manual_pump_voltage(hw_v).is_ok()
         };
         if ok {
             self.mark_wc_manual_targets_and_emit(None, Some(voltage));
@@ -835,8 +836,7 @@ impl LiveUccdBackend {
         };
         let ok = {
             let mut ctrl = self.lock_mutex(&self.cooler_controller);
-            ctrl.set_mode(CoolerMode::Manual);
-            ctrl.turn_off_fan().is_ok()
+            ctrl.turn_off_manual_fan().is_ok()
         };
         if ok {
             self.mark_wc_manual_targets_and_emit(Some(0), None);
@@ -850,8 +850,7 @@ impl LiveUccdBackend {
         };
         let ok = {
             let mut ctrl = self.lock_mutex(&self.cooler_controller);
-            ctrl.set_mode(CoolerMode::Manual);
-            ctrl.turn_off_pump().is_ok()
+            ctrl.turn_off_manual_pump().is_ok()
         };
         if ok {
             self.mark_wc_manual_targets_and_emit(None, Some(4));

@@ -483,3 +483,72 @@ async fn m8_life_extreme_nvidia_offset_returns_false_without_panicking_and_keeps
     );
     assert_eq!(alive.as_deref(), Ok("Test Laptop"));
 }
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 3)]
+async fn ta_03_sigterm_during_startup_activation_runs_hardware_cleanup_and_releases_bus() {
+    let root = tempfile::tempdir().unwrap();
+    let (started, entered) = std::sync::mpsc::channel();
+    let (release, wait) = std::sync::mpsc::channel();
+    let slow = default_high_performance_profile();
+    let mut cfg = create_default_settings();
+    let mut prof = slow.clone();
+    prof.odm_profile_name = None;
+    prof.odm_power_limits = vec![41, 70, 90];
+    cfg.profiles.insert(prof.id.clone(), prof.clone());
+    cfg.set_active_profile_for_mode("power_ac", &prof.id);
+    ConfigManager::with_custom_path(root.path().join("settings.json"))
+        .save(&cfg)
+        .unwrap();
+
+    let (backend, platform, _, _) = build_custom_backend(
+        root.path(),
+        true,
+        |_| {},
+        |p| {
+            let wrapper = LifecycleAuditPlatform::new(p);
+            *wrapper.tdp_gate.lock().unwrap() = Some((started, wait));
+            Arc::new(wrapper)
+        },
+    );
+
+    let name = "org.test.uccd.life.startup_sigterm";
+    let conn = session_conn().await;
+    let (stop_tx, stop_rx) = tokio::sync::oneshot::channel::<()>();
+    let start_task = tokio::spawn(DaemonRuntime::start_on_connection_cancellable(
+        conn.clone(),
+        name,
+        Arc::clone(&backend),
+        Arc::new(AllowAllAuthorizer),
+        true,
+        async move {
+            let _ = stop_rx.await;
+        },
+    ));
+
+    // Wait until activate_hardware is actively blocked inside TDP programming.
+    handoff_wait_gate(entered).await;
+    platform.clear_journal();
+    let _ = stop_tx.send(());
+    let _ = release.send(());
+
+    let res = tokio::time::timeout(Duration::from_secs(3), start_task)
+        .await
+        .expect("start_on_connection_cancellable did not abort in time")
+        .expect("join failed")
+        .expect("startup abort returned D-Bus error");
+    assert!(res.is_none(), "expected Ok(None) after startup cancellation");
+
+    let bus = zbus::fdo::DBusProxy::new(&conn).await.unwrap();
+    assert!(
+        !bus.name_has_owner(name.try_into().unwrap()).await.unwrap(),
+        "bus name must be released after startup cancellation"
+    );
+    assert!(
+        backend.was_hardware_activated(),
+        "expected hardware activation flag before abort"
+    );
+    assert!(
+        platform.journal().contains(&PlatformWrite::SetFansAuto),
+        "startup cancellation must restore firmware auto fan control"
+    );
+}

@@ -788,23 +788,37 @@ impl LiveUccdBackend {
             let mut kb = self.lock_mutex(&self.keyboard_ctrl);
             let _ = kb.init();
             if let Some(ref states) = kb_states {
-                if !states.is_empty() && kb.is_available() {
+                if !states.is_empty() && kb.is_available() && !self.shutting_down.load(Ordering::SeqCst) {
                     let _ = kb.apply_states(states);
                 }
             }
-            kb.hydrate_from_hardware();
+            if !self.shutting_down.load(Ordering::SeqCst) {
+                kb.hydrate_from_hardware();
+            }
+        }
+        if self.shutting_down.load(Ordering::SeqCst) {
+            return;
         }
 
         if let Some(ref lb_cfg) = lb_val {
             let mut lb = self.lock_mutex(&self.lightbar_ctrl);
             let _ = lb.configure(lb_cfg);
         }
+        if self.shutting_down.load(Ordering::SeqCst) {
+            return;
+        }
 
         if let Some(ref pd) = pd_val {
             self.apply_wakeup_policy_from_settings(pd);
         }
+        if self.shutting_down.load(Ordering::SeqCst) {
+            return;
+        }
 
         self.reconcile_power_state(true);
+        if self.shutting_down.load(Ordering::SeqCst) {
+            return;
+        }
         let active_now = self.read_rw(&self.active_profile).clone();
         self.apply_charging_settings_for_profile(&active_now);
         let _ = self.tick_fans_once();

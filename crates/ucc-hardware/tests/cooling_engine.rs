@@ -217,3 +217,76 @@ fn lct_cooler_queue_coalesces_rate_limits_and_cancels_on_disconnect_or_suspend()
     assert!(ctrl.generation() > gen_before);
     assert_eq!(ctrl.pending_len(), 0);
 }
+
+#[test]
+fn ta_01_single_sensor_failure_triggers_failsafe_auto_without_zeroing_fan() {
+    let backend = MockPlatformBackend::uniwill_default();
+    backend.set_fan_temp(0, 30); // Cold CPU -> 0%
+    backend.set_fan_temp(1, 91); // Hot GPU -> 100%
+
+    let mut profile = sample_fan_profile();
+    profile.table_cpu = vec![
+        FanPoint::new(20, 0),
+        FanPoint::new(45, 0),
+        FanPoint::new(90, 100),
+    ];
+    profile.table_gpu = vec![
+        FanPoint::new(20, 0),
+        FanPoint::new(45, 0),
+        FanPoint::new(90, 100),
+    ];
+
+    let mut controller = FanController::new(&backend, profile, false);
+    let snap_hot = controller.tick(&backend, true, 1000);
+    assert!(!snap_hot.fallback_auto);
+    assert_eq!(snap_hot.speeds_percent, vec![Some(0), Some(100)]);
+
+    // GPU sensor disappears while CPU remains cold: MUST NOT command 0% to GPU!
+    backend.clear_journal();
+    backend.set_fan_temp_error(1);
+    let snap_gpu_lost = controller.tick(&backend, true, 2000);
+    assert!(snap_gpu_lost.fallback_auto);
+    assert_eq!(snap_gpu_lost.temps_c, vec![Some(30), None]);
+    assert_eq!(snap_gpu_lost.speeds_percent, vec![None, None]);
+    let journal = backend.journal();
+    assert_eq!(journal, vec![PlatformWrite::SetFansAuto]);
+    assert!(!journal
+        .iter()
+        .any(|w| matches!(w, PlatformWrite::SetFanSpeed { fan_idx: 1, percent: 0 })));
+
+    // Invalid out-of-range GPU temperature also keeps failsafe auto active without 0% write
+    backend.clear_journal();
+    backend.set_fan_temp(1, 200);
+    let snap_oob = controller.tick(&backend, true, 3000);
+    assert!(snap_oob.fallback_auto);
+    assert_eq!(snap_oob.speeds_percent, vec![None, None]);
+    assert!(backend.journal().is_empty());
+
+    // Sensor recovers to 91°C -> resumes active curve control cleanly
+    backend.clear_journal();
+    backend.set_fan_temp(1, 91);
+    let snap_recovered = controller.tick(&backend, true, 4000);
+    assert!(!snap_recovered.fallback_auto);
+    assert_eq!(snap_recovered.speeds_percent, vec![Some(0), Some(100)]);
+    assert!(backend
+        .journal()
+        .contains(&PlatformWrite::SetFanSpeed {
+            fan_idx: 1,
+            percent: 100
+        }));
+}
+
+#[test]
+fn ta_02_cooler_rejected_manual_command_preserves_auto_mode() {
+    let mut ctrl = CoolerController::new();
+    assert_eq!(ctrl.mode(), CoolerMode::Auto);
+    assert_eq!(ctrl.set_manual_fan_speed(101), Err(CoolerError::InvalidFanSpeed(101)));
+    assert_eq!(ctrl.mode(), CoolerMode::Auto);
+    assert_eq!(ctrl.pending_len(), 0);
+    assert_eq!(
+        ctrl.set_manual_pump_voltage(PumpVoltage::V12),
+        Err(CoolerError::V12Forbidden)
+    );
+    assert_eq!(ctrl.mode(), CoolerMode::Auto);
+    assert_eq!(ctrl.pending_len(), 0);
+}

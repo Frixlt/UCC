@@ -789,6 +789,78 @@ impl CoolerController {
         self.queue.enqueue(cmd)
     }
 
+    /// Atomically validates `percent`, switches to [`CoolerMode::Manual`], and enqueues the command.
+    ///
+    /// Never switches away from [`CoolerMode::Auto`] if validation or queueing fails (`TA-02`).
+    pub fn set_manual_fan_speed(&mut self, percent: u8) -> Result<(), CoolerError> {
+        self.apply_manual_fan_cmd(CoolerCommand::FanSpeed(percent), FanTarget::Speed(percent))
+    }
+
+    /// Atomically validates `voltage`, switches to [`CoolerMode::Manual`], and enqueues the command (`TA-02`).
+    pub fn set_manual_pump_voltage(&mut self, voltage: PumpVoltage) -> Result<(), CoolerError> {
+        self.apply_manual_pump_cmd(
+            CoolerCommand::PumpVoltage(voltage),
+            PumpTarget::Voltage(voltage),
+        )
+    }
+
+    /// Atomically switches to [`CoolerMode::Manual`] and turns off the cooler fan (`TA-02`).
+    pub fn turn_off_manual_fan(&mut self) -> Result<(), CoolerError> {
+        self.apply_manual_fan_cmd(CoolerCommand::TurnOffFan, FanTarget::Off)
+    }
+
+    /// Atomically switches to [`CoolerMode::Manual`] and turns off the cooler pump (`TA-02`).
+    pub fn turn_off_manual_pump(&mut self) -> Result<(), CoolerError> {
+        self.apply_manual_pump_cmd(
+            CoolerCommand::TurnOffPump,
+            PumpTarget::Voltage(PumpVoltage::Off),
+        )
+    }
+
+    fn apply_manual_fan_cmd(
+        &mut self,
+        cmd: CoolerCommand,
+        target: FanTarget,
+    ) -> Result<(), CoolerError> {
+        cmd.validate()?;
+        let prev_mode = self.mode;
+        let prev_target = self.manual_fan;
+        if prev_mode != CoolerMode::Manual {
+            self.queue.clear_fan_and_pump();
+            self.mode = CoolerMode::Manual;
+            let _ = Self::enqueue_pump_target(&mut self.queue, self.manual_pump);
+        }
+        self.manual_fan = target;
+        if let Err(err) = self.queue.enqueue(cmd) {
+            self.manual_fan = prev_target;
+            self.mode = prev_mode;
+            return Err(err);
+        }
+        Ok(())
+    }
+
+    fn apply_manual_pump_cmd(
+        &mut self,
+        cmd: CoolerCommand,
+        target: PumpTarget,
+    ) -> Result<(), CoolerError> {
+        cmd.validate()?;
+        let prev_mode = self.mode;
+        let prev_target = self.manual_pump;
+        if prev_mode != CoolerMode::Manual {
+            self.queue.clear_fan_and_pump();
+            self.mode = CoolerMode::Manual;
+            let _ = Self::enqueue_fan_target(&mut self.queue, self.manual_fan);
+        }
+        self.manual_pump = target;
+        if let Err(err) = self.queue.enqueue(cmd) {
+            self.manual_pump = prev_target;
+            self.mode = prev_mode;
+            return Err(err);
+        }
+        Ok(())
+    }
+
     pub fn set_rgb(
         &mut self,
         red: u8,

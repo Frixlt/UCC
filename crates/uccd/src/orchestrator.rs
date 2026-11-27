@@ -383,8 +383,34 @@ impl DaemonRuntime {
         authorizer: Arc<dyn Authorizer>,
         spawn_workers: bool,
     ) -> zbus::Result<Self> {
+        Self::start_on_connection_cancellable(
+            connection,
+            bus_name,
+            backend,
+            authorizer,
+            spawn_workers,
+            std::future::pending::<()>(),
+        )
+        .await?
+        .ok_or_else(|| zbus::Error::Failure("Daemon startup cancelled".to_string()))
+    }
+
+    /// Starts `LiveUccdBackend` on `connection`, racing all slow startup stages against `shutdown_fut`
+    /// so an early `SIGINT`/`SIGTERM` aborts initialization and still runs bounded hardware cleanup (`TA-03`).
+    pub async fn start_on_connection_cancellable<F>(
+        connection: zbus::Connection,
+        bus_name: impl Into<String>,
+        backend: Arc<LiveUccdBackend>,
+        authorizer: Arc<dyn Authorizer>,
+        spawn_workers: bool,
+        shutdown_fut: F,
+    ) -> zbus::Result<Option<Self>>
+    where
+        F: std::future::Future<Output = ()> + Send,
+    {
         let bus_name = bus_name.into();
         let flags = zbus::fdo::RequestNameFlags::DoNotQueue.into();
+        let mut shutdown_fut = std::pin::pin!(shutdown_fut);
 
         // Reject early with ZERO hardware writes if another owner already holds the public name.
         if let Ok(dbus_proxy) = zbus::fdo::DBusProxy::new(&connection).await {
@@ -401,41 +427,115 @@ impl DaemonRuntime {
         // cannot be acknowledged or overwritten during predecessor handoff/activation (`M8-HANDOFF-01`).
         backend.set_activation_pending(true);
 
+        let abort_startup = |conn: zbus::Connection,
+                             name: String,
+                             backend: Arc<LiveUccdBackend>,
+                             release_name: bool| async move {
+            backend.begin_shutdown();
+            backend.set_activation_pending(false);
+            let handoff_guard = register_in_flight_shutdown(&name);
+            if release_name {
+                let _ = tokio::time::timeout(
+                    Duration::from_secs(2),
+                    unregister_uccd_paths(&conn),
+                )
+                .await;
+                let _ = tokio::time::timeout(
+                    Duration::from_secs(2),
+                    conn.release_name(name.as_str()),
+                )
+                .await;
+            }
+            let (done_tx, done_rx) = tokio::sync::oneshot::channel();
+            let backend_timeout = Arc::clone(&backend);
+            let spawn_err_tx = handoff_guard.tx.clone();
+            match std::thread::Builder::new()
+                .name("uccd-startup-abort".to_string())
+                .spawn(move || {
+                    let res = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                        backend.wait_in_flight_hw_ops();
+                        backend.shutdown();
+                        backend.take_unrestored_cpu_defaults()
+                    }));
+                    match res {
+                        Ok(unrestored_cpu) => handoff_guard.complete(unrestored_cpu),
+                        Err(payload) => {
+                            let msg = format_panic_payload(payload);
+                            error!("Startup-abort hardware shutdown panicked: {msg}");
+                            handoff_guard.fail(format!("startup-abort cleanup panicked: {msg}"));
+                        }
+                    }
+                    let _ = done_tx.send(());
+                }) {
+                Ok(_) => {
+                    if tokio::time::timeout(Duration::from_secs(5), done_rx)
+                        .await
+                        .is_err()
+                    {
+                        backend_timeout.mark_shutdown_wait_expired();
+                        error!(
+                            "Timed out waiting for hardware cleanup after startup signal; continuing exit"
+                        );
+                    }
+                }
+                Err(err) => {
+                    let _ = spawn_err_tx.send(ShutdownOutcome::Failed(format!(
+                        "failed to spawn startup-abort thread: {err}"
+                    )));
+                }
+            }
+        };
+
         // Perform strictly read-only sleep snapshot load and bounded priming BEFORE exporting
         // objects or requesting bus_name (`FULL-27-01`, `DEEP-03`).
         let mut sig_rx = backend.subscribe_signals();
         let prime_timeout = startup_prime_timeout();
         let sleep_load_backend = Arc::clone(&backend);
-        if let Err(err) = tokio::time::timeout(
-            prime_timeout,
-            run_detached_blocking("uccd-sleep-load", move || {
-                let _ = sleep_load_backend.load_sleep_state_read_only();
-            }),
-        )
-        .await
-        {
-            warn!("Timed out loading sleep snapshot after {prime_timeout:?}: {err}");
-        }
-        let prime_backend = Arc::clone(&backend);
-        match tokio::time::timeout(
-            prime_timeout,
-            run_detached_blocking("uccd-prime", move || {
-                prime_backend.prime_read_only();
-            }),
-        )
-        .await
-        {
-            Ok(Ok(())) => {}
-            Ok(Err(err)) => {
-                backend.mark_prime_degraded(true);
-                warn!("Daemon read-only priming failed ({err}); continuing in degraded startup");
+        tokio::select! {
+            biased;
+            _ = &mut shutdown_fut => {
+                abort_startup(connection, bus_name, backend, false).await;
+                return Ok(None);
             }
-            Err(_) => {
-                backend.mark_prime_degraded(true);
-                warn!(
-                    "Startup priming exceeded {:?}; publishing D-Bus service in degraded mode",
-                    prime_timeout
-                );
+            res = tokio::time::timeout(
+                prime_timeout,
+                run_detached_blocking("uccd-sleep-load", move || {
+                    let _ = sleep_load_backend.load_sleep_state_read_only();
+                }),
+            ) => {
+                if let Err(err) = res {
+                    warn!("Timed out loading sleep snapshot after {prime_timeout:?}: {err}");
+                }
+            }
+        }
+
+        let prime_backend = Arc::clone(&backend);
+        tokio::select! {
+            biased;
+            _ = &mut shutdown_fut => {
+                abort_startup(connection, bus_name, backend, false).await;
+                return Ok(None);
+            }
+            prime_res = tokio::time::timeout(
+                prime_timeout,
+                run_detached_blocking("uccd-prime", move || {
+                    prime_backend.prime_read_only();
+                }),
+            ) => {
+                match prime_res {
+                    Ok(Ok(())) => {}
+                    Ok(Err(err)) => {
+                        backend.mark_prime_degraded(true);
+                        warn!("Daemon read-only priming failed ({err}); continuing in degraded startup");
+                    }
+                    Err(_) => {
+                        backend.mark_prime_degraded(true);
+                        warn!(
+                            "Startup priming exceeded {:?}; publishing D-Bus service in degraded mode",
+                            prime_timeout
+                        );
+                    }
+                }
             }
         }
 
@@ -458,54 +558,77 @@ impl DaemonRuntime {
             }
         }
 
-        match connection
-            .request_name_with_flags(bus_name.as_str(), flags)
-            .await
-        {
-            Ok(zbus::fdo::RequestNameReply::PrimaryOwner) => {}
-            Ok(reply) => {
+        tokio::select! {
+            biased;
+            _ = &mut shutdown_fut => {
                 unregister_uccd_paths(&connection).await;
-                backend.set_activation_pending(false);
-                return Err(zbus::Error::Failure(format!(
-                    "Failed to acquire exclusive D-Bus name '{bus_name}': {reply:?}"
-                )));
+                abort_startup(connection, bus_name, backend, false).await;
+                return Ok(None);
             }
-            Err(err) => {
-                unregister_uccd_paths(&connection).await;
-                backend.set_activation_pending(false);
-                return Err(err);
+            req_res = connection.request_name_with_flags(bus_name.as_str(), flags) => {
+                match req_res {
+                    Ok(zbus::fdo::RequestNameReply::PrimaryOwner) => {}
+                    Ok(reply) => {
+                        unregister_uccd_paths(&connection).await;
+                        backend.set_activation_pending(false);
+                        return Err(zbus::Error::Failure(format!(
+                            "Failed to acquire exclusive D-Bus name '{bus_name}': {reply:?}"
+                        )));
+                    }
+                    Err(err) => {
+                        unregister_uccd_paths(&connection).await;
+                        backend.set_activation_pending(false);
+                        return Err(err);
+                    }
+                }
             }
         }
 
         // Wait until EVERY timed-out predecessor cleanup + in-flight hardware op on this bus_name
         // settles before touching hardware (`M8-HANDOFF-02`, `03`, `M8-LIFE-02`).
-        let inherited_cpu_defaults = match wait_for_predecessor_shutdown(&bus_name).await {
-            Ok(defaults) => defaults,
-            Err(reason) => {
-                unregister_uccd_paths(&connection).await;
-                let _ = connection.release_name(bus_name.as_str()).await;
-                backend.set_activation_pending(false);
-                return Err(zbus::Error::Failure(format!(
-                    "Refusing to start on '{bus_name}': predecessor cleanup failed ({reason})"
-                )));
+        let inherited_cpu_defaults = tokio::select! {
+            biased;
+            _ = &mut shutdown_fut => {
+                abort_startup(connection, bus_name, backend, true).await;
+                return Ok(None);
+            }
+            pred_res = wait_for_predecessor_shutdown(&bus_name) => {
+                match pred_res {
+                    Ok(defaults) => defaults,
+                    Err(reason) => {
+                        unregister_uccd_paths(&connection).await;
+                        let _ = connection.release_name(bus_name.as_str()).await;
+                        backend.set_activation_pending(false);
+                        return Err(zbus::Error::Failure(format!(
+                            "Refusing to start on '{bus_name}': predecessor cleanup failed ({reason})"
+                        )));
+                    }
+                }
             }
         };
 
         let activate_backend = Arc::clone(&backend);
-        if let Err(err) = run_detached_blocking("uccd-activate", move || {
-            let _ = activate_backend.load_sleep_state_read_only();
-            activate_backend.seed_inherited_cpu_defaults(inherited_cpu_defaults);
-            activate_backend.activate_hardware();
-            activate_backend.clear_consumed_sleep_state();
-        })
-        .await
-        {
-            unregister_uccd_paths(&connection).await;
-            let _ = connection.release_name(bus_name.as_str()).await;
-            backend.set_activation_pending(false);
-            return Err(zbus::Error::Failure(format!(
-                "Daemon hardware activation failed: {err}"
-            )));
+        tokio::select! {
+            biased;
+            _ = &mut shutdown_fut => {
+                abort_startup(connection, bus_name, backend, true).await;
+                return Ok(None);
+            }
+            act_res = run_detached_blocking("uccd-activate", move || {
+                let _ = activate_backend.load_sleep_state_read_only();
+                activate_backend.seed_inherited_cpu_defaults(inherited_cpu_defaults);
+                activate_backend.activate_hardware();
+                activate_backend.clear_consumed_sleep_state();
+            }) => {
+                if let Err(err) = act_res {
+                    unregister_uccd_paths(&connection).await;
+                    let _ = connection.release_name(bus_name.as_str()).await;
+                    backend.set_activation_pending(false);
+                    return Err(zbus::Error::Failure(format!(
+                        "Daemon hardware activation failed: {err}"
+                    )));
+                }
+            }
         }
 
         let (stop_tx, stop_rx) = watch::channel(false);
@@ -636,14 +759,14 @@ impl DaemonRuntime {
             }));
         }
 
-        Ok(Self {
+        Ok(Some(Self {
             connection,
             bus_name,
             backend,
             stop_tx,
             worker_stop,
             tasks,
-        })
+        }))
     }
 
     pub fn backend(&self) -> &Arc<LiveUccdBackend> {
