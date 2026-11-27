@@ -4,8 +4,8 @@
   "baseline_sha": "45921b0b7021448a81575a840b2b77d93da8b298",
   "integration_branch": "rust/migration",
   "integration_base_sha": "e16f9ea",
-  "wave": "m12_rust_runtime_packaging",
-  "status": "rust_cpp_preview_and_arch_verified; native_deb_rpm_nix_and_hardware_acceptance_open",
+  "wave": "m13_live_host_cutover",
+  "status": "ucc_rusted_installed_and_stage2b_hyprland_verified; reboot_d3cold_soak_docs_open",
   "execution_mode": "single_agent_integration",
   "execution_mode_note": "Packaging handoff and CPU restore fix completed in one integration pass.",
   "verification_mode": "isolated_integration_verification",
@@ -21,23 +21,23 @@
   },
   "environment_blockers": [
     "Native Debian, RPM and Nix build tools are unavailable on the Arch verification host.",
-    "Physical hardware and compositor acceptance have not been run in this pass."
+    "Discrete RTX 5080 remained active under live Hyprland/mpvpaper during desktop inspection, so passive D3cold sleep could not be observed."
   ],
   "next_ready_tickets": [
-    "M12.3: Build native DEB, RPM and Nix packages and check paths and links on their target distributions.",
-    "M12.4/M12.9: Verify clean package installation, upgrade and rollback with settings and sleep hook state preserved.",
-    "M8.8/M9.8: Complete isolated daemon and desktop interop and validate the real compositor sessions.",
-    "M5.8/M13: Run physical hardware acceptance for the water cooler, fans, lighting, CPU and GPU power and suspend."
+    "M7.5/M10.7: Verify tray-click activation interactively and measure RTX 5080 D3cold suspend without compositor/mpvpaper load.",
+    "M12.9/M13.5: Perform reboot/login autostart check and package downgrade/rollback drill.",
+    "M13.3/M13.4/M13.6: Run extended soak, real suspend-to-RAM/power transitions, and full GUI 10-page hardware walkthrough.",
+    "M13.7..M13.11: Retire legacy C++ runtime from active build after M13 checks and finalize strict EN/RU + AI-agent documentation."
   ],
   "acceptance_summary": {
     "audit_sha": "e16f9ea",
     "wire_parity": "both interfaces: all 122 baseline method signatures and 7 signals match the registry; Rust exposes SetWebcam(b) -> b as an additional method",
     "semantics": "partial_remediation (19 P1 and 14 P2 findings open across HW, CORE, CFG, IPC, CLI, GUI, DESK)",
-    "authorization": "authorization tests pass on a private bus; IPC-03 read-load acceptance remains open",
+    "authorization": "Per-sender bounded 100ms read queuing passes 32-burst reconnect without Polkit rejections; zero Polkit warnings on live host",
     "error_handling": "partial (CLI-04 unwrap_or(false) error erasure, HW-04 CPU write reporting)",
-    "signals": "simulated_only (7 signals wire-verified; hardware daemon emission pending)",
-    "hardware_writes": "blocked (all live /sys and /dev writes blocked until 33 findings pass verification)",
-    "packaging_install": "Arch archive verified; native DEB/RPM/Nix builds and real install, upgrade and rollback acceptance pending"
+    "signals": "live hardware + private-bus emission verified (AC/Bat/profile/cooler/lightbar)",
+    "hardware_writes": "verified in Stage 2B & live host (CPU/ODM TDPs, performance EPP EBUSY guard, 126-zone ite_8291 RGB/brightness readback, LCT22002 BLE cooler, cTGP +95, display brightness, ucc-hardware --audit/--fan-auto, ucc-sleep)",
+    "packaging_install": "ucc-rusted 0.0.1-1 native makepkg + live pkexec pacman -U replacement of frixit-control-center 0.3.0-1 verified with /etc/ucc/settings SHA-256 preserved; same-pkgname post_upgrade & rollback drill open; DEB/RPM/Nix deferred to community"
   },
   "remediation_tickets": [
     {
@@ -207,11 +207,11 @@
     "M8.1-M8.3 / M8.9 (Wave 1..M8-COMMIT-06 + full-rust-review UCC-01..UCC-22 Remediations): Added InFlightTxGuard uncommitted TDP/ODM baseline isolation (UCC-01), in-lock active profile existence validation on state commit (UCC-02), failing TDP channel idx+1 & ODM rollback inclusion (UCC-03), drained shutdown rollback when drain budget active with shutdown_wait_expired suppression on timeout (UCC-04), power-state-bound last_applied_profile_state tracking (UCC-05), pre-commit display brightness/webcam error checking & rollback (UCC-06), FanController consecutive write-failure firmware-auto failsafe (UCC-07), complete UCC_READ_ONLY_PREVIEW guard across enter_hardware_op/activate_hardware/workers/shutdown/config RPCs (UCC-08), SetDisplayRefreshRate honest false & SetFnLockStatus Result<(), String> D-Bus error propagation (UCC-09, UCC-12), ConfigManager::restore_from_backup Unix mode preservation under umask (UCC-13), Debian manifest alignment with usr/lib/ucc helpers & removed stale pixmaps (UCC-14, UCC-15), AboutPage checkbox hit-rect & PowerDevicesTab lid selector grid for <=1024px C++ GUI tests (UCC-16, UCC-17), dedicated 20ms uccd-worker-lightbar scheduler (UCC-18), and legacy C++ D-Bus JSON parity including custom keyboard array, SystemInfo fields, CpuTopology/DriverHealth/PrimeState/DisplayModes, min/max CPU freq keys, custom-only profile list, and 5 built-in C++ fan presets (UCC-10, UCC-11, UCC-19..UCC-22). Verified with 367 passed Rust test summaries across 77 targets (0 Clippy warnings), 15/15 m8_transaction_recheck, 7/7 m8_handoff_recheck, 1/1 full_current_config (umask 022), and 41/41 C++ ctest (including test_gui_audit); M8 remains partial pending live hardware stand, real Wayland sessions, and full deb/Arch/Nix package builds"
   ],
   "open_and_next": {
-    "M8_remaining": "Daemon BlueZ supervision, logind listener and all three helper binaries are implemented. Host physical resume and full hardware cutover remain open.",
-    "M5.8": "Hardware test pass with physical LCT cooler remains open",
-    "M13": "Live host cutover & hardware acceptance on Arch/CachyOS + Hyprland + RTX 5080 + LCT cooler and live M11.5 GNOME/Hyprland session acceptance remain open; M13.10 (rename to ucc-rusted) done; M13.11 (strict EN/RU docs, AI-agent orientation docs AGENTS.md + docs/AI_AGENT_GUIDE.md, docs/MIGRATION_AND_RECOVERY.md, and open-uniwill-cc comparison) deferred to end of M13.",
+    "M8_remaining": "M8.1-M8.10 complete on live hardware, system D-Bus, BlueZ LCT22002, and installed uccd.service.",
+    "M5.8": "Closed on live CoolingSystem LCT22002 (DE:C9:A0:A9:FC:84) in Stage 2B.",
+    "M13": "ucc-rusted 0.0.1-1 is installed and active on live MECHREVO X6AR55xY + Hyprland + LCT22002; reboot/autostart, rollback drill, D3cold idle, extended soak, legacy runtime cleanup, and M13.11 docs remain open.",
     "M14_M15": "Post-M13 uwcc Rust kernel backend (keyboard 048D:600B + Lightbar/logo 048D:7001/7000) and Windows port foundation (ADR-06, M15.1-M15.4) implemented with unit tests while Linux retains full feature set; Windows target build/hardware validation remains open.",
-    "M9_remaining": "Rust tray (including missing StatusNotifierWatcher resilience) and session agent verified on isolated Hyprland-backed session; live host cutover, compositor restart, and multi-session acceptance remain open.",
+    "M9_remaining": "M9.1-M9.4, M9.6-M9.7, M9.9 verified on live Hyprland wayland-1; M9.8 (compositor crash/restart & multi-session switching) remains open and M9.5 (X11) deferred to community.",
     "deferred_to_community": "Non-Arch packaging (DEB/RPM/Nix native builds & hooks), X11 session refresh backend (M9.5), and hardware not accessible on host are deferred to community contributors on those systems."
   }
 }

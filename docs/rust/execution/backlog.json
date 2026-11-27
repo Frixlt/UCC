@@ -1142,8 +1142,8 @@
       "milestone": "M4",
       "wave": "V4",
       "title": "Прогнать fake sysfs/procfs failure matrix; после этого провести ограниченные аппаратные read/write проверки.",
-      "status": "partial",
-      "status_basis": "Fake sysfs failure matrix (missing, read-only, 0o000 permission denied, corrupted/invalid values, whitespace trimming, path traversal prevention, write containment audit, bidirectional CPU range parsing) passed (23a8499); physical hardware limited read/write pass remains open in M13.",
+      "status": "done",
+      "status_basis": "Fake sysfs failure matrix (23a8499) and live hardware read/write acceptance on MECHREVO X6AR55xY (CPU/ODM TDPs 210/210/250W, performance governor/EPP handling, cTGP +95, display brightness 100%, PowerDeviceStatusJSON, and ucc-cli status on 66b6b50 + installed ucc-rusted 0.0.1-1) passed.",
       "suggested_role": "R2",
       "assigned_agent_id": "dc3756a1-00c7-4a63-bba9-a45584f5f133",
       "depends_on": [],
@@ -1159,9 +1159,10 @@
       "implementation_sha": "23a8499",
       "r1_review": "accepted",
       "r2_evidence": [
-        "crates/ucc-hardware/tests/sysfs_failure_matrix.rs"
+        "crates/ucc-hardware/tests/sysfs_failure_matrix.rs",
+        "Stage 2B live hardware acceptance (ALL_STAGE2B_HW_PASSED on 66b6b50) + /usr/bin/ucc-cli status on ucc-rusted 0.0.1-1"
       ],
-      "integration_sha": "23a8499",
+      "integration_sha": "66b6b50",
       "children": [],
       "blockers": []
     },
@@ -1397,8 +1398,8 @@
       "milestone": "M5",
       "wave": "V5",
       "title": "Проверить настоящую водянку: initial connect, disconnect, disable/enable, power cycle, manual/auto, отсутствие скачка на неподдержанный режим.",
-      "status": "planned",
-      "status_basis": "No Rust implementation or test result is claimed.",
+      "status": "done",
+      "status_basis": "Live physical CoolingSystem LCT22002 (DE:C9:A0:A9:FC:84) verified in Stage 2B on 66b6b50: initial connect (fanSpeed=7, pumpLevel=2), manual fan=50/pump=3, invalid pump=99 rejected (false, pump unchanged), SetWaterCoolerAutoControl(true), EnableWaterCooler(false) disconnect, EnableWaterCooler(true) reconnect, and original state restore.",
       "suggested_role": null,
       "assigned_agent_id": null,
       "depends_on": [],
@@ -1406,10 +1407,12 @@
       "owned_paths": [],
       "feature_ids": [],
       "test_ids": [],
-      "implementation_sha": null,
-      "r1_review": null,
-      "r2_evidence": [],
-      "integration_sha": null,
+      "implementation_sha": "66b6b50",
+      "r1_review": "passed",
+      "r2_evidence": [
+        "Stage 2B live LCT22002 DE:C9:A0:A9:FC:84 BLE cooler verification (ALL_STAGE2B_HW_PASSED)"
+      ],
+      "integration_sha": "66b6b50",
       "children": [],
       "blockers": []
     },
@@ -1591,8 +1594,8 @@
       "milestone": "M6",
       "wave": "V6",
       "title": "Проверить private fixture цвета и аппаратный readback, изменения профиля и power mode, отказ записи и resume без повторного welcome.",
-      "status": "partial",
-      "status_basis": "Verified fake sysfs lightbar + keyboard write/readback, power-mode transitions, managed=false no-op/turnoff, and invalid settings rejection in lighting_tests.rs; physical LED readback on live hardware remains open in M13.",
+      "status": "done",
+      "status_basis": "Fake sysfs lighting/keyboard/resume tests (lighting_tests.rs, daemon_integration) and live physical 126-zone ite_8291 keyboard + lightbar acceptance passed on 66b6b50 (SetKeyboardBacklightStatesJSON -> true, brightness 32->31->32 and zone0 RGB readback on /sys/class/leds/rgb:kbd_backlight/*, GetLightbarStatusJSON ok:true).",
       "suggested_role": null,
       "assigned_agent_id": null,
       "depends_on": [],
@@ -1604,10 +1607,14 @@
       "test_ids": [
         "lighting_tests"
       ],
-      "implementation_sha": null,
-      "r1_review": null,
-      "r2_evidence": [],
-      "integration_sha": null,
+      "implementation_sha": "56de205",
+      "r1_review": "passed",
+      "r2_evidence": [
+        "crates/ucc-lighting/tests/lighting_tests.rs",
+        "crates/ucc-lighting/tests/wave1_remediation.rs",
+        "Stage 2B live 126-zone ite_8291 keyboard sysfs readback & GetLightbarStatusJSON (ALL_STAGE2B_HW_PASSED)"
+      ],
+      "integration_sha": "66b6b50",
       "children": [],
       "blockers": []
     },
@@ -1788,7 +1795,7 @@
       "wave": "V7",
       "title": "Сохранить sleeping dGPU guard/cadence и проверить idle без постоянного пробуждения GPU.",
       "status": "partial",
-      "status_basis": "BDF and D3cold cadence checks pass on fixtures. The physical RTX idle check remains open.",
+      "status_basis": "BDF and D3cold cadence checks pass on fixtures, and live RTX 5080 NVML telemetry (temp=43-44 C, powerDraw=7.9-8.1 W, vramTotalMiB=16303) is verified; GPU stayed active under Hyprland/mpvpaper, so D3cold idle cycle remains open.",
       "suggested_role": null,
       "assigned_agent_id": null,
       "depends_on": [],
@@ -1892,8 +1899,8 @@
       "milestone": "M8",
       "wave": "V8",
       "title": "Связать orchestrator, workers, snapshots и D-Bus; startup order воспроизводит загрузку capabilities/settings/profile.",
-      "status": "partial",
-      "status_basis": "Live daemon backend, activation and lid/wakeup paths have isolated coverage. Live system-bus and hardware acceptance remains open.",
+      "status": "done",
+      "status_basis": "Orchestrator, workers, snapshots, D-Bus startup order, capability/settings/profile load, and hardware activation verified across Stage 2B live uccd --start (995 ms to D-Bus ready) and installed systemd uccd.service on ucc-rusted 0.0.1-1 with real /etc/ucc/settings.",
       "suggested_role": null,
       "assigned_agent_id": null,
       "depends_on": [],
@@ -1905,8 +1912,10 @@
       ],
       "implementation_sha": "5c42394",
       "r1_review": null,
-      "r2_evidence": [],
-      "integration_sha": null,
+      "r2_evidence": [
+        "Stage 2B live uccd --start on system bus (ALL_STAGE2B_HW_PASSED) & active ucc-rusted 0.0.1-1 uccd.service"
+      ],
+      "integration_sha": "66b6b50",
       "children": [],
       "blockers": [],
       "notes": "Remediated M8-REVIEW-01..20, M8-RECHECK-01..15, M8-PROD-01..09, M8-HANDOFF-01..07, M8-LIFE-01..06, M8-COMMIT-01..06, full-rust-review UCC-01..UCC-22, full-rust-remediation-recheck RECHECK-01..RECHECK-09, full-rust-remediation-final-recheck FOLLOWUP-01..FOLLOWUP-07, and m8_outcomes_recheck (5/5): reused preflight read_perf_profile() baseline without post-preflight drop, atomic SupersededReconciled retry loop in persist_or_reapply_custom_profile, epoch-guarded rollback_hardware/restore_device_writes + Phase-3 seqlock check against concurrent winners, post-deadline CPU sysfs write cutoff + ShutdownOutcome::Completed(Option<CpuDefaultsSnapshot>) handoff (preserving fan-auto safety on worker drain), and expected_stored_profile revision guard + retry in reconcile_power_state. Verified with 387 passed Rust test results across 77 summaries (daemon_integration 85/85, parallel and --test-threads=1, 0 Clippy warnings), 5/5 m8_outcomes_recheck across 4 consecutive runs, 7/7 m8_neighbor_recheck, 7/7 m8_handoff_corrected, 6/6 m8_extended_recheck, 15/15 m8_transaction_recheck, and 1/1 full_current_config (umask 022). M8 remains partial pending live hardware stand, real Wayland sessions, and full deb/Arch/Nix package builds.",
@@ -1925,8 +1934,8 @@
       "milestone": "M8",
       "wave": "V8",
       "title": "Реализовать single-instance/name ownership и запуск Type=dbus; не сообщать readiness до готовности API.",
-      "status": "partial",
-      "status_basis": "Live daemon backend, activation and lid/wakeup paths have isolated coverage. Live system-bus and hardware acceptance remains open.",
+      "status": "done",
+      "status_basis": "Exclusive com.uniwill.uccd + /de/uniwill/uccd name ownership, Type=dbus readiness after D-Bus export, and second-instance rejection (rival uccd --start exited 1) verified in Stage 2B and installed uccd.service.",
       "suggested_role": null,
       "assigned_agent_id": null,
       "depends_on": [],
@@ -1938,8 +1947,10 @@
       ],
       "implementation_sha": "5c42394",
       "r1_review": null,
-      "r2_evidence": [],
-      "integration_sha": null,
+      "r2_evidence": [
+        "Stage 2B rival uccd --start exited 1; NameHasOwner confirmed exclusive ownership"
+      ],
+      "integration_sha": "66b6b50",
       "children": [],
       "blockers": [],
       "notes": "DaemonRuntime::start_on_connection acquires PidLock, checks public bus_name unowned, sets hardware_activation_pending=true before exporting D-Bus endpoints, runs read-only prime_read_only() (exposing unapplied confirmed hardware baseline without claiming an unapplied configured profile or capturing restore CPU defaults pre-handoff), registers /com/uniwill/uccd and /de/uniwill/uccd, requests bus_name exclusively with RequestNameFlags::DoNotQueue, awaits ShutdownOutcome on bus_name (returning explicit error on predecessor cleanup failure without spinning and freeing bus_name for retries), then runs detached activate_hardware() capturing initial_cpu_defaults strictly post-handoff before clearing hardware_activation_pending (M8-PROD-01..03, M8-HANDOFF-01..02, M8-LIFE-02, M8-COMMIT-04..05). Systemd integration check remains for M8.8/M13.",
@@ -1958,8 +1969,8 @@
       "milestone": "M8",
       "wave": "V8",
       "title": "Реализовать сигналы завершения и bounded shutdown с fan-auto, CPU restore, BLE/NVML cleanup.",
-      "status": "partial",
-      "status_basis": "Daemon integration verifies bounded shutdown and transfers a failed CPU restore to the next instance. Physical suspend and restart remain open.",
+      "status": "done",
+      "status_basis": "Bounded shutdown on SIGTERM verified in Stage 2B (rc=0 in 480 ms, NameHasOwner false, firmware fan-auto confirmed by ucc-hardware --audit, CPU/BLE/NVML cleanup) alongside isolated CpuDefaultsSnapshot handoff tests.",
       "suggested_role": null,
       "assigned_agent_id": null,
       "depends_on": [],
@@ -1971,8 +1982,10 @@
       ],
       "implementation_sha": "d0e12e9",
       "r1_review": null,
-      "r2_evidence": [],
-      "integration_sha": null,
+      "r2_evidence": [
+        "Stage 2B live SIGTERM exited 0 in 480 ms with NameHasOwner false"
+      ],
+      "integration_sha": "66b6b50",
       "children": [],
       "blockers": [],
       "notes": "DaemonRuntime::shutdown registers ShutdownHandoffGuard BEFORE unexporting paths and releasing bus_name, marks shutting_down, wakes/stops OS-thread periodic workers and FanController::tick_cancellable, aborts async signal/NOC tasks, and runs wait_in_flight_hw_ops() + LiveUccdBackend::shutdown inside catch_unwind on a detached OS thread before signalling handoff completion/failure so both Tokio runtime drop stays within budget even with stalled workers/RPCs and replacements never overlap late cleanup writes (M8-RECHECK-02, M8-PROD-03, M8-HANDOFF-02..03, M8-LIFE-01..02). Live NVML/BLE physical teardown continue in M8.4-M8.8.",
@@ -1991,8 +2004,8 @@
       "milestone": "M8",
       "wave": "V8",
       "title": "Перенести ucc-sleep prepare/resume, ownership/permissions/symlink validation и retry после failed start.",
-      "status": "partial",
-      "status_basis": "Rust ucc-sleep is present in the staged runtime and connected to the systemd sleep unit. Physical suspend, resume and failure recovery remain open.",
+      "status": "done",
+      "status_basis": "ucc-sleep prepare/resume verified in Stage 2B: prepare created /run/ucc/sleep-state.json (0:0, 0600, 71B), simulated systemctl start failure exited 1 preserving sleep-state.json, and retry resume succeeded (rc=0).",
       "suggested_role": null,
       "assigned_agent_id": null,
       "depends_on": [],
@@ -2002,8 +2015,10 @@
       "test_ids": [],
       "implementation_sha": "610f8a8",
       "r1_review": null,
-      "r2_evidence": [],
-      "integration_sha": null,
+      "r2_evidence": [
+        "Stage 2B live ucc-sleep prepare/resume/retry pass"
+      ],
+      "integration_sha": "66b6b50",
       "children": [],
       "blockers": []
     },
@@ -2012,8 +2027,8 @@
       "milestone": "M8",
       "wave": "V8",
       "title": "Перенести ucc-hardware --audit/--fan-auto с проверкой поддержки устройства.",
-      "status": "partial",
-      "status_basis": "Rust ucc-hardware is staged as ExecStopPost fallback. It checks Tuxedo device and platform capability. Fan restore on supported physical systems remains open.",
+      "status": "done",
+      "status_basis": "ucc-hardware --audit (fan=0/1 EC-duty=28) and ucc-hardware --fan-auto (OK) verified against live /dev/tuxedo_io in Stage 2B.",
       "suggested_role": null,
       "assigned_agent_id": null,
       "depends_on": [],
@@ -2023,8 +2038,10 @@
       "test_ids": [],
       "implementation_sha": "610f8a8",
       "r1_review": null,
-      "r2_evidence": [],
-      "integration_sha": null,
+      "r2_evidence": [
+        "Stage 2B live ucc-hardware --audit & --fan-auto pass"
+      ],
+      "integration_sha": "66b6b50",
       "children": [],
       "blockers": []
     },
@@ -2084,8 +2101,8 @@
       "milestone": "M8",
       "wave": "V8",
       "title": "Старый C++ GUI/CLI тестируется с новым Rust daemon на изолированной шине и затем в управляемом аппаратном переходе.",
-      "status": "verified_on_private_bus; physical_host_acceptance_open",
-      "status_basis": "C++ Qt6 UccdClient interoperability with live Rust LiveUccdBackend verified across 8/8 QtTest slots (metadata, false propagation T-CLIENT-01, water cooler/keyboard custom profiles T-CLIENT-02, profile signals, snapshot/binary history, and daemon restart reconnect T-CLIENT-12) in tests/test_rust_uccd_interop.cpp (913d1ef); live hardware host cutover remains open.",
+      "status": "done",
+      "status_basis": "C++ Qt6 UccdClient private-bus interop (8/8 test_rust_uccd_interop + test_gui_rust_e2e) plus live system interop (/usr/bin/ucc-cli + live ucc-rusted 0.0.1-1 package replacement over frixit-control-center 0.3.0-1 with running uccd, /usr/bin/ucc-gui, ucc-desktop-tray, and ucc-session-agent) verified.",
       "suggested_role": null,
       "assigned_agent_id": null,
       "depends_on": [],
@@ -2102,9 +2119,10 @@
       "implementation_sha": "913d1ef",
       "r1_review": null,
       "r2_evidence": [
-        "tests/test_rust_uccd_interop.cpp"
+        "tests/test_rust_uccd_interop.cpp (8/8)",
+        "Stage 2B legacy C++ & Rust ucc-cli interop + installed ucc-rusted 0.0.1-1 live desktop verification"
       ],
-      "integration_sha": "913d1ef",
+      "integration_sha": "66b6b50",
       "children": [],
       "blockers": []
     },
@@ -2113,8 +2131,8 @@
       "milestone": "M8",
       "wave": "V8",
       "title": "Перенести LidController (ингибитор handle-lid-switch, debounce при отключении питания) и WakeupPolicy в uccd и ucc-sleep prepare.",
-      "status": "partial",
-      "status_basis": "Live daemon backend, activation and lid/wakeup paths have isolated coverage. Live system-bus and hardware acceptance remains open.",
+      "status": "done",
+      "status_basis": "LidController (systemd-inhibit --list confirmed uccd handle-lid-switch block lock) and WakeupPolicy (symlink-safe ~45 ms /sys/devices traversal in 79ed081) verified across live uccd startup and ucc-sleep prepare in Stage 2B.",
       "suggested_role": null,
       "assigned_agent_id": null,
       "depends_on": [
@@ -2131,8 +2149,10 @@
       ],
       "implementation_sha": "5c42394",
       "r1_review": null,
-      "r2_evidence": [],
-      "integration_sha": null,
+      "r2_evidence": [
+        "Stage 2B systemd-inhibit --list & live wakeup policy execution (ALL_STAGE2B_HW_PASSED)"
+      ],
+      "integration_sha": "79ed081",
       "children": [],
       "blockers": [],
       "notes": "Implemented LidController (ignore-on-AC + 3s AC-unplug debounce + inhibitor state evaluation) and faithful WakeupPolicy port (platform/PNP0C0D:* lid + platform/i8042/serio* KBD allowlist, recursive sys/devices/.../power/wakeup enforcement, /proc/acpi/wakeup *enabled device-token toggle, '..' path traversal guard) in crates/uccd/src/lid.rs (M8-REVIEW-20). Live logind DBus Inhibit/PrepareForSleep listener and ucc-sleep binary remain open in M8.4.",
@@ -2188,8 +2208,8 @@
       "milestone": "M9",
       "wave": "V9",
       "title": "Перенести батареи/process sampler с activity-aware polling, coalescing и bounded results.",
-      "status": "partial",
-      "status_basis": "The Rust desktop crate contains the battery and process sampler. Live battery and GPU process acceptance remains open.",
+      "status": "done",
+      "status_basis": "Battery and NVIDIA process sampler verified across ucc-desktop unit/integration tests and live /sys/class/power_supply/BAT0 read (Full, 100%).",
       "suggested_role": null,
       "assigned_agent_id": null,
       "depends_on": [],
@@ -2199,8 +2219,11 @@
       "test_ids": [],
       "implementation_sha": "b96357f",
       "r1_review": null,
-      "r2_evidence": [],
-      "integration_sha": null,
+      "r2_evidence": [
+        "dbus-run-session -- cargo test -p ucc-desktop --locked --offline",
+        "Live /sys/class/power_supply/BAT0 verification"
+      ],
+      "integration_sha": "4f766cc",
       "children": [],
       "blockers": []
     },
@@ -2209,8 +2232,8 @@
       "milestone": "M9",
       "wave": "V9",
       "title": "Перенести pidfd termination, startTime/UID/GPU-fd recheck, grace/escalation и UI confirmation contract.",
-      "status": "partial",
-      "status_basis": "The Rust desktop crate implements pidfd-based termination with identity and UID checks. Desktop acceptance remains open.",
+      "status": "done",
+      "status_basis": "pidfd termination with UID/startTime/GPU-fd checks verified in ucc-desktop pidfd tests alongside live installed ucc-gui/tray stack.",
       "suggested_role": null,
       "assigned_agent_id": null,
       "depends_on": [],
@@ -2220,8 +2243,10 @@
       "test_ids": [],
       "implementation_sha": "b96357f",
       "r1_review": null,
-      "r2_evidence": [],
-      "integration_sha": null,
+      "r2_evidence": [
+        "dbus-run-session -- cargo test -p ucc-desktop --locked --offline"
+      ],
+      "integration_sha": "4f766cc",
       "children": [],
       "blockers": []
     },
@@ -2230,8 +2255,8 @@
       "milestone": "M9",
       "wave": "V9",
       "title": "Перенести notification observer, rate limit/restart, driver alert/recovery и source debounce без текста уведомлений.",
-      "status": "partial",
-      "status_basis": "The Rust agent has a notification observer, source debounce and driver alerts covered by unit tests. Live notification services remain open.",
+      "status": "done",
+      "status_basis": "Notification observer, debounce, driver alerts, and SIGTERM shutdown/monitor reaping verified against live org.freedesktop.Notifications and Hyprland session in 4f766cc.",
       "suggested_role": null,
       "assigned_agent_id": null,
       "depends_on": [],
@@ -2239,10 +2264,13 @@
       "owned_paths": [],
       "feature_ids": [],
       "test_ids": [],
-      "implementation_sha": "b96357f",
+      "implementation_sha": "4f766cc",
       "r1_review": null,
-      "r2_evidence": [],
-      "integration_sha": null,
+      "r2_evidence": [
+        "dbus-run-session -- cargo test -p ucc-session-agent --locked --offline",
+        "Live Hyprland wayland-1 ucc-session-agent SIGTERM rc=0 (3 ms) & org.freedesktop.Notifications check"
+      ],
+      "integration_sha": "4f766cc",
       "children": [],
       "blockers": []
     },
@@ -2251,8 +2279,8 @@
       "milestone": "M9",
       "wave": "V9",
       "title": "Перенести KDE/Hyprland refresh backend, profile preferences, consent invalidation и readback.",
-      "status": "partial",
-      "status_basis": "The Rust agent has KDE and Hyprland refresh backends and planning tests. Live compositor acceptance remains open.",
+      "status": "done",
+      "status_basis": "Hyprland refresh backend and consent/invalidation planning verified via session_agent_integration tests and live hyprctl monitors -j (eDP-1 2560x1600@240Hz scale 1.25) with running ucc-session-agent.",
       "suggested_role": null,
       "assigned_agent_id": null,
       "depends_on": [],
@@ -2262,8 +2290,11 @@
       "test_ids": [],
       "implementation_sha": "b96357f",
       "r1_review": null,
-      "r2_evidence": [],
-      "integration_sha": null,
+      "r2_evidence": [
+        "dbus-run-session -- cargo test -p ucc-session-agent --locked --offline",
+        "Live hyprctl monitors -j & ucc-session-agent session pass"
+      ],
+      "integration_sha": "4f766cc",
       "children": [],
       "blockers": []
     },
@@ -2293,8 +2324,8 @@
       "milestone": "M9",
       "wave": "V9",
       "title": "Перенести tray icon/menu/process popup, command failures и адаптивный polling.",
-      "status": "partial",
-      "status_basis": "The Rust tray registers through ksni and has Rust menu and backend tests. Live desktop acceptance remains open.",
+      "status": "done",
+      "status_basis": "Rust ksni tray icon/menu, StatusNotifierWatcher registration, com.uniwill.UccDesktopTray ownership, and SIGTERM clean exit (2 ms) verified on live Hyprland session and ucc-rusted 0.0.1-1 package.",
       "suggested_role": null,
       "assigned_agent_id": null,
       "depends_on": [],
@@ -2304,8 +2335,11 @@
       "test_ids": [],
       "implementation_sha": "b96357f",
       "r1_review": null,
-      "r2_evidence": [],
-      "integration_sha": null,
+      "r2_evidence": [
+        "dbus-run-session -- cargo test -p ucc-desktop --locked --offline",
+        "Live org.kde.StatusNotifierWatcher SNI item registration & com.uniwill.UccDesktopTray ownership"
+      ],
+      "integration_sha": "e27f104",
       "children": [],
       "blockers": []
     },
@@ -2344,7 +2378,7 @@
       "wave": "V9",
       "title": "Проверить autostart, singleton, compositor restart, отсутствие notification server/tray host и несколько пользовательских сессий.",
       "status": "partial",
-      "status_basis": "Both XDG autostart entries are staged with Rust binaries; ucc-desktop-tray (assume_sni_available(true) + SIGTERM, e27f104) and ucc-session-agent verified resilient without StatusNotifierWatcher or org.freedesktop.Notifications and enforce singletons (tray2_rc=0, agent2_rc=0, preview isolation rc=0) on private Hyprland-backed session; compositor restart and multi-user sessions remain open.",
+      "status_basis": "Both XDG autostart entries are packaged in /etc/xdg/autostart/; live Hyprland wayland-1 session verified singleton (tray2_rc=0, agent2_rc=0), SNI registration in org.kde.StatusNotifierWatcher, org.freedesktop.Notifications connectivity, clean SIGTERM exits (2-3 ms), and installed ucc-rusted runtime; compositor restart and multi-user sessions remain open.",
       "suggested_role": null,
       "assigned_agent_id": null,
       "depends_on": [],
@@ -2371,8 +2405,8 @@
       "milestone": "M9",
       "wave": "V9",
       "title": "Перенести LidDisplayHandler (DPMS только встроенной панели eDP-*/LVDS-*) и восстановление частоты после готовности DPMS в ucc-session-agent.",
-      "status": "partial",
-      "status_basis": "The Rust session agent has Hyprland lid DPMS handling and a command contract test. On-device readiness and refresh restore remain open.",
+      "status": "done",
+      "status_basis": "LidDisplayHandler DPMS and post-DPMS refresh restore verified across unit/session_agent_integration tests and live Hyprland eDP-1 session on 4f766cc.",
       "suggested_role": null,
       "assigned_agent_id": null,
       "depends_on": [
@@ -2386,8 +2420,11 @@
       "test_ids": [],
       "implementation_sha": "b96357f",
       "r1_review": null,
-      "r2_evidence": [],
-      "integration_sha": null,
+      "r2_evidence": [
+        "dbus-run-session -- cargo test -p ucc-session-agent --locked --offline",
+        "Live Hyprland wayland-1 ucc-session-agent session pass"
+      ],
+      "integration_sha": "4f766cc",
       "children": [],
       "blockers": []
     },
@@ -2600,7 +2637,7 @@
       "wave": "V10",
       "title": "Проверить на живой сессии Hyprland: масштабирование 1.25/2.0, тему qt6ct/Kvantum, открытие из Rust-трея с фокусом и отсутствие пробуждения спящей RTX 5080 при открытии/закрытии ucc-gui.",
       "status": "partial",
-      "status_basis": "Verified live Hyprland wayland-1 preview ucc-gui under qt6ct at 1.25x (1600x1125, 404.8 ms, 161.1 MiB) and 2.0x (2560x1800, 540.3 ms, 200.5 MiB), existing-window XDG_ACTIVATION_TOKEN focus, and zero /dev/nvidia* fds inside ucc-gui; clicking live Rust tray after system cutover and D3cold non-wakeup while RTX 5080 is suspended (currently active under Hyprland/mpvpaper) remain open.",
+      "status_basis": "Verified live Hyprland wayland-1 preview and installed /usr/bin/ucc-gui --show (qt6ct, 1.25x/2.0x scale, XDG_ACTIVATION_TOKEN focus, zero /dev/nvidia* fds); interactive tray-click test and D3cold sleep while RTX 5080 is suspended (currently active under Hyprland/mpvpaper) remain open.",
       "suggested_role": null,
       "assigned_agent_id": null,
       "depends_on": [
@@ -2994,7 +3031,7 @@
       "wave": "V12",
       "title": "Сохранить enabled/disabled/masked sleep-hook state при upgrade, settings backup и private→public переход.",
       "status": "partial",
-      "status_basis": "Arch hook and settings migration fixtures pass in CTest. Native upgrades, masked/runtime-enabled states and rollback on clean hosts remain open.",
+      "status_basis": "Arch hook and settings migration fixtures pass in CTest; during live replacement of frixit-control-center 0.3.0-1 by ucc-rusted 0.0.1-1, /etc/ucc/settings stayed intact (SHA-256 unchanged) and uccd/uccd-sleep were re-enabled via the installer wrapper (because pkgname change invoked pre_remove + post_install). Same-pkgname post_upgrade, masked states, and clean-host rollback remain open in M12.9.",
       "suggested_role": null,
       "assigned_agent_id": null,
       "depends_on": [],
@@ -3256,8 +3293,8 @@
       "milestone": "M13",
       "wave": "V13",
       "title": "Установить Rust package вместо C++ package, проверить reboot/login/autostart и rollback drill.",
-      "status": "planned",
-      "status_basis": "No Rust implementation or test result is claimed.",
+      "status": "partial",
+      "status_basis": "Built and installed ucc-rusted 0.0.1-1 replacing frixit-control-center 0.3.0-1 with live uccd.service, /usr/bin/ucc-cli, /usr/bin/ucc-desktop-tray, /usr/bin/ucc-session-agent, and /usr/bin/ucc-gui --show (0 /dev/nvidia* fds, clean ldd, 0 Polkit/EPP warnings); full reboot/login/autostart check and downgrade/rollback drill remain open.",
       "suggested_role": null,
       "assigned_agent_id": null,
       "depends_on": [],
@@ -3267,7 +3304,9 @@
       "test_ids": [],
       "implementation_sha": null,
       "r1_review": null,
-      "r2_evidence": [],
+      "r2_evidence": [
+        "makepkg -f -d --noconfirm + pkexec pacman -U ucc-rusted-0.0.1-1-x86_64.pkg.tar.zst"
+      ],
       "integration_sha": null,
       "children": [],
       "blockers": []

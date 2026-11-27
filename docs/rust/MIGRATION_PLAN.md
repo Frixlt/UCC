@@ -422,7 +422,7 @@ Pump code `0` — высокий режим 11V, `2` — 7V, `3` — 8V, `4` —
 - [x] M4.5 Перенести governor/EPP/min-max/turbo/HWP, defaults/reapply/restore и ошибки записи.
 - [x] M4.6 Перенести devices scan/merge, whitelist paths/values, отсутствующие devices и независимые три колонки.
 - [x] M4.7 Перенести ASPM/Wi-Fi/system tunables/nvidia-powerd/persistence ordering без shell interpolation.
-- [ ] M4.8 *(частично выполнено — ждёт аппаратных read/write на хосте)* Прогнать fake sysfs/procfs failure matrix; после этого провести ограниченные аппаратные read/write проверки.
+- [x] M4.8 Прогнать fake sysfs/procfs failure matrix и провести ограниченные аппаратные read/write проверки на живом железе (проверены CPU/ODM TDPs 210/210/250 Вт, governor/EPP `performance`, cTGP `+95`, brightness 100%, `PowerDeviceStatusJSON`, `ucc-cli status`).
 - [x] M4.9 Ввести доменный трейт `PlatformBackend` поверх `HardwareIo`/`Sysfs`, изолирующий `TuxedoIoBackend` от логики демона и готовящий плавный переход к `UwccBackend` (`ADR-05`).
 
 **Выход:** CPU/device actions соответствуют fixture journal и подтверждаемому readback; неподдержанное оборудование не получает guessed writes.
@@ -436,7 +436,7 @@ Pump code `0` — высокий режим 11V, `2` — 7V, `3` — 8V, `4` —
 - [x] M5.5 Реализовать discovery/reconnect state machine, deadlines/backoff, keepalive, поздний adapter, saved identity.
 - [x] M5.6 Реализовать ordered writes с gap ≥80 мс, coalescing значений и cancellation поколения соединения.
 - [x] M5.7 Сохранить manual/auto semantics, Fan/Pump/LED restore после reconnect; запрещённый pump code отвергается.
-- [ ] M5.8 Проверить настоящую водянку: initial connect, disconnect, disable/enable, power cycle, manual/auto, отсутствие скачка на неподдержанный режим.
+- [x] M5.8 Проверить настоящую водянку: initial connect, disconnect, disable/enable, power cycle, manual/auto, отсутствие скачка на неподдержанный режим (проверено на физической `CoolingSystem LCT22002` `DE:C9:A0:A9:FC:84`: connect `fan=7/pump=2`, manual `fan=50/pump=3`, отказ `pump=99 -> false` с сохранением `pump=3`, `SetWaterCoolerAutoControl(true)`, `EnableWaterCooler(false)` -> disconnect -> `EnableWaterCooler(true)` -> reconnect и восстановление состояния).
 - [x] M5.9 Исправить надёжное восстановление профиля/состояния СЖО в текущем C++ UCC (если требуется хотфикс) и во всех 5 причинах в Rust `uccd` и `ucc-hardware` (`manual_fan_speed`/`manual_pump_voltage` из профиля, мгновенный пересчёт кривой и replay после `WC_CONNECT_DEBOUNCE`, `spawn_blocking` для `reconcile_power_state`, загрузка LED из `aquaris.json`, `PrepareForSleep` teardown/resume, авто-включение сканирования при настроенном `state_map["power_wc"]`; по решению пользователя legacy C++ оставлен без хотфиксов — все причины и регрессионные тесты реализованы в Rust).
 
 **Выход:** охлаждение работает автономно от GUI; BLE failures не задерживают fan loop, Polkit или shutdown.
@@ -448,7 +448,7 @@ Pump code `0` — высокий режим 11V, `2` — 7V, `3` — 8V, `4` —
 - [x] M6.3 Реализовать brightness scaling и buffered RGB writes; guard восстанавливает buffer_input и при ошибке.
 - [x] M6.4 Перенести Lightbar discovery/settings, power modes, majority color, defaults и все 5 frame functions.
 - [x] M6.5 Реализовать таймер анимации без sleep в event loop, no overlap, proper idle/Flash, Welcome/Silent/Test.
-- [ ] M6.6 *(частично выполнено — ждёт физического LED readback и resume)* Проверить private fixture цвета и аппаратный readback, изменения профиля и power mode, отказ записи и resume без повторного welcome.
+- [x] M6.6 Проверить private fixture цвета и аппаратный readback, изменения профиля и power mode, отказ записи и resume без повторного welcome (проверены 126 зон `ite_8291` и физический readback `/sys/class/leds/rgb:kbd_backlight/{brightness,multi_intensity}` + `GetLightbarStatusJSON` `ok:true` на хосте).
 - [x] M6.7 Отделить логику клавиатуры и Lightbar от способа доставки (`LightingTransport`: `SysfsLedTransport` для `M6–M13` и точка подключения `HidrawTransport` для `M14`).
 
 **Выход:** старые цвета/яркость и physical mapping сохранены; idle и error states воспроизводимы.
@@ -459,7 +459,7 @@ Pump code `0` — высокий режим 11V, `2` — 7V, `3` — 8V, `4` —
 - [x] M7.2 Перенести Intel i915/xe, AMD и NVIDIA paths с per-GPU sensor identity и отсутствующими датчиками.
 - [x] M7.3 Перенести реально используемые NVML/NvAPI symbols, capabilities, optional libraries и ограниченные OC paths.
 - [x] M7.4 Ввести freshness/validity в модели; legacy sentinels формируются на IPC boundary.
-- [ ] M7.5 *(частично выполнено)* Сохранить sleeping dGPU guard/cadence и проверить idle без постоянного пробуждения GPU.
+- [ ] M7.5 *(частично выполнено — ждёт проверки D3cold без нагрузки Hyprland/mpvpaper)* Сохранить sleeping dGPU guard/cadence и проверить idle без постоянного пробуждения GPU (живая телеметрия RTX 5080 по NVML подтверждена на хосте: `temp=43–44 °C`, `powerDraw=7.9–8.1 W`, `vram=16303 MiB`; GPU оставалась в `active` из-за композитора Hyprland/`mpvpaper`, D3cold-цикл не проверялся).
 - [x] M7.6 Реализовать bounded history, 10 series, horizon и legacy binary codec с malformed/truncated payload tests.
 - [x] M7.7 Проверить shared ownership/init/shutdown NVIDIA, no-GPU machine и error injection; при необходимости подключить isolated GPU helper.
 
@@ -467,30 +467,30 @@ Pump code `0` — высокий режим 11V, `2` — 7V, `3` — 8V, `4` —
 
 ### M8 — интегрированный Rust daemon и helpers
 
-- [ ] M8.1 *(частично выполнено)* Связать orchestrator, workers, snapshots и D-Bus; startup order воспроизводит загрузку capabilities/settings/profile.
-- [ ] M8.2 *(частично выполнено)* Реализовать single-instance/name ownership и запуск Type=dbus; не сообщать readiness до готовности API.
-- [ ] M8.3 *(частично выполнено)* Реализовать сигналы завершения и bounded shutdown с fan-auto, CPU restore, BLE/NVML cleanup.
-- [ ] M8.4 *(частично выполнено)* Перенести ucc-sleep prepare/resume, ownership/permissions/symlink validation и retry после failed start.
-- [ ] M8.5 *(частично выполнено)* Перенести ucc-hardware --audit/--fan-auto с проверкой поддержки устройства.
+- [x] M8.1 Связать orchestrator, workers, snapshots и D-Bus; startup order воспроизводит загрузку capabilities/settings/profile (подтверждено на живом `uccd --start` на system bus и установленном `uccd.service`, `995 ms` до готовности D-Bus, полная активация оборудования с реальным `/etc/ucc/settings`).
+- [x] M8.2 Реализовать single-instance/name ownership и запуск Type=dbus; не сообщать readiness до готовности API (эксклюзивный захват `com.uniwill.uccd` и `/de/uniwill/uccd`, второй `uccd --start` завершается с кодом `1`).
+- [x] M8.3 Реализовать сигналы завершения и bounded shutdown с fan-auto, CPU restore, BLE/NVML cleanup (`SIGTERM` завершился с кодом `0` за `480 ms`, имя `com.uniwill.uccd` освобождено, `ucc-hardware --audit` подтвердил восстановление).
+- [x] M8.4 Перенести `ucc-sleep` prepare/resume, ownership/permissions/symlink validation и retry после failed start (проверены живой `/usr/lib/ucc/ucc-sleep prepare` -> `/run/ucc/sleep-state.json` `0:0 0600`, сохранение снимка при отказе `systemctl start` с `rc=1` и успешный повторный `resume` с `rc=0`).
+- [x] M8.5 Перенести `ucc-hardware --audit`/`--fan-auto` с проверкой поддержки устройства (проверены `--audit` `fan=0/1 EC-duty=28` и `--fan-auto -> OK` на реальном `/dev/tuxedo_io`).
 - [x] M8.6 Перенести `ucc-import-check` с проверкой всех профилей/curves/LED IDs (валидация CLI + корпус в `crates/uccd/tests/import_check_corpus.rs`).
 - [x] M8.7 Проверить restart, corrupt config, unavailable device, D-Bus restart, slow auth, queue overload, sleep cancellation (7-кейсовая матрица на частной шине в `crates/uccd/tests/fault_matrix.rs`).
-- [ ] M8.8 *(частично выполнено)* Старый C++ GUI/CLI тестируется с новым Rust daemon на изолированной шине и затем в управляемом аппаратном переходе.
-- [ ] M8.9 *(частично выполнено)* Перенести `LidController` (ингибитор `handle-lid-switch`, debounce при отключении питания) и `WakeupPolicy` в `uccd` и `ucc-sleep prepare`.
+- [x] M8.8 Старый C++ GUI/CLI тестируется с новым Rust daemon на изолированной шине и в управляемом аппаратном переходе (пройдены interop-тесты на частной шине, совместимость `/usr/bin/ucc-cli` и переход системы на пакет `ucc-rusted 0.0.1-1` с живым `/usr/bin/ucc-gui`, треем, агентом и демоном).
+- [x] M8.9 Перенести `LidController` (ингибитор `handle-lid-switch`, debounce при отключении питания) и `WakeupPolicy` в `uccd` и `ucc-sleep prepare` (подтверждён блок-ингибитор `handle-lid-switch` в `systemd-inhibit --list` и обход `/sys/devices` за ~45 мс без зацикливания симлинков).
 - [x] M8.10 Гасить подсветку клавиатуры и (опционально) подсветку подключённой СЖО при закрытии крышки и восстанавливать из RAM при открытии или выходе из сна (настройки на карточке `Lid` в `PowerDevicesTab`: `turnOffKeyboardBacklightOnLidClose` и `turnOffWaterCoolerLedOnLidClose`, без изменения активного профиля/`settings.json`, плюс подписка на `login1` `LidClosed` / `UPower` `LidIsClosed` в `run_logind_monitor_loop` и тесты).
 
 **Выход:** все backend-функции F01–F29/F40 работают без C++ daemon и без запущенного GUI.
 
 ### M9 — пользовательская desktop-часть
 
-- [ ] M9.1 *(частично выполнено)* Перенести батареи/process sampler с activity-aware polling, coalescing и bounded results.
-- [ ] M9.2 *(частично выполнено)* Перенести pidfd termination, startTime/UID/GPU-fd recheck, grace/escalation и UI confirmation contract.
-- [ ] M9.3 *(частично выполнено)* Перенести notification observer, rate limit/restart, driver alert/recovery и source debounce без текста уведомлений.
-- [ ] M9.4 *(частично выполнено)* Перенести KDE/Hyprland refresh backend, profile preferences, consent invalidation и readback.
+- [x] M9.1 Перенести батареи/process sampler с activity-aware polling, coalescing и bounded results (подтверждены чтение `/sys/class/power_supply/BAT0` и `cargo test -p ucc-desktop`).
+- [x] M9.2 Перенести pidfd termination, startTime/UID/GPU-fd recheck, grace/escalation и UI confirmation contract.
+- [x] M9.3 Перенести notification observer, rate limit/restart, driver alert/recovery и source debounce без текста уведомлений (подтверждены живой `org.freedesktop.Notifications`, работа `ucc-session-agent` в Hyprland и чистый выход `SIGTERM` `rc=0` в `4f766cc`).
+- [x] M9.4 Перенести KDE/Hyprland refresh backend, profile preferences, consent invalidation и readback (подтверждён живой `hyprctl monitors -j`: `eDP-1 2560x1600@240Hz scale 1.25`).
 - [ ] M9.5 *(отложено на сообщество)* Обеспечить X11 backend в пользовательской сессии и совместимый маршрут SetDisplayRefreshRate.
-- [ ] M9.6 *(частично выполнено)* Перенести tray icon/menu/process popup, command failures и адаптивный polling.
+- [x] M9.6 Перенести tray icon/menu/process popup, command failures и адаптивный polling (подтверждена регистрация в `org.kde.StatusNotifierWatcher` и владение `com.uniwill.UccDesktopTray` в живой сессии).
 - [x] M9.7 Реализовать GUI activation endpoint с token forwarding и отдельные service names preview.
-- [ ] M9.8 *(частично выполнено — ждёт compositor restart и нескольких пользовательских сессий)* Проверить autostart, singleton, compositor restart, отсутствие notification server/tray host и несколько пользовательских сессий (подтверждены singleton `ucc-desktop-tray`/`ucc-session-agent` и работа без `StatusNotifierWatcher` / `Notifications`).
-- [ ] M9.9 *(частично выполнено)* Перенести `LidDisplayHandler` (DPMS только встроенной панели `eDP-*`/`LVDS-*`) и восстановление частоты после готовности DPMS в `ucc-session-agent`.
+- [ ] M9.8 *(частично выполнено — ждёт compositor restart и нескольких пользовательских сессий)* Проверить autostart, singleton, compositor restart, отсутствие notification server/tray host и несколько пользовательских сессий (на живой сессии Hyprland `wayland-1` подтверждены singleton и чистый `SIGTERM` за `2–3 ms` для `ucc-desktop-tray` и `ucc-session-agent`, регистрация SNI и работа без `StatusNotifierWatcher`/`Notifications`).
+- [x] M9.9 Перенести `LidDisplayHandler` (DPMS только встроенной панели `eDP-*`/`LVDS-*`) и восстановление частоты после готовности DPMS в `ucc-session-agent`.
 
 **Выход:** tray и session agent работают без открытого главного окна и без Qt.
 
@@ -502,7 +502,7 @@ Pump code `0` — высокий режим 11V, `2` — 7V, `3` — 8V, `4` —
 - [x] M10.4 Обеспечить жизненный цикл «0 МБ Qt в фоне»: закрытие окна `ucc-gui` полностью завершает процесс, а клик в Rust-трее `ucc-desktop-tray` мгновенно запускает или фокусирует `ucc-gui` с передачей Wayland activation token.
 - [x] M10.5 Исключить прототип `crates/ucc-gui` (`iced`/`wgpu`) из `Cargo.toml` и `Cargo.lock`, очистив Rust-workspace от графических зависимостей.
 - [x] M10.6 Прогнать полный `test_gui_audit` (все 10 разделов, включая карточку `Lid close action & sleep wakeup` `F45`, обе темы, `UCC_READ_ONLY_PREVIEW` и отказ команд без fake success) в связке с новым Rust-демоном `uccd` на изолированной шине.
-- [ ] M10.7 *(частично выполнено — ждёт проверки с живого системного трея после переключения и при спящей RTX 5080)* Проверить на живой сессии Hyprland: масштабирование `1.25`/`2.0` (`404.8 ms` / `540.3 ms`), тему `qt6ct`, фокус по `XDG_ACTIVATION_TOKEN` и `0` `/dev/nvidia*` fds в `ucc-gui`; осталось открыть окно по клику из живого системного трея и проверить D3cold sleep, когда RTX 5080 не занята композитором/`mpvpaper`.
+- [ ] M10.7 *(частично выполнено — ждёт ручного клика из трея и проверки D3cold при спящей RTX 5080)* Проверить на живой сессии Hyprland: масштабирование `1.25`/`2.0` (`404.8 ms` / `540.3 ms`), тему `qt6ct`, фокус по `XDG_ACTIVATION_TOKEN` и `0` `/dev/nvidia*` fds в установленном `/usr/bin/ucc-gui`; осталось подтвердить ручной клик по новому системному трею и D3cold sleep без нагрузки композитора/`mpvpaper`.
 - [x] M10.8 Дополировка GUI: добавить уникальные векторные иконки в `FluentTheme::icon()` для вкладок `Power & Devices`, `Lightbar` и `Battery & Processes` вместо fallback-иконки клавиатуры.
 - [x] M10.9 Добавить вкладку `Experimental` в `ucc-gui` с отдельной иконкой в сайдбаре, предупреждением о тестовом статусе и расширяемой структурой для будущих экспериментальных настроек.
 
@@ -526,7 +526,7 @@ Pump code `0` — высокий режим 11V, `2` — 7V, `3` — 8V, `4` —
 - [x] M12.1 Создать `cargo xtask dist` для release artifacts, staging tree, manifests, version/commit metadata.
 - [x] M12.2 Обновить Arch PKGBUILD, provides/conflicts, install hooks; settings не включаются в public package.
 - [ ] M12.3 *(отложено на сообщество)* Обновить DEB/RPM/Nix recipes, services/dbus/polkit/autostart/icons/man/completions; проверить Nix-store helper paths.
-- [ ] M12.4 *(частично выполнено)* Сохранить enabled/disabled/masked sleep-hook state при upgrade, settings backup и private→public переход.
+- [ ] M12.4 *(частично выполнено — ждёт проверки одноимённого `post_upgrade` и отката на чистом окружении)* Сохранить enabled/disabled/masked sleep-hook state при upgrade, settings backup и private→public переход (при живой замене `frixit-control-center 0.3.0-1` → `ucc-rusted 0.0.1-1` `/etc/ucc/settings` сохранён побайтно без перезаписи, а `uccd`/`uccd-sleep` восстановлены в `enabled`; из-за смены `pkgname` отрабатывали `pre_remove`+`post_install`, поэтому одноимённый `post_upgrade` и masked/rollback-сценарии на чистом стенде остаются в M12.9).
 - [x] M12.5 Настроить fmt/clippy/tests/contract tests/fuzz smoke/build/packaging/UI jobs под непривилегированным пользователем.
 - [x] M12.6 Проверить normal (`-DUCC_PACKAGE_RUST_RUNTIME=ON -DBUILD_TRAY=OFF`, 48/48 CTest) и read-only preview (`-DUCC_READ_ONLY_PREVIEW=ON`, 3/3 CTest) сборки, а также `xtask dist` (18 staged файлов) без доступа к системному `/sys` и system bus.
 - [x] M12.7 Проверить dependencies/runtime links: основным binaries не нужны Qt/libucc-dbus; ожидаемые системные/FFI библиотеки перечислены.
@@ -542,7 +542,7 @@ Pump code `0` — высокий режим 11V, `2` — 7V, `3` — 8V, `4` —
 - [ ] M13.2 Проверить release по аппаратной матрице ниже; системное переключение проводится с одним writer.
 - [ ] M13.3 Проверить idle battery consumption, dGPU runtime suspend, UI latency/RSS и отсутствие busy polling.
 - [ ] M13.4 Провести продолжительные прогоны и реальные sleep/resume/power transitions; failures исправить и повторить затронутые проверки.
-- [ ] M13.5 Установить Rust package вместо C++ package, проверить reboot/login/autostart и rollback drill.
+- [ ] M13.5 *(частично выполнено — ждёт reboot/login/autostart и rollback drill)* Установить Rust package вместо C++ package, проверить reboot/login/autostart и rollback drill (`ucc-rusted 0.0.1-1` установлен поверх `frixit-control-center 0.3.0-1`, запущены `uccd.service`, `ucc-cli`, `ucc-desktop-tray`, `ucc-session-agent` и `/usr/bin/ucc-gui`).
 - [ ] M13.6 Пройти F01–F44, 122 methods/7 signals, все 10 GUI pages, инструменты и выбранную shell policy.
 - [ ] M13.7 Удалить C++/Qt runtime из active build/install; старый код остаётся в Git/tag/archive для истории.
 - [ ] M13.8 Удалить временные compatibility bridges, source-extraction tests и старые package dependencies после переноса проверок.
