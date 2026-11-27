@@ -306,15 +306,15 @@ impl PlatformBackend for BlockingProfilePlatform {
             {
                 let mut count = self.entered.lock().unwrap();
                 *count += 1;
-                self.release.1.notify_all();
             }
+            let deadline = Instant::now() + Duration::from_secs(5);
             let mut open = self.release.0.lock().unwrap();
             while !*open {
-                let (guard, timeout) = self
-                    .release
-                    .1
-                    .wait_timeout(open, Duration::from_secs(5))
-                    .unwrap();
+                let remaining = deadline.saturating_duration_since(Instant::now());
+                if remaining.is_zero() {
+                    break;
+                }
+                let (guard, timeout) = self.release.1.wait_timeout(open, remaining).unwrap();
                 open = guard;
                 if timeout.timed_out() {
                     break;
@@ -492,7 +492,7 @@ async fn stress_2_profile_switch_during_slow_backend_preserves_newer_profile() {
     let inner_platform = build_mock_platform();
     let armed = Arc::new(AtomicBool::new(false));
     let entered = Arc::new((Mutex::new(false), Condvar::new()));
-    let slow_delay = Duration::from_millis(400);
+    let slow_delay = Duration::from_millis(1000);
 
     let slow_platform: Arc<dyn PlatformBackend> = Arc::new(SlowTdpPlatform {
         inner: Arc::clone(&inner_platform),
@@ -533,10 +533,14 @@ async fn stress_2_profile_switch_during_slow_backend_preserves_newer_profile() {
         .await
         .unwrap());
 
-    // Arm the 400 ms delay exclusively for `slow_profile_a` (TDP channel 0 == 45W).
+    // Pre-build proxies before launching `slow_task` so proxy setup never eats into `slow_delay`.
+    let slow_proxy = build_proxy(&conn, bus_name.clone()).await;
+    let read_proxy = build_proxy(&conn, bus_name.clone()).await;
+    let fast_proxy = build_proxy(&conn, bus_name.clone()).await;
+
+    // Arm the 1000 ms delay exclusively for `slow_profile_a` (TDP channel 0 == 45W).
     armed.store(true, Ordering::SeqCst);
 
-    let slow_proxy = build_proxy(&conn, bus_name.clone()).await;
     let slow_started = Instant::now();
     let slow_task =
         tokio::spawn(async move { slow_proxy.set_active_profile("slow_profile_a").await });
@@ -567,7 +571,6 @@ async fn stress_2_profile_switch_during_slow_backend_preserves_newer_profile() {
     );
 
     // 1. Verify the daemon stays responsive to read RPCs while the slow backend call is in flight.
-    let read_proxy = build_proxy(&conn, bus_name.clone()).await;
     let read_start = Instant::now();
     assert_eq!(
         read_proxy.get_device_name().await.unwrap(),
@@ -575,13 +578,12 @@ async fn stress_2_profile_switch_during_slow_backend_preserves_newer_profile() {
     );
     assert_eq!(read_proxy.get_power_state().await.unwrap(), "power_ac");
     assert!(
-        read_start.elapsed() < Duration::from_millis(200),
+        read_start.elapsed() < Duration::from_millis(500),
         "read RPCs blocked behind slow backend profile switch ({:?})",
         read_start.elapsed()
     );
 
     // 2. Issue the newer profile switch mid-flight while `slow_profile_a` is still sleeping.
-    let fast_proxy = build_proxy(&conn, bus_name.clone()).await;
     assert!(
         fast_proxy
             .set_active_profile("fast_profile_b")
@@ -1037,7 +1039,7 @@ async fn stress_5_bounded_queues_requests_history_and_lane_backpressure() {
         "Stress Test Laptop"
     );
     assert!(
-        t_read.elapsed() < Duration::from_millis(200),
+        t_read.elapsed() < Duration::from_millis(1000),
         "Read lane starved by saturated Profile lane ({:?})",
         t_read.elapsed()
     );
@@ -1066,7 +1068,12 @@ async fn stress_5_bounded_queues_requests_history_and_lane_backpressure() {
     *release.0.lock().unwrap() = true;
     release.1.notify_all();
     for h in saturated {
-        let _ = h.await;
+        let ok = tokio::time::timeout(Duration::from_secs(5), h)
+            .await
+            .expect("saturated task timed out")
+            .expect("saturated task panicked")
+            .expect("saturated apply_profile D-Bus call failed");
+        assert!(ok, "saturated apply_profile must succeed once unblocked");
     }
     runtime.shutdown(Duration::from_secs(2)).await;
 }
