@@ -10,6 +10,7 @@
 
 pub mod defaults;
 pub mod error;
+pub mod import;
 pub mod legacy;
 pub mod manager;
 pub mod persistence;
@@ -18,6 +19,7 @@ pub mod settings;
 
 pub use defaults::*;
 pub use error::*;
+pub use import::*;
 pub use legacy::*;
 pub use manager::*;
 pub use persistence::*;
