@@ -472,8 +472,8 @@ Pump code `0` — высокий режим 11V, `2` — 7V, `3` — 8V, `4` —
 - [ ] M8.3 *(частично выполнено)* Реализовать сигналы завершения и bounded shutdown с fan-auto, CPU restore, BLE/NVML cleanup.
 - [ ] M8.4 *(частично выполнено)* Перенести ucc-sleep prepare/resume, ownership/permissions/symlink validation и retry после failed start.
 - [ ] M8.5 *(частично выполнено)* Перенести ucc-hardware --audit/--fan-auto с проверкой поддержки устройства.
-- [ ] M8.6 *(частично выполнено)* Перенести ucc-import-check с проверкой всех профилей/curves/LED IDs.
-- [ ] M8.7 *(частично выполнено)* Проверить restart, corrupt config, unavailable device, D-Bus restart, slow auth, queue overload, sleep cancellation.
+- [x] M8.6 Перенести `ucc-import-check` с проверкой всех профилей/curves/LED IDs (валидация CLI + корпус в `crates/uccd/tests/import_check_corpus.rs`).
+- [x] M8.7 Проверить restart, corrupt config, unavailable device, D-Bus restart, slow auth, queue overload, sleep cancellation (7-кейсовая матрица на частной шине в `crates/uccd/tests/fault_matrix.rs`).
 - [ ] M8.8 *(частично выполнено)* Старый C++ GUI/CLI тестируется с новым Rust daemon на изолированной шине и затем в управляемом аппаратном переходе.
 - [ ] M8.9 *(частично выполнено)* Перенести `LidController` (ингибитор `handle-lid-switch`, debounce при отключении питания) и `WakeupPolicy` в `uccd` и `ucc-sleep prepare`.
 - [x] M8.10 Гасить подсветку клавиатуры и (опционально) подсветку подключённой СЖО при закрытии крышки и восстанавливать из RAM при открытии или выходе из сна (настройки на карточке `Lid` в `PowerDevicesTab`: `turnOffKeyboardBacklightOnLidClose` и `turnOffWaterCoolerLedOnLidClose`, без изменения активного профиля/`settings.json`, плюс подписка на `login1` `LidClosed` / `UPower` `LidIsClosed` в `run_logind_monitor_loop` и тесты).
@@ -530,7 +530,7 @@ Pump code `0` — высокий режим 11V, `2` — 7V, `3` — 8V, `4` —
 - [x] M12.5 Настроить fmt/clippy/tests/contract tests/fuzz smoke/build/packaging/UI jobs под непривилегированным пользователем.
 - [ ] M12.6 *(частично выполнено)* Проверить normal и preview сборки; CI не получает доступ к реальному sysfs/system bus.
 - [x] M12.7 Проверить dependencies/runtime links: основным binaries не нужны Qt/libucc-dbus; ожидаемые системные/FFI библиотеки перечислены.
-- [ ] M12.8 *(частично выполнено — ждёт живого прогона установки/отката и публикации release assets)* Сформировать license/dependency notices, SBOM/source archive и migration/recovery guide.
+- [x] M12.8 Сформировать license/dependency notices, CycloneDX SBOM и source archive (`docs/MIGRATION_AND_RECOVERY.md` перенесено в `M13.11`).
 - [ ] M12.9 Установить staged package на чистое окружение и обновить копию существующей установки; затем выполнить downgrade/rollback.
 - [x] M12.10 Закрепить единый code style, commit convention и алгоритм релизов: `rustfmt.toml`, `.editorconfig`, `cargo fmt --check` в CI, `CONTRIBUTING.md`, устранение хардкода `docs/releases/0.3.0.md` в `.github/workflows/release.yml`, синхронная проверка/обновление версий (`Cargo.toml`, `CMakeLists.txt`, `PKGBUILD`, `ucc.spec`, `package.nix`) и генерация `CHANGELOG`.
 
@@ -548,7 +548,7 @@ Pump code `0` — высокий режим 11V, `2` — 7V, `3` — 8V, `4` —
 - [ ] M13.8 Удалить временные compatibility bridges, source-extraction tests и старые package dependencies после переноса проверок.
 - [ ] M13.9 Обновить README/BUILDING/TESTING/COMPARISON/origins и выпустить проверенный release.
 - [x] M13.10 Переименовать проект из `Frixit Control Center` в выбранное Rust-ориентированное имя во всех пользовательских runtime-поверхностях (GUI, tray, CLI, desktop-файлы, PKGBUILD, packaging-метаданные) с сохранением совместимости D-Bus/миграции (`ucc-rusted`; документация `README.md`, `README.ru.md`, `docs/BUILDING.md` вынесена в `M13.11`).
-- [ ] M13.11 Подготовить строгую техническую документацию без маркетинга и нейрослопа (`наш` и т.п.) и документацию для AI-агентов для быстрой ориентации в проекте (`AGENTS.md`, `docs/AI_AGENT_GUIDE.md`), `README.md` (EN), `README.ru.md` (RU), архитектуру, справочники D-Bus API и CLI, матрицу железа и объективное сравнение в `docs/COMPARISON.md` с [`open-uniwill-cc`](https://github.com/aspidovss/open-uniwill-cc/blob/main/README.ru.md), upstream `UCC Revorked`, `TUXEDO Control Center`, `Clevo Control Center`, `LCT`, `CoreCtrl` и `asusctl` (полностью убрать упоминание «Личный Python ControlCenter»).
+- [ ] M13.11 Подготовить строгую техническую документацию без маркетинга и нейрослопа (`наш` и т.п.) и документацию для AI-агентов для быстрой ориентации в проекте (`AGENTS.md`, `docs/AI_AGENT_GUIDE.md`), `README.md` (EN), `README.ru.md` (RU), архитектуру, справочники D-Bus API и CLI, матрицу железа, руководство по миграции и восстановлению (`docs/MIGRATION_AND_RECOVERY.md`) и объективное сравнение в `docs/COMPARISON.md` с [`open-uniwill-cc`](https://github.com/aspidovss/open-uniwill-cc/blob/main/README.ru.md), upstream `UCC Revorked`, `TUXEDO Control Center`, `Clevo Control Center`, `LCT`, `CoreCtrl` и `asusctl` (полностью убрать упоминание «Личный Python ControlCenter»).
 
 **Выход:** достигается определение готовности из раздела 16. Наличие незавершённого hardware test или несогласованной потери embedded shell UI оставляет соответствующий пункт открытым.
 
