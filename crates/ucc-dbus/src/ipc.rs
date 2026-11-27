@@ -414,8 +414,8 @@ pub fn required_access_level(req: &IpcRequest) -> IpcAccessLevel {
         | "SetWaterCoolerPumpVoltage" => IpcAccessLevel::ManageHardware,
 
         "ApplyProfile" | "AddCustomProfile" | "SaveCustomProfile" | "UpdateCustomProfile" => {
-            if let Some(profile_json) =
-                str_param(&req.params, "profileJson").or_else(|| str_param(&req.params, "profile_json"))
+            if let Some(profile_json) = str_param(&req.params, "profileJson")
+                .or_else(|| str_param(&req.params, "profile_json"))
             {
                 if profile_requires_manage_hardware(&profile_json) {
                     return IpcAccessLevel::ManageHardware;
@@ -932,13 +932,17 @@ fn dispatch_inner(
             let Some(state) = str_param(p, "state") else {
                 return IpcResponse::failure(req.id, "missing string param 'state'");
             };
-            let Some(profile_id) = str_param(p, "profileId").or_else(|| str_param(p, "profile_id")) else {
+            let Some(profile_id) =
+                str_param(p, "profileId").or_else(|| str_param(p, "profile_id"))
+            else {
                 return IpcResponse::failure(req.id, "missing string param 'profileId'");
             };
             IpcResponse::success(req.id, json!(backend.set_state_map(&state, &profile_id)))
         }
         "SetBatchStateMap" => {
-            let Some(state_map_json) = str_param(p, "stateMapJson").or_else(|| str_param(p, "state_map_json")) else {
+            let Some(state_map_json) =
+                str_param(p, "stateMapJson").or_else(|| str_param(p, "state_map_json"))
+            else {
                 return IpcResponse::failure(req.id, "missing string param 'stateMapJson'");
             };
             if let Err(resp) = check_payload_size(req.id, "stateMapJson", &state_map_json) {
@@ -947,7 +951,9 @@ fn dispatch_inner(
             IpcResponse::success(req.id, json!(backend.set_batch_state_map(&state_map_json)))
         }
         "SetFanProfileCPU" => {
-            let Some(points_json) = str_param(p, "pointsJson").or_else(|| str_param(p, "points_json")) else {
+            let Some(points_json) =
+                str_param(p, "pointsJson").or_else(|| str_param(p, "points_json"))
+            else {
                 return IpcResponse::failure(req.id, "missing string param 'pointsJson'");
             };
             if let Err(resp) = check_payload_size(req.id, "pointsJson", &points_json) {
@@ -956,7 +962,9 @@ fn dispatch_inner(
             IpcResponse::success(req.id, json!(backend.set_fan_profile_cpu(&points_json)))
         }
         "SetFanProfileDGPU" => {
-            let Some(points_json) = str_param(p, "pointsJson").or_else(|| str_param(p, "points_json")) else {
+            let Some(points_json) =
+                str_param(p, "pointsJson").or_else(|| str_param(p, "points_json"))
+            else {
                 return IpcResponse::failure(req.id, "missing string param 'pointsJson'");
             };
             if let Err(resp) = check_payload_size(req.id, "pointsJson", &points_json) {
@@ -965,7 +973,9 @@ fn dispatch_inner(
             IpcResponse::success(req.id, json!(backend.set_fan_profile_dgpu(&points_json)))
         }
         "ApplyFanProfiles" => {
-            let Some(fan_profiles_json) = str_param(p, "fanProfilesJson").or_else(|| str_param(p, "fan_profiles_json")) else {
+            let Some(fan_profiles_json) =
+                str_param(p, "fanProfilesJson").or_else(|| str_param(p, "fan_profiles_json"))
+            else {
                 return IpcResponse::failure(req.id, "missing string param 'fanProfilesJson'");
             };
             if let Err(resp) = check_payload_size(req.id, "fanProfilesJson", &fan_profiles_json) {
@@ -1067,7 +1077,9 @@ fn dispatch_inner(
             IpcResponse::success(req.id, json!(backend.enable_water_cooler(enable)))
         }
         "SetWaterCoolerFanSpeed" => {
-            let Some(speed) = i32_param(p, "speed").or_else(|| i32_param(p, "duty_cycle_percent")) else {
+            let Some(speed) =
+                i32_param(p, "speed").or_else(|| i32_param(p, "duty_cycle_percent"))
+            else {
                 return IpcResponse::failure(req.id, "missing int param 'speed'");
             };
             IpcResponse::success(req.id, json!(backend.set_water_cooler_fan_speed(speed)))
@@ -1129,13 +1141,17 @@ fn dispatch_inner(
 
         // --- Privileged (ManageHardware) ---
         "SetChargingProfile" => {
-            let Some(profile) = str_param(p, "profile").or_else(|| str_param(p, "profile_descriptor")) else {
+            let Some(profile) =
+                str_param(p, "profile").or_else(|| str_param(p, "profile_descriptor"))
+            else {
                 return IpcResponse::failure(req.id, "missing string param 'profile'");
             };
             IpcResponse::success(req.id, json!(backend.set_charging_profile(&profile)))
         }
         "SetChargingPriority" => {
-            let Some(priority) = str_param(p, "priority").or_else(|| str_param(p, "priority_descriptor")) else {
+            let Some(priority) =
+                str_param(p, "priority").or_else(|| str_param(p, "priority_descriptor"))
+            else {
                 return IpcResponse::failure(req.id, "missing string param 'priority'");
             };
             IpcResponse::success(req.id, json!(backend.set_charging_priority(&priority)))
@@ -1153,7 +1169,9 @@ fn dispatch_inner(
             IpcResponse::success(req.id, json!(backend.set_charge_end_threshold(value)))
         }
         "SetChargeType" => {
-            let Some(charge_type) = str_param(p, "chargeType").or_else(|| str_param(p, "type_val")) else {
+            let Some(charge_type) =
+                str_param(p, "chargeType").or_else(|| str_param(p, "type_val"))
+            else {
                 return IpcResponse::failure(req.id, "missing string param 'chargeType'");
             };
             IpcResponse::success(req.id, json!(backend.set_charge_type(&charge_type)))
@@ -1165,7 +1183,9 @@ fn dispatch_inner(
             IpcResponse::success(req.id, json!(backend.set_nvidia_power_offset(offset)))
         }
         "SetWaterCoolerPumpVoltage" => {
-            let Some(voltage) = i32_param(p, "voltage").or_else(|| i32_param(p, "voltage_code")) else {
+            let Some(voltage) =
+                i32_param(p, "voltage").or_else(|| i32_param(p, "voltage_code"))
+            else {
                 return IpcResponse::failure(req.id, "missing int param 'voltage'");
             };
             if voltage == FORBIDDEN_PUMP_VOLTAGE_CODE {
