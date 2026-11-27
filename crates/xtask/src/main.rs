@@ -8,6 +8,11 @@ use std::fs;
 use std::io;
 use std::os::unix::fs::PermissionsExt;
 use std::path::{Path, PathBuf};
+use xtask::maintenance::{
+    self, CaptureGalleryArgs, DeploymentManager, DesktopTransition, PrepareDeploymentArgs,
+    SystemCommandRunner,
+};
+use xtask::sha256_hex;
 
 fn repo_root() -> PathBuf {
     let manifest_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
@@ -135,8 +140,60 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 println!("  4. git commit -am \"chore(release): v{version}\" && git tag -a v{version} -m \"v{version}\"");
             }
         }
+        "import-offline" => {
+            let rest: Vec<String> = args.map(|s| s.to_string_lossy().into_owned()).collect();
+            let parsed = maintenance::parse_import_offline_args(&rest)?;
+            let report = maintenance::run_import_offline(&parsed)?;
+            println!("{}", serde_json::to_string_pretty(&report)?);
+        }
+        "maintenance" => {
+            let sub = args
+                .next()
+                .map(|s| s.to_string_lossy().into_owned())
+                .ok_or(
+                "Usage: cargo xtask maintenance <prepare-deployment|deploy|desktop-transition> ...",
+            )?;
+            let rest: Vec<String> = args.map(|s| s.to_string_lossy().into_owned()).collect();
+            let runner = SystemCommandRunner;
+            let root = repo_root();
+            match sub.as_str() {
+                "prepare-deployment" => {
+                    let parsed = parse_prepare_deployment_args(&rest)?;
+                    let out = maintenance::prepare_deployment(&parsed, &root, &runner, false)?;
+                    println!("{}", serde_json::to_string(&out)?);
+                }
+                "deploy" => {
+                    run_deploy_cli(&rest, &runner)?;
+                }
+                "desktop-transition" => {
+                    run_desktop_transition_cli(&rest, &runner)?;
+                }
+                other => {
+                    return Err(format!("Unknown maintenance subcommand: {other}").into());
+                }
+            }
+        }
+        "capture-gallery" => {
+            let rest: Vec<String> = args.map(|s| s.to_string_lossy().into_owned()).collect();
+            let root = repo_root();
+            let parsed = parse_capture_gallery_args(&rest, &root)?;
+            let runner = SystemCommandRunner;
+            let manifest = maintenance::capture_gallery(&parsed, &root, &runner)?;
+            let count = manifest["files"].as_object().map_or(0, |m| m.len());
+            println!(
+                "Captured and verified {count} images at {}",
+                parsed.output_dir.display()
+            );
+        }
+        "parser-check" => {
+            let root = repo_root();
+            let versions = check_versions_in_root(&root)?;
+            let sbom = generate_sbom_json(&root, &versions[0].1)?;
+            let report = maintenance::run_parser_check(&root, versions.len(), &sbom)?;
+            println!("{}", serde_json::to_string_pretty(&report)?);
+        }
         _ => {
-            eprintln!("Usage: cargo xtask <dist [dir [bin-dir]]|install-runtime <dir> <bin-dir>|dist-cli|completions|manpages|build-fixtures|check-versions|release <ver> [--dry-run]>");
+            eprintln!("Usage: cargo xtask <dist [dir [bin-dir]]|install-runtime <dir> <bin-dir>|dist-cli|completions|manpages|build-fixtures|check-versions|release <ver> [--dry-run]|import-offline|maintenance|capture-gallery|parser-check>");
             std::process::exit(1);
         }
     }
@@ -224,83 +281,235 @@ fn json_escape(input: &str) -> String {
     out
 }
 
-/// Pure-Rust SHA-256 hex digest (zero external dependencies, works offline everywhere).
-pub fn sha256_hex(data: &[u8]) -> String {
-    const K: [u32; 64] = [
-        0x428a2f98, 0x71374491, 0xb5c0fbcf, 0xe9b5dba5, 0x3956c25b, 0x59f111f1, 0x923f82a4,
-        0xab1c5ed5, 0xd807aa98, 0x12835b01, 0x243185be, 0x550c7dc3, 0x72be5d74, 0x80deb1fe,
-        0x9bdc06a7, 0xc19bf174, 0xe49b69c1, 0xefbe4786, 0x0fc19dc6, 0x240ca1cc, 0x2de92c6f,
-        0x4a7484aa, 0x5cb0a9dc, 0x76f988da, 0x983e5152, 0xa831c66d, 0xb00327c8, 0xbf597fc7,
-        0xc6e00bf3, 0xd5a79147, 0x06ca6351, 0x14292967, 0x27b70a85, 0x2e1b2138, 0x4d2c6dfc,
-        0x53380d13, 0x650a7354, 0x766a0abb, 0x81c2c92e, 0x92722c85, 0xa2bfe8a1, 0xa81a664b,
-        0xc24b8b70, 0xc76c51a3, 0xd192e819, 0xd6990624, 0xf40e3585, 0x106aa070, 0x19a4c116,
-        0x1e376c08, 0x2748774c, 0x34b0bcb5, 0x391c0cb3, 0x4ed8aa4a, 0x5b9cca4f, 0x682e6ff3,
-        0x748f82ee, 0x78a5636f, 0x84c87814, 0x8cc70208, 0x90befffa, 0xa4506ceb, 0xbef9a3f7,
-        0xc67178f2,
-    ];
-    let mut h: [u32; 8] = [
-        0x6a09e667, 0xbb67ae85, 0x3c6ef372, 0xa54ff53a, 0x510e527f, 0x9b05688c, 0x1f83d9ab,
-        0x5be0cd19,
-    ];
-    let bit_len = (data.len() as u64).wrapping_mul(8);
-    let mut msg = data.to_vec();
-    msg.push(0x80);
-    while msg.len() % 64 != 56 {
-        msg.push(0);
-    }
-    msg.extend_from_slice(&bit_len.to_be_bytes());
+fn parse_prepare_deployment_args(args: &[String]) -> Result<PrepareDeploymentArgs, String> {
+    let mut build_dir = None;
+    let mut data_dir = None;
+    let mut tcc_dir = PathBuf::from("/etc/tcc");
+    let mut tcc_archive = PathBuf::from("/opt/tuxedo-control-center/resources/app.asar");
+    let mut normal_tests = None;
+    let mut preview_tests = None;
+    let mut sysfs_leds = PathBuf::from("/sys/class/leds");
+    let mut allow_gui_audit_failure = false;
+    let mut output_dir = None;
 
-    for offset in (0..msg.len()).step_by(64) {
-        let chunk = &msg[offset..offset + 64];
-        let mut w = [0u32; 64];
-        for i in 0..16 {
-            w[i] = u32::from_be_bytes([
-                chunk[i * 4],
-                chunk[i * 4 + 1],
-                chunk[i * 4 + 2],
-                chunk[i * 4 + 3],
-            ]);
+    let mut i = 0;
+    while i < args.len() {
+        match args[i].as_str() {
+            "--build" => {
+                i += 1;
+                build_dir = Some(PathBuf::from(args.get(i).ok_or("--build requires a path")?));
+            }
+            "--data" => {
+                i += 1;
+                data_dir = Some(PathBuf::from(args.get(i).ok_or("--data requires a path")?));
+            }
+            "--tcc-dir" => {
+                i += 1;
+                tcc_dir = PathBuf::from(args.get(i).ok_or("--tcc-dir requires a path")?);
+            }
+            "--tcc-archive" => {
+                i += 1;
+                tcc_archive = PathBuf::from(args.get(i).ok_or("--tcc-archive requires a path")?);
+            }
+            "--normal-tests" => {
+                i += 1;
+                normal_tests = Some(PathBuf::from(
+                    args.get(i).ok_or("--normal-tests requires a path")?,
+                ));
+            }
+            "--preview-tests" => {
+                i += 1;
+                preview_tests = Some(PathBuf::from(
+                    args.get(i).ok_or("--preview-tests requires a path")?,
+                ));
+            }
+            "--sysfs-leds" => {
+                i += 1;
+                sysfs_leds = PathBuf::from(args.get(i).ok_or("--sysfs-leds requires a path")?);
+            }
+            "--allow-gui-audit-failure" => allow_gui_audit_failure = true,
+            other if other.starts_with('-') => {
+                return Err(format!("Unknown prepare-deployment flag: {other}"));
+            }
+            other => {
+                if output_dir.is_some() {
+                    return Err(format!("Unexpected extra argument: {other}"));
+                }
+                output_dir = Some(PathBuf::from(other));
+            }
         }
-        for i in 16..64 {
-            let s0 = w[i - 15].rotate_right(7) ^ w[i - 15].rotate_right(18) ^ (w[i - 15] >> 3);
-            let s1 = w[i - 2].rotate_right(17) ^ w[i - 2].rotate_right(19) ^ (w[i - 2] >> 10);
-            w[i] = w[i - 16]
-                .wrapping_add(s0)
-                .wrapping_add(w[i - 7])
-                .wrapping_add(s1);
-        }
-        let [mut a, mut b, mut c, mut d, mut e, mut f, mut g, mut hh] = h;
-        for i in 0..64 {
-            let s1 = e.rotate_right(6) ^ e.rotate_right(11) ^ e.rotate_right(25);
-            let ch = (e & f) ^ ((!e) & g);
-            let temp1 = hh
-                .wrapping_add(s1)
-                .wrapping_add(ch)
-                .wrapping_add(K[i])
-                .wrapping_add(w[i]);
-            let s0 = a.rotate_right(2) ^ a.rotate_right(13) ^ a.rotate_right(22);
-            let maj = (a & b) ^ (a & c) ^ (b & c);
-            let temp2 = s0.wrapping_add(maj);
-            hh = g;
-            g = f;
-            f = e;
-            e = d.wrapping_add(temp1);
-            d = c;
-            c = b;
-            b = a;
-            a = temp1.wrapping_add(temp2);
-        }
-        for (slot, val) in h.iter_mut().zip([a, b, c, d, e, f, g, hh]) {
-            *slot = slot.wrapping_add(val);
-        }
+        i += 1;
     }
 
-    let mut hex = String::with_capacity(64);
-    for word in h {
-        use std::fmt::Write as _;
-        let _ = write!(hex, "{word:08x}");
+    Ok(PrepareDeploymentArgs {
+        build_dir: build_dir.ok_or("--build is required")?,
+        data_dir: data_dir.ok_or("--data is required")?,
+        tcc_dir,
+        tcc_archive,
+        normal_tests: normal_tests.ok_or("--normal-tests is required")?,
+        preview_tests: preview_tests.ok_or("--preview-tests is required")?,
+        sysfs_leds,
+        allow_gui_audit_failure,
+        output_dir: output_dir.ok_or("output directory is required")?,
+    })
+}
+
+fn run_deploy_cli(args: &[String], runner: &SystemCommandRunner) -> Result<(), String> {
+    let mut install: Option<PathBuf> = None;
+    let mut rollback: Option<PathBuf> = None;
+    let mut root = PathBuf::from("/");
+
+    let mut i = 0;
+    while i < args.len() {
+        match args[i].as_str() {
+            "--install" => {
+                i += 1;
+                install = Some(PathBuf::from(
+                    args.get(i).ok_or("--install requires a path")?,
+                ));
+            }
+            "--rollback" => {
+                i += 1;
+                rollback = Some(PathBuf::from(
+                    args.get(i).ok_or("--rollback requires a path")?,
+                ));
+            }
+            "--root" => {
+                i += 1;
+                root = PathBuf::from(args.get(i).ok_or("--root requires a path")?);
+            }
+            other => return Err(format!("Unknown deploy argument: {other}")),
+        }
+        i += 1;
     }
-    hex
+
+    if install.is_some() == rollback.is_some() {
+        return Err("Specify exactly one of --install <bundle> or --rollback <backup>".to_string());
+    }
+
+    if root == Path::new("/") {
+        let euid_root = fs::read_to_string("/proc/self/status").ok().and_then(|s| {
+            s.lines()
+                .find(|l| l.starts_with("Uid:"))
+                .and_then(|l| l.split_whitespace().nth(2))
+                .and_then(|u| u.parse::<u32>().ok())
+        }) == Some(0);
+        if !euid_root {
+            return Err("System installation requires root (use pkexec)".to_string());
+        }
+    }
+
+    if let Some(bundle) = install {
+        let mut mgr = DeploymentManager::new(&bundle, &root, runner);
+        let backup = mgr.install()?;
+        println!(
+            "{}",
+            serde_json::json!({ "installed": true, "backup": backup.display().to_string() })
+        );
+    } else if let Some(backup) = rollback {
+        let resolved = fs::canonicalize(&backup)
+            .map_err(|e| format!("Failed resolving backup {}: {e}", backup.display()))?;
+        let mut mgr = DeploymentManager::from_backup(&resolved, &root, runner)?;
+        mgr.rollback()?;
+        println!(
+            "{}",
+            serde_json::json!({ "rolledBack": true, "backup": resolved.display().to_string() })
+        );
+    }
+    Ok(())
+}
+
+fn run_desktop_transition_cli(args: &[String], runner: &SystemCommandRunner) -> Result<(), String> {
+    let mut positional = Vec::new();
+    let mut source: Option<PathBuf> = None;
+    let mut preferences: Option<PathBuf> = None;
+    let mut home = std::env::var_os("HOME")
+        .map(PathBuf::from)
+        .unwrap_or_else(|| PathBuf::from("/tmp"));
+
+    let mut i = 0;
+    while i < args.len() {
+        match args[i].as_str() {
+            "--source" => {
+                i += 1;
+                source = Some(PathBuf::from(
+                    args.get(i).ok_or("--source requires a path")?,
+                ));
+            }
+            "--preferences" => {
+                i += 1;
+                preferences = Some(PathBuf::from(
+                    args.get(i).ok_or("--preferences requires a path")?,
+                ));
+            }
+            "--home" => {
+                i += 1;
+                home = PathBuf::from(args.get(i).ok_or("--home requires a path")?);
+            }
+            other if other.starts_with('-') => {
+                return Err(format!("Unknown desktop-transition flag: {other}"));
+            }
+            other => positional.push(other.to_string()),
+        }
+        i += 1;
+    }
+
+    if positional.len() != 2 {
+        return Err(
+            "Usage: cargo xtask maintenance desktop-transition <quiesce|activate|restore> <state-dir> [--source <dir>] [--preferences <file>] [--home <dir>]"
+                .to_string(),
+        );
+    }
+    let action = positional[0].as_str();
+    let state_dir = PathBuf::from(&positional[1]);
+    let transition = DesktopTransition::new(&state_dir, &home, runner);
+    match action {
+        "quiesce" => {
+            let src = source.ok_or("--source is required for quiesce")?;
+            let state = transition.quiesce(&src)?;
+            println!("{}", serde_json::to_string_pretty(&state).unwrap());
+        }
+        "activate" => {
+            let prefs = preferences.ok_or("--preferences is required for activate")?;
+            let state = transition.activate(&prefs)?;
+            println!("{}", serde_json::to_string_pretty(&state).unwrap());
+        }
+        "restore" => {
+            let state = transition.restore()?;
+            println!("{}", serde_json::to_string_pretty(&state).unwrap());
+        }
+        other => return Err(format!("Unknown desktop-transition action: {other}")),
+    }
+    Ok(())
+}
+
+fn parse_capture_gallery_args(
+    args: &[String],
+    repo_root: &Path,
+) -> Result<CaptureGalleryArgs, String> {
+    let mut build_dir = None;
+    let mut output_dir = repo_root.join("screenshots/current");
+
+    let mut i = 0;
+    while i < args.len() {
+        match args[i].as_str() {
+            "--build" => {
+                i += 1;
+                build_dir = Some(PathBuf::from(args.get(i).ok_or("--build requires a path")?));
+            }
+            "--output" => {
+                i += 1;
+                output_dir = PathBuf::from(args.get(i).ok_or("--output requires a path")?);
+            }
+            other => return Err(format!("Unknown capture-gallery argument: {other}")),
+        }
+        i += 1;
+    }
+
+    Ok(CaptureGalleryArgs {
+        build_dir: build_dir.ok_or("--build is required")?,
+        output_dir,
+    })
 }
 
 struct LockPkg {

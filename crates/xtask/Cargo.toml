@@ -7,8 +7,11 @@ authors.workspace = true
 rust-version.workspace = true
 
 [dependencies]
+serde = { workspace = true }
+serde_json = { workspace = true }
 thiserror = { workspace = true }
 ucc-cli = { path = "../ucc-cli" }
+ucc-config = { workspace = true }
 clap_complete = "4.5"
 
 [dev-dependencies]
