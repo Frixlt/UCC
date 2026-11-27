@@ -557,3 +557,40 @@ fn uniwill_profile_with_charge_type_succeeds_when_bat0_lacks_charge_nodes_and_hy
         Some("high_capacity")
     );
 }
+
+#[test]
+fn custom_fan_profile_accepts_float_pump_temperatures_from_real_settings() {
+    let root = tempfile::tempdir().unwrap();
+    let settings_path = root.path().join("settings.json");
+    let custom_fan_id = "frixit-tcc-l287pgdbmxpmks8k9ai";
+    let settings_json = serde_json::json!({
+        "stateMap": { "power_ac": "frixit-ac" },
+        "profiles": {
+            "frixit-ac": default_high_performance_profile()
+        },
+        "customFanProfiles": {
+            custom_fan_id: {
+                "id": custom_fan_id,
+                "name": "Custom Pump Curve",
+                "json": {
+                    "tableCPU": [{ "temp": 0, "speed": 10 }, { "temp": 100, "speed": 100 }],
+                    "tableGPU": [{ "temp": 0, "speed": 10 }, { "temp": 100, "speed": 100 }],
+                    "tableWaterCoolerFan": [{ "temp": 20, "speed": 7 }, { "temp": 100, "speed": 100 }],
+                    "tablePump": [
+                        { "temp": 20, "speed": 1 },
+                        { "temp": 65.01210653753026, "speed": 2 },
+                        { "temp": 79.93088739546089, "speed": 3 }
+                    ]
+                }
+            }
+        }
+    });
+    std::fs::write(&settings_path, settings_json.to_string()).unwrap();
+
+    let (backend, _, _, _) = build_custom_backend(root.path(), true, |_| {}, |p| p);
+    let raw = backend.get_fan_profile(custom_fan_id);
+    let parsed: serde_json::Value = serde_json::from_str(&raw).unwrap();
+    assert_eq!(parsed["id"], custom_fan_id);
+    assert_eq!(parsed["tablePump"][1]["temp"], 65);
+    assert_eq!(parsed["tablePump"][2]["temp"], 80);
+}

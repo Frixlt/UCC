@@ -539,6 +539,105 @@ async fn t_sec_ipc03_per_sender_read_load_bounded_without_starving_other_clients
     );
 }
 
+struct MockFastPolkitAuthority {
+    in_flight: Arc<AtomicUsize>,
+    max_in_flight: Arc<AtomicUsize>,
+}
+
+#[zbus::interface(name = "org.freedesktop.PolicyKit1.Authority")]
+impl MockFastPolkitAuthority {
+    async fn check_authorization(
+        &self,
+        _subject: (String, HashMap<String, OwnedValue>),
+        _action_id: String,
+        _details: HashMap<String, String>,
+        _flags: u32,
+        _cancellation_id: String,
+    ) -> (bool, bool, HashMap<String, String>) {
+        let cur = self.in_flight.fetch_add(1, Ordering::SeqCst) + 1;
+        self.max_in_flight.fetch_max(cur, Ordering::SeqCst);
+        tokio::time::sleep(Duration::from_millis(2)).await;
+        self.in_flight.fetch_sub(1, Ordering::SeqCst);
+        (true, false, HashMap::new())
+    }
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn t_sec_ipc03_fast_gui_reconnect_burst_of_32_reads_succeeds_without_false_denial() {
+    let daemon = PrivateDbusDaemon::spawn();
+    let gui_conn = Builder::address(daemon.address.as_str())
+        .unwrap()
+        .build()
+        .await
+        .unwrap();
+
+    let in_flight = Arc::new(AtomicUsize::new(0));
+    let max_in_flight = Arc::new(AtomicUsize::new(0));
+    let _authority_conn = Builder::address(daemon.address.as_str())
+        .unwrap()
+        .name("org.freedesktop.PolicyKit1")
+        .unwrap()
+        .serve_at(
+            "/org/freedesktop/PolicyKit1/Authority",
+            MockFastPolkitAuthority {
+                in_flight: Arc::clone(&in_flight),
+                max_in_flight: Arc::clone(&max_in_flight),
+            },
+        )
+        .unwrap()
+        .build()
+        .await
+        .unwrap();
+
+    let server_conn = Builder::address(daemon.address.as_str())
+        .unwrap()
+        .name("com.uniwill.uccd")
+        .unwrap()
+        .build()
+        .await
+        .unwrap();
+    register_uccd_service(
+        &server_conn,
+        Arc::new(ReadEnabledBackend),
+        Arc::new(PolkitAuthorizer::new()),
+    )
+    .await
+    .unwrap();
+
+    let proxy = UccdProxy::builder(&gui_conn)
+        .destination("com.uniwill.uccd")
+        .unwrap()
+        .path(DBUS_PATH)
+        .unwrap()
+        .build()
+        .await
+        .unwrap();
+
+    let mut handles = Vec::new();
+    for _ in 0..32 {
+        let p = proxy.clone();
+        handles.push(tokio::spawn(async move {
+            p.get_display_brightness().await.unwrap_or(-1)
+        }));
+    }
+
+    let mut succeeded = 0usize;
+    for h in handles {
+        if h.await.unwrap() == 77 {
+            succeeded += 1;
+        }
+    }
+    assert_eq!(
+        succeeded, 32,
+        "all 32 rapid reconnect reads must succeed through bounded queuing"
+    );
+    let peak = max_in_flight.load(Ordering::SeqCst);
+    assert!(
+        peak <= 8,
+        "per-sender queued burst must still cap concurrency at <= 8, got {peak}"
+    );
+}
+
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn t_sec_ipc03_oversized_json_payloads_rejected_before_auth_and_backend() {
     let auth = Arc::new(TrackingAuthorizer::new(true));

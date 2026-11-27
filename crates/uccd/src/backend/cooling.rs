@@ -63,6 +63,21 @@ pub(super) fn normalize_and_parse_custom_fan_profile(
                 obj.insert(target.to_string(), v);
             }
         }
+        if let Some(Value::Array(points)) = obj.get_mut(target) {
+            for pt in points.iter_mut() {
+                if let Value::Object(pt_obj) = pt {
+                    for coord in ["temp", "speed"] {
+                        if let Some(val) = pt_obj.get(coord) {
+                            if val.as_i64().is_none() {
+                                if let Some(f) = val.as_f64().filter(|f| f.is_finite()) {
+                                    pt_obj.insert(coord.to_string(), Value::from(f.round() as i64));
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
     }
 
     let normalized_val = Value::Object(obj);

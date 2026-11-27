@@ -120,18 +120,30 @@ fn run_check(settings_path: &str, caps_path: &str) -> Result<Value, String> {
         }
     }
 
+    fn parse_rounded_curve_coord(v: &Value) -> Option<i64> {
+        v.as_i64().or_else(|| {
+            v.as_f64()
+                .filter(|f| f.is_finite())
+                .map(|f| f.round() as i64)
+        })
+    }
+
     if let Some(custom_fans) = parsed_settings.custom_fan_profiles.as_ref() {
         for (id, fan_entry) in custom_fans {
             if let Some(obj) = fan_entry.json.as_object() {
                 for curve_key in ["tableCPU", "tableGPU", "tablePump", "tableWaterCoolerFan"] {
                     if let Some(points) = obj.get(curve_key).and_then(|v| v.as_array()) {
                         for pt in points {
-                            let temp =
-                                pt.get("temp").and_then(|v| v.as_i64()).ok_or_else(|| {
+                            let temp = pt
+                                .get("temp")
+                                .and_then(parse_rounded_curve_coord)
+                                .ok_or_else(|| {
                                     format!("Invalid temp in customFanProfiles.{id}.{curve_key}")
                                 })?;
-                            let speed =
-                                pt.get("speed").and_then(|v| v.as_i64()).ok_or_else(|| {
+                            let speed = pt
+                                .get("speed")
+                                .and_then(parse_rounded_curve_coord)
+                                .ok_or_else(|| {
                                     format!("Invalid speed in customFanProfiles.{id}.{curve_key}")
                                 })?;
                             if !(0..=150).contains(&temp) || !(0..=100).contains(&speed) {

@@ -268,4 +268,27 @@ fn m8_6_corpus_rejects_corrupt_brightness_curves_leds_and_unsafe_devices() {
     let p_mode = dir.path().join("missing_mode.json");
     std::fs::write(&p_mode, serde_json::to_string(&missing_mode).unwrap()).unwrap();
     assert!(!run_import_check(&p_mode, &caps_path).status.success());
+
+    // 7. Rejects non-numeric string temp in customFanProfiles while accepting finite float temp.
+    let mut float_curve = baseline_ucc_v03_settings();
+    float_curve["customFanProfiles"]["custom-fan"]["json"]["tablePump"] = json!([
+        { "temp": 20, "speed": 1 },
+        { "temp": 65.01210653753026, "speed": 2 },
+        { "temp": 79.93088739546089, "speed": 3 }
+    ]);
+    let p_float = dir.path().join("float_pump.json");
+    std::fs::write(&p_float, serde_json::to_string(&float_curve).unwrap()).unwrap();
+    let out_float = run_import_check(&p_float, &caps_path);
+    assert!(
+        out_float.status.success(),
+        "float tablePump curve should succeed, stderr: {}",
+        String::from_utf8_lossy(&out_float.stderr)
+    );
+
+    let mut str_curve = baseline_ucc_v03_settings();
+    str_curve["customFanProfiles"]["custom-fan"]["json"]["tablePump"] =
+        json!([{ "temp": "not-a-number", "speed": 1 }]);
+    let p_str = dir.path().join("str_pump.json");
+    std::fs::write(&p_str, serde_json::to_string(&str_curve).unwrap()).unwrap();
+    assert!(!run_import_check(&p_str, &caps_path).status.success());
 }
