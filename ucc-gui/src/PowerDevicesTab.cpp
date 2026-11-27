@@ -91,6 +91,16 @@ PowerDevicesTab::PowerDevicesTab(UccdClient *client,QWidget *parent) : QWidget(p
   m_wakeOnlyLidKbd->setToolTip("Disables wakeups from mouse, USB receivers, AC/USB-C power, RTC timers, and Thunderbolt devices.");
   m_wakeOnlyLidKbd->setEnabled(!readOnlyPreview);
   lidLayout->addWidget(m_wakeOnlyLidKbd);
+  m_lidOffKbd=new QCheckBox("Turn off keyboard backlight when lid closes");
+  m_lidOffKbd->setObjectName("turnOffKeyboardBacklightOnLidClose");
+  m_lidOffKbd->setToolTip("Temporarily sets keyboard zones to brightness 0 while the lid is closed and restores them when reopened.");
+  m_lidOffKbd->setEnabled(!readOnlyPreview);
+  lidLayout->addWidget(m_lidOffKbd);
+  m_lidOffWcLed=new QCheckBox("Turn off water cooler LED when lid closes (if connected)");
+  m_lidOffWcLed->setObjectName("turnOffWaterCoolerLedOnLidClose");
+  m_lidOffWcLed->setToolTip("Turns off the external water cooler RGB LED while the lid is closed and restores it when reopened.");
+  m_lidOffWcLed->setEnabled(!readOnlyPreview);
+  lidLayout->addWidget(m_lidOffWcLed);
   layout->addWidget(lidCard);
   auto *toolbar=new QHBoxLayout;
   m_search=new QLineEdit;m_search->setPlaceholderText("Filter devices by name or path");toolbar->addWidget(m_search,1);
@@ -109,7 +119,7 @@ PowerDevicesTab::PowerDevicesTab(UccdClient *client,QWidget *parent) : QWidget(p
   connect(m_scan,&QPushButton::clicked,this,&PowerDevicesTab::scan);
   connect(m_client,&UccdClient::powerDeviceStatusChanged,this,&PowerDevicesTab::showStatus);
   connect(m_client,&UccdClient::connectionStatusChanged,this,[this](bool connected){
-    if(connected) reload();else {m_save->setEnabled(false);m_scan->setEnabled(false);m_lidAc->setEnabled(false);m_lidTypeC->setEnabled(false);m_lidBat->setEnabled(false);m_wakeOnlyLidKbd->setEnabled(false);m_status->setText("Service unavailable");}
+    if(connected) reload();else {m_save->setEnabled(false);m_scan->setEnabled(false);m_lidAc->setEnabled(false);m_lidTypeC->setEnabled(false);m_lidBat->setEnabled(false);m_wakeOnlyLidKbd->setEnabled(false);m_lidOffKbd->setEnabled(false);m_lidOffWcLed->setEnabled(false);m_status->setText("Service unavailable");}
   });
   reload();
 }
@@ -118,7 +128,7 @@ void PowerDevicesTab::reload() {
   const auto document=json ? QJsonDocument::fromJson(QByteArray::fromStdString(*json)) : QJsonDocument();
   const bool available=document.isObject();
   m_save->setEnabled(available && !readOnlyPreview);m_scan->setEnabled(available && !readOnlyPreview);
-  m_lidAc->setEnabled(available && !readOnlyPreview);m_lidTypeC->setEnabled(available && !readOnlyPreview);m_lidBat->setEnabled(available && !readOnlyPreview);m_wakeOnlyLidKbd->setEnabled(available && !readOnlyPreview);
+  m_lidAc->setEnabled(available && !readOnlyPreview);m_lidTypeC->setEnabled(available && !readOnlyPreview);m_lidBat->setEnabled(available && !readOnlyPreview);m_wakeOnlyLidKbd->setEnabled(available && !readOnlyPreview);m_lidOffKbd->setEnabled(available && !readOnlyPreview);m_lidOffWcLed->setEnabled(available && !readOnlyPreview);
   if(!available) {m_status->setText("Per-device controls require the updated UCC daemon.");return;}
   m_settings=document.object();m_enabled->setChecked(m_settings["enabled"].toBool(false));
   m_nvidia->setChecked(m_settings["keepNvidiaAwake"].toBool(false));
@@ -131,6 +141,8 @@ void PowerDevicesTab::reload() {
   selectLid(m_lidTypeC,lid.value("type_c").toString("screen_off"));
   selectLid(m_lidBat,lid.value("bat").toString("suspend"));
   m_wakeOnlyLidKbd->setChecked(lid.value("wakeOnlyLidAndKeyboard").toBool(true));
+  m_lidOffKbd->setChecked(lid.value("turnOffKeyboardBacklightOnLidClose").toBool(true));
+  m_lidOffWcLed->setChecked(lid.value("turnOffWaterCoolerLedOnLidClose").toBool(false));
   const auto cpu=m_settings["cpu"].toObject();
   for(int row=0;row<3;++row) {
     m_cpu->setItem(row,0,new QTableWidgetItem(QStringList{"AC","Type-C","Battery"}[row]));
@@ -193,7 +205,9 @@ QJsonObject PowerDevicesTab::collect() const {
   }
   result["devices"]=entries;
   result["lid"]=QJsonObject{{"ac",m_lidAc->currentData().toString()},{"type_c",m_lidTypeC->currentData().toString()},
-                            {"bat",m_lidBat->currentData().toString()},{"wakeOnlyLidAndKeyboard",m_wakeOnlyLidKbd->isChecked()}};
+                            {"bat",m_lidBat->currentData().toString()},{"wakeOnlyLidAndKeyboard",m_wakeOnlyLidKbd->isChecked()},
+                            {"turnOffKeyboardBacklightOnLidClose",m_lidOffKbd->isChecked()},
+                            {"turnOffWaterCoolerLedOnLidClose",m_lidOffWcLed->isChecked()}};
   return result;
 }
 void PowerDevicesTab::save() {

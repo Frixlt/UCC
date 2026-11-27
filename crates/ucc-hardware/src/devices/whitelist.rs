@@ -251,6 +251,16 @@ pub fn validate_settings_json(settings: &Value) -> Result<(), String> {
                         return Err("Invalid wakeOnlyLidAndKeyboard flag".to_string());
                     }
                 }
+                "turnOffKeyboardBacklightOnLidClose" => {
+                    if !v.is_boolean() {
+                        return Err("Invalid turnOffKeyboardBacklightOnLidClose flag".to_string());
+                    }
+                }
+                "turnOffWaterCoolerLedOnLidClose" => {
+                    if !v.is_boolean() {
+                        return Err("Invalid turnOffWaterCoolerLedOnLidClose flag".to_string());
+                    }
+                }
                 other => return Err(format!("Invalid lid policy field: {other}")),
             }
         }

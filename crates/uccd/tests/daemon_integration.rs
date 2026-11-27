@@ -5021,3 +5021,120 @@ async fn failed_cpu_restore_is_carried_to_the_next_daemon() {
     runtime.shutdown(Duration::from_secs(2)).await;
     assert_eq!(restored.as_deref(), Some("0"));
 }
+
+#[tokio::test]
+async fn m8_10_lid_close_blanks_and_restores_keyboard_and_wc_led_in_ram_only() {
+    use ucc_dbus::UccdBackend;
+    use ucc_hardware::{CoolerPacketEncoder, RgbState, RgbTarget};
+
+    let root = tempfile::tempdir().unwrap();
+    let (backend, _, _, lighting) = build_test_backend(root.path());
+    let name = "org.test.uccd.m8_10_lid_lighting";
+    let runtime = start_runtime(Arc::clone(&backend), name, false).await;
+
+    let initial_kb = json!([{
+        "brightness": 180,
+        "red": 12,
+        "green": 140,
+        "blue": 255,
+        "mode": 0
+    }])
+    .to_string();
+    assert!(backend.set_keyboard_backlight_states_json(&initial_kb));
+    let before_settings = std::fs::read_to_string(root.path().join("settings.json")).unwrap();
+
+    // Configure both lid blanking toggles and connect water cooler with an active LED color.
+    let pd_both = json!({
+        "enabled": false,
+        "keepNvidiaAwake": false,
+        "lid": {
+            "ac": "screen_off",
+            "type_c": "screen_off",
+            "bat": "suspend",
+            "wakeOnlyLidAndKeyboard": true,
+            "turnOffKeyboardBacklightOnLidClose": true,
+            "turnOffWaterCoolerLedOnLidClose": true
+        }
+    })
+    .to_string();
+    assert!(backend.set_power_device_settings_json(&pd_both));
+    backend.set_cooler_connected_state(true);
+    assert!(backend.set_water_cooler_led_color(200, 30, 90, 0));
+    let _ = backend.drain_cooler_commands();
+
+    let after_cfg_settings = std::fs::read_to_string(root.path().join("settings.json")).unwrap();
+    let _ = before_settings;
+
+    // 1. Close lid: keyboard brightness becomes 0 and WC LED turns off without altering settings.json.
+    backend.on_lid_state_changed(true);
+    assert!(backend.is_lid_closed());
+    let kb_while_closed: Vec<serde_json::Value> =
+        serde_json::from_str(&backend.get_keyboard_backlight_states_json()).unwrap();
+    assert_eq!(kb_while_closed[0]["brightness"].as_u64(), Some(0));
+    assert_eq!(backend.cooler_desired_rgb(), RgbTarget::Off);
+    tokio::time::sleep(Duration::from_millis(90)).await;
+    let pkts = backend.drain_cooler_commands();
+    assert!(
+        pkts.contains(&CoolerPacketEncoder::turn_off(ucc_hardware::CMD_RGB)),
+        "closing lid must enqueue TurnOffLed packet when WC LED blanking is enabled: {pkts:?}"
+    );
+    assert_eq!(
+        std::fs::read_to_string(root.path().join("settings.json")).unwrap(),
+        after_cfg_settings,
+        "lid close blanking must live in RAM only and never mutate settings.json"
+    );
+
+    // 2. While lid stays closed, explicit LED/keyboard updates stay blanked on hardware but update RAM snapshot.
+    let updated_kb = json!([{
+        "brightness": 220,
+        "red": 255,
+        "green": 0,
+        "blue": 100,
+        "mode": 0
+    }])
+    .to_string();
+    assert!(backend.set_keyboard_backlight_states_json(&updated_kb));
+    let kb_still_dark: Vec<serde_json::Value> =
+        serde_json::from_str(&backend.get_keyboard_backlight_states_json()).unwrap();
+    assert_eq!(kb_still_dark[0]["brightness"].as_u64(), Some(0));
+
+    // 3. Reopen lid: previous keyboard states (updated RAM brightness 220) and WC LED color restore.
+    backend.on_lid_state_changed(false);
+    assert!(!backend.is_lid_closed());
+    let kb_reopened: Vec<serde_json::Value> =
+        serde_json::from_str(&backend.get_keyboard_backlight_states_json()).unwrap();
+    assert_eq!(kb_reopened[0]["brightness"].as_u64(), Some(220));
+    assert_eq!(
+        backend.cooler_desired_rgb(),
+        RgbTarget::Color {
+            red: 200,
+            green: 30,
+            blue: 90,
+            state: RgbState::Static
+        }
+    );
+    let _ = lighting;
+
+    // 4. Disable both toggles: closing lid leaves keyboard & WC LED untouched.
+    let pd_off = json!({
+        "enabled": false,
+        "keepNvidiaAwake": false,
+        "lid": {
+            "ac": "screen_off",
+            "type_c": "screen_off",
+            "bat": "suspend",
+            "wakeOnlyLidAndKeyboard": true,
+            "turnOffKeyboardBacklightOnLidClose": false,
+            "turnOffWaterCoolerLedOnLidClose": false
+        }
+    })
+    .to_string();
+    assert!(backend.set_power_device_settings_json(&pd_off));
+    backend.on_lid_state_changed(true);
+    let kb_unchanged: Vec<serde_json::Value> =
+        serde_json::from_str(&backend.get_keyboard_backlight_states_json()).unwrap();
+    assert_eq!(kb_unchanged[0]["brightness"].as_u64(), Some(220));
+    assert_ne!(backend.cooler_desired_rgb(), RgbTarget::Off);
+
+    runtime.shutdown(Duration::from_secs(2)).await;
+}

@@ -206,9 +206,13 @@ pub struct LiveUccdBackend {
     pub(super) water_cooler_enabled: AtomicBool,
     pub(super) water_cooler_available: AtomicBool,
     pub(super) water_cooler_connected: AtomicBool,
+    pub(super) cooler_suspending: AtomicBool,
 
     pub(super) keyboard_ctrl: Arc<Mutex<KeyboardBacklightController>>,
     pub(super) lightbar_ctrl: Arc<Mutex<LightbarController>>,
+    pub(super) lid_closed: AtomicBool,
+    pub(super) lid_saved_keyboard_states: Mutex<Option<Vec<ucc_core::KeyboardBacklightState>>>,
+    pub(super) lid_saved_wc_rgb: Mutex<Option<ucc_hardware::RgbTarget>>,
     pub(super) power_devices: PowerDeviceController,
     pub(super) power_policy: RwLock<PowerPolicy>,
     pub(super) lid_controller: Mutex<LidController>,
@@ -353,8 +357,12 @@ impl LiveUccdBackend {
             water_cooler_enabled: AtomicBool::new(false),
             water_cooler_available: AtomicBool::new(wc_supported),
             water_cooler_connected: AtomicBool::new(false),
+            cooler_suspending: AtomicBool::new(false),
             keyboard_ctrl: Arc::new(Mutex::new(keyboard_ctrl)),
             lightbar_ctrl: Arc::new(Mutex::new(lightbar_ctrl)),
+            lid_closed: AtomicBool::new(false),
+            lid_saved_keyboard_states: Mutex::new(None),
+            lid_saved_wc_rgb: Mutex::new(None),
             power_devices: deps.power_devices,
             power_policy: RwLock::new(power_policy),
             lid_controller: Mutex::new(LidController::new(deps.lid_policy)),
@@ -730,9 +738,22 @@ impl LiveUccdBackend {
         }
     }
 
+    /// Tears down transient BLE cooler state before system suspend (`PrepareForSleep(true)`).
+    pub fn on_system_suspend(&self) {
+        self.cooler_suspending.store(true, Ordering::SeqCst);
+        self.lock_mutex(&self.cooler_controller)
+            .on_prepare_for_sleep(true);
+    }
+
     /// Restores lightbar idle state on resume from sleep without repeating welcome animation (`ISSUE-04`).
     pub fn on_system_resume(&self) {
+        self.cooler_suspending.store(false, Ordering::SeqCst);
+        self.lock_mutex(&self.cooler_controller)
+            .on_prepare_for_sleep(false);
         let _ = self.lock_mutex(&self.lightbar_ctrl).on_resume();
+        if !self.is_lid_closed() {
+            self.restore_lid_lighting();
+        }
     }
 
     pub fn config_recovered_at_startup(&self) -> bool {

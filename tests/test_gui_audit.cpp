@@ -362,17 +362,24 @@ private slots:
     auto *lidTypeC=window.findChild<QComboBox *>("lidActionTypeC");QVERIFY(lidTypeC);
     auto *lidBat=window.findChild<QComboBox *>("lidActionBat");QVERIFY(lidBat);
     auto *wakeOnly=window.findChild<QCheckBox *>("wakeOnlyLidAndKeyboard");QVERIFY(wakeOnly);
+    auto *lidOffKbd=window.findChild<QCheckBox *>("turnOffKeyboardBacklightOnLidClose");QVERIFY(lidOffKbd);
+    auto *lidOffWcLed=window.findChild<QCheckBox *>("turnOffWaterCoolerLedOnLidClose");QVERIFY(lidOffWcLed);
     QCOMPARE(lidAc->currentData().toString(),QString("screen_off"));
     QCOMPARE(lidTypeC->currentData().toString(),QString("screen_off"));
     QCOMPARE(lidBat->currentData().toString(),QString("suspend"));
     QVERIFY(wakeOnly->isChecked());
+    QVERIFY(lidOffKbd->isChecked());
+    QVERIFY(!lidOffWcLed->isChecked());
     auto *save=window.findChild<QPushButton *>("savePowerDevices");QVERIFY(save);
 #ifdef UCC_READ_ONLY_PREVIEW
     QVERIFY(!save->isEnabled());
     QVERIFY(!lidAc->isEnabled());
     QVERIFY(!wakeOnly->isEnabled());
+    QVERIFY(!lidOffKbd->isEnabled());
+    QVERIFY(!lidOffWcLed->isEnabled());
     QVERIFY(stats()["writes"].toArray().isEmpty());
 #else
+    lidOffWcLed->setChecked(true);
     QVERIFY(save->isEnabled());save->click();
     const auto payload=QJsonDocument::fromJson(control("TestLastPowerDevices").toString().toUtf8()).object();
     const auto entry=payload["devices"].toArray()[0].toObject();
@@ -382,6 +389,8 @@ private slots:
     QCOMPARE(payload["lid"]["ac"].toString(),QString("screen_off"));
     QCOMPARE(payload["lid"]["bat"].toString(),QString("suspend"));
     QVERIFY(payload["lid"]["wakeOnlyLidAndKeyboard"].toBool());
+    QVERIFY(payload["lid"]["turnOffKeyboardBacklightOnLidClose"].toBool());
+    QVERIFY(payload["lid"]["turnOffWaterCoolerLedOnLidClose"].toBool());
 #endif
     QTest::qWait(80);
     const QString output=qEnvironmentVariable("UCC_SCREENSHOT_DIR");

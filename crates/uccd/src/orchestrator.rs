@@ -714,8 +714,34 @@ impl DaemonRuntime {
     }
 }
 
-/// Best-effort systemd-logind monitor handling `PrepareForSleep` resume notifications and
-/// `handle-lid-switch` inhibitor coordination when non-default lid policies are active (`ISSUE-03`).
+async fn next_signal_opt(
+    stream: Option<&mut std::pin::Pin<Box<zbus::proxy::SignalStream<'_>>>>,
+) -> Option<zbus::Message> {
+    let Some(s) = stream else {
+        return std::future::pending().await;
+    };
+    std::future::poll_fn(|cx| s.as_mut().poll_next(cx)).await
+}
+
+fn extract_lid_closed_change(
+    msg: &zbus::Message,
+    expected_iface: &str,
+    expected_prop: &str,
+) -> Option<bool> {
+    let (iface, changed, _invalidated): (
+        String,
+        HashMap<String, zbus::zvariant::OwnedValue>,
+        Vec<String>,
+    ) = msg.body().deserialize().ok()?;
+    if iface != expected_iface {
+        return None;
+    }
+    let val = changed.get(expected_prop)?;
+    bool::try_from(val).ok()
+}
+
+/// Best-effort systemd-logind & UPower monitor handling `PrepareForSleep` resume notifications,
+/// `handle-lid-switch` inhibitor coordination (`ISSUE-03`), and lid keyboard/cooler lighting (`M8.10`).
 async fn run_logind_monitor_loop(
     connection: zbus::Connection,
     backend: Arc<LiveUccdBackend>,
@@ -731,6 +757,10 @@ async fn run_logind_monitor_loop(
     else {
         return;
     };
+
+    if let Ok(closed) = login_proxy.get_property::<bool>("LidClosed").await {
+        backend.seed_initial_lid_state(closed);
+    }
 
     let mut inhibitor_fd: Option<zbus::zvariant::OwnedFd> = None;
     let pd_settings: serde_json::Value =
@@ -759,6 +789,30 @@ async fn run_logind_monitor_loop(
     };
     let mut sleep_stream = std::pin::pin!(sleep_stream);
 
+    let mut login_props_stream = match zbus::Proxy::new(
+        &connection,
+        "org.freedesktop.login1",
+        "/org/freedesktop/login1",
+        "org.freedesktop.DBus.Properties",
+    )
+    .await
+    {
+        Ok(p) => p.receive_signal("PropertiesChanged").await.ok().map(Box::pin),
+        Err(_) => None,
+    };
+
+    let mut upower_props_stream = match zbus::Proxy::new(
+        &connection,
+        "org.freedesktop.UPower",
+        "/org/freedesktop/UPower",
+        "org.freedesktop.DBus.Properties",
+    )
+    .await
+    {
+        Ok(p) => p.receive_signal("PropertiesChanged").await.ok().map(Box::pin),
+        Err(_) => None,
+    };
+
     loop {
         tokio::select! {
             biased;
@@ -766,8 +820,14 @@ async fn run_logind_monitor_loop(
             maybe_sig = std::future::poll_fn(|cx| sleep_stream.as_mut().poll_next(cx)) => {
                 let Some(msg) = maybe_sig else { break; };
                 if let Ok((sleeping,)) = msg.body().deserialize::<(bool,)>() {
-                    if !sleeping {
-                        let b = Arc::clone(&backend);
+                    let b = Arc::clone(&backend);
+                    if sleeping {
+                        let _ = tokio::task::spawn_blocking(move || {
+                            if let Some(_g) = b.enter_worker_hw_op() {
+                                b.on_system_suspend();
+                            }
+                        }).await;
+                    } else {
                         let _ = tokio::task::spawn_blocking(move || {
                             if let Some(_g) = b.enter_worker_hw_op() {
                                 b.on_system_resume();
@@ -775,6 +835,34 @@ async fn run_logind_monitor_loop(
                             }
                         }).await;
                     }
+                }
+            }
+            maybe_msg = next_signal_opt(login_props_stream.as_mut()) => {
+                let Some(msg) = maybe_msg else {
+                    login_props_stream = None;
+                    continue;
+                };
+                if let Some(closed) = extract_lid_closed_change(&msg, "org.freedesktop.login1.Manager", "LidClosed") {
+                    let b = Arc::clone(&backend);
+                    let _ = tokio::task::spawn_blocking(move || {
+                        if let Some(_g) = b.enter_worker_hw_op() {
+                            b.on_lid_state_changed(closed);
+                        }
+                    }).await;
+                }
+            }
+            maybe_msg = next_signal_opt(upower_props_stream.as_mut()) => {
+                let Some(msg) = maybe_msg else {
+                    upower_props_stream = None;
+                    continue;
+                };
+                if let Some(closed) = extract_lid_closed_change(&msg, "org.freedesktop.UPower", "LidIsClosed") {
+                    let b = Arc::clone(&backend);
+                    let _ = tokio::task::spawn_blocking(move || {
+                        if let Some(_g) = b.enter_worker_hw_op() {
+                            b.on_lid_state_changed(closed);
+                        }
+                    }).await;
                 }
             }
         }

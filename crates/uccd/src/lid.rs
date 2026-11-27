@@ -79,6 +79,8 @@ pub struct LidSourcePolicy {
     pub type_c: LidSourceAction,
     pub bat: LidSourceAction,
     pub wake_only_lid_and_keyboard: bool,
+    pub turn_off_keyboard_backlight_on_lid_close: bool,
+    pub turn_off_water_cooler_led_on_lid_close: bool,
 }
 
 impl Default for LidSourcePolicy {
@@ -88,6 +90,8 @@ impl Default for LidSourcePolicy {
             type_c: LidSourceAction::Ignore,
             bat: LidSourceAction::Suspend,
             wake_only_lid_and_keyboard: true,
+            turn_off_keyboard_backlight_on_lid_close: true,
+            turn_off_water_cooler_led_on_lid_close: false,
         }
     }
 }
@@ -120,6 +124,18 @@ pub fn parse_lid_policy_from_json(power_devices: &serde_json::Value) -> LidSourc
         .and_then(|v| v.as_bool())
     {
         policy.wake_only_lid_and_keyboard = w;
+    }
+    if let Some(v) = lid
+        .get("turnOffKeyboardBacklightOnLidClose")
+        .and_then(|v| v.as_bool())
+    {
+        policy.turn_off_keyboard_backlight_on_lid_close = v;
+    }
+    if let Some(v) = lid
+        .get("turnOffWaterCoolerLedOnLidClose")
+        .and_then(|v| v.as_bool())
+    {
+        policy.turn_off_water_cooler_led_on_lid_close = v;
     }
     policy
 }

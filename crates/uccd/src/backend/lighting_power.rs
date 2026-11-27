@@ -3,14 +3,15 @@
 //! Keyboard RGB, Lightbar animation ticks, PowerPolicy/PowerDevices, and WakeupPolicy (`ISSUE-03`, `ISSUE-13`, `ISSUE-34`).
 
 use super::{DbusSignalEvent, LiveUccdBackend};
-use crate::lid::WakeupPolicy;
+use crate::lid::{parse_lid_policy_from_json, LidSourcePolicy, WakeupPolicy};
 use serde_json::Value;
 use std::path::Path;
 use std::sync::atomic::Ordering;
 use std::sync::Arc;
 use ucc_config::UccSettings;
 use ucc_core::{KeyboardBacklightState, PolicyDecision, ProfileState, UccProfile};
-use ucc_hardware::{PowerDeviceController, Sysfs};
+use ucc_dbus::UccdBackend;
+use ucc_hardware::{CoolerState, PowerDeviceController, RgbTarget, Sysfs};
 
 impl LiveUccdBackend {
     pub(super) fn lock_mutex<'a, T>(&self, m: &'a std::sync::Mutex<T>) -> std::sync::MutexGuard<'a, T> {
@@ -175,15 +176,142 @@ impl LiveUccdBackend {
         let Some((states, _)) = Self::parse_keyboard_states_value(&val) else {
             return;
         };
+        let lid_policy = self.current_lid_source_policy();
+        let blanked_under_lid =
+            self.is_lid_closed() && lid_policy.turn_off_keyboard_backlight_on_lid_close;
+        if blanked_under_lid {
+            *self.lock_mutex(&self.lid_saved_keyboard_states) = Some(states.clone());
+        }
+        let target_states = if blanked_under_lid {
+            Self::blanked_keyboard_states(&states)
+        } else {
+            states
+        };
         let applied = {
             let mut ctrl = self.lock_mutex(&self.keyboard_ctrl);
             if !ctrl.is_available() {
                 let _ = ctrl.init();
             }
-            ctrl.is_available() && ctrl.apply_states(&states).is_ok()
+            ctrl.is_available() && ctrl.apply_states(&target_states).is_ok()
         };
-        if applied {
+        if applied && !blanked_under_lid {
             self.lock_mutex(&self.lightbar_ctrl).keyboard_changed();
+        }
+    }
+
+    pub(super) fn current_lid_source_policy(&self) -> LidSourcePolicy {
+        let pd_val = serde_json::from_str::<Value>(&self.get_power_device_settings_json())
+            .unwrap_or(Value::Null);
+        parse_lid_policy_from_json(&pd_val)
+    }
+
+    pub(super) fn is_water_cooler_connected_now(&self) -> bool {
+        self.water_cooler_connected.load(Ordering::SeqCst)
+            || self.lock_mutex(&self.cooler_controller).state() == CoolerState::Connected
+    }
+
+    fn blanked_keyboard_states(states: &[KeyboardBacklightState]) -> Vec<KeyboardBacklightState> {
+        states
+            .iter()
+            .cloned()
+            .map(|mut s| {
+                s.brightness = 0;
+                s
+            })
+            .collect()
+    }
+
+    pub fn seed_initial_lid_state(&self, closed: bool) {
+        self.lid_closed.store(closed, Ordering::SeqCst);
+    }
+
+    pub fn is_lid_closed(&self) -> bool {
+        self.lid_closed.load(Ordering::SeqCst)
+    }
+
+    /// Blanks keyboard backlight and optional water cooler LED in RAM on lid close (`M8.10`),
+    /// restoring previous live states when reopened without mutating `settings.json`.
+    pub fn on_lid_state_changed(&self, closed: bool) {
+        if self.shutting_down.load(Ordering::SeqCst)
+            || ucc_config::is_read_only_preview()
+            || self.is_vendor_unsupported()
+        {
+            self.lid_closed.store(closed, Ordering::SeqCst);
+            return;
+        }
+        let prev = self.lid_closed.swap(closed, Ordering::SeqCst);
+        if prev == closed {
+            return;
+        }
+        if !closed {
+            self.restore_lid_lighting();
+            return;
+        }
+
+        let policy = self.current_lid_source_policy();
+        if policy.turn_off_keyboard_backlight_on_lid_close {
+            let mut ctrl = self.lock_mutex(&self.keyboard_ctrl);
+            if !ctrl.is_available() {
+                let _ = ctrl.init();
+            }
+            if ctrl.is_available() {
+                let current = ctrl.current_states().to_vec();
+                if !current.is_empty() && current.iter().any(|s| s.brightness > 0) {
+                    {
+                        let mut saved = self.lock_mutex(&self.lid_saved_keyboard_states);
+                        if saved.is_none() {
+                            *saved = Some(current.clone());
+                        }
+                    }
+                    let dark = Self::blanked_keyboard_states(&current);
+                    let _ = ctrl.apply_states(&dark);
+                }
+            }
+        }
+
+        if policy.turn_off_water_cooler_led_on_lid_close && self.is_water_cooler_connected_now() {
+            let mut cooler = self.lock_mutex(&self.cooler_controller);
+            let current_rgb = cooler.desired_rgb_target();
+            if matches!(current_rgb, RgbTarget::Color { .. }) {
+                {
+                    let mut saved = self.lock_mutex(&self.lid_saved_wc_rgb);
+                    if saved.is_none() {
+                        *saved = Some(current_rgb);
+                    }
+                }
+                let _ = cooler.turn_off_led();
+            }
+        }
+    }
+
+    /// Restores keyboard backlight and water cooler LED previously blanked by lid close (`M8.10`).
+    pub fn restore_lid_lighting(&self) {
+        if self.shutting_down.load(Ordering::SeqCst)
+            || ucc_config::is_read_only_preview()
+            || self.is_vendor_unsupported()
+        {
+            return;
+        }
+        if let Some(states) = self.lock_mutex(&self.lid_saved_keyboard_states).take() {
+            let mut ctrl = self.lock_mutex(&self.keyboard_ctrl);
+            if !ctrl.is_available() {
+                let _ = ctrl.init();
+            }
+            if ctrl.is_available() {
+                let _ = ctrl.apply_states(&states);
+            }
+        }
+        if let Some(RgbTarget::Color {
+            red,
+            green,
+            blue,
+            state,
+        }) = self.lock_mutex(&self.lid_saved_wc_rgb).take()
+        {
+            if self.is_water_cooler_connected_now() {
+                let mut cooler = self.lock_mutex(&self.cooler_controller);
+                let _ = cooler.set_rgb(red, green, blue, state);
+            }
         }
     }
 
@@ -204,14 +332,28 @@ impl LiveUccdBackend {
         };
 
         // Write to hardware BEFORE updating persistent settings (`ISSUE-13`).
+        let blanked_under_lid = self.is_lid_closed()
+            && self
+                .current_lid_source_policy()
+                .turn_off_keyboard_backlight_on_lid_close;
         {
             let mut ctrl = self.lock_mutex(&self.keyboard_ctrl);
             if !ctrl.is_available() {
                 let _ = ctrl.init();
             }
-            if ctrl.apply_states(&states).is_err() {
+            if blanked_under_lid {
+                let dark = Self::blanked_keyboard_states(&states);
+                if ctrl.apply_states(&dark).is_err() {
+                    return false;
+                }
+            } else if ctrl.apply_states(&states).is_err() {
                 return false;
             }
+        }
+        if blanked_under_lid {
+            *self.lock_mutex(&self.lid_saved_keyboard_states) = Some(states.clone());
+        } else {
+            *self.lock_mutex(&self.lid_saved_keyboard_states) = None;
         }
 
         if self
@@ -224,7 +366,9 @@ impl LiveUccdBackend {
             return false;
         }
 
-        self.lock_mutex(&self.lightbar_ctrl).keyboard_changed();
+        if !blanked_under_lid {
+            self.lock_mutex(&self.lightbar_ctrl).keyboard_changed();
+        }
 
         if let Some(ref pid) = kb_profile_id {
             let updated = {

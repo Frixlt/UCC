@@ -471,6 +471,24 @@ impl LiveUccdBackend {
             3 => RgbState::BreatheColor,
             _ => RgbState::Static,
         };
+        if self.is_lid_closed()
+            && self
+                .current_lid_source_policy()
+                .turn_off_water_cooler_led_on_lid_close
+            && self.is_water_cooler_connected_now()
+        {
+            *self.lock_mutex(&self.lid_saved_wc_rgb) = Some(ucc_hardware::RgbTarget::Color {
+                red: r,
+                green: g,
+                blue: b,
+                state,
+            });
+            return self
+                .lock_mutex(&self.cooler_controller)
+                .turn_off_led()
+                .is_ok();
+        }
+        *self.lock_mutex(&self.lid_saved_wc_rgb) = None;
         self.lock_mutex(&self.cooler_controller)
             .set_rgb(r, g, b, state)
             .is_ok()
@@ -480,6 +498,7 @@ impl LiveUccdBackend {
         let Some(_op_guard) = self.enter_hardware_op() else {
             return false;
         };
+        *self.lock_mutex(&self.lid_saved_wc_rgb) = None;
         self.lock_mutex(&self.cooler_controller)
             .turn_off_led()
             .is_ok()
@@ -756,7 +775,21 @@ impl LiveUccdBackend {
         true
     }
 
-    pub(super) fn drain_cooler_commands(&self) -> Vec<[u8; 8]> {
+    pub fn set_cooler_connected_state(&self, connected: bool) {
+        self.water_cooler_connected.store(connected, Ordering::SeqCst);
+        let mut cooler = self.lock_mutex(&self.cooler_controller);
+        if connected {
+            cooler.on_connected();
+        } else {
+            cooler.on_disconnected();
+        }
+    }
+
+    pub fn cooler_desired_rgb(&self) -> ucc_hardware::RgbTarget {
+        self.lock_mutex(&self.cooler_controller).desired_rgb_target()
+    }
+
+    pub fn drain_cooler_commands(&self) -> Vec<[u8; 8]> {
         let sink = MockBleTransport::new(true);
         let mut cooler = self.lock_mutex(&self.cooler_controller);
         let _ = cooler.flush_ready(&sink, Instant::now());

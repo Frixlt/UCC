@@ -327,10 +327,23 @@ fn t_daemon_05_whitelist_validates_lid_policy_section() {
             "ac": "screen_off",
             "type_c": "ignore",
             "bat": "suspend",
-            "wakeOnlyLidAndKeyboard": true
+            "wakeOnlyLidAndKeyboard": true,
+            "turnOffKeyboardBacklightOnLidClose": true,
+            "turnOffWaterCoolerLedOnLidClose": false
         }
     });
     assert!(validate_settings_json(&valid).is_ok());
+
+    let invalid_bool = json!({
+        "enabled": true,
+        "lid": {
+            "turnOffKeyboardBacklightOnLidClose": "yes"
+        }
+    });
+    assert!(
+        validate_settings_json(&invalid_bool).is_err(),
+        "whitelist validate_settings_json must reject non-boolean lid lighting toggles"
+    );
 
     let invalid = json!({
         "enabled": true,
