@@ -171,7 +171,7 @@ impl FanControlLogic {
             None => filtered_temp,
             Some(prev) if filtered_temp >= prev => filtered_temp,
             Some(prev) => {
-                let floor = filtered_temp + Self::HYSTERESIS_DEG;
+                let floor = filtered_temp.saturating_add(Self::HYSTERESIS_DEG);
                 prev.min(floor).max(filtered_temp)
             }
         };
