@@ -10,7 +10,11 @@ pub mod platform;
 pub mod sysfs;
 pub mod telemetry;
 pub mod traits;
+pub mod windows_display;
+pub mod windows_lid;
+pub mod windows_power;
 pub mod windows_wmi;
+pub mod winrt_cooler;
 
 pub use cpu::{
     find_closest_value, parse_cpu_range_list, CpuController, CpuInfo, CpuTopology, CpuWorker,
@@ -52,8 +56,8 @@ pub use ioctl::{
     TuxedoIoDevice,
 };
 pub use nvml::{
-    GpuRuntimeStatus, NvidiaPowerGuard, NvmlError, NvmlMemory, NvmlTelemetry,
-    NvmlTelemetrySnapshot, NvmlUtilization, NvmlWrapper,
+    windows_nvml_candidate_paths, GpuRuntimeStatus, NvidiaPowerGuard, NvmlError, NvmlMemory,
+    NvmlTelemetry, NvmlTelemetrySnapshot, NvmlUtilization, NvmlWrapper,
 };
 pub use platform::{
     MockPlatformBackend, PlatformBackend, PlatformBackendKind, PlatformCapabilities, PlatformError,
@@ -69,6 +73,33 @@ pub use traits::{
     MockGpuBackend, MockHardwareIo, MockProcessRunner, MockSysfs, ProcessExecution, ProcessOutput,
     ProcessRunner, RealClock, RealProcessRunner, RealSysfs, Sysfs, SysfsWrite,
 };
+pub use windows_display::{
+    DisplayModeSpec, MockWindowsDisplayTransport, WindowsDisplayController, WindowsDisplayError,
+    WindowsDisplayTransport, WindowsDisplayWrite,
+};
+pub use windows_lid::{
+    parse_lid_power_broadcast, LidGuid, LidRegistrationHandle, LidSwitchState,
+    MockWindowsLidTransport, PowerBroadcastSetting, WindowsLidError, WindowsLidMonitor,
+    WindowsLidTransport, DEVICE_NOTIFY_WINDOW_HANDLE, GUID_LIDSWITCH_STATE_CHANGE,
+    GUID_LIDSWITCH_STATE_CHANGE_BYTES,
+};
+pub use windows_power::{
+    epp_percent_to_str, epp_str_to_percent, BoostMode, MockWindowsPowerTransport, PowerGuid,
+    WindowsPowerController, WindowsPowerError, WindowsPowerSource, WindowsPowerTransport,
+    WindowsPowerWrite, GUID_PROCESSOR_FREQUENCY_MAXIMUM, GUID_PROCESSOR_PERF_BOOST_MODE,
+    GUID_PROCESSOR_PERF_ENERGY_PREFERENCE, GUID_PROCESSOR_SETTINGS_SUBGROUP,
+    GUID_PROCESSOR_THROTTLE_MAXIMUM, GUID_PROCESSOR_THROTTLE_MINIMUM,
+};
 pub use windows_wmi::{
-    ec_reg, MockWmiEcTransport, WindowsWmiEcBackend, WmiEcOp, WmiEcTransport, WmiPlatformLimits,
+    decode_ec_read_byte, ec_reg, encode_ec_read_arg, encode_ec_write_arg, feature_requirement,
+    feature_support, AcpiWmiCommand, DriverRequirement, MockWmiEcTransport, WindowsWmiEcBackend,
+    WmiEcOp, WmiEcTransport, WmiFeature, WmiFeatureSupport, WmiPlatformLimits,
+    WINDOWS_WMI_CAPABILITY_MATRIX, WMI_CLASS_ACPI_TEST, WMI_EC_READ_FLAG, WMI_METHOD_GET_SET_ULONG,
+    WMI_METHOD_ID_EC_RW, WMI_NAMESPACE,
+};
+pub use winrt_cooler::{
+    format_ble_address_u64, nordic_uart_guids, parse_ble_address_u64, parse_winrt_guid,
+    validate_cooler_tx_packet, MockWinRtGattBridge, WinRtBleDeviceInfo, WinRtBleError,
+    WinRtCoolerTransport, WinRtGattBridge, WinRtGattHandles, WinRtGuid, NORDIC_UART_RX_CHAR_GUID,
+    NORDIC_UART_SERVICE_GUID, NORDIC_UART_TX_CHAR_GUID,
 };
