@@ -21,7 +21,7 @@ fn test_tray_menu_structure_and_actions() {
 
     // Test activate sends OpenGui action
     ksni::Tray::activate(&mut tray, 0, 0);
-    assert_eq!(rx.try_recv().unwrap(), TrayAction::OpenGui);
+    assert!(matches!(rx.try_recv().unwrap(), TrayAction::OpenGui(_)));
 
     // Verify menu items
     let menu = ksni::Tray::menu(&tray);

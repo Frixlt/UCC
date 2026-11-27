@@ -86,7 +86,9 @@ fn t_desk01_bounded_tray_action_channel_drops_excess_without_blocking() {
         received.push(action);
     }
     assert_eq!(received.len(), 32);
-    assert!(received.iter().all(|a| *a == TrayAction::OpenGui));
+    assert!(received
+        .iter()
+        .all(|a| matches!(a, TrayAction::OpenGui(_))));
 }
 
 #[test]
@@ -205,5 +207,41 @@ async fn t_m97_activate_gui_dbus_prefers_activate_with_token_and_uses_preview_bu
     assert_eq!(
         *legacy_calls.lock().unwrap(),
         vec!["Activate".to_string()]
+    );
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn t_m1_5_activate_with_token_reaches_main_gui_service() {
+    let daemon = PrivateDbusDaemon::spawn();
+    let gui_calls = Arc::new(Mutex::new(Vec::new()));
+
+    let _gui_conn = Builder::address(daemon.address.as_str())
+        .unwrap()
+        .name(GUI_DBUS_SERVICE)
+        .unwrap()
+        .serve_at(
+            GUI_DBUS_PATH,
+            MockGuiTokenService {
+                calls: Arc::clone(&gui_calls),
+            },
+        )
+        .unwrap()
+        .build()
+        .await
+        .unwrap();
+
+    let client_conn = Builder::address(daemon.address.as_str())
+        .unwrap()
+        .build()
+        .await
+        .unwrap();
+
+    activate_gui_dbus_on(&client_conn, GUI_DBUS_SERVICE, Some("ksni-wayland-tok-7"))
+        .await
+        .expect("main GUI ActivateWithToken must succeed");
+
+    assert_eq!(
+        *gui_calls.lock().unwrap(),
+        vec!["ActivateWithToken:ksni-wayland-tok-7".to_string()]
     );
 }

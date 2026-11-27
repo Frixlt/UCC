@@ -9,9 +9,9 @@ use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::Arc;
 use tokio::sync::mpsc;
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum TrayAction {
-    OpenGui,
+    OpenGui(Option<String>),
     SelectProfile(usize),
     ToggleFanAuto,
     ToggleWaterCooler,
@@ -30,11 +30,15 @@ impl ActionSender {
             Self::Unbounded(tx) => {
                 let _ = tx.send(action);
             }
-            Self::Bounded(tx) => {
-                if let Err(err) = tx.try_send(action) {
-                    tracing::warn!("Dropping tray action {:?}: {err}", action);
+            Self::Bounded(tx) => match tx.try_send(action) {
+                Ok(()) => {}
+                Err(mpsc::error::TrySendError::Full(dropped)) => {
+                    tracing::warn!("Dropping tray action {:?}: queue full", dropped);
                 }
-            }
+                Err(mpsc::error::TrySendError::Closed(dropped)) => {
+                    tracing::warn!("Dropping tray action {:?}: channel closed", dropped);
+                }
+            },
         }
     }
 }
@@ -148,7 +152,8 @@ impl Tray for UccTray {
     }
 
     fn activate(&mut self, _x: i32, _y: i32) {
-        self.action_tx.send_action(TrayAction::OpenGui);
+        self.action_tx
+            .send_action(TrayAction::OpenGui(ksni::current_xdg_activation_token()));
     }
 
     fn menu(&self) -> Vec<MenuItem<Self>> {
@@ -168,7 +173,7 @@ impl Tray for UccTray {
         let mut items = vec![MenuItem::Standard(StandardItem {
             label: "Open Control Center".into(),
             activate: Box::new(move |_| {
-                open_tx.send_action(TrayAction::OpenGui);
+                open_tx.send_action(TrayAction::OpenGui(ksni::current_xdg_activation_token()));
             }),
             ..Default::default()
         })];

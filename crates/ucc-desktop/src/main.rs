@@ -284,8 +284,9 @@ async fn main() {
             }
             Some(action) = rx.recv() => {
                 match action {
-                    TrayAction::OpenGui => {
-                        let token = std::env::var("XDG_ACTIVATION_TOKEN").ok();
+                    TrayAction::OpenGui(tray_token) => {
+                        let env_token = std::env::var("XDG_ACTIVATION_TOKEN").ok();
+                        let token = tray_token.or(env_token);
                         if let Err(err) = activate_or_launch_gui(token.as_deref(), preview).await {
                             warn!("Failed to activate or launch ucc-gui: {err}");
                         }

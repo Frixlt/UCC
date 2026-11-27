@@ -21,6 +21,10 @@ inline void activateGuiWindow(QWidget *window,const QString &token) {
 #else
   if(!token.isEmpty()) qputenv("XDG_ACTIVATION_TOKEN", token.toUtf8());
 #endif
-  window->activateWindow();if(auto *handle=window->windowHandle()) handle->requestActivate();
+  window->activateWindow();
+  if(auto *handle=window->windowHandle()) handle->requestActivate();
+#ifndef UCC_HAVE_KWINDOWSYSTEM
+  if(!token.isEmpty()) qunsetenv("XDG_ACTIVATION_TOKEN");
+#endif
 }
 }

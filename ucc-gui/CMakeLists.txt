@@ -100,6 +100,10 @@ if(TARGET PkgConfig::UCC_XCB)
   target_compile_definitions(ucc-gui PRIVATE UCC_HAS_X11_BLUR)
 endif()
 
+if(UCC_PACKAGE_RUST_RUNTIME)
+  target_compile_definitions(ucc-gui PRIVATE UCC_PACKAGE_RUST_RUNTIME=1)
+endif()
+
 target_compile_options( ucc-gui PRIVATE
   -Wall
   -Wextra
