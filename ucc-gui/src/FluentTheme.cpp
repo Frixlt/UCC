@@ -72,11 +72,14 @@ QFrame *createCard(QWidget *parent) {
   return card;
 }
 QIcon icon(const QString &name) {
+  return icon(name, colors().secondary);
+}
+QIcon icon(const QString &name, const QColor &stroke) {
   QPixmap image(24,24); image.fill(Qt::transparent);
   QPainter p(&image); p.setRenderHint(QPainter::Antialiasing);
-  p.setPen(QPen(colors().secondary,1.5));
+  p.setPen(QPen(stroke,1.5));
   if(name=="Light" || name=="Dark" || name=="Auto") {
-    p.setPen(QPen(colors().secondary,1.6,Qt::SolidLine,Qt::RoundCap,Qt::RoundJoin));
+    p.setPen(QPen(stroke,1.6,Qt::SolidLine,Qt::RoundCap,Qt::RoundJoin));
     auto sun=[&](QPointF center,qreal radius,bool half){
       if(half) p.drawArc(QRectF(center.x()-radius,center.y()-radius,2*radius,2*radius),90*16,180*16);
       else p.drawEllipse(center,radius,radius);
@@ -135,6 +138,9 @@ QIcon icon(const QString &name) {
     p.drawLine(14,3,14,9);
     p.drawPolyline(QPolygonF{{10,9},{4,19},{5,21},{19,21},{20,19},{14,9}});
     p.drawLine(7,16,17,16);
+  } else if(name=="Logo") {
+    p.drawPolygon(QPolygonF{{12,3},{20,10},{12,21},{4,10}});
+    p.drawPolygon(QPolygonF{{12,7},{16,10.5},{12,16.5},{8,10.5}});
   } else {
     p.drawRoundedRect(QRectF(2,5,20,14),2,2);
     for(int y:{9,13}) for(int x:{6,10,14,18}) p.drawPoint(x,y);
@@ -266,29 +272,30 @@ QCheckBox::indicator { width: 16px; height: 16px; }
 QTabWidget::pane { border: none; background: transparent; }
 QTabBar::tab { background: transparent; padding: 12px 18px; border-bottom: 2px solid transparent; }
 QTabBar::tab:selected { border-bottom: 2px solid @accent; color: @accent; }
-QTabWidget#lightingTabs::pane { border-top: 1px solid @border; background: transparent; padding-top: 12px; }
-QTabWidget#lightingTabs > QTabBar { background: transparent; }
-QTabWidget#lightingTabs > QTabBar::tab {
-  background: @inset;
+QTabWidget#lightingTabs, QTabWidget#lightingTabs::pane { border: none; background: transparent; padding: 0; }
+QFrame#lightingSegmentedBar {
+  background: @segTrack;
+  border: 1px solid @border;
+  border-radius: 10px;
+}
+QPushButton#lightingSegmentButton {
+  background: transparent;
   color: @secondary;
   border: 1px solid transparent;
-  border-bottom: none;
-  border-top-left-radius: 8px;
-  border-top-right-radius: 8px;
-  padding: 8px 18px;
-  margin-right: 4px;
-  min-width: 88px;
+  border-radius: 7px;
+  padding: 7px 18px;
+  font-size: 13px;
+  font-weight: 600;
+  min-height: 20px;
 }
-QTabWidget#lightingTabs > QTabBar::tab:hover {
+QPushButton#lightingSegmentButton:hover:!checked {
   background: @hover;
   color: @text;
 }
-QTabWidget#lightingTabs > QTabBar::tab:selected {
-  background: @surface;
+QPushButton#lightingSegmentButton:checked {
+  background: @segActiveBg;
   color: @accent;
-  border-color: @border;
-  border-top: 2px solid @accent;
-  font-weight: 600;
+  border: 1px solid @segActiveBorder;
 }
 QScrollArea, QScrollArea > QWidget > QWidget { background: transparent; border: none; }
 QScrollBar:vertical { background: transparent; width: 8px; margin: 0; }
@@ -309,7 +316,7 @@ QCheckBox::indicator:checked { background: @accent; border-color: @accent; image
 QCheckBox::indicator:disabled { background: @disabled; border-color: @border; }
 QCheckBox::indicator:checked:disabled { background: @disabledText; }
 )QSS";
-  const QHash<QString,QColor> tokens={{"@canvas",c.canvas},{"@surface",c.surface},{"@inset",c.inset},{"@text",c.text},{"@secondary",c.secondary},{"@border",c.border},{"@accent",c.accent},{"@onAccent",c.onAccent},{"@hover",c.hover},{"@selected",c.selected},{"@disabled",c.disabled},{"@disabledText",c.disabledText},{"@success",c.success},{"@warning",c.warning},{"@controlBorder",isDark() ? QColor("#586477") : QColor("#CDD3DF")},{"@controlHoverBorder",isDark() ? QColor("#798AA4") : QColor("#ABB7CA")},{"@accentHover",isDark() ? QColor("#8EC7FF") : QColor("#005BAA")},{"@scrollbar",isDark() ? QColor("#59667B") : QColor("#C2C8D3")}};
+  const QHash<QString,QColor> tokens={{"@canvas",c.canvas},{"@surface",c.surface},{"@inset",c.inset},{"@text",c.text},{"@secondary",c.secondary},{"@border",c.border},{"@accent",c.accent},{"@onAccent",c.onAccent},{"@hover",c.hover},{"@selected",c.selected},{"@disabled",c.disabled},{"@disabledText",c.disabledText},{"@success",c.success},{"@warning",c.warning},{"@controlBorder",isDark() ? QColor("#586477") : QColor("#CDD3DF")},{"@controlHoverBorder",isDark() ? QColor("#798AA4") : QColor("#ABB7CA")},{"@accentHover",isDark() ? QColor("#8EC7FF") : QColor("#005BAA")},{"@scrollbar",isDark() ? QColor("#59667B") : QColor("#C2C8D3")},{"@segTrack",isDark() ? c.surface : QColor("#EAEFF7")},{"@segActiveBg",isDark() ? c.selected : QColor("#FFFFFF")},{"@segActiveBorder",isDark() ? QColor("#3B5B82") : QColor("#CDD5E1")}};
   // Replace long names first so @accent does not consume @accentHover.
   auto keys=tokens.keys();std::sort(keys.begin(),keys.end(),[](const auto &a,const auto &b){return a.size()>b.size();});
   for(const auto &key:keys) sheet.replace(key,tokens.value(key).name());

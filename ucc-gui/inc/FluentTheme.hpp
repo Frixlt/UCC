@@ -33,4 +33,5 @@ QFrame *createCard(QWidget *parent = nullptr);
 void collapseWhenEmpty(QFrame *card);
 void styleSliderRow(QHBoxLayout *layout, QLabel *value);
 QIcon icon(const QString &name);
+QIcon icon(const QString &name, const QColor &stroke);
 }

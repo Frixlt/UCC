@@ -495,13 +495,24 @@ void MainWindow::setupLightingPage()
   auto *lightingPage = new QWidget( this );
   auto *lightingLayout = new QVBoxLayout( lightingPage );
   lightingLayout->setContentsMargins( 0, 0, 0, 0 );
-  lightingLayout->setSpacing( 0 );
+  lightingLayout->setSpacing( 14 );
+
+  auto *segRow = new QHBoxLayout();
+  segRow->setContentsMargins( 0, 0, 0, 0 );
+  auto *segBar = new QFrame( lightingPage );
+  segBar->setObjectName( "lightingSegmentedBar" );
+  auto *segLayout = new QHBoxLayout( segBar );
+  segLayout->setContentsMargins( 4, 4, 4, 4 );
+  segLayout->setSpacing( 4 );
+  segRow->addWidget( segBar );
+  segRow->addStretch( 1 );
+  lightingLayout->addLayout( segRow );
 
   m_lightingTabs = new QTabWidget( lightingPage );
   m_lightingTabs->setObjectName( "lightingTabs" );
-  m_lightingTabs->setDocumentMode( true );
   m_lightingTabs->setTabsClosable( false );
   m_lightingTabs->setMovable( false );
+  m_lightingTabs->tabBar()->hide();
 
   setupKeyboardBacklightPage( m_lightingTabs );
 
@@ -534,12 +545,51 @@ void MainWindow::setupLightingPage()
   logoLayout->addStretch( 1 );
   m_lightingTabs->addTab( logoPage, "Logo" );
 
-  connect( m_lightingTabs, &QTabWidget::currentChanged, this, [this]( int subIndex ) {
+  struct SegmentDef { QString label; QString iconKey; };
+  const QVector<SegmentDef> segmentDefs = {
+    { "Keyboard", "Keyboard" },
+    { "Lightbar", "Lightbar" },
+    { "Logo", "Logo" },
+  };
+  QVector<QPushButton *> segmentButtons;
+  segmentButtons.reserve( segmentDefs.size() );
+  for ( int i = 0; i < segmentDefs.size(); ++i )
+  {
+    auto *btn = new QPushButton( segmentDefs[i].label, segBar );
+    btn->setObjectName( "lightingSegmentButton" );
+    btn->setCheckable( true );
+    btn->setCursor( Qt::PointingHandCursor );
+    btn->setIconSize( QSize( 18, 18 ) );
+    btn->setMinimumWidth( 116 );
+    segLayout->addWidget( btn );
+    segmentButtons.append( btn );
+    connect( btn, &QPushButton::clicked, this, [this, i]() {
+      if ( m_lightingTabs )
+        m_lightingTabs->setCurrentIndex( i );
+    } );
+  }
+  auto syncSegments = [this, segmentButtons, segmentDefs]( int activeIndex ) {
+    const auto c = FluentTheme::colors();
+    for ( int i = 0; i < segmentButtons.size(); ++i )
+    {
+      const bool active = ( i == activeIndex );
+      const QSignalBlocker blocked( segmentButtons[i] );
+      segmentButtons[i]->setChecked( active );
+      segmentButtons[i]->setIcon( FluentTheme::icon( segmentDefs[i].iconKey, active ? c.accent : c.secondary ) );
+    }
+  };
+  syncSegments( m_lightingTabs->currentIndex() );
+  connect( FluentTheme::events(), &FluentTheme::ThemeEvents::changed, segBar, [this, syncSegments]() {
+    if ( m_lightingTabs )
+      syncSegments( m_lightingTabs->currentIndex() );
+  } );
+  connect( m_lightingTabs, &QTabWidget::currentChanged, this, [this, syncSegments]( int subIndex ) {
+    syncSegments( subIndex );
     if ( m_tabs && m_tabs->currentIndex() == 4 && subIndex == 0 )
       refreshKeyboardLightingState();
   } );
 
-  lightingLayout->addWidget( m_lightingTabs );
+  lightingLayout->addWidget( m_lightingTabs, 1 );
   m_tabs->addTab( lightingPage, "Lighting" );
 }
 

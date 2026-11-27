@@ -134,8 +134,12 @@ private slots:
     // Verify Lighting browser tabs (non-closable), Hardware page, per-profile lid toggles,
     // per-core monitor checkbox, and Experimental widgets exist inside live MainWindow.
     auto *lightingTabs = window.findChild<QTabWidget *>(QStringLiteral("lightingTabs"));
+    auto *segBar = window.findChild<QFrame *>(QStringLiteral("lightingSegmentedBar"));
     QVERIFY(lightingTabs);
+    QVERIFY(segBar);
     QVERIFY(!lightingTabs->tabsClosable());
+    QVERIFY(lightingTabs->tabBar()->isHidden());
+    QCOMPARE(segBar->findChildren<QPushButton *>(QStringLiteral("lightingSegmentButton")).size(), 3);
     QCOMPARE(lightingTabs->count(), 3);
     QCOMPARE(lightingTabs->tabText(0), QStringLiteral("Keyboard"));
     QCOMPARE(lightingTabs->tabText(1), QStringLiteral("Lightbar"));
