@@ -217,8 +217,18 @@ impl PlatformBackend for WindowsWmiEcBackend {
         }
         let reg = Self::fan_duty_reg(fan_idx)?;
         let ec_duty = ((u16::from(percent) * 200) / 100) as u8;
+        let prev_mode = self
+            .transport
+            .read_ec_byte(ec_reg::FAN_MANUAL_MODE)
+            .unwrap_or(0);
         self.transport.write_ec_byte(ec_reg::FAN_MANUAL_MODE, 1)?;
-        self.transport.write_ec_byte(reg, ec_duty)
+        if let Err(err) = self.transport.write_ec_byte(reg, ec_duty) {
+            if prev_mode == 0 {
+                let _ = self.transport.write_ec_byte(ec_reg::FAN_MANUAL_MODE, 0);
+            }
+            return Err(err);
+        }
+        Ok(())
     }
 
     fn set_fans_auto(&self) -> Result<(), PlatformError> {
@@ -246,7 +256,10 @@ impl PlatformBackend for WindowsWmiEcBackend {
                 "TDP watts out of platform bounds",
             ));
         }
-        self.transport.write_ec_byte(reg, watts as u8)
+        let watts_u8 = u8::try_from(watts).map_err(|_| {
+            PlatformError::InvalidArgument("TDP watts exceeds 8-bit EC register range")
+        })?;
+        self.transport.write_ec_byte(reg, watts_u8)
     }
 
     fn read_perf_profile(&self) -> Result<i32, PlatformError> {

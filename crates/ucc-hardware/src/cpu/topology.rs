@@ -246,10 +246,16 @@ fn probe_core_type_cpuid(id: u32) -> String {
         }
         let guard = AffinityGuard { original };
 
+        #[cfg(target_arch = "x86_64")]
         let max_leaf = core::arch::x86_64::__get_cpuid_max(0).0;
+        #[cfg(target_arch = "x86")]
+        let max_leaf = core::arch::x86::__get_cpuid_max(0).0;
         let mut core_type = "unknown";
         if max_leaf >= 0x1a {
+            #[cfg(target_arch = "x86_64")]
             let res = core::arch::x86_64::__cpuid_count(0x1a, 0);
+            #[cfg(target_arch = "x86")]
+            let res = core::arch::x86::__cpuid_count(0x1a, 0);
             let val = res.eax >> 24;
             if val == 0x40 {
                 core_type = "P";

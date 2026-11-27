@@ -233,7 +233,7 @@ impl LightingTransport for SysfsLedTransport {
 
         // 2. Per-key RGB drivers (HID / NB04)
         let per_key = self.find_per_key_rgb_leds();
-        if per_key.len() > 3 {
+        if !per_key.is_empty() {
             let paths: Vec<PathBuf> = per_key.iter().map(|(p, _)| p.clone()).collect();
             let led_ids: Vec<u32> = per_key.iter().map(|(_, id)| *id).collect();
             let max_brightness = self

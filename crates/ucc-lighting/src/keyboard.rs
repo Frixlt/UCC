@@ -174,15 +174,6 @@ impl KeyboardBacklightController {
             let _ = self.init();
         }
         let caps = self.capabilities.as_ref().filter(|c| c.zones > 0)?;
-        if !self.current_states.is_empty() && self.current_states.len() >= caps.zones {
-            let colors = map_states_by_led_id(caps, &self.current_states);
-            let brightness = self.current_states.first().map(|s| s.brightness as u32);
-            return Some(KeyboardHardwareSnapshot {
-                colors,
-                brightness,
-                states: self.current_states.clone(),
-            });
-        }
         let colors = self.transport.read_keyboard_colors().unwrap_or_default();
         let brightness = self
             .transport
@@ -190,10 +181,34 @@ impl KeyboardBacklightController {
             .ok()
             .flatten()
             .or_else(|| self.current_states.first().map(|s| s.brightness as u32));
+        let states = if !colors.is_empty() {
+            let b_val = brightness
+                .unwrap_or(0)
+                .min(caps.max_brightness)
+                .min(u8::MAX as u32) as u8;
+            colors
+                .iter()
+                .map(|c| KeyboardBacklightState {
+                    brightness: b_val,
+                    red: c.r,
+                    green: c.g,
+                    blue: c.b,
+                })
+                .collect()
+        } else {
+            let mut fallback = self.current_states.clone();
+            if let Some(b) = brightness {
+                let b_val = b.min(caps.max_brightness).min(u8::MAX as u32) as u8;
+                for state in &mut fallback {
+                    state.brightness = b_val;
+                }
+            }
+            fallback
+        };
         Some(KeyboardHardwareSnapshot {
             colors,
             brightness,
-            states: self.current_states.clone(),
+            states,
         })
     }
 

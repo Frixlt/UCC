@@ -149,8 +149,8 @@ pub fn write_atomic(target_path: impl AsRef<Path>, content: &[u8]) -> Result<(),
         {
             use std::os::unix::fs::OpenOptionsExt;
             opts.mode(target_mode);
-            // 0o400000 is O_NOFOLLOW on Linux
-            opts.custom_flags(0o400000);
+            // Refuse to follow symlinks via target-specific O_NOFOLLOW
+            opts.custom_flags(libc::O_NOFOLLOW);
         }
         let mut temp_file = opts.open(&temp_path)?;
 
@@ -202,8 +202,8 @@ pub fn write_atomic(target_path: impl AsRef<Path>, content: &[u8]) -> Result<(),
                 {
                     use std::os::unix::fs::OpenOptionsExt;
                     opts.mode(mode);
-                    // 0o400000 is O_NOFOLLOW on Linux
-                    opts.custom_flags(0o400000);
+                    // Refuse to follow symlinks via target-specific O_NOFOLLOW
+                    opts.custom_flags(libc::O_NOFOLLOW);
                 }
                 let mut f = opts.open(&bak_temp)?;
                 #[cfg(unix)]

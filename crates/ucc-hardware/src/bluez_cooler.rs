@@ -15,6 +15,7 @@ use zbus::{Connection, Proxy};
 
 const DEFAULT_GATT_RESOLVE_TIMEOUT: Duration = Duration::from_secs(5);
 const GATT_POLL_INTERVAL: Duration = Duration::from_millis(25);
+const BLUEZ_GATT_TIMEOUT: Duration = Duration::from_secs(3);
 
 /// Supported LCT liquid cooler hardware revisions.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -70,21 +71,23 @@ pub fn select_cooler<'a>(
     }
 
     if let Some(id) = saved {
-        if let Some(ref addr) = id.address {
-            if let Some(found) = devices
-                .iter()
-                .find(|d| d.address.eq_ignore_ascii_case(addr))
-            {
-                return Some(found);
+        if id.address.is_some() || id.name.is_some() {
+            if let Some(ref addr) = id.address {
+                if let Some(found) = devices
+                    .iter()
+                    .find(|d| d.address.eq_ignore_ascii_case(addr))
+                {
+                    return Some(found);
+                }
             }
-        }
-        if let Some(ref saved_name) = id.name {
-            let name_matches: Vec<&DiscoveredCooler> = devices
-                .iter()
-                .filter(|d| d.name.eq_ignore_ascii_case(saved_name))
-                .collect();
-            if name_matches.len() == 1 {
-                return Some(name_matches[0]);
+            if let Some(ref saved_name) = id.name {
+                let name_matches: Vec<&DiscoveredCooler> = devices
+                    .iter()
+                    .filter(|d| d.name.eq_ignore_ascii_case(saved_name))
+                    .collect();
+                if name_matches.len() == 1 {
+                    return Some(name_matches[0]);
+                }
             }
             return None;
         }
@@ -422,19 +425,27 @@ pub struct BluezGattSession {
 
 impl BluezGattSession {
     pub async fn is_connected(&self) -> bool {
-        self.dev_proxy
-            .get_property::<bool>("Connected")
-            .await
-            .unwrap_or(false)
+        matches!(
+            tokio::time::timeout(
+                BLUEZ_GATT_TIMEOUT,
+                self.dev_proxy.get_property::<bool>("Connected"),
+            )
+            .await,
+            Ok(Ok(true))
+        )
     }
 
     pub async fn write_packet(&self, packet: [u8; 8]) -> Result<(), CoolerError> {
         CoolerPacketEncoder::validate_packet(&packet)?;
         let opts: HashMap<String, Value<'_>> = HashMap::new();
-        self.tx_proxy
-            .call_method("WriteValue", &(packet.to_vec(), opts))
-            .await
-            .map_err(|_| CoolerError::NotConnected)?;
+        tokio::time::timeout(
+            BLUEZ_GATT_TIMEOUT,
+            self.tx_proxy
+                .call_method("WriteValue", &(packet.to_vec(), opts)),
+        )
+        .await
+        .map_err(|_| CoolerError::NotConnected)?
+        .map_err(|_| CoolerError::NotConnected)?;
         Ok(())
     }
 

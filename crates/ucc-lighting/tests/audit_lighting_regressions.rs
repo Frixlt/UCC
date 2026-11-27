@@ -139,7 +139,7 @@ impl LightingTransport for CountingTransport {
 }
 
 #[test]
-fn t_lighting_snapshot_uses_cached_states_without_hardware_readback() {
+fn t_lighting_snapshot_reads_live_hardware_after_external_change() {
     let inner = MockLightingTransport::new();
     inner.set_keyboard_caps(Some(KeyboardCapabilities {
         zones: 3,
@@ -155,13 +155,13 @@ fn t_lighting_snapshot_uses_cached_states_without_hardware_readback() {
         brightness_reads: AtomicUsize::new(0),
     });
 
-    // Cold controller with empty current_states still falls back to hardware readback.
-    let mut cold = KeyboardBacklightController::new(transport.clone());
-    assert!(cold.snapshot_hardware_state().is_some());
+    // Cold controller performs live hardware readback.
+    let mut controller = KeyboardBacklightController::new(transport.clone());
+    assert!(controller.snapshot_hardware_state().is_some());
     assert_eq!(transport.color_reads.load(Ordering::SeqCst), 1);
     assert_eq!(transport.brightness_reads.load(Ordering::SeqCst), 1);
 
-    // Warm controller after apply_states must serve snapshot from RAM with zero USB sysfs reads.
+    // Warm controller must still read live hardware so external changes are reflected accurately (N05).
     let states = vec![
         KeyboardBacklightState {
             brightness: 32,
@@ -182,19 +182,26 @@ fn t_lighting_snapshot_uses_cached_states_without_hardware_readback() {
             blue: 90,
         },
     ];
-    cold.apply_states(&states).unwrap();
+    controller.apply_states(&states).unwrap();
+    transport.inner.write_keyboard_brightness(18).unwrap();
+    transport.inner.set_keyboard_colors(vec![
+        RgbColor::new(1, 2, 3),
+        RgbColor::new(4, 5, 6),
+        RgbColor::new(7, 8, 9),
+    ]);
     transport.color_reads.store(0, Ordering::SeqCst);
     transport.brightness_reads.store(0, Ordering::SeqCst);
-    let snap = cold.snapshot_hardware_state().unwrap();
-    assert_eq!(transport.color_reads.load(Ordering::SeqCst), 0);
-    assert_eq!(transport.brightness_reads.load(Ordering::SeqCst), 0);
-    assert_eq!(snap.brightness, Some(32));
+
+    let snap = controller.snapshot_hardware_state().unwrap();
+    assert_eq!(transport.color_reads.load(Ordering::SeqCst), 1);
+    assert_eq!(transport.brightness_reads.load(Ordering::SeqCst), 1);
+    assert_eq!(snap.brightness, Some(18));
     assert_eq!(
         snap.colors,
         vec![
-            RgbColor::new(10, 20, 30),
-            RgbColor::new(40, 50, 60),
-            RgbColor::new(70, 80, 90),
+            RgbColor::new(1, 2, 3),
+            RgbColor::new(4, 5, 6),
+            RgbColor::new(7, 8, 9),
         ]
     );
 }

@@ -315,6 +315,7 @@ fn test_disabling_keep_awake_and_switching_to_battery_undoes_persistence() {
     write_file(&gpu.join("vendor"), "0x10de");
     write_file(&gpu.join("class"), "0x030000");
     write_file(&gpu.join("power/control"), "auto");
+    write_file(&gpu.join("power/runtime_status"), "active");
     write_file(&proc.join("driver/nvidia/version"), "570.86.16");
 
     let calls = Arc::new(Mutex::new(Vec::new()));

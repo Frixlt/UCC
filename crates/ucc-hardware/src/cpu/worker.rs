@@ -122,17 +122,18 @@ impl CpuWorker {
         if !self.no_epp_write_quirk && !cpu.energy_performance_preference.is_empty() {
             let epp = &cpu.energy_performance_preference;
             if self.is_epp_available(epp) {
+                let mut epp_write_ok = true;
                 if let Err(e) = self.cpu_ctrl.set_energy_performance_preference(Some(epp)) {
                     if e.raw_os_error() == Some(libc::EBUSY) {
-                        self.no_epp_write_quirk = true;
-                        warn!("CpuWorker: EPP write returned EBUSY. Disabling EPP management");
+                        epp_write_ok = false;
+                        debug!("CpuWorker: EPP write returned transient EBUSY; keeping EPP management enabled");
                     } else if e.kind() != std::io::ErrorKind::NotFound {
                         return Err(format!("Failed to apply CPU EPP '{epp}': {e}"));
                     }
                 }
 
                 // Verification check: detect EPP write rejection quirks
-                if !self.cpu_ctrl.cores.is_empty() {
+                if epp_write_ok && !self.cpu_ctrl.cores.is_empty() {
                     let first_core = &self.cpu_ctrl.cores[0];
                     if let Some(ref current_epp) = first_core.read_energy_performance_preference() {
                         if current_epp != epp

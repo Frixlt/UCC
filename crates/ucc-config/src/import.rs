@@ -164,6 +164,7 @@ pub fn effective_tcc_fan_table(
     validate_fan_points_slice(points)?;
     if !(0..=100).contains(&minimum)
         || !(0..=100).contains(&maximum)
+        || minimum > maximum
         || !(-100..=100).contains(&offset)
     {
         return Err(ConfigError::Validation(

@@ -214,6 +214,47 @@ fn map_platform_profile_str_to_code(vendor: DeviceVendor, raw: &str) -> Option<i
     }
 }
 
+fn map_perf_profile_code_to_str(
+    vendor: DeviceVendor,
+    profile_code: i32,
+    path: &std::path::Path,
+    sysfs: Option<&dyn Sysfs>,
+) -> Option<&'static str> {
+    let candidates: &[&'static str] = match vendor {
+        DeviceVendor::Uniwill => match profile_code {
+            1 => &["low-power", "quiet", "power_save"],
+            2 => &["balanced", "enthusiast", "office"],
+            3 => &["performance", "overboost"],
+            _ => return None,
+        },
+        DeviceVendor::Clevo => match profile_code {
+            0 => &["quiet", "low-power"],
+            1 => &["power_saving", "powersave"],
+            2 => &["performance", "balanced"],
+            3 => &["entertainment", "overboost"],
+            _ => return None,
+        },
+        DeviceVendor::Unsupported => return None,
+    };
+
+    if let Some(choices_path) = path.parent().map(|p| p.join("platform_profile_choices")) {
+        let raw_choices = sysfs
+            .and_then(|s| s.read(&choices_path).ok())
+            .or_else(|| std::fs::read_to_string(&choices_path).ok());
+        if let Some(raw) = raw_choices {
+            let tokens: Vec<&str> = raw.split_whitespace().collect();
+            if let Some(matched) = candidates
+                .iter()
+                .copied()
+                .find(|c| tokens.iter().any(|t| t.eq_ignore_ascii_case(c)))
+            {
+                return Some(matched);
+            }
+        }
+    }
+    candidates.first().copied()
+}
+
 impl<H: HardwareIo> TuxedoIoBackend<H> {
     /// Probes capabilities through `hw` (optionally enriched with `dmi` and `sysfs`).
     pub fn new(hw: H, dmi: Option<&DmiInfo>, sysfs: Option<&dyn Sysfs>) -> Self {
@@ -431,12 +472,37 @@ impl<H: HardwareIo> PlatformBackend for TuxedoIoBackend<H> {
             self.capabilities.perf_profiles_available,
             profile_code,
         )?;
-        set_perf_profile(&self.hw, vendor, profile_code)?;
-        *self
-            .cached_perf_profile
-            .lock()
-            .unwrap_or_else(|e| e.into_inner()) = Some(profile_code);
-        Ok(())
+        match set_perf_profile(&self.hw, vendor, profile_code) {
+            Ok(()) => {
+                *self
+                    .cached_perf_profile
+                    .lock()
+                    .unwrap_or_else(|e| e.into_inner()) = Some(profile_code);
+                Ok(())
+            }
+            Err(ioctl_err) => {
+                if let (Some(ref path), Some(profile_str)) = (
+                    &self.platform_profile_path,
+                    self.platform_profile_path.as_deref().and_then(|p| {
+                        map_perf_profile_code_to_str(vendor, profile_code, p, self.sysfs.as_deref())
+                    }),
+                ) {
+                    let write_res = if let Some(ref sys) = self.sysfs {
+                        sys.write(path, profile_str)
+                    } else {
+                        std::fs::write(path, profile_str)
+                    };
+                    if write_res.is_ok() {
+                        *self
+                            .cached_perf_profile
+                            .lock()
+                            .unwrap_or_else(|e| e.into_inner()) = Some(profile_code);
+                        return Ok(());
+                    }
+                }
+                Err(ioctl_err.into())
+            }
+        }
     }
 
     fn set_mode_enable(&self, enable: bool) -> Result<(), PlatformError> {

@@ -370,11 +370,23 @@ struct UccProfileWire {
     charging_profile: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     charging_priority: Option<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "crate::charging::deserialize_opt_charge_type"
+    )]
     charge_type: Option<ChargeType>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "crate::charging::deserialize_opt_threshold"
+    )]
     charge_start_threshold: Option<u8>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "crate::charging::deserialize_opt_threshold"
+    )]
     charge_end_threshold: Option<u8>,
     #[serde(
         flatten,

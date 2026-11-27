@@ -1,0 +1,357 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+//! Reproduction integration tests for confirmed `ucc-hardware` findings on commit `1d07126`:
+//! - R04: Missing `power/runtime_status` treated as active NVIDIA GPU -> invokes `nvidia-smi -pm 0`.
+//! - R05: `select_cooler` falls back to single candidate with a different MAC when a MAC is saved.
+//! - N14: `CpuWorker` permanently disables EPP management on transient `EBUSY` under `performance`.
+//! - N15: `WindowsWmiEcBackend::set_fan_speed_percent` leaves `FAN_MANUAL_MODE=1` when duty write fails.
+//! - N16: `WindowsWmiEcBackend::set_tdp` truncates `watts > 255` via `as u8` instead of rejecting.
+//! - N21: `TuxedoIoBackend::set_perf_profile` lacks sysfs `tuxedo_platform_profile` fallback on ioctl failure.
+//! - R20: `cpu/topology.rs` enables `target_arch = "x86"` while calling `core::arch::x86_64::__*cpuid*`.
+
+use serde_json::json;
+use std::collections::BTreeMap;
+use std::fs;
+use std::path::Path;
+use std::sync::{Arc, Mutex};
+use tempfile::TempDir;
+use ucc_core::UccProfile;
+use ucc_hardware::ioctl::requests;
+use ucc_hardware::traits::MockHardwareIo;
+use ucc_hardware::{
+    ec_reg, select_cooler, CpuWorker, DeviceProcessRunner, DiscoveredCooler, LctDeviceModel,
+    MockSysfs, MockWmiEcTransport, PlatformBackend, PlatformError, PowerDeviceController,
+    SavedCoolerIdentity, TuxedoIoBackend, WindowsWmiEcBackend, WmiEcTransport, WmiPlatformLimits,
+};
+
+#[test]
+fn r04_missing_runtime_status_must_not_invoke_nvidia_smi() {
+    let tmp = TempDir::new().unwrap();
+    let sys = tmp.path().join("sys");
+    let proc = tmp.path().join("proc");
+
+    let pci_dev = sys.join("bus/pci/devices/0000:01:00.0");
+    fs::create_dir_all(pci_dev.join("power")).unwrap();
+    fs::write(pci_dev.join("vendor"), "0x10de\n").unwrap();
+    fs::write(pci_dev.join("class"), "0x030000\n").unwrap();
+    fs::write(pci_dev.join("power/control"), "auto\n").unwrap();
+    // Deliberately omit `power/runtime_status` to simulate an unreadable/missing sysfs node.
+
+    let nvidia_proc = proc.join("driver/nvidia");
+    fs::create_dir_all(&nvidia_proc).unwrap();
+    fs::write(nvidia_proc.join("version"), "NVRM version: 550.0\n").unwrap();
+
+    type RecordedCalls = Arc<Mutex<Vec<(String, Vec<String>)>>>;
+    let calls: RecordedCalls = Arc::new(Mutex::new(Vec::new()));
+    let calls_cb = Arc::clone(&calls);
+    let runner: DeviceProcessRunner = Arc::new(move |prog: &str, args: &[&str]| {
+        calls_cb.lock().unwrap().push((
+            prog.to_string(),
+            args.iter().map(|s| (*s).to_string()).collect(),
+        ));
+        true
+    });
+
+    let controller = PowerDeviceController::new(&sys, &proc, runner, tmp.path().join("bin"));
+    controller
+        .set_settings(json!({
+            "enabled": true,
+            "keepNvidiaAwake": false,
+            "cpu": {},
+            "devices": [
+                {
+                    "type": "pci",
+                    "name": "NVIDIA dGPU",
+                    "path": "/sys/bus/pci/devices/0000:01:00.0/power/control",
+                    "ac_val": "auto",
+                    "type_c_val": "auto",
+                    "bat_val": "auto"
+                }
+            ]
+        }))
+        .unwrap();
+
+    controller.apply("bat");
+
+    let recorded = calls.lock().unwrap();
+    let invoked_nvidia_smi_pm0 = recorded
+        .iter()
+        .any(|(prog, args)| prog == "nvidia-smi" && args == &["-pm", "0"]);
+    assert!(
+        !invoked_nvidia_smi_pm0,
+        "R04: missing power/runtime_status with keepNvidiaAwake=false must not invoke `nvidia-smi -pm 0`, \
+         recorded calls: {:?}",
+        *recorded
+    );
+}
+
+#[test]
+fn r05_select_cooler_must_not_pick_different_mac_when_mac_saved() {
+    let candidate = DiscoveredCooler {
+        device_path: "/org/bluez/hci0/dev_11_22_33_44_55_66".to_string(),
+        address: "11:22:33:44:55:66".to_string(),
+        name: "LCT21001".to_string(),
+        model: LctDeviceModel::Lct21001,
+        tx_char_path: None,
+        rx_char_path: None,
+        connected: false,
+    };
+    let saved = SavedCoolerIdentity {
+        address: Some("AA:BB:CC:DD:EE:FF".to_string()),
+        name: None,
+    };
+
+    let selected = select_cooler(std::slice::from_ref(&candidate), Some(&saved));
+    assert_eq!(
+        selected, None,
+        "R05: select_cooler must return None when saved MAC does not match and no saved name exists"
+    );
+}
+
+fn create_single_core_intel_pstate_fixture(root: &Path) {
+    fs::create_dir_all(root).unwrap();
+    fs::write(root.join("present"), "0").unwrap();
+    fs::write(root.join("possible"), "0").unwrap();
+    fs::write(root.join("online"), "0").unwrap();
+
+    let pstate = root.join("intel_pstate");
+    fs::create_dir_all(&pstate).unwrap();
+    fs::write(pstate.join("no_turbo"), "0").unwrap();
+    fs::write(pstate.join("hwp_dynamic_boost"), "0").unwrap();
+
+    let cpufreq = root.join("cpu0/cpufreq");
+    fs::create_dir_all(&cpufreq).unwrap();
+    fs::write(cpufreq.join("scaling_driver"), "intel_pstate").unwrap();
+    fs::write(cpufreq.join("scaling_governor"), "performance").unwrap();
+    fs::write(
+        cpufreq.join("scaling_available_governors"),
+        "performance powersave",
+    )
+    .unwrap();
+    fs::write(cpufreq.join("energy_performance_preference"), "performance").unwrap();
+    fs::write(
+        cpufreq.join("energy_performance_available_preferences"),
+        "default performance balance_performance balance_power power",
+    )
+    .unwrap();
+    fs::write(cpufreq.join("cpuinfo_min_freq"), "800000").unwrap();
+    fs::write(cpufreq.join("cpuinfo_max_freq"), "4800000").unwrap();
+    fs::write(cpufreq.join("scaling_min_freq"), "800000").unwrap();
+    fs::write(cpufreq.join("scaling_max_freq"), "4800000").unwrap();
+}
+
+#[test]
+fn n14_cpu_worker_ebusy_on_performance_must_not_permanently_disable_epp() {
+    // 1. Verify the `libc::EBUSY` branch in `CpuWorker::apply_cpu_profile` does not permanently
+    //    flip `no_epp_write_quirk = true` on a transient EBUSY (e.g. under `performance` governor).
+    let worker_src_path = Path::new(env!("CARGO_MANIFEST_DIR")).join("src/cpu/worker.rs");
+    let worker_src = fs::read_to_string(&worker_src_path).unwrap_or_else(|e| {
+        panic!("Failed to read {}: {e}", worker_src_path.display());
+    });
+
+    if let Some(ebusy_idx) = worker_src.find("libc::EBUSY") {
+        let after_ebusy = &worker_src[ebusy_idx..];
+        if let Some(open_brace) = after_ebusy.find('{') {
+            let mut depth = 0usize;
+            let mut block_end = after_ebusy.len();
+            for (i, ch) in after_ebusy[open_brace..].char_indices() {
+                match ch {
+                    '{' => depth += 1,
+                    '}' => {
+                        depth -= 1;
+                        if depth == 0 {
+                            block_end = open_brace + i + 1;
+                            break;
+                        }
+                    }
+                    _ => {}
+                }
+            }
+            let ebusy_block = &after_ebusy[open_brace..block_end];
+            assert!(
+                !ebusy_block.contains("no_epp_write_quirk = true"),
+                "N14: transient EBUSY on EPP write (e.g. under `performance` governor) must not \
+                 permanently set `no_epp_write_quirk = true`; found in EBUSY handler:\n{ebusy_block}"
+            );
+        }
+    }
+
+    // 2. Verify runtime transition on `CpuWorker`: applying `performance` then `powersave` with
+    //    `balance_power` EPP succeeds and writes the requested EPP under `powersave`.
+    let tmp = TempDir::new().unwrap();
+    create_single_core_intel_pstate_fixture(tmp.path());
+
+    let mut worker = CpuWorker::new(tmp.path());
+
+    let mut perf_profile = UccProfile::new("perf", "Performance");
+    perf_profile.cpu.governor = "performance".to_string();
+    perf_profile.cpu.energy_performance_preference = "balance_power".to_string();
+    worker.apply_cpu_profile(&perf_profile).unwrap();
+
+    let mut powersave_profile = UccProfile::new("save", "Powersave");
+    powersave_profile.cpu.governor = "powersave".to_string();
+    powersave_profile.cpu.energy_performance_preference = "balance_power".to_string();
+    worker.apply_cpu_profile(&powersave_profile).unwrap();
+
+    assert!(
+        !worker.no_epp_write_quirk,
+        "N14: CpuWorker must keep EPP management enabled after switching to powersave"
+    );
+    let epp_on_disk = fs::read_to_string(
+        tmp.path()
+            .join("cpu0/cpufreq/energy_performance_preference"),
+    )
+    .unwrap();
+    assert_eq!(
+        epp_on_disk.trim(),
+        "balance_power",
+        "N14: EPP must be written as `balance_power` once governor is `powersave`"
+    );
+    assert!(worker.validate_cpu_freq(&powersave_profile));
+}
+
+struct FailingDutyWmiTransport {
+    regs: Mutex<BTreeMap<u16, u8>>,
+    fail_reg: u16,
+}
+
+impl FailingDutyWmiTransport {
+    fn new(fail_reg: u16) -> Self {
+        let mut regs = BTreeMap::new();
+        regs.insert(ec_reg::FAN_MANUAL_MODE, 0);
+        Self {
+            regs: Mutex::new(regs),
+            fail_reg,
+        }
+    }
+
+    fn get_reg(&self, addr: u16) -> Option<u8> {
+        self.regs.lock().unwrap().get(&addr).copied()
+    }
+}
+
+impl WmiEcTransport for FailingDutyWmiTransport {
+    fn is_available(&self) -> bool {
+        true
+    }
+
+    fn read_ec_byte(&self, addr: u16) -> Result<u8, PlatformError> {
+        Ok(self.regs.lock().unwrap().get(&addr).copied().unwrap_or(0))
+    }
+
+    fn write_ec_byte(&self, addr: u16, val: u8) -> Result<(), PlatformError> {
+        if addr == self.fail_reg {
+            return Err(PlatformError::Unavailable);
+        }
+        self.regs.lock().unwrap().insert(addr, val);
+        Ok(())
+    }
+
+    fn call_wmi_method(&self, _method_id: u32, _arg: u64) -> Result<u64, PlatformError> {
+        Ok(0)
+    }
+}
+
+#[test]
+fn n15_windows_wmi_failed_duty_write_restores_auto_mode() {
+    let transport = Arc::new(FailingDutyWmiTransport::new(ec_reg::CPU_FAN_DUTY));
+    let backend =
+        WindowsWmiEcBackend::new(Arc::clone(&transport) as _, WmiPlatformLimits::default());
+
+    let res = backend.set_fan_speed_percent(0, 60);
+    assert!(
+        res.is_err(),
+        "Expected CPU fan duty write failure to propagate as Err"
+    );
+    assert_eq!(
+        transport.get_reg(ec_reg::FAN_MANUAL_MODE),
+        Some(0),
+        "N15: failed duty write must restore FAN_MANUAL_MODE to 0 (auto) instead of leaving it at 1"
+    );
+}
+
+#[test]
+fn n16_windows_wmi_tdp_above_255_rejected_not_truncated() {
+    let transport = Arc::new(MockWmiEcTransport::new(true));
+    let limits = WmiPlatformLimits {
+        tdp_limits: [(15, 300), (20, 300), (25, 300)],
+        ..WmiPlatformLimits::default()
+    };
+    let backend = WindowsWmiEcBackend::new(Arc::clone(&transport) as _, limits);
+
+    let res = backend.set_tdp(0, 256);
+    assert!(
+        res.is_err(),
+        "N16: set_tdp(0, 256) exceeds 8-bit EC register width and must return Err"
+    );
+    assert_eq!(
+        transport.get_reg(ec_reg::PL1_WATTS),
+        None,
+        "N16: rejected 256 W TDP must not truncate to 0 and write PL1_WATTS"
+    );
+}
+
+#[test]
+fn n21_tuxedo_io_backend_falls_back_to_platform_profile_sysfs_on_write() {
+    let hw = MockHardwareIo::new();
+    hw.set_i32_read(requests::R_HWCHECK_UW, 1);
+    hw.set_i32_read(requests::R_UW_PROFS_AVAILABLE, 3);
+    hw.set_error(requests::W_UW_PERF_PROF);
+
+    let sysfs = Arc::new(MockSysfs::new());
+    let profile_path =
+        Path::new("/sys/bus/platform/devices/tuxedo_platform_profile/platform_profile");
+    sysfs.set_file(profile_path, "balanced\n");
+
+    let backend = TuxedoIoBackend::with_sysfs(hw, None, Arc::clone(&sysfs) as _);
+    assert_eq!(
+        backend.read_perf_profile().unwrap(),
+        2,
+        "Initial sysfs platform_profile `balanced` should map to Uniwill code 2"
+    );
+
+    let write_res = backend.set_perf_profile(3);
+    assert!(
+        write_res.is_ok(),
+        "N21: set_perf_profile must fall back to tuxedo_platform_profile sysfs when ioctl fails, \
+         got {write_res:?}"
+    );
+    assert!(
+        sysfs.journal().iter().any(|w| w.path == profile_path),
+        "N21: fallback must write to {}",
+        profile_path.display()
+    );
+    assert_eq!(
+        backend.read_perf_profile().unwrap(),
+        3,
+        "N21: readback after sysfs fallback write must report profile code 3"
+    );
+}
+
+#[test]
+fn r20_cpu_topology_x86_cfg_does_not_hardcode_x86_64_cpuid() {
+    let topology_path = Path::new(env!("CARGO_MANIFEST_DIR")).join("src/cpu/topology.rs");
+    let source = fs::read_to_string(&topology_path).unwrap_or_else(|e| {
+        panic!("Failed to read {}: {e}", topology_path.display());
+    });
+
+    let code_without_line_comments: String = source
+        .lines()
+        .map(|line| line.split("//").next().unwrap_or(""))
+        .collect::<Vec<_>>()
+        .join("\n");
+
+    let enables_x86_32 = code_without_line_comments.contains(r#"target_arch = "x86""#);
+    let calls_x86_64_cpuid = code_without_line_comments
+        .contains("core::arch::x86_64::__get_cpuid_max")
+        || code_without_line_comments.contains("core::arch::x86_64::__cpuid_count");
+    let calls_x86_32_cpuid = code_without_line_comments
+        .contains("core::arch::x86::__get_cpuid_max")
+        || code_without_line_comments.contains("core::arch::x86::__cpuid_count");
+
+    assert!(
+        !(enables_x86_32 && calls_x86_64_cpuid && !calls_x86_32_cpuid),
+        "R20: {} includes target_arch = \"x86\" in cfg while calling core::arch::x86_64 CPUID \
+         intrinsics without a 32-bit core::arch::x86 branch",
+        topology_path.display()
+    );
+}

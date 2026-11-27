@@ -289,7 +289,7 @@ impl PowerDeviceController {
                                     let rt_status = self.read_file(
                                         &parent.join("power/runtime_status").to_string_lossy(),
                                     );
-                                    if rt_status.is_empty() || rt_status == "active" {
+                                    if rt_status == "active" {
                                         any_nvidia_active = true;
                                     }
                                     let mode_key = format!("{}_val", mode);
