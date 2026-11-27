@@ -1,3 +1,4 @@
+use ksni::MenuItem;
 use tokio::sync::mpsc;
 use ucc_desktop::tray::{TrayAction, UccTray};
 
@@ -11,24 +12,37 @@ fn test_tray_menu_structure_and_actions() {
     ];
     let mut tray = UccTray::new(profiles, 1, tx);
 
-    // Test title and ID
+    // Test title, ID, icon and tooltip
     assert_eq!(ksni::Tray::id(&tray), "ucc-rusted");
     assert_eq!(ksni::Tray::title(&tray), "ucc-rusted");
-    assert_eq!(
-        ksni::Tray::icon_name(&tray),
-        "preferences-system-performance"
-    );
+    assert_eq!(ksni::Tray::icon_name(&tray), "ucc-tray");
+    let tooltip = ksni::Tray::tool_tip(&tray);
+    assert_eq!(tooltip.title, "ucc-rusted");
+    assert!(tooltip.description.contains("Gaming"));
 
     // Test activate sends OpenGui action
     ksni::Tray::activate(&mut tray, 0, 0);
     assert!(matches!(rx.try_recv().unwrap(), TrayAction::OpenGui(_)));
 
-    // Verify menu items
+    // Verify clean menu labels without verbose "(click ...)" suffixes
     let menu = ksni::Tray::menu(&tray);
     assert!(menu.len() >= 5); // OpenGui, Separator, RadioGroup, Separator, Fan, WaterCooler, Separator, Quit
+    for item in &menu {
+        if let MenuItem::Standard(std_item) = item {
+            assert!(
+                !std_item.label.contains("(click"),
+                "unexpected verbose hint in tray label: {}",
+                std_item.label
+            );
+        }
+    }
 
     // Change profile
     tray.set_active_profile(2);
+    assert!(ksni::Tray::tool_tip(&tray).description.contains("Turbo"));
     // Change water cooler status
     tray.set_water_cooler_connected(true);
+    assert!(ksni::Tray::tool_tip(&tray)
+        .description
+        .contains("Water Cooler: Connected"));
 }

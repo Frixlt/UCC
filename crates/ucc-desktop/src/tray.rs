@@ -4,7 +4,7 @@
 //! and X11 without requiring Qt or C++ runtime dependencies.
 
 use ksni::menu::{RadioGroup, RadioItem, StandardItem};
-use ksni::{MenuItem, Tray, TrayMethods};
+use ksni::{MenuItem, ToolTip, Tray, TrayMethods};
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::Arc;
 use tokio::sync::mpsc;
@@ -148,7 +148,38 @@ impl Tray for UccTray {
     }
 
     fn icon_name(&self) -> String {
-        "preferences-system-performance".to_string()
+        "ucc-tray".to_string()
+    }
+
+    fn tool_tip(&self) -> ToolTip {
+        let daemon_connected = self.daemon_connected.load(Ordering::SeqCst);
+        let description = if !daemon_connected {
+            "Service unavailable (reconnecting...)".to_string()
+        } else {
+            let active_idx = self.active_profile.load(Ordering::SeqCst);
+            let profile = self
+                .profiles
+                .get(active_idx)
+                .map(String::as_str)
+                .unwrap_or("Unknown");
+            let fan = if self.fan_auto.load(Ordering::SeqCst) {
+                "Auto"
+            } else {
+                "Max"
+            };
+            let wc = if self.water_cooler_connected.load(Ordering::SeqCst) {
+                "Connected"
+            } else {
+                "Disconnected"
+            };
+            format!("Profile: {profile}\nFan: {fan} · Water Cooler: {wc}")
+        };
+        ToolTip {
+            icon_name: "ucc-tray".to_string(),
+            icon_pixmap: Vec::new(),
+            title: "ucc-rusted".to_string(),
+            description,
+        }
     }
 
     fn activate(&mut self, _x: i32, _y: i32) {
@@ -216,9 +247,9 @@ impl Tray for UccTray {
             MenuItem::Separator,
             MenuItem::Standard(StandardItem {
                 label: if fan_auto {
-                    "Fan: Auto (click for Max)".into()
+                    "Fan: Auto".into()
                 } else {
-                    "Fan: Max (click for Auto)".into()
+                    "Fan: Max".into()
                 },
                 enabled: daemon_connected,
                 activate: Box::new(move |this: &mut Self| {
@@ -230,9 +261,9 @@ impl Tray for UccTray {
             }),
             MenuItem::Standard(StandardItem {
                 label: if wc_connected {
-                    "Water Cooler: Connected (click to disconnect)".into()
+                    "Water Cooler: Connected".into()
                 } else {
-                    "Water Cooler: Disconnected (click to scan)".into()
+                    "Water Cooler: Disconnected".into()
                 },
                 enabled: daemon_connected,
                 activate: Box::new(move |this: &mut Self| {

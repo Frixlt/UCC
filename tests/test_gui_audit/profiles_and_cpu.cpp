@@ -38,7 +38,7 @@ void GuiAudit::profileRefreshRateSavesAndChargingLivesOutsideProfiles() {
 #endif
     const auto output=qEnvironmentVariable("UCC_SCREENSHOT_DIR");
     if(!output.isEmpty()) {QTest::qWait(450);for(auto* scroll:window.findChildren<QScrollArea*>()) if(scroll->widget() && scroll->widget()->isAncestorOf(rate)) scroll->ensureWidgetVisible(rate);QTest::qWait(100);QDir().mkpath(output);QVERIFY(window.grab().save(output+"/profile-refresh.png"));}
-    nav->setCurrentRow(9);QVERIFY(charging->isVisible());
+    nav->setCurrentRow(8);QVERIFY(charging->isVisible());
 #ifndef UCC_READ_ONLY_PREVIEW
     const auto before=stats()["writes"].toArray().size();
     charging->setCurrentIndex(charging->findData("high_capacity"));

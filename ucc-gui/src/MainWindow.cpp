@@ -271,7 +271,7 @@ void MainWindow::setupUI()
   sideLayout->addWidget(device);sideLayout->addSpacing(20);
   auto *navigation=new QListWidget(sidebar);navigation->setObjectName("navigation");
   navigation->setIconSize(QSize(24,24));
-  const QStringList labels={"Overview","Profiles","Cooler Settings","Watercool Settings","Monitor","Keyboard & Hardware","About","Power & Devices","Lightbar","Battery & Processes","Experimental"};
+  const QStringList labels={"Overview","Profiles","Cooler Settings","Watercool Settings","Monitor","Keyboard & Hardware","Power & Devices","Lightbar","Battery & Processes","Experimental","About"};
   for(const auto &label:labels) new QListWidgetItem(FluentTheme::icon(label),label,navigation);
   sideLayout->addWidget(navigation,1);
   auto *footer=new QWidget(sidebar);footer->setObjectName("sidebarFooter");
@@ -357,7 +357,7 @@ void MainWindow::setupUI()
   auto showNavigationHeading=[heading,subtitle,labels](int row) {
     if(row<0 || row>=labels.size()) return;
     heading->setText(labels[row]);
-    const QStringList descriptions={"Your system at a glance","Power, cooling and lighting in one profile","Shape CPU and GPU cooling for your profile","Water cooling, pump and lighting controls","Live system telemetry","Backlight and device controls","Build information, project origins and open-source acknowledgements","CPU, modules and device policies for every power source","Front lighting and notification animations","Battery power and your NVIDIA processes","Preview and experimental settings under development"};
+    const QStringList descriptions={"Your system at a glance","Power, cooling and lighting in one profile","Shape CPU and GPU cooling for your profile","Water cooling, pump and lighting controls","Live system telemetry","Backlight and device controls","CPU, modules and device policies for every power source","Front lighting and notification animations","Battery power and your NVIDIA processes","Preview and experimental settings under development","Build information, project origins and open-source acknowledgements"};
     subtitle->setText(descriptions.value(row));
   };
   connect(navigation,&QListWidget::currentRowChanged,this,[this,showNavigationHeading](int row){
@@ -410,7 +410,6 @@ void MainWindow::setupUI()
 
   setupKeyboardBacklightPage();
   setupHardwarePage();
-  m_tabs->addTab(createAboutPage(this),"About");
   auto *powerDevices=new PowerDevicesTab(m_UccdClient.get(),this);
   connect(powerDevices,&PowerDevicesTab::message,statusBar(),[this](const QString &text){statusBar()->showMessage(text);});
   m_tabs->addTab(powerDevices,"Power & Devices");
@@ -439,6 +438,7 @@ void MainWindow::setupUI()
   experimentalLayout->addWidget(experimentalOptionsCard);
   experimentalLayout->addStretch(1);
   m_tabs->addTab(experimentalPage,"Experimental");
+  m_tabs->addTab(createAboutPage(this),"About");
   if(!m_waterCoolerSupported) {navigation->item(3)->setFlags(navigation->item(3)->flags() & ~Qt::ItemIsEnabled);navigation->item(3)->setToolTip("Water cooling is not supported by this device.");}
   navigation->setCurrentRow(0);
 }

@@ -83,6 +83,21 @@ fn intel_i915_xe_and_amd_hwmon_readers_isolate_sensors() {
     assert_eq!(snap_xe.max_core_freq_mhz, Some(2250.0));
     assert_eq!(snap_xe.temp_c, None);
 
+    // 2b. Intel xe/i915 fallback to cur_freq when act_freq dips to 0 during RC6 idle
+    sysfs.set_file(xe_card.join("device/tile0/gt0/freq0/act_freq"), "0\n");
+    sysfs.set_file(xe_card.join("device/tile0/gt0/freq0/cur_freq"), "633\n");
+    let snap_xe_rc6 = read_intel_igpu_sysfs(&sysfs, xe_card, now);
+    assert_eq!(snap_xe_rc6.core_freq_mhz, Some(633.0));
+
+    sysfs.set_file(xe_card.join("device/tile0/gt0/freq0/act_freq"), "800\n");
+    let snap_xe_active = read_intel_igpu_sysfs(&sysfs, xe_card, now);
+    assert_eq!(snap_xe_active.core_freq_mhz, Some(800.0));
+
+    sysfs.set_file(i915_card.join("gt_act_freq_mhz"), "0\n");
+    sysfs.set_file(i915_card.join("gt_cur_freq_mhz"), "450\n");
+    let snap_i915_rc6 = read_intel_igpu_sysfs(&sysfs, i915_card, now);
+    assert_eq!(snap_i915_rc6.core_freq_mhz, Some(450.0));
+
     // 3. Intel GPU RAPL discovery
     sysfs.set_file("/sys/class/powercap/intel-rapl:0:0/name", "core");
     sysfs.set_file("/sys/class/powercap/intel-rapl:0:1/name", "uncore");

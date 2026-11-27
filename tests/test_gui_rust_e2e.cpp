@@ -110,6 +110,7 @@ private slots:
     QVERIFY(nav);
     QVERIFY(pages);
     QCOMPARE(nav->count(), 11);
+    QCOMPARE(nav->item(10)->text(), QStringLiteral("About"));
 
     const int expectedPageIndices[] = {0, 1, 2, 2, 3, 4, 5, 6, 7, 8, 9};
     for (int row = 0; row < 11; ++row) {
@@ -131,6 +132,7 @@ private slots:
       ucc::FluentTheme::setMode(theme, false);
       QCoreApplication::processEvents();
       QCOMPARE(nav->count(), 11);
+    QCOMPARE(nav->item(10)->text(), QStringLiteral("About"));
     }
 
     // Exercise live Rust mutations via GUI / client and confirm state transitions.

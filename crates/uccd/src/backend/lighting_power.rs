@@ -314,6 +314,7 @@ impl LiveUccdBackend {
         if prev == closed {
             return;
         }
+        tracing::info!(closed, "Lid state changed");
         if !closed {
             self.restore_lid_lighting();
             return;
@@ -325,6 +326,9 @@ impl LiveUccdBackend {
             if !ctrl.is_available() {
                 let _ = ctrl.init();
             }
+            if ctrl.is_available() && ctrl.current_states().is_empty() {
+                ctrl.hydrate_from_hardware();
+            }
             if ctrl.is_available() {
                 let current = ctrl.current_states().to_vec();
                 if !current.is_empty() && current.iter().any(|s| s.brightness > 0) {
@@ -335,7 +339,14 @@ impl LiveUccdBackend {
                         }
                     }
                     let dark = Self::blanked_keyboard_states(&current);
-                    let _ = ctrl.apply_states(&dark);
+                    if let Err(err) = ctrl.apply_states(&dark) {
+                        tracing::warn!("Failed to blank keyboard backlight on lid close: {err}");
+                    } else {
+                        tracing::info!(
+                            zones = dark.len(),
+                            "Blanked keyboard backlight in RAM on lid close"
+                        );
+                    }
                 }
             }
         }
@@ -369,7 +380,14 @@ impl LiveUccdBackend {
                 let _ = ctrl.init();
             }
             if ctrl.is_available() {
-                let _ = ctrl.apply_states(&states);
+                if let Err(err) = ctrl.apply_states(&states) {
+                    tracing::warn!("Failed to restore keyboard backlight after lid open: {err}");
+                } else {
+                    tracing::info!(
+                        zones = states.len(),
+                        "Restored keyboard backlight from RAM after lid open"
+                    );
+                }
             }
         }
         if let Some(RgbTarget::Color {

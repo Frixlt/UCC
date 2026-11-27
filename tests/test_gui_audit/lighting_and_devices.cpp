@@ -15,7 +15,7 @@ void GuiAudit::standaloneTrayShowsModesAndHonorsCommandFailures() {
     const auto forced=ucc::DesktopTray::statusIcon({{"current_mode","ac"},{"manual_mode","bat"}},{},"Balanced").pixmap(64,64).toImage();QVERIFY(plain!=forced);
   }
 void GuiAudit::batteryAndProcessPageStaysReadOnlyUntilConfirmed() {
-    control("TestVisualFixture");ucc::MainWindow window;window.resize(1280,900);window.show();auto *nav=window.findChild<QListWidget*>("navigation");QVERIFY(nav);nav->setCurrentRow(9);QTest::qWait(350);
+    control("TestVisualFixture");ucc::MainWindow window;window.resize(1280,900);window.show();auto *nav=window.findChild<QListWidget*>("navigation");QVERIFY(nav);nav->setCurrentRow(8);QTest::qWait(350);
     QCOMPARE(window.findChild<QLabel*>("pageTitle")->text(),QString("Battery & Processes"));
     auto *refresh=window.findChild<QCheckBox*>("refreshRateNotifications");QVERIFY(refresh);
     QSettings preferences("UniwillControlCenter","desktop");const auto previous=preferences.value("refreshRateNotifications");
@@ -58,9 +58,9 @@ void GuiAudit::sessionAgentRelaysOnlyNotificationEvents() {
   }
 void GuiAudit::lightbarKeepsSourceValuesAndRejectsFailedCommands() {
     control("TestVisualFixture");ucc::MainWindow window;window.resize(1280,900);window.show();
-    auto *navigation=window.findChild<QListWidget*>("navigation");QVERIFY(navigation);navigation->setCurrentRow(8);QTest::qWait(350);
+    auto *navigation=window.findChild<QListWidget*>("navigation");QVERIFY(navigation);navigation->setCurrentRow(7);QTest::qWait(350);
     QCOMPARE(window.findChild<QLabel*>("pageTitle")->text(),QString("Lightbar"));
-    QCOMPARE(window.findChild<QTabWidget*>("pages")->currentIndex(),7);
+    QCOMPARE(window.findChild<QTabWidget*>("pages")->currentIndex(),6);
     auto *ac=window.findChild<QSpinBox*>("lightbarBrightness_ac"),*usb=window.findChild<QSpinBox*>("lightbarBrightness_type_c");QVERIFY(ac);QVERIFY(usb);QCOMPARE(ac->value(),0);QCOMPARE(usb->value(),148);
     QVERIFY(!window.findChild<QCheckBox*>("lightbarEnabled_bat")->isChecked());
     auto *save=window.findChild<QPushButton*>("saveLightbar"),*test=window.findChild<QPushButton*>("testLightbar");QVERIFY(save);QVERIFY(test);
@@ -111,7 +111,7 @@ void GuiAudit::sparseKeyboardZonesKeepSavedPhysicalIndices() {
   }
 void GuiAudit::deviceMatrixKeepsThreeIndependentModes() {
     control("TestVisualFixture");ucc::MainWindow window;window.resize(1280,900);window.show();
-    auto *navigation=window.findChild<QListWidget *>("navigation");navigation->setCurrentRow(7);
+    auto *navigation=window.findChild<QListWidget *>("navigation");navigation->setCurrentRow(6);
     QCOMPARE(window.findChild<QLabel *>("pageTitle")->text(),QString("Power & Devices"));
     QVERIFY(window.findChild<QLabel *>("subtitle")->text().contains("modules"));
     auto *table=window.findChild<QTableWidget *>("powerDeviceTable");QVERIFY(table);QCOMPARE(table->rowCount(),4);

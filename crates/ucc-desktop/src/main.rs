@@ -94,6 +94,52 @@ fn parse_profiles_json(raw: &str, out: &mut Vec<(String, String)>) {
     }
 }
 
+fn parse_bound_profile_ids(raw: &str) -> Vec<String> {
+    let Ok(val) = serde_json::from_str::<Value>(raw) else {
+        return Vec::new();
+    };
+    let obj = val
+        .get("stateMap")
+        .and_then(|v| v.as_object())
+        .or_else(|| val.as_object());
+    let Some(obj) = obj else {
+        return Vec::new();
+    };
+    let mut ids = Vec::new();
+    for key in ["power_ac", "power_type_c", "power_bat", "power_wc"] {
+        if let Some(id) = obj
+            .get(key)
+            .and_then(|v| v.as_str())
+            .filter(|s| !s.is_empty())
+        {
+            if !ids.iter().any(|existing| existing == id) {
+                ids.push(id.to_string());
+            }
+        }
+    }
+    ids
+}
+
+fn filter_profiles_to_bound(
+    all: Vec<(String, String)>,
+    bound_ids: &[String],
+    active_id: Option<&str>,
+) -> Vec<(String, String)> {
+    if bound_ids.is_empty() {
+        return all;
+    }
+    let filtered: Vec<(String, String)> = all
+        .iter()
+        .filter(|(id, _)| bound_ids.iter().any(|b| b == id) || active_id.is_some_and(|a| a == id))
+        .cloned()
+        .collect();
+    if filtered.is_empty() {
+        all
+    } else {
+        filtered
+    }
+}
+
 async fn fetch_snapshot(proxy: &UccdProxy<'_>) -> Result<DaemonSnapshot, String> {
     let mut any_ok = false;
     let mut list = Vec::new();
@@ -112,6 +158,14 @@ async fn fetch_snapshot(proxy: &UccdProxy<'_>) -> Result<DaemonSnapshot, String>
         }
     }
 
+    let bound_ids = match proxy.get_settings_json().await {
+        Ok(raw) => {
+            any_ok = true;
+            parse_bound_profile_ids(&raw)
+        }
+        Err(_) => Vec::new(),
+    };
+
     let active_id = match proxy.get_active_profile_json().await {
         Ok(s) => {
             any_ok = true;
@@ -121,6 +175,8 @@ async fn fetch_snapshot(proxy: &UccdProxy<'_>) -> Result<DaemonSnapshot, String>
         }
         Err(_) => None,
     };
+
+    let list = filter_profiles_to_bound(list, &bound_ids, active_id.as_deref());
 
     let active_idx = active_id
         .as_deref()
@@ -374,4 +430,42 @@ async fn main() {
     }
 
     handle.shutdown().await;
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{filter_profiles_to_bound, parse_bound_profile_ids};
+
+    #[test]
+    fn filters_tray_profiles_to_bound_state_map_entries_and_active_profile() {
+        let bound = parse_bound_profile_ids(
+            r#"{"power_ac":"frixit-ac","power_bat":"frixit-bat","power_type_c":"frixit-type_c","power_wc":""}"#,
+        );
+        assert_eq!(bound, vec!["frixit-ac", "frixit-type_c", "frixit-bat"]);
+
+        let all = vec![
+            ("__quiet__".into(), "Quiet [Built-in]".into()),
+            ("__office__".into(), "Office [Built-in]".into()),
+            (
+                "__default_custom_profile__".into(),
+                "TUXEDO Defaults".into(),
+            ),
+            ("frixit-ac".into(), "max perfomance".into()),
+            ("frixit-bat".into(), "powersave".into()),
+            ("frixit-type_c".into(), "type c".into()),
+        ];
+
+        let filtered = filter_profiles_to_bound(all.clone(), &bound, Some("frixit-ac"));
+        assert_eq!(
+            filtered,
+            vec![
+                ("frixit-ac".into(), "max perfomance".into()),
+                ("frixit-bat".into(), "powersave".into()),
+                ("frixit-type_c".into(), "type c".into()),
+            ]
+        );
+
+        let fallback = filter_profiles_to_bound(all.clone(), &[], None);
+        assert_eq!(fallback, all);
+    }
 }

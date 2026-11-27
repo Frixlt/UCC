@@ -143,20 +143,37 @@ fn parse_max_amd_freq_mhz(content: &str) -> Option<f64> {
 pub fn read_intel_igpu_sysfs(sysfs: &dyn Sysfs, card_dir: &Path, now: Instant) -> IGpuSnapshot {
     let i915_cur = card_dir.join("gt_act_freq_mhz");
     let i915_multi_gt_cur = card_dir.join("gt/gt0/rps_act_freq_mhz");
-    let (freq_path, max_path) = if sysfs.exists(&i915_cur) {
-        (i915_cur, card_dir.join("gt_RP0_freq_mhz"))
+    let (freq_path, fallback_freq_path, max_path) = if sysfs.exists(&i915_cur) {
+        (
+            i915_cur,
+            card_dir.join("gt_cur_freq_mhz"),
+            card_dir.join("gt_RP0_freq_mhz"),
+        )
     } else if sysfs.exists(&i915_multi_gt_cur) {
-        (i915_multi_gt_cur, card_dir.join("gt/gt0/rps_RP0_freq_mhz"))
+        (
+            i915_multi_gt_cur,
+            card_dir.join("gt/gt0/rps_cur_freq_mhz"),
+            card_dir.join("gt/gt0/rps_RP0_freq_mhz"),
+        )
     } else {
         (
             card_dir.join("device/tile0/gt0/freq0/act_freq"),
+            card_dir.join("device/tile0/gt0/freq0/cur_freq"),
             card_dir.join("device/tile0/gt0/freq0/rp0_freq"),
         )
     };
 
-    let core_freq_mhz = read_i64(sysfs, &freq_path)
-        .filter(|&v| v >= 0)
-        .map(|v| v as f64);
+    // Intel xe/i915 drops `act_freq` to 0 during brief RC6 C-state idle windows while
+    // `cur_freq` still reflects the requested active clock; fall back to `cur_freq` when > 0.
+    let raw_act = read_i64(sysfs, &freq_path).filter(|&v| v >= 0);
+    let raw_cur = read_i64(sysfs, &fallback_freq_path).filter(|&v| v > 0);
+    let core_freq_mhz = match (raw_act, raw_cur) {
+        (Some(v), _) if v > 0 => Some(v as f64),
+        (_, Some(cur)) => Some(cur as f64),
+        (Some(0), None) => Some(0.0),
+        (None, None) => None,
+        (Some(v), None) => Some(v as f64),
+    };
     let max_core_freq_mhz = read_i64(sysfs, &max_path)
         .filter(|&v| v >= 0)
         .map(|v| v as f64);
