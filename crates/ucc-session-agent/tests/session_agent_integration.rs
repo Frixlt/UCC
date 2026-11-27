@@ -85,6 +85,7 @@ struct FakeUccdState {
     policy_json: Mutex<String>,
     profile_json: Mutex<String>,
     dev_settings_json: Mutex<String>,
+    profile_reads: std::sync::atomic::AtomicUsize,
 }
 
 impl FakeUccdState {
@@ -118,6 +119,7 @@ impl FakeUccdState {
                 })
                 .to_string(),
             ),
+            profile_reads: std::sync::atomic::AtomicUsize::new(0),
         }
     }
 }
@@ -147,6 +149,7 @@ impl FakeUccd {
 
     #[zbus(name = "GetActiveProfileJSON")]
     fn get_active_profile_json(&self) -> String {
+        self.0.profile_reads.fetch_add(1, Ordering::SeqCst);
         self.0.profile_json.lock().unwrap().clone()
     }
 
@@ -533,6 +536,251 @@ async fn full_27_06_refresh_advisor_and_lid_dpms_dispatch() {
         })
         .await,
         "expected LidClosed=false to invoke dpms on, log={}",
+        read_log()
+    );
+
+    let _ = agent.kill().await;
+}
+
+#[tokio::test]
+async fn recheck_04_stale_refresh_offer_invalidated_after_profile_power_sleep_and_apply() {
+    let (bus_dir, bus_addr, mut _dbus_child) = spawn_isolated_dbus().await;
+    let runtime_dir = bus_dir.path().join("runtime");
+    let drm_dir = bus_dir.path().join("drm");
+    let bin_dir = bus_dir.path().join("bin");
+    let cmd_log = bus_dir.path().join("hyprctl.log");
+    std::fs::create_dir_all(&runtime_dir).unwrap();
+    std::fs::create_dir_all(&drm_dir).unwrap();
+    std::fs::create_dir_all(&bin_dir).unwrap();
+    write_fake_hyprctl(&bin_dir, &cmd_log);
+
+    let notif_state = Arc::new(FakeNotificationsState::default());
+    let notif_conn = zbus::connection::Builder::address(bus_addr.as_str())
+        .unwrap()
+        .name("org.freedesktop.Notifications")
+        .unwrap()
+        .serve_at(
+            "/org/freedesktop/Notifications",
+            FakeNotifications(Arc::clone(&notif_state)),
+        )
+        .unwrap()
+        .build()
+        .await
+        .unwrap();
+
+    let login_conn = connect_bus(&bus_addr, Some("org.freedesktop.login1")).await;
+    login_conn
+        .object_server()
+        .at(
+            "/org/freedesktop/login1",
+            FakeLogin1 {
+                lid_closed: AtomicBool::new(false),
+            },
+        )
+        .await
+        .unwrap();
+
+    let uccd_state = Arc::new(FakeUccdState::new("bat", 60, true));
+    let svc_name = "org.test.uccd.session.recheck04";
+    let uccd_conn = zbus::connection::Builder::address(bus_addr.as_str())
+        .unwrap()
+        .name(svc_name)
+        .unwrap()
+        .serve_at("/com/uniwill/uccd", FakeUccd(Arc::clone(&uccd_state)))
+        .unwrap()
+        .build()
+        .await
+        .unwrap();
+
+    let orig_path = std::env::var("PATH").unwrap_or_default();
+    let test_path = format!("{}:{orig_path}", bin_dir.display());
+    let exe = env!("CARGO_BIN_EXE_ucc-session-agent");
+    let mut agent = Command::new(exe)
+        .env("DBUS_SESSION_BUS_ADDRESS", &bus_addr)
+        .env("UCCD_DBUS_SERVICE", svc_name)
+        .env("UCC_LID_BUS_SESSION", "1")
+        .env("UCC_DRM_ROOT", &drm_dir)
+        .env("XDG_RUNTIME_DIR", &runtime_dir)
+        .env("HYPRLAND_INSTANCE_SIGNATURE", "test-instance")
+        .env("PATH", test_path)
+        .stdin(Stdio::null())
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .kill_on_drop(true)
+        .spawn()
+        .unwrap();
+
+    // Wait for initial 60Hz suggestion notification on bat/60Hz profile.
+    assert!(
+        poll_until(Duration::from_secs(4), || {
+            notif_state
+                .notifies
+                .lock()
+                .unwrap()
+                .iter()
+                .any(|n| n.actions.iter().any(|a| a == "apply"))
+        })
+        .await
+    );
+    let old_60hz_id = notif_state
+        .notifies
+        .lock()
+        .unwrap()
+        .iter()
+        .find(|n| n.actions.iter().any(|a| a == "apply"))
+        .unwrap()
+        .id;
+
+    let read_log = || std::fs::read_to_string(&cmd_log).unwrap_or_default();
+    let reads_before = uccd_state.profile_reads.load(Ordering::SeqCst);
+
+    // Case 1: Live state changed to 240Hz without signal -> clicking old 60Hz notification re-queries and aborts!
+    *uccd_state.profile_json.lock().unwrap() = json!({
+        "id": "raced_240",
+        "display": { "useRefRate": true, "refreshRate": 240 }
+    })
+    .to_string();
+    let notif_iface = notif_conn
+        .object_server()
+        .interface::<_, FakeNotifications>("/org/freedesktop/Notifications")
+        .await
+        .unwrap();
+    FakeNotifications::action_invoked(notif_iface.signal_emitter(), old_60hz_id, "apply")
+        .await
+        .unwrap();
+    assert!(
+        poll_until(Duration::from_secs(3), || {
+            uccd_state.profile_reads.load(Ordering::SeqCst) > reads_before
+                && notif_state.closed.lock().unwrap().contains(&old_60hz_id)
+        })
+        .await,
+        "expected ActionInvoked to re-query active profile and close old 60Hz notification"
+    );
+    tokio::time::sleep(Duration::from_millis(250)).await;
+    assert!(
+        !read_log().contains("keyword monitor eDP-1,2560x1600@60,auto,auto"),
+        "raced 60Hz notification applied against live 240Hz profile: {}",
+        read_log()
+    );
+
+    // Trigger a fresh 60Hz offer, then emit ProfileChanged -> 240Hz: offer must close and ActionInvoked must do nothing.
+    let n_before_60 = notif_state.notifies.lock().unwrap().len();
+    *uccd_state.profile_json.lock().unwrap() = json!({
+        "id": "back_60",
+        "display": { "useRefRate": true, "refreshRate": 60 }
+    })
+    .to_string();
+    let uccd_iface = uccd_conn
+        .object_server()
+        .interface::<_, FakeUccd>("/com/uniwill/uccd")
+        .await
+        .unwrap();
+    FakeUccd::profile_changed(uccd_iface.signal_emitter(), "back_60", "", "")
+        .await
+        .unwrap();
+    assert!(
+        poll_until(Duration::from_secs(4), || {
+            notif_state
+                .notifies
+                .lock()
+                .unwrap()
+                .iter()
+                .skip(n_before_60)
+                .any(|n| n.actions.iter().any(|a| a == "apply"))
+        })
+        .await
+    );
+    let mid_60hz_id = notif_state
+        .notifies
+        .lock()
+        .unwrap()
+        .iter()
+        .skip(n_before_60)
+        .find(|n| n.actions.iter().any(|a| a == "apply"))
+        .unwrap()
+        .id;
+
+    let reads_mid = uccd_state.profile_reads.load(Ordering::SeqCst);
+    *uccd_state.profile_json.lock().unwrap() = json!({
+        "id": "now_240",
+        "display": { "useRefRate": true, "refreshRate": 240 }
+    })
+    .to_string();
+    FakeUccd::profile_changed(uccd_iface.signal_emitter(), "now_240", "", "")
+        .await
+        .unwrap();
+    assert!(
+        poll_until(Duration::from_secs(3), || {
+            uccd_state.profile_reads.load(Ordering::SeqCst) > reads_mid
+                && notif_state.closed.lock().unwrap().contains(&mid_60hz_id)
+        })
+        .await,
+        "expected ProfileChanged to close old 60Hz notification and re-read profile"
+    );
+    FakeNotifications::action_invoked(notif_iface.signal_emitter(), mid_60hz_id, "apply")
+        .await
+        .unwrap();
+    tokio::time::sleep(Duration::from_millis(250)).await;
+    assert!(
+        !read_log().contains("keyword monitor eDP-1,2560x1600@60,auto,auto"),
+        "stale 60Hz notification applied after ProfileChanged to 240Hz: {}",
+        read_log()
+    );
+
+    // Case 2: Fresh 60Hz offer invalidated by PrepareForSleep(true) before ActionInvoked.
+    let n_before_sleep = notif_state.notifies.lock().unwrap().len();
+    *uccd_state.profile_json.lock().unwrap() = json!({
+        "id": "back_60_sleep",
+        "display": { "useRefRate": true, "refreshRate": 60 }
+    })
+    .to_string();
+    FakeUccd::profile_changed(uccd_iface.signal_emitter(), "back_60_sleep", "", "")
+        .await
+        .unwrap();
+    assert!(
+        poll_until(Duration::from_secs(4), || {
+            notif_state
+                .notifies
+                .lock()
+                .unwrap()
+                .iter()
+                .skip(n_before_sleep)
+                .any(|n| n.actions.iter().any(|a| a == "apply"))
+        })
+        .await
+    );
+    let second_id = notif_state
+        .notifies
+        .lock()
+        .unwrap()
+        .iter()
+        .skip(n_before_sleep)
+        .find(|n| n.actions.iter().any(|a| a == "apply"))
+        .unwrap()
+        .id;
+
+    let login_iface = login_conn
+        .object_server()
+        .interface::<_, FakeLogin1>("/org/freedesktop/login1")
+        .await
+        .unwrap();
+    FakeLogin1::prepare_for_sleep(login_iface.signal_emitter(), true)
+        .await
+        .unwrap();
+    assert!(
+        poll_until(Duration::from_secs(3), || {
+            notif_state.closed.lock().unwrap().contains(&second_id)
+        })
+        .await,
+        "PrepareForSleep(true) must close pending refresh notification"
+    );
+    FakeNotifications::action_invoked(notif_iface.signal_emitter(), second_id, "apply")
+        .await
+        .unwrap();
+    tokio::time::sleep(Duration::from_millis(400)).await;
+    assert!(
+        !read_log().contains("keyword monitor eDP-1,2560x1600@60,auto,auto"),
+        "invalidated offer after PrepareForSleep(true) must not apply: {}",
         read_log()
     );
 

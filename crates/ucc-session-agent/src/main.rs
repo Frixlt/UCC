@@ -101,20 +101,35 @@ struct SessionState {
 }
 
 impl SessionState {
+    async fn invalidate_pending_refresh(
+        &mut self,
+        notif: Option<&NotificationsProxy<'_>>,
+        clear_last_notified: bool,
+    ) {
+        if let Some((old_id, _)) = self.pending_refresh.take() {
+            close_notify(notif, old_id).await;
+        }
+        if clear_last_notified {
+            self.last_notified_refresh = None;
+        }
+    }
+
     async fn maybe_suggest_refresh(&mut self, notif: Option<&NotificationsProxy<'_>>) {
         let Some(cfg) = query_compositor_config(self.backend).await else {
+            self.invalidate_pending_refresh(notif, true).await;
             return;
         };
         let Some(plan) =
             RefreshAdvisor::plan(&cfg, &self.policy_source, &self.drm_root, self.requested_hz)
         else {
-            self.last_notified_refresh = None;
+            self.invalidate_pending_refresh(notif, true).await;
             return;
         };
         let key = (plan.output.clone(), plan.target_mode.clone());
         if self.last_notified_refresh.as_ref() == Some(&key) {
             return;
         }
+        self.invalidate_pending_refresh(notif, false).await;
         let body = format_refresh_prompt(&plan);
         if let Some(id) = send_notify(
             notif,
@@ -128,6 +143,72 @@ impl SessionState {
         {
             self.last_notified_refresh = Some(key);
             self.pending_refresh = Some((id, plan));
+        }
+    }
+
+    async fn handle_refresh_action(
+        &mut self,
+        id: u32,
+        action_key: &str,
+        proxy: &UccdProxy<'_>,
+        notif: Option<&NotificationsProxy<'_>>,
+    ) {
+        let matches_pending = self
+            .pending_refresh
+            .as_ref()
+            .is_some_and(|(pending_id, _)| *pending_id == id && action_key == "apply");
+        if !matches_pending {
+            return;
+        }
+        let Some((_, saved_plan)) = self.pending_refresh.take() else {
+            return;
+        };
+        self.last_notified_refresh = None;
+        close_notify(notif, id).await;
+
+        let Ok(prof_raw) = proxy.get_active_profile_json().await else {
+            warn!("Aborting refresh apply: active profile re-query failed");
+            return;
+        };
+        let Ok(policy_raw) = proxy.get_power_policy_json().await else {
+            warn!("Aborting refresh apply: power policy re-query failed");
+            return;
+        };
+        self.requested_hz = parse_requested_hz(&prof_raw);
+        self.policy_source = parse_policy_source(&policy_raw);
+
+        let Some(cfg) = query_compositor_config(self.backend).await else {
+            warn!("Aborting refresh apply: compositor query failed");
+            return;
+        };
+        let Some(fresh_plan) =
+            RefreshAdvisor::plan(&cfg, &self.policy_source, &self.drm_root, self.requested_hz)
+        else {
+            warn!("Skipping stale refresh apply: offer is no longer applicable");
+            return;
+        };
+        if fresh_plan.output != saved_plan.output
+            || fresh_plan.target_mode != saved_plan.target_mode
+        {
+            warn!(
+                "Skipping stale refresh apply: plan changed from {}@{} to {}@{}",
+                saved_plan.output,
+                saved_plan.target_mode,
+                fresh_plan.output,
+                fresh_plan.target_mode
+            );
+            return;
+        }
+        if let Some(cmd) = self.backend.command_name() {
+            let cmd_args = RefreshAdvisor::apply_command_args(self.backend, &fresh_plan);
+            run_commands(vec![(cmd, cmd_args)]).await;
+            match query_compositor_config(self.backend).await {
+                Some(post_cfg) if RefreshAdvisor::applied(&post_cfg, &fresh_plan) => {}
+                _ => warn!(
+                    "Refresh command for {}@{} did not verify on compositor readback",
+                    fresh_plan.output, fresh_plan.target_mode
+                ),
+            }
         }
     }
 }
@@ -342,7 +423,11 @@ async fn main() {
                         power_notice_deadline = Some(tokio::time::Instant::now() + Duration::from_millis(800));
                     }
                     lid_handler.policy_changed(&policy_raw);
-                    state.policy_source = parse_policy_source(&policy_raw);
+                    let new_source = parse_policy_source(&policy_raw);
+                    if new_source != state.policy_source {
+                        state.invalidate_pending_refresh(notif_proxy.as_ref(), true).await;
+                        state.policy_source = new_source;
+                    }
                     state.maybe_suggest_refresh(notif_proxy.as_ref()).await;
                 }
             }
@@ -352,7 +437,12 @@ async fn main() {
                         power_notice_deadline = Some(tokio::time::Instant::now() + Duration::from_millis(800));
                     }
                     lid_handler.policy_changed(&policy_raw);
-                    state.policy_source = parse_policy_source(&policy_raw);
+                    let new_source = parse_policy_source(&policy_raw);
+                    if new_source != state.policy_source {
+                        state.invalidate_pending_refresh(notif_proxy.as_ref(), true).await;
+                        state.policy_source = new_source;
+                        state.maybe_suggest_refresh(notif_proxy.as_ref()).await;
+                    }
                 }
             }
             _ = async {
@@ -376,10 +466,11 @@ async fn main() {
                 }
             }
             _ = next_optional(&mut profile_stream) => {
+                state.invalidate_pending_refresh(notif_proxy.as_ref(), true).await;
                 if let Ok(prof_raw) = proxy.get_active_profile_json().await {
                     state.requested_hz = parse_requested_hz(&prof_raw);
+                    state.maybe_suggest_refresh(notif_proxy.as_ref()).await;
                 }
-                state.maybe_suggest_refresh(notif_proxy.as_ref()).await;
             }
             _ = next_optional(&mut dev_status_stream) => {
                 if let Ok(settings_raw) = proxy.get_power_device_settings_json().await {
@@ -388,15 +479,14 @@ async fn main() {
             }
             sig = next_optional(&mut action_stream) => {
                 if let Ok(args) = sig.args() {
-                    if let Some((pending_id, ref plan)) = state.pending_refresh {
-                        if args.id == pending_id && args.action_key == "apply" {
-                            if let Some(cmd) = state.backend.command_name() {
-                                let cmd_args = RefreshAdvisor::apply_command_args(state.backend, plan);
-                                run_commands(vec![(cmd, cmd_args)]).await;
-                            }
-                            state.pending_refresh = None;
-                        }
-                    }
+                    state
+                        .handle_refresh_action(
+                            args.id,
+                            &args.action_key,
+                            &proxy,
+                            notif_proxy.as_ref(),
+                        )
+                        .await;
                 }
             }
             sig = next_optional(&mut closed_stream) => {
@@ -408,6 +498,7 @@ async fn main() {
             }
             sig = next_optional(&mut sleep_stream) => {
                 if let Ok(args) = sig.args() {
+                    state.invalidate_pending_refresh(notif_proxy.as_ref(), true).await;
                     if !args.start {
                         state.maybe_suggest_refresh(notif_proxy.as_ref()).await;
                     }
