@@ -186,6 +186,222 @@ fn stage_dist_assets(dest: &Path) -> Result<(), Box<dyn std::error::Error>> {
         Err(err) => return Err(err.into()),
     }
     std::os::unix::fs::symlink("uccd-sleep.service", sleep_alias)?;
+    stage_release_metadata(&root, dest)?;
+    Ok(())
+}
+
+fn json_escape(input: &str) -> String {
+    let mut out = String::with_capacity(input.len());
+    for ch in input.chars() {
+        match ch {
+            '"' => out.push_str("\\\""),
+            '\\' => out.push_str("\\\\"),
+            '\n' => out.push_str("\\n"),
+            '\r' => out.push_str("\\r"),
+            '\t' => out.push_str("\\t"),
+            c if (c as u32) < 0x20 => {
+                use std::fmt::Write as _;
+                let _ = write!(out, "\\u{:04x}", c as u32);
+            }
+            c => out.push(c),
+        }
+    }
+    out
+}
+
+/// Pure-Rust SHA-256 hex digest (zero external dependencies, works offline everywhere).
+pub fn sha256_hex(data: &[u8]) -> String {
+    const K: [u32; 64] = [
+        0x428a2f98, 0x71374491, 0xb5c0fbcf, 0xe9b5dba5, 0x3956c25b, 0x59f111f1, 0x923f82a4, 0xab1c5ed5,
+        0xd807aa98, 0x12835b01, 0x243185be, 0x550c7dc3, 0x72be5d74, 0x80deb1fe, 0x9bdc06a7, 0xc19bf174,
+        0xe49b69c1, 0xefbe4786, 0x0fc19dc6, 0x240ca1cc, 0x2de92c6f, 0x4a7484aa, 0x5cb0a9dc, 0x76f988da,
+        0x983e5152, 0xa831c66d, 0xb00327c8, 0xbf597fc7, 0xc6e00bf3, 0xd5a79147, 0x06ca6351, 0x14292967,
+        0x27b70a85, 0x2e1b2138, 0x4d2c6dfc, 0x53380d13, 0x650a7354, 0x766a0abb, 0x81c2c92e, 0x92722c85,
+        0xa2bfe8a1, 0xa81a664b, 0xc24b8b70, 0xc76c51a3, 0xd192e819, 0xd6990624, 0xf40e3585, 0x106aa070,
+        0x19a4c116, 0x1e376c08, 0x2748774c, 0x34b0bcb5, 0x391c0cb3, 0x4ed8aa4a, 0x5b9cca4f, 0x682e6ff3,
+        0x748f82ee, 0x78a5636f, 0x84c87814, 0x8cc70208, 0x90befffa, 0xa4506ceb, 0xbef9a3f7, 0xc67178f2,
+    ];
+    let mut h: [u32; 8] = [
+        0x6a09e667, 0xbb67ae85, 0x3c6ef372, 0xa54ff53a,
+        0x510e527f, 0x9b05688c, 0x1f83d9ab, 0x5be0cd19,
+    ];
+    let bit_len = (data.len() as u64).wrapping_mul(8);
+    let mut msg = data.to_vec();
+    msg.push(0x80);
+    while msg.len() % 64 != 56 {
+        msg.push(0);
+    }
+    msg.extend_from_slice(&bit_len.to_be_bytes());
+
+    for offset in (0..msg.len()).step_by(64) {
+        let chunk = &msg[offset..offset + 64];
+        let mut w = [0u32; 64];
+        for i in 0..16 {
+            w[i] = u32::from_be_bytes([
+                chunk[i * 4],
+                chunk[i * 4 + 1],
+                chunk[i * 4 + 2],
+                chunk[i * 4 + 3],
+            ]);
+        }
+        for i in 16..64 {
+            let s0 = w[i - 15].rotate_right(7) ^ w[i - 15].rotate_right(18) ^ (w[i - 15] >> 3);
+            let s1 = w[i - 2].rotate_right(17) ^ w[i - 2].rotate_right(19) ^ (w[i - 2] >> 10);
+            w[i] = w[i - 16].wrapping_add(s0).wrapping_add(w[i - 7]).wrapping_add(s1);
+        }
+        let [mut a, mut b, mut c, mut d, mut e, mut f, mut g, mut hh] = h;
+        for i in 0..64 {
+            let s1 = e.rotate_right(6) ^ e.rotate_right(11) ^ e.rotate_right(25);
+            let ch = (e & f) ^ ((!e) & g);
+            let temp1 = hh.wrapping_add(s1).wrapping_add(ch).wrapping_add(K[i]).wrapping_add(w[i]);
+            let s0 = a.rotate_right(2) ^ a.rotate_right(13) ^ a.rotate_right(22);
+            let maj = (a & b) ^ (a & c) ^ (b & c);
+            let temp2 = s0.wrapping_add(maj);
+            hh = g;
+            g = f;
+            f = e;
+            e = d.wrapping_add(temp1);
+            d = c;
+            c = b;
+            b = a;
+            a = temp1.wrapping_add(temp2);
+        }
+        for (slot, val) in h.iter_mut().zip([a, b, c, d, e, f, g, hh]) {
+            *slot = slot.wrapping_add(val);
+        }
+    }
+
+    let mut hex = String::with_capacity(64);
+    for word in h {
+        use std::fmt::Write as _;
+        let _ = write!(hex, "{word:08x}");
+    }
+    hex
+}
+
+struct LockPkg {
+    name: String,
+    version: String,
+    source: Option<String>,
+    checksum: Option<String>,
+}
+
+fn parse_cargo_lock_packages(lock_content: &str) -> Vec<LockPkg> {
+    let mut pkgs = Vec::new();
+    let mut current: Option<LockPkg> = None;
+    let extract_quoted = |line: &str, key: &str| -> Option<String> {
+        line.strip_prefix(key)
+            .and_then(|rest| rest.trim().strip_prefix('"'))
+            .and_then(|rest| rest.strip_suffix('"'))
+            .map(ToString::to_string)
+    };
+    for raw in lock_content.lines() {
+        let line = raw.trim();
+        if line == "[[package]]" {
+            if let Some(pkg) = current.take() {
+                if !pkg.name.is_empty() && !pkg.version.is_empty() {
+                    pkgs.push(pkg);
+                }
+            }
+            current = Some(LockPkg {
+                name: String::new(),
+                version: String::new(),
+                source: None,
+                checksum: None,
+            });
+            continue;
+        }
+        if let Some(ref mut pkg) = current {
+            if let Some(v) = extract_quoted(line, "name = ") {
+                pkg.name = v;
+            } else if let Some(v) = extract_quoted(line, "version = ") {
+                pkg.version = v;
+            } else if let Some(v) = extract_quoted(line, "source = ") {
+                pkg.source = Some(v);
+            } else if let Some(v) = extract_quoted(line, "checksum = ") {
+                pkg.checksum = Some(v);
+            }
+        }
+    }
+    if let Some(pkg) = current {
+        if !pkg.name.is_empty() && !pkg.version.is_empty() {
+            pkgs.push(pkg);
+        }
+    }
+    pkgs
+}
+
+pub fn generate_sbom_json(root: &Path, app_version: &str) -> Result<String, Box<dyn std::error::Error>> {
+    let lock_raw = fs::read_to_string(root.join("Cargo.lock"))?;
+    let pkgs = parse_cargo_lock_packages(&lock_raw);
+    let mut out = String::from("{\n  \"bomFormat\": \"CycloneDX\",\n  \"specVersion\": \"1.5\",\n  \"metadata\": {\n    \"component\": {\n      \"type\": \"application\",\n      \"name\": \"ucc-rusted\",\n      \"version\": \"");
+    out.push_str(&json_escape(app_version));
+    out.push_str("\"\n    }\n  },\n  \"components\": [\n");
+    for (idx, pkg) in pkgs.iter().enumerate() {
+        let comma = if idx + 1 < pkgs.len() { "," } else { "" };
+        let purl = format!("pkg:cargo/{}@{}", pkg.name, pkg.version);
+        let source_line = pkg
+            .source
+            .as_ref()
+            .map(|s| format!(", \"description\": \"{}\"", json_escape(s)))
+            .unwrap_or_default();
+        let hash_line = pkg
+            .checksum
+            .as_ref()
+            .map(|h| format!(", \"hashes\": [{{\"alg\": \"SHA-256\", \"content\": \"{}\"}}]", json_escape(h)))
+            .unwrap_or_default();
+        out.push_str(&format!(
+            "    {{\"type\": \"library\", \"name\": \"{}\", \"version\": \"{}\", \"purl\": \"{}\"{source_line}{hash_line}}}{comma}\n",
+            json_escape(&pkg.name),
+            json_escape(&pkg.version),
+            json_escape(&purl),
+        ));
+    }
+    out.push_str("  ]\n}\n");
+    Ok(out)
+}
+
+fn current_git_short_sha(root: &Path) -> String {
+    std::process::Command::new("git")
+        .current_dir(root)
+        .args(["rev-parse", "--short", "HEAD"])
+        .output()
+        .ok()
+        .filter(|o| o.status.success())
+        .map(|o| String::from_utf8_lossy(&o.stdout).trim().to_string())
+        .filter(|s| !s.is_empty())
+        .unwrap_or_else(|| "unknown".to_string())
+}
+
+fn stage_release_metadata(root: &Path, dest: &Path) -> Result<(), Box<dyn std::error::Error>> {
+    let cargo_raw = fs::read_to_string(root.join("Cargo.toml"))?;
+    let version = parse_manifest_version(ManifestKind::CargoToml, &cargo_raw)?;
+    let commit = current_git_short_sha(root);
+    let doc_dir = dest.join("share/doc/ucc");
+    fs::create_dir_all(&doc_dir)?;
+
+    let mut manifest = format!(
+        "{{\n  \"package\": \"ucc-rusted\",\n  \"version\": \"{}\",\n  \"commit\": \"{}\",\n  \"binaries\": [\n",
+        json_escape(&version),
+        json_escape(&commit)
+    );
+    for (idx, (name, subdir)) in RUNTIME_BINARIES.iter().enumerate() {
+        let rel = format!("{subdir}/{name}");
+        let bytes = fs::read(dest.join(&rel))?;
+        let digest = sha256_hex(&bytes);
+        let comma = if idx + 1 < RUNTIME_BINARIES.len() { "," } else { "" };
+        manifest.push_str(&format!(
+            "    {{\"path\": \"{}\", \"bytes\": {}, \"sha256\": \"{}\"}}{comma}\n",
+            json_escape(&rel),
+            bytes.len(),
+            digest
+        ));
+    }
+    manifest.push_str("  ]\n}\n");
+    fs::write(doc_dir.join("RELEASE_MANIFEST.json"), manifest)?;
+
+    let sbom = generate_sbom_json(root, &version)?;
+    fs::write(doc_dir.join("SBOM.json"), sbom)?;
     Ok(())
 }
 
@@ -760,5 +976,34 @@ mod tests {
         bump_versions_in_root(root, "0.4.0", false).unwrap();
         let changelog_twice = fs::read_to_string(root.join("debian/changelog")).unwrap();
         assert_eq!(changelog_once, changelog_twice);
+    }
+
+    #[test]
+    fn dist_emits_release_manifest_and_cyclonedx_sbom() {
+        assert_eq!(
+            sha256_hex(b"abc"),
+            "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad"
+        );
+        let sbom = generate_sbom_json(&repo_root(), "0.3.0").unwrap();
+        assert!(sbom.contains("\"bomFormat\": \"CycloneDX\""));
+        assert!(sbom.contains("\"name\": \"ucc-rusted\""));
+        assert!(sbom.contains("\"purl\": \"pkg:cargo/zbus@"));
+
+        let tmp = tempfile::tempdir().unwrap();
+        let bins = tmp.path().join("bins");
+        let dest = tmp.path().join("dist");
+        fs::create_dir_all(&bins).unwrap();
+        for (name, _) in RUNTIME_BINARIES {
+            let f = bins.join(name);
+            fs::write(&f, format!("bin:{name}")).unwrap();
+            fs::set_permissions(&f, fs::Permissions::from_mode(0o755)).unwrap();
+        }
+        install_runtime(&dest, &bins).unwrap();
+        stage_dist_assets(&dest).unwrap();
+
+        let manifest = fs::read_to_string(dest.join("share/doc/ucc/RELEASE_MANIFEST.json")).unwrap();
+        assert!(manifest.contains("\"package\": \"ucc-rusted\""));
+        assert!(manifest.contains("lib/ucc/ucc-sleep"));
+        assert!(dest.join("share/doc/ucc/SBOM.json").is_file());
     }
 }

@@ -551,3 +551,46 @@ fn test_settings_fixture_roundtrip() {
 
     assert_eq!(parsed, reloaded);
 }
+
+#[test]
+fn m12_5_fuzz_smoke_malformed_settings_never_panics() {
+    use ucc_config::{is_valid_settings_content, ProfilesCatalog};
+
+    let malformed_cases = [
+        "",
+        "{",
+        "null",
+        "[]",
+        "\"string\"",
+        r#"{"profiles": null, "stateMap": 42}"#,
+        r#"{"profiles": {"bad": {"id": "", "fan": {"tableCPU": [{"temp": -999, "speed": 999}]}}}}"#,
+        r#"{"profiles": {}, "chargeEndThreshold": 10, "chargeStartThreshold": 90}"#,
+        &"{".repeat(512),
+    ];
+
+    for case in &malformed_cases {
+        let _ = UccSettings::from_json(case);
+        let _ = ProfilesCatalog::from_json(case);
+        let _ = is_valid_settings_content(case);
+    }
+
+    // Deterministic Xorshift64 fuzz-smoke over byte mutations of a valid fixture
+    let base = create_default_settings().to_json_pretty().unwrap().into_bytes();
+    let mut state: u64 = 0x5EED_F00D_CAFE_1234;
+    for iter in 0..200usize {
+        state ^= state << 13;
+        state ^= state >> 7;
+        state ^= state << 17;
+        let mut mutated = base.clone();
+        let cut = (state as usize) % (mutated.len() + 1);
+        if iter % 3 == 0 {
+            mutated.truncate(cut);
+        } else if !mutated.is_empty() {
+            let idx = (state as usize) % mutated.len();
+            mutated[idx] ^= (state >> 8) as u8;
+        }
+        let lossy = String::from_utf8_lossy(&mutated);
+        let _ = UccSettings::from_json(&lossy);
+        let _ = is_valid_settings_content(&lossy);
+    }
+}

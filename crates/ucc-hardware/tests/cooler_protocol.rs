@@ -121,3 +121,23 @@ fn test_cooler_state_machine_reconnect_and_keepalive() {
     assert!(sm.on_connection_failure()); // 3 -> Failed (threshold reached)
     assert_eq!(sm.state(), CoolerState::Failed);
 }
+
+#[test]
+fn m12_5_fuzz_smoke_cooler_packet_decoder_never_panics() {
+    for length in [0usize, 1, 7, 8, 9, 16] {
+        let buf = vec![0xFFu8; length];
+        let _ = CoolerPacketEncoder::validate_packet(&buf);
+    }
+    for byte in 0u8..=u8::MAX {
+        let pkt = [byte, byte ^ 0x1b, byte.wrapping_mul(3), 101, byte, 0, 0, byte ^ 0xef];
+        let _ = CoolerPacketEncoder::validate_packet(&pkt);
+    }
+    let mut state: u64 = 0xC001_ED42_1234_5678;
+    for _ in 0..500 {
+        state ^= state << 13;
+        state ^= state >> 7;
+        state ^= state << 17;
+        let pkt = state.to_le_bytes();
+        let _ = CoolerPacketEncoder::validate_packet(&pkt);
+    }
+}
