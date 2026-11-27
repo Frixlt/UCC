@@ -354,7 +354,7 @@ Pump code `0` — высокий режим 11V, `2` — 7V, `3` — 8V, `4` —
 
 ## 11. Этапы реализации и критерии выхода
 
-Статусы ниже относятся к будущей реализации. Только сохранение исходной базы выполнено сейчас. Этап нельзя закрыть заглушкой, если она покрывает обязательную функцию.
+Статусы ниже синхронизированы с `docs/rust/execution/backlog.json` (всего 139 задач: выполнено 64, заменено ADR-01 — 3, частично выполнено — 26, отложено на сообщество — 2, запланировано — 44). Этап нельзя закрыть заглушкой, если она покрывает обязательную функцию.
 
 ### M0 — воспроизводимая исходная база
 
@@ -362,80 +362,80 @@ Pump code `0` — высокий режим 11V, `2` — 7V, `3` — 8V, `4` —
 
 - [x] M0.1 Сохранить все текущие рабочие изменения отдельным коммитом и push.
 - [x] M0.2 Снять статическую инвентаризацию компонентов/методов/файлов с SHA-256.
-- [ ] M0.3 Создать отдельную ветку/worktree для Rust, не переписывая историю базы.
-- [ ] M0.4 Собрать C++ normal и read-only preview на базе коммита; сохранить toolchain/config/logs.
-- [ ] M0.5 Запустить текущий набор и сфокусированные GUI scenarios; зафиксировать failures/skips отдельно.
-- [ ] M0.6 Снять XML D-Bus и обезличенные fixtures settings/profiles/telemetry/capabilities.
-- [ ] M0.7 Зафиксировать reference images всех 10 разделов и driver-warning в обеих темах; существующая галерея содержит 22 изображения.
-- [ ] M0.8 Создать реестр F01–F44 со статусами: обязательная функция, аппаратно недоступна, подтверждённый legacy defect, shell decision.
-- [ ] M0.9 Зафиксировать текущие CPU/RSS/idle wakeups/UI latency/package footprint для последующего сравнения.
+- [x] M0.3 Создать отдельную ветку/worktree для Rust, не переписывая историю базы.
+- [x] M0.4 Собрать C++ normal и read-only preview на базе коммита; сохранить toolchain/config/logs.
+- [x] M0.5 Запустить текущий набор и сфокусированные GUI scenarios; зафиксировать failures/skips отдельно.
+- [x] M0.6 Снять XML D-Bus и обезличенные fixtures settings/profiles/telemetry/capabilities.
+- [x] M0.7 Зафиксировать reference images всех 10 разделов и driver-warning в обеих темах; существующая галерея содержит 22 изображения.
+- [x] M0.8 Создать реестр F01–F44 со статусами: обязательная функция, аппаратно недоступна, подтверждённый legacy defect, shell decision.
+- [x] M0.9 Зафиксировать текущие CPU/RSS/idle wakeups/UI latency/package footprint для последующего сравнения.
 
 **Выход:** любой разработчик воспроизводит базу; известные сбои и непроверенные аппаратные сценарии названы явно. Личные данные остаются в private fixture storage, публичные fixtures обезличены.
 
 ### M1 — технические прототипы и архитектурные решения
 
-- [ ] M1.1 Создать минимальный Cargo workspace и закрепить stable toolchain/MSRV/dependencies.
-- [ ] M1.2 Iced prototype: Fluent shell, таблица устройств, curve canvas, keyboard canvas, live chart на полном horizon.
-- [ ] M1.3 Проверить кириллицу/IME, keyboard navigation, focus, tooltips, DPI 100/125/150/200%, Light/Dark/Auto и доступность ключевых controls.
-- [ ] M1.4 Проверить native Wayland KDE/Hyprland и X11; исключить неявный выбор NVIDIA renderer, который держит dGPU активной.
-- [ ] M1.5 Проверить ksni menu, tokens, existing-window activation и переход на desktop окна; определить необходимый toolkit integration patch.
-- [ ] M1.6 Проверить Rust ioctl ABI: request numbers/struct layouts против установленного driver ABI и C++ reference harness.
-- [ ] M1.7 На fake BlueZ проверить GATT interface, уведомления, reconnect и выбор bluer/direct-zbus.
-- [ ] M1.8 Проверить покрытие NVIDIA wrapper и возможную изоляцию native GPU calls отдельным процессом.
-- [ ] M1.9 Зафиксировать решение GNOME/Plasma: минимальные adapters как исключение или согласованная замена embedding на Rust popup.
-- [ ] M1.10 Записать ADR по GUI, concurrency, data compatibility, privileges и external-library boundaries.
+- [x] M1.1 Создать минимальный Cargo workspace и закрепить stable toolchain/MSRV/dependencies.
+- [x] M1.2 *(заменено ADR-01)* Iced prototype: Fluent shell, таблица устройств, curve canvas, keyboard canvas, live chart на полном horizon.
+- [x] M1.3 *(заменено ADR-01)* Проверить кириллицу/IME, keyboard navigation, focus, tooltips, DPI 100/125/150/200%, Light/Dark/Auto и доступность ключевых controls.
+- [x] M1.4 *(заменено ADR-01)* Проверить native Wayland KDE/Hyprland и X11; исключить неявный выбор NVIDIA renderer, который держит dGPU активной.
+- [ ] M1.5 *(частично выполнено)* Проверить ksni menu, tokens, existing-window activation и переход на desktop окна; определить необходимый toolkit integration patch.
+- [x] M1.6 Проверить Rust ioctl ABI: request numbers/struct layouts против установленного driver ABI и C++ reference harness.
+- [x] M1.7 На fake BlueZ проверить GATT interface, уведомления, reconnect и выбор bluer/direct-zbus.
+- [x] M1.8 Проверить покрытие NVIDIA wrapper и возможную изоляцию native GPU calls отдельным процессом.
+- [x] M1.9 Зафиксировать решение GNOME/Plasma: минимальные adapters как исключение или согласованная замена embedding на Rust popup.
+- [x] M1.10 Записать ADR по GUI, concurrency, data compatibility, privileges и external-library boundaries.
 
 **Выход:** есть демонстрируемые прототипы самых рискованных мест. Toolkit не выбирается по одному красивому окну. Если activation/chart/input проваливается, решение меняется здесь, до переноса всех страниц.
 
 ### M2 — доменная модель и настройки
 
-- [ ] M2.1 Перенести ProfileState, physical/effective/profile states и PowerPolicy как pure functions/state machine.
-- [ ] M2.2 Перенести UccProfile, fan/keyboard profiles, stateMap, global charging, capability types, units и supported defaults.
-- [ ] M2.3 Развести legacy wire DTO и внутреннюю модель `Option`/typed values.
-- [ ] M2.4 Перенести default profiles и device-specific defaults с сохранением IDs; исключить личные power limits из public defaults.
-- [ ] M2.5 Реализовать read/validate/round-trip settings, autosave, Aquaris, user INI prefs и sleep snapshots.
-- [ ] M2.6 Реализовать atomic persistence, backups/recovery и сериализацию без повторных ключей.
-- [ ] M2.7 Перенести CPU/fan/profile parsers и validation с fixtures повреждённых/неполных/старых файлов.
-- [ ] M2.8 Прогнать property/differential tests policy matrix и сериализации; intentional differences записать отдельно.
+- [x] M2.1 Перенести ProfileState, physical/effective/profile states и PowerPolicy как pure functions/state machine.
+- [x] M2.2 Перенести UccProfile, fan/keyboard profiles, stateMap, global charging, capability types, units и supported defaults.
+- [x] M2.3 Развести legacy wire DTO и внутреннюю модель `Option`/typed values.
+- [x] M2.4 Перенести default profiles и device-specific defaults с сохранением IDs; исключить личные power limits из public defaults.
+- [ ] M2.5 *(частично выполнено)* Реализовать read/validate/round-trip settings, autosave, Aquaris, user INI prefs и sleep snapshots.
+- [x] M2.6 Реализовать atomic persistence, backups/recovery и сериализацию без повторных ключей.
+- [x] M2.7 Перенести CPU/fan/profile parsers и validation с fixtures повреждённых/неполных/старых файлов.
+- [x] M2.8 Прогнать property/differential tests policy matrix и сериализации; intentional differences записать отдельно.
 
 **Выход:** Rust загружает действующие обезличенные настройки без потерь; повторная запись не теряет ни включённые CPU ID, ни RGB, ни частоты, ни global charging.
 
 ### M3 — D-Bus и CLI
 
-- [ ] M3.1 Реализовать `ucc-dbus`: все legacy methods/signals и typed proxies.
-- [ ] M3.2 Реализовать fake service и контрактные тесты 122 методов, включая bool false, malformed JSON, timeout, unavailable.
-- [ ] M3.3 Перенести Polkit action mapping read/control/manage-hardware; проверять реального sender и его lifecycle.
-- [ ] M3.4 Не блокировать event loop во время auth prompt; ограничить параллелизм, очередь и размер JSON.
-- [ ] M3.5 Перенести CLI status/monitor, profile/statemap, fan/keyboard, hardware/watercooler/charging/cpu/gpu/power-limits, power/devices/lightbar.
-- [ ] M3.6 Сохранить aliases, --json, monitor count/interval и exit codes; справка/completion/man генерируются из актуальной команды.
-- [ ] M3.7 Проверить Rust CLI → C++ daemon и C++ test-client → Rust fake/daemon backend на private bus.
-- [ ] M3.8 Учесть старые semantic defects client wrappers и отсутствующие методы как явные contract deviations.
+- [x] M3.1 Реализовать `ucc-dbus`: все legacy methods/signals и typed proxies.
+- [x] M3.2 Реализовать fake service и контрактные тесты 122 методов, включая bool false, malformed JSON, timeout, unavailable.
+- [x] M3.3 Перенести Polkit action mapping read/control/manage-hardware; проверять реального sender и его lifecycle.
+- [x] M3.4 Не блокировать event loop во время auth prompt; ограничить параллелизм, очередь и размер JSON.
+- [x] M3.5 Перенести CLI status/monitor, profile/statemap, fan/keyboard, hardware/watercooler/charging/cpu/gpu/power-limits, power/devices/lightbar.
+- [x] M3.6 Сохранить aliases, --json, monitor count/interval и exit codes; справка/completion/man генерируются из актуальной команды.
+- [x] M3.7 Проверить Rust CLI → C++ daemon и C++ test-client → Rust fake/daemon backend на private bus.
+- [x] M3.8 Учесть старые semantic defects client wrappers и отсутствующие методы как явные contract deviations.
 
 **Выход:** transport/CLI полностью работоспособны с fake hardware; совместимость проверяется автоматически. Простой запуск `--help` не считается готовностью CLI.
 
 ### M4 — аппаратная основа и CPU/device policies
 
-- [ ] M4.1 Ввести traits HardwareIo, Sysfs, ProcessRunner, Clock, GpuBackend и тестовые реализации с write journal.
-- [ ] M4.2 Перенести Clevo/Uniwill detection, `/dev/tuxedo_io`, descriptors, capabilities и exact DMI quirks.
-- [ ] M4.3 Реализовать ioctl запросы с точным encoding, включая существующее использование pointer-sized `_IOR/_IOW`, не заменяя его автоматически `size_of::<i32>()`.
-- [ ] M4.4 Перенести CPU discovery, sparse topology, CPUID affinity guard, selection и enable-before-disable.
-- [ ] M4.5 Перенести governor/EPP/min-max/turbo/HWP, defaults/reapply/restore и ошибки записи.
-- [ ] M4.6 Перенести devices scan/merge, whitelist paths/values, отсутствующие devices и независимые три колонки.
-- [ ] M4.7 Перенести ASPM/Wi-Fi/system tunables/nvidia-powerd/persistence ordering без shell interpolation.
-- [ ] M4.8 Прогнать fake sysfs/procfs failure matrix; после этого провести ограниченные аппаратные read/write проверки.
-- [ ] M4.9 Ввести доменный трейт `PlatformBackend` поверх `HardwareIo`/`Sysfs`, изолирующий `TuxedoIoBackend` от логики демона и готовящий плавный переход к `UwccBackend` (`ADR-05`).
+- [x] M4.1 Ввести traits HardwareIo, Sysfs, ProcessRunner, Clock, GpuBackend и тестовые реализации с write journal.
+- [x] M4.2 Перенести Clevo/Uniwill detection, `/dev/tuxedo_io`, descriptors, capabilities и exact DMI quirks.
+- [x] M4.3 Реализовать ioctl запросы с точным encoding, включая существующее использование pointer-sized `_IOR/_IOW`, не заменяя его автоматически `size_of::<i32>()`.
+- [x] M4.4 Перенести CPU discovery, sparse topology, CPUID affinity guard, selection и enable-before-disable.
+- [x] M4.5 Перенести governor/EPP/min-max/turbo/HWP, defaults/reapply/restore и ошибки записи.
+- [x] M4.6 Перенести devices scan/merge, whitelist paths/values, отсутствующие devices и независимые три колонки.
+- [x] M4.7 Перенести ASPM/Wi-Fi/system tunables/nvidia-powerd/persistence ordering без shell interpolation.
+- [x] M4.8 Прогнать fake sysfs/procfs failure matrix; после этого провести ограниченные аппаратные read/write проверки.
+- [x] M4.9 Ввести доменный трейт `PlatformBackend` поверх `HardwareIo`/`Sysfs`, изолирующий `TuxedoIoBackend` от логики демона и готовящий плавный переход к `UwccBackend` (`ADR-05`).
 
 **Выход:** CPU/device actions соответствуют fixture journal и подтверждаемому readback; неподдержанное оборудование не получает guessed writes.
 
 ### M5 — охлаждение и BLE
 
-- [ ] M5.1 Перенести FanProfile interpolation, pump steps, filters/hysteresis/limits и sameSpeed.
-- [ ] M5.2 Проверить таблицы и округление на температурных трассах; отдельно протестировать critical/failure policies.
-- [ ] M5.3 Реализовать независимый fan loop и firmware-auto recovery при штатном/аварийном завершении.
-- [ ] M5.4 Перенести BLE packets/UUID/model mapping и encode/decode tests без реального устройства.
-- [ ] M5.5 Реализовать discovery/reconnect state machine, deadlines/backoff, keepalive, поздний adapter, saved identity.
-- [ ] M5.6 Реализовать ordered writes с gap ≥80 мс, coalescing значений и cancellation поколения соединения.
-- [ ] M5.7 Сохранить manual/auto semantics, Fan/Pump/LED restore после reconnect; запрещённый pump code отвергается.
+- [x] M5.1 Перенести FanProfile interpolation, pump steps, filters/hysteresis/limits и sameSpeed.
+- [x] M5.2 Проверить таблицы и округление на температурных трассах; отдельно протестировать critical/failure policies.
+- [x] M5.3 Реализовать независимый fan loop и firmware-auto recovery при штатном/аварийном завершении.
+- [x] M5.4 Перенести BLE packets/UUID/model mapping и encode/decode tests без реального устройства.
+- [ ] M5.5 *(частично выполнено)* Реализовать discovery/reconnect state machine, deadlines/backoff, keepalive, поздний adapter, saved identity.
+- [x] M5.6 Реализовать ordered writes с gap ≥80 мс, coalescing значений и cancellation поколения соединения.
+- [x] M5.7 Сохранить manual/auto semantics, Fan/Pump/LED restore после reconnect; запрещённый pump code отвергается.
 - [ ] M5.8 Проверить настоящую водянку: initial connect, disconnect, disable/enable, power cycle, manual/auto, отсутствие скачка на неподдержанный режим.
 - [ ] M5.9 Исправить надёжное восстановление профиля/состояния СЖО в текущем C++ UCC (если требуется хотфикс) и во всех 5 причинах в Rust `uccd` и `ucc-hardware` (`manual_fan_speed`/`manual_pump_voltage` из профиля, мгновенный пересчёт кривой и replay после `WC_CONNECT_DEBOUNCE`, `spawn_blocking` для `reconcile_power_state`, загрузка LED из `aquaris.json`, `PrepareForSleep` teardown/resume, авто-включение сканирования при настроенном `state_map["power_wc"]`).
 
@@ -443,65 +443,65 @@ Pump code `0` — высокий режим 11V, `2` — 7V, `3` — 8V, `4` —
 
 ### M6 — клавиатура и Lightbar
 
-- [ ] M6.1 Перенести обнаружение white/zone/per-key LEDs и физические ID.
-- [ ] M6.2 Перенести калиброванную раскладку и mapping LED-ID → hardware path без сдвига missing zones.
-- [ ] M6.3 Реализовать brightness scaling и buffered RGB writes; guard восстанавливает buffer_input и при ошибке.
-- [ ] M6.4 Перенести Lightbar discovery/settings, power modes, majority color, defaults и все 5 frame functions.
-- [ ] M6.5 Реализовать таймер анимации без sleep в event loop, no overlap, proper idle/Flash, Welcome/Silent/Test.
-- [ ] M6.6 Проверить private fixture цвета и аппаратный readback, изменения профиля и power mode, отказ записи и resume без повторного welcome.
-- [ ] M6.7 Отделить логику клавиатуры и Lightbar от способа доставки (`LightingTransport`: `SysfsLedTransport` для `M6–M13` и точка подключения `HidrawTransport` для `M14`).
+- [x] M6.1 Перенести обнаружение white/zone/per-key LEDs и физические ID.
+- [x] M6.2 Перенести калиброванную раскладку и mapping LED-ID → hardware path без сдвига missing zones.
+- [x] M6.3 Реализовать brightness scaling и buffered RGB writes; guard восстанавливает buffer_input и при ошибке.
+- [x] M6.4 Перенести Lightbar discovery/settings, power modes, majority color, defaults и все 5 frame functions.
+- [x] M6.5 Реализовать таймер анимации без sleep в event loop, no overlap, proper idle/Flash, Welcome/Silent/Test.
+- [x] M6.6 Проверить private fixture цвета и аппаратный readback, изменения профиля и power mode, отказ записи и resume без повторного welcome.
+- [x] M6.7 Отделить логику клавиатуры и Lightbar от способа доставки (`LightingTransport`: `SysfsLedTransport` для `M6–M13` и точка подключения `HidrawTransport` для `M14`).
 
 **Выход:** старые цвета/яркость и physical mapping сохранены; idle и error states воспроизводимы.
 
 ### M7 — telemetry и история
 
-- [ ] M7.1 Перенести CPU sensors/RAPL energy counters, wrap-around/time delta и единицы.
-- [ ] M7.2 Перенести Intel i915/xe, AMD и NVIDIA paths с per-GPU sensor identity и отсутствующими датчиками.
-- [ ] M7.3 Перенести реально используемые NVML/NvAPI symbols, capabilities, optional libraries и ограниченные OC paths.
-- [ ] M7.4 Ввести freshness/validity в модели; legacy sentinels формируются на IPC boundary.
-- [ ] M7.5 Сохранить sleeping dGPU guard/cadence и проверить idle без постоянного пробуждения GPU.
-- [ ] M7.6 Реализовать bounded history, 10 series, horizon и legacy binary codec с malformed/truncated payload tests.
-- [ ] M7.7 Проверить shared ownership/init/shutdown NVIDIA, no-GPU machine и error injection; при необходимости подключить isolated GPU helper.
+- [x] M7.1 Перенести CPU sensors/RAPL energy counters, wrap-around/time delta и единицы.
+- [x] M7.2 Перенести Intel i915/xe, AMD и NVIDIA paths с per-GPU sensor identity и отсутствующими датчиками.
+- [x] M7.3 Перенести реально используемые NVML/NvAPI symbols, capabilities, optional libraries и ограниченные OC paths.
+- [x] M7.4 Ввести freshness/validity в модели; legacy sentinels формируются на IPC boundary.
+- [ ] M7.5 *(частично выполнено)* Сохранить sleeping dGPU guard/cadence и проверить idle без постоянного пробуждения GPU.
+- [x] M7.6 Реализовать bounded history, 10 series, horizon и legacy binary codec с malformed/truncated payload tests.
+- [x] M7.7 Проверить shared ownership/init/shutdown NVIDIA, no-GPU machine и error injection; при необходимости подключить isolated GPU helper.
 
 **Выход:** telemetry не смешивает GPU, не рисует выдуманные значения и не мешает энергосбережению; старый Monitor получает совместимый бинарный ответ.
 
 ### M8 — интегрированный Rust daemon и helpers
 
-- [ ] M8.1 Связать orchestrator, workers, snapshots и D-Bus; startup order воспроизводит загрузку capabilities/settings/profile.
-- [ ] M8.2 Реализовать single-instance/name ownership и запуск Type=dbus; не сообщать readiness до готовности API.
-- [ ] M8.3 Реализовать сигналы завершения и bounded shutdown с fan-auto, CPU restore, BLE/NVML cleanup.
-- [ ] M8.4 Перенести ucc-sleep prepare/resume, ownership/permissions/symlink validation и retry после failed start.
-- [ ] M8.5 Перенести ucc-hardware --audit/--fan-auto с проверкой поддержки устройства.
-- [ ] M8.6 Перенести ucc-import-check с проверкой всех профилей/curves/LED IDs.
-- [ ] M8.7 Проверить restart, corrupt config, unavailable device, D-Bus restart, slow auth, queue overload, sleep cancellation.
-- [ ] M8.8 Старый C++ GUI/CLI тестируется с новым Rust daemon на изолированной шине и затем в управляемом аппаратном переходе.
-- [ ] M8.9 Перенести `LidController` (ингибитор `handle-lid-switch`, debounce при отключении питания) и `WakeupPolicy` в `uccd` и `ucc-sleep prepare`.
+- [ ] M8.1 *(частично выполнено)* Связать orchestrator, workers, snapshots и D-Bus; startup order воспроизводит загрузку capabilities/settings/profile.
+- [ ] M8.2 *(частично выполнено)* Реализовать single-instance/name ownership и запуск Type=dbus; не сообщать readiness до готовности API.
+- [ ] M8.3 *(частично выполнено)* Реализовать сигналы завершения и bounded shutdown с fan-auto, CPU restore, BLE/NVML cleanup.
+- [ ] M8.4 *(частично выполнено)* Перенести ucc-sleep prepare/resume, ownership/permissions/symlink validation и retry после failed start.
+- [ ] M8.5 *(частично выполнено)* Перенести ucc-hardware --audit/--fan-auto с проверкой поддержки устройства.
+- [ ] M8.6 *(частично выполнено)* Перенести ucc-import-check с проверкой всех профилей/curves/LED IDs.
+- [ ] M8.7 *(частично выполнено)* Проверить restart, corrupt config, unavailable device, D-Bus restart, slow auth, queue overload, sleep cancellation.
+- [ ] M8.8 *(частично выполнено)* Старый C++ GUI/CLI тестируется с новым Rust daemon на изолированной шине и затем в управляемом аппаратном переходе.
+- [ ] M8.9 *(частично выполнено)* Перенести `LidController` (ингибитор `handle-lid-switch`, debounce при отключении питания) и `WakeupPolicy` в `uccd` и `ucc-sleep prepare`.
 - [ ] M8.10 Гасить подсветку клавиатуры и (опционально) подсветку подключённой СЖО при закрытии крышки и восстанавливать из RAM при открытии или выходе из сна (настройки на карточке `Lid` в `PowerDevicesTab`: `turnOffKeyboardBacklightOnLidClose` и `turnOffWaterCoolerLedOnLidClose`, без изменения активного профиля/`settings.json`, плюс подписка на `login1` `LidClosed` / `UPower` `LidIsClosed` в `run_logind_monitor_loop` и тесты).
 
 **Выход:** все backend-функции F01–F29/F40 работают без C++ daemon и без запущенного GUI.
 
 ### M9 — пользовательская desktop-часть
 
-- [ ] M9.1 Перенести батареи/process sampler с activity-aware polling, coalescing и bounded results.
-- [ ] M9.2 Перенести pidfd termination, startTime/UID/GPU-fd recheck, grace/escalation и UI confirmation contract.
-- [ ] M9.3 Перенести notification observer, rate limit/restart, driver alert/recovery и source debounce без текста уведомлений.
-- [ ] M9.4 Перенести KDE/Hyprland refresh backend, profile preferences, consent invalidation и readback.
-- [ ] M9.5 Обеспечить X11 backend в пользовательской сессии и совместимый маршрут SetDisplayRefreshRate.
-- [ ] M9.6 Перенести tray icon/menu/process popup, command failures и адаптивный polling.
-- [ ] M9.7 Реализовать GUI activation endpoint с token forwarding и отдельные service names preview.
-- [ ] M9.8 Проверить autostart, singleton, compositor restart, отсутствие notification server/tray host и несколько пользовательских сессий.
-- [ ] M9.9 Перенести `LidDisplayHandler` (DPMS только встроенной панели `eDP-*`/`LVDS-*`) и восстановление частоты после готовности DPMS в `ucc-session-agent`.
+- [ ] M9.1 *(частично выполнено)* Перенести батареи/process sampler с activity-aware polling, coalescing и bounded results.
+- [ ] M9.2 *(частично выполнено)* Перенести pidfd termination, startTime/UID/GPU-fd recheck, grace/escalation и UI confirmation contract.
+- [ ] M9.3 *(частично выполнено)* Перенести notification observer, rate limit/restart, driver alert/recovery и source debounce без текста уведомлений.
+- [ ] M9.4 *(частично выполнено)* Перенести KDE/Hyprland refresh backend, profile preferences, consent invalidation и readback.
+- [ ] M9.5 *(отложено на сообщество)* Обеспечить X11 backend в пользовательской сессии и совместимый маршрут SetDisplayRefreshRate.
+- [ ] M9.6 *(частично выполнено)* Перенести tray icon/menu/process popup, command failures и адаптивный polling.
+- [x] M9.7 Реализовать GUI activation endpoint с token forwarding и отдельные service names preview.
+- [ ] M9.8 *(частично выполнено)* Проверить autostart, singleton, compositor restart, отсутствие notification server/tray host и несколько пользовательских сессий.
+- [ ] M9.9 *(частично выполнено)* Перенести `LidDisplayHandler` (DPMS только встроенной панели `eDP-*`/`LVDS-*`) и восстановление частоты после готовности DPMS в `ucc-session-agent`.
 
 **Выход:** tray и session agent работают без открытого главного окна и без Qt.
 
 ### M10 — автономный `Qt6::Widgets` GUI поверх Rust `uccd` (`ADR-01`)
 
-- [ ] M10.1 Отвязать CMake-сборку `ucc-gui` от удаляемых C++-компонентов (`uccd`, `ucc-session`, `ucc-desktop-tray`, `ucc-tray`) и лишних зависимостей (`Qml`, `Quick`, `QuickControls2`, `Qt6::Bluetooth`, `KF6WindowSystem`, `KF6StatusNotifierItem`), оставив только `Qt6::{Core,Gui,Widgets,DBus,Charts}`.
-- [ ] M10.2 Заменить активацию окна через `KF6WindowSystem` на нативный путь Qt6 Wayland (`XDG_ACTIVATION_TOKEN` + `QWindow::requestActivate()`) и статически встроить клиент D-Bus (без установки внешней `libucc-dbus.so`).
+- [x] M10.1 Отвязать CMake-сборку `ucc-gui` от удаляемых C++-компонентов (`uccd`, `ucc-session`, `ucc-desktop-tray`, `ucc-tray`) и лишних зависимостей (`Qml`, `Quick`, `QuickControls2`, `Qt6::Bluetooth`, `KF6WindowSystem`, `KF6StatusNotifierItem`), оставив только `Qt6::{Core,Gui,Widgets,DBus,Charts}`.
+- [ ] M10.2 *(частично выполнено)* Заменить активацию окна через `KF6WindowSystem` на нативный путь Qt6 Wayland (`XDG_ACTIVATION_TOKEN` + `QWindow::requestActivate()`) и статически встроить клиент D-Bus (без установки внешней `libucc-dbus.so`).
 - [ ] M10.3 Перевести вкладку `Battery & Processes` на данные/команды Rust-стека (или изолированный легковесный Qt-виджет без `ucc-desktop-tray`), сохранив безопасное завершение пользовательских процессов NVIDIA и настройки глобальной зарядки.
 - [ ] M10.4 Обеспечить жизненный цикл «0 МБ Qt в фоне»: закрытие окна `ucc-gui` полностью завершает процесс, а клик в Rust-трее `ucc-desktop-tray` мгновенно запускает или фокусирует `ucc-gui` с передачей Wayland activation token.
-- [ ] M10.5 Исключить прототип `crates/ucc-gui` (`iced`/`wgpu`) из `Cargo.toml` и `Cargo.lock`, очистив Rust-workspace от графических зависимостей.
-- [ ] M10.6 Прогнать полный `test_gui_audit` (все 10 разделов, включая карточку `Lid close action & sleep wakeup` `F45`, обе темы, `UCC_READ_ONLY_PREVIEW` и отказ команд без fake success) в связке с новым Rust-демоном `uccd` на изолированной шине.
+- [x] M10.5 Исключить прототип `crates/ucc-gui` (`iced`/`wgpu`) из `Cargo.toml` и `Cargo.lock`, очистив Rust-workspace от графических зависимостей.
+- [x] M10.6 Прогнать полный `test_gui_audit` (все 10 разделов, включая карточку `Lid close action & sleep wakeup` `F45`, обе темы, `UCC_READ_ONLY_PREVIEW` и отказ команд без fake success) в связке с новым Rust-демоном `uccd` на изолированной шине.
 - [ ] M10.7 Проверить на живой сессии Hyprland: масштабирование `1.25`/`2.0`, тему `qt6ct`/Kvantum, открытие из Rust-трея с фокусом и отсутствие пробуждения спящей RTX 5080 при открытии/закрытии `ucc-gui`.
 - [ ] M10.8 Дополировка GUI: добавить уникальные векторные иконки в `FluentTheme::icon()` для вкладок `Power & Devices`, `Lightbar` и `Battery & Processes` вместо fallback-иконки клавиатуры.
 - [ ] M10.9 Добавить вкладку `Experimental` в `ucc-gui` с отдельной иконкой в сайдбаре, предупреждением о тестовом статусе и расширяемой структурой для будущих экспериментальных настроек.
@@ -523,14 +523,14 @@ Pump code `0` — высокий режим 11V, `2` — 7V, `3` — 8V, `4` —
 
 ### M12 — пакеты, CI и обновление
 
-- [ ] M12.1 Создать `cargo xtask dist` для release artifacts, staging tree, manifests, version/commit metadata.
-- [ ] M12.2 Обновить Arch PKGBUILD, provides/conflicts, install hooks; settings не включаются в public package.
-- [ ] M12.3 Обновить DEB/RPM/Nix recipes, services/dbus/polkit/autostart/icons/man/completions; проверить Nix-store helper paths.
-- [ ] M12.4 Сохранить enabled/disabled/masked sleep-hook state при upgrade, settings backup и private→public переход.
-- [ ] M12.5 Настроить fmt/clippy/tests/contract tests/fuzz smoke/build/packaging/UI jobs под непривилегированным пользователем.
-- [ ] M12.6 Проверить normal и preview сборки; CI не получает доступ к реальному sysfs/system bus.
-- [ ] M12.7 Проверить dependencies/runtime links: основным binaries не нужны Qt/libucc-dbus; ожидаемые системные/FFI библиотеки перечислены.
-- [ ] M12.8 Сформировать license/dependency notices, SBOM/source archive и migration/recovery guide.
+- [ ] M12.1 *(частично выполнено)* Создать `cargo xtask dist` для release artifacts, staging tree, manifests, version/commit metadata.
+- [x] M12.2 Обновить Arch PKGBUILD, provides/conflicts, install hooks; settings не включаются в public package.
+- [ ] M12.3 *(отложено на сообщество)* Обновить DEB/RPM/Nix recipes, services/dbus/polkit/autostart/icons/man/completions; проверить Nix-store helper paths.
+- [ ] M12.4 *(частично выполнено)* Сохранить enabled/disabled/masked sleep-hook state при upgrade, settings backup и private→public переход.
+- [ ] M12.5 *(частично выполнено)* Настроить fmt/clippy/tests/contract tests/fuzz smoke/build/packaging/UI jobs под непривилегированным пользователем.
+- [ ] M12.6 *(частично выполнено)* Проверить normal и preview сборки; CI не получает доступ к реальному sysfs/system bus.
+- [x] M12.7 Проверить dependencies/runtime links: основным binaries не нужны Qt/libucc-dbus; ожидаемые системные/FFI библиотеки перечислены.
+- [ ] M12.8 *(частично выполнено)* Сформировать license/dependency notices, SBOM/source archive и migration/recovery guide.
 - [ ] M12.9 Установить staged package на чистое окружение и обновить копию существующей установки; затем выполнить downgrade/rollback.
 - [ ] M12.10 Закрепить единый code style, commit convention и алгоритм релизов: `rustfmt.toml`, `.editorconfig`, `cargo fmt --check` в CI, `CONTRIBUTING.md`, устранение хардкода `docs/releases/0.3.0.md` в `.github/workflows/release.yml`, синхронная проверка/обновление версий (`Cargo.toml`, `CMakeLists.txt`, `PKGBUILD`, `ucc.spec`, `package.nix`) и генерация `CHANGELOG`.
 
