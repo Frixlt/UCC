@@ -172,6 +172,8 @@ if(DBUS_RUN_SESSION_EXECUTABLE AND BUILD_GUI)
     displayBrightnessCommitsOnReleaseAndIgnoresMonitorDuringDrag
     applyFailureDoesNotClaimSuccessOrSendWaterCooler
     asyncApplyAllowsImmediateWindowCloseWithoutLateWaterCooler
+    rejectedProfileSelectionKeepsPreviousActiveProfile
+    slowSetActiveProfileDoesNotBlockEventLoop
     prepareForSleepResumeSetsSidebarStatus
     watercoolCrosshairsStayVisibleAcrossTabsAndPartialReads
     deviceSupportStatusDistinguishesOfflineFromUnsupported)
@@ -202,7 +204,9 @@ if(DBUS_RUN_SESSION_EXECUTABLE AND BUILD_GUI)
     monitorPowerAxisUsesLaptopRange
     pageEntranceFinishesAfterRapidNavigation
     pageEntranceUsesCurrentThemeCanvas
-    entranceCanBeDisabledAndPreservesEditorFocus)
+    entranceCanBeDisabledAndPreservesEditorFocus
+    readUccdBatchBoundsConcurrencyAndCompletesAllMethods
+    monitorTabPreservesLateCrossProducerPointsWithoutDuplicates)
   add_test(NAME test_gui_audit_preview_gallery COMMAND ${DBUS_RUN_SESSION_EXECUTABLE} -- bash ${CMAKE_CURRENT_SOURCE_DIR}/run_gui_audit_test.sh $<TARGET_FILE:test_gui_audit>
     aboutLoggingPreferenceAndFolderAction
     aboutBuildCreditsAndBundledLicense

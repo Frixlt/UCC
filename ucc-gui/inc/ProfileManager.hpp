@@ -164,6 +164,7 @@ private:
   QJsonArray m_customFanProfilesData;    ///< [{id, name, json}, ...] local
   QJsonArray m_customKeyboardProfilesData;
   QJsonObject m_stateMap;
+  quint64 m_activeProfileRequestSeq = 0;
 };
 
 } // namespace ucc

@@ -464,6 +464,75 @@ bool UccdClient::setActiveProfile( const std::string &profileId )
   return callMethod< bool >( "SetActiveProfile", id ).value_or( false );
 }
 
+static QDBusPendingCallWatcher *dispatchAsyncBoolProfileCall(
+  QDBusInterface *iface,
+  bool connected,
+  const QString &method,
+  const QString &payload,
+  QObject *context,
+  QObject *defaultOwner,
+  std::function< void( bool, const QString & ) > callback,
+  const QString &rejectMessage )
+{
+  if ( !connected || !iface )
+  {
+    if ( callback )
+      callback( false, QStringLiteral( "UCC daemon is unavailable" ) );
+    return nullptr;
+  }
+
+  QDBusPendingCall pending = iface->asyncCall( method, payload );
+  QObject *owner = context ? context : defaultOwner;
+  auto *watcher = new QDBusPendingCallWatcher( pending, owner );
+  QObject::connect(
+    watcher,
+    &QDBusPendingCallWatcher::finished,
+    owner,
+    [watcher, cb = std::move( callback ), rejectMessage]( QDBusPendingCallWatcher *finished ) {
+      QDBusPendingReply< bool > reply = *finished;
+      if ( finished == watcher )
+        watcher->deleteLater();
+      if ( !cb )
+        return;
+      if ( reply.isValid() )
+      {
+        const bool ok = reply.value();
+        cb( ok, ok ? QString() : rejectMessage );
+      }
+      else
+      {
+        cb( false, reply.error().message() );
+      }
+    } );
+  return watcher;
+}
+
+QDBusPendingCallWatcher *UccdClient::setActiveProfileAsync(
+  const std::string &profileId,
+  QObject *context,
+  std::function< void( bool, const QString & ) > callback )
+{
+  if ( !mayDispatchUccdMethod( QStringLiteral( "SetActiveProfile" ) ) )
+  {
+    if ( callback )
+      callback( false, QStringLiteral( "Blocked in read-only preview mode" ) );
+    return nullptr;
+  }
+  if ( !isConnected() )
+  {
+    connectToDaemon();
+  }
+  return dispatchAsyncBoolProfileCall(
+    m_interface.get(),
+    isConnected(),
+    QStringLiteral( "SetActiveProfile" ),
+    QString::fromStdString( profileId ),
+    context,
+    this,
+    std::move( callback ),
+    QStringLiteral( "Daemon rejected profile switch" ) );
+}
+
 bool UccdClient::applyProfile( const std::string &profileJSON )
 {
   return callMethod< bool >( "ApplyProfile", QString::fromStdString( profileJSON ) ).value_or( false );
@@ -484,39 +553,15 @@ QDBusPendingCallWatcher *UccdClient::applyProfileAsync(
   {
     connectToDaemon();
   }
-  if ( !isConnected() )
-  {
-    if ( callback )
-      callback( false, QStringLiteral( "UCC daemon is unavailable" ) );
-    return nullptr;
-  }
-
-  QDBusPendingCall pending = m_interface->asyncCall(
+  return dispatchAsyncBoolProfileCall(
+    m_interface.get(),
+    isConnected(),
     QStringLiteral( "ApplyProfile" ),
-    QString::fromStdString( profileJSON ) );
-  QObject *owner = context ? context : this;
-  auto *watcher = new QDBusPendingCallWatcher( pending, owner );
-  QObject::connect(
-    watcher,
-    &QDBusPendingCallWatcher::finished,
-    owner,
-    [watcher, cb = std::move( callback )]( QDBusPendingCallWatcher *finished ) {
-      QDBusPendingReply< bool > reply = *finished;
-      if ( finished == watcher )
-        watcher->deleteLater();
-      if ( !cb )
-        return;
-      if ( reply.isValid() )
-      {
-        const bool ok = reply.value();
-        cb( ok, ok ? QString() : QStringLiteral( "Daemon rejected profile apply" ) );
-      }
-      else
-      {
-        cb( false, reply.error().message() );
-      }
-    } );
-  return watcher;
+    QString::fromStdString( profileJSON ),
+    context,
+    this,
+    std::move( callback ),
+    QStringLiteral( "Daemon rejected profile apply" ) );
 }
 
 bool UccdClient::saveCustomProfile( [[maybe_unused]] [[maybe_unused]] const std::string &profileJSON )

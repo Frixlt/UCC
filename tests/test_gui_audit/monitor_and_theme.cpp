@@ -262,3 +262,64 @@ void GuiAudit::entranceCanBeDisabledAndPreservesEditorFocus() {
     QCOMPARE(QApplication::focusWidget(),focused);
     QVERIFY(stats().value("writes").toArray().isEmpty());
   }
+void GuiAudit::readUccdBatchBoundsConcurrencyAndCompletesAllMethods() {
+    control("TestVisualFixture");
+    QVariantMap received;
+    bool done = false;
+    QObject owner;
+    const QStringList methods = {
+      "GetFanDataCPU", "GetFanDataGPU1", "GetFanDataGPU2",
+      "GetCpuFrequencyMHz", "GetCpuPowerValuesJSON", "GetDGpuInfoValuesJSON",
+      "GetIGpuInfoValuesJSON", "GetWaterCoolerFanSpeed", "GetWaterCoolerPumpLevel",
+      "GetDisplayBrightness", "GetWebcamSWStatus", "GetFnLockStatus"
+    };
+    ucc::readUccdBatch(&owner, methods, [&](QVariantMap result) {
+      received = result;
+      done = true;
+    });
+    QTRY_VERIFY_WITH_TIMEOUT(done, 3000);
+    QVERIFY(received.contains("GetFanDataCPU"));
+    QVERIFY(received.contains("GetWaterCoolerFanSpeed"));
+    QVERIFY(received.contains("GetDisplayBrightness"));
+    QCOMPARE(received.size(), methods.size());
+  }
+void GuiAudit::monitorTabPreservesLateCrossProducerPointsWithoutDuplicates() {
+    control("TestVisualFixture");
+    ucc::MonitorTab tab(client.get());
+    auto appendMetric = [](QByteArray &out, uint8_t metricId, int64_t ts, double val) {
+      uint32_t cnt = 1;
+      out.append(reinterpret_cast<const char*>(&metricId), 1);
+      out.append(reinterpret_cast<const char*>(&cnt), sizeof(cnt));
+      out.append(reinterpret_cast<const char*>(&ts), sizeof(ts));
+      out.append(reinterpret_cast<const char*>(&val), sizeof(val));
+    };
+
+    const qint64 now = QDateTime::currentMSecsSinceEpoch();
+    QByteArray batch1;
+    appendMetric(batch1, 0, now - 1000, 61.0); // cpuTemp at t-1000
+    QVERIFY(QMetaObject::invokeMethod(&tab, "applyBinaryData", Qt::DirectConnection, Q_ARG(QByteArray, batch1)));
+
+    // Overlap batch repeats cpuTemp@t-1000 AND delivers late fan point cpuFanDuty@(now-1200) from another producer.
+    QByteArray batch2;
+    appendMetric(batch2, 0, now - 1000, 61.0); // duplicate cpuTemp -> must be deduplicated
+    appendMetric(batch2, 0, now - 500, 64.0);  // new cpuTemp
+    appendMetric(batch2, 1, now - 1200, 48.0); // late cpuFanDuty earlier than cpuTemp high-water
+    QVERIFY(QMetaObject::invokeMethod(&tab, "applyBinaryData", Qt::DirectConnection, Q_ARG(QByteArray, batch2)));
+    QVERIFY(QMetaObject::invokeMethod(&tab, "commitSeries", Qt::DirectConnection));
+
+    QLineSeries *cpuTempSeries = nullptr;
+    QLineSeries *cpuDutySeries = nullptr;
+    for (auto *view : tab.findChildren<QChartView*>()) {
+      for (auto *abs : view->chart()->series()) {
+        auto *s = qobject_cast<QLineSeries*>(abs);
+        if (!s) continue;
+        const auto key = s->property("_metricKey").toString();
+        if (key == "cpuTemp") cpuTempSeries = s;
+        if (key == "cpuFanDuty") cpuDutySeries = s;
+      }
+    }
+    QVERIFY(cpuTempSeries && cpuDutySeries);
+    QCOMPARE(cpuTempSeries->count(), 2);
+    QCOMPARE(cpuDutySeries->count(), 1);
+    QCOMPARE(cpuDutySeries->at(0).y(), 48.0);
+  }

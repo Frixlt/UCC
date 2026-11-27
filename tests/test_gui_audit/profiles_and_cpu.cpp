@@ -277,16 +277,74 @@ void GuiAudit::asyncApplyAllowsImmediateWindowCloseWithoutLateWaterCooler() {
     QTest::qWait(900);
     QVERIFY2(!stats()["writes"].toArray().contains("EnableWaterCooler"),"Closed MainWindow must not dispatch late EnableWaterCooler after ApplyProfile finishes");
   }
+void GuiAudit::rejectedProfileSelectionKeepsPreviousActiveProfile() {
+#ifdef UCC_READ_ONLY_PREVIEW
+    QSKIP("Only applies to writable build");
+#endif
+    control("TestVisualFixture");
+    profiles->refresh();
+    QString origActive = profiles->activeProfileId();
+    QVERIFY(!origActive.isEmpty());
+    QString otherId;
+    for (const auto &v : profiles->defaultProfilesData()) {
+      const QString cand = v.toObject()["id"].toString();
+      if (!cand.isEmpty() && cand != origActive) { otherId = cand; break; }
+    }
+    QVERIFY(!otherId.isEmpty());
+
+    control("TestFailControl", {true});
+    QSignalSpy activeSpy(profiles.get(), &ucc::ProfileManager::activeProfileChanged);
+    QSignalSpy errorSpy(profiles.get(), &ucc::ProfileManager::error);
+    profiles->setActiveProfile(otherId);
+    QTRY_VERIFY(!errorSpy.isEmpty());
+    QCOMPARE(profiles->activeProfileId(), origActive);
+    QCOMPARE(activeSpy.count(), 0);
+  }
+void GuiAudit::slowSetActiveProfileDoesNotBlockEventLoop() {
+#ifdef UCC_READ_ONLY_PREVIEW
+    QSKIP("Only applies to writable build");
+#endif
+    control("TestVisualFixture");
+    profiles->refresh();
+    QString origActive = profiles->activeProfileId();
+    QString otherId;
+    for (const auto &v : profiles->defaultProfilesData()) {
+      const QString cand = v.toObject()["id"].toString();
+      if (!cand.isEmpty() && cand != origActive) { otherId = cand; break; }
+    }
+    QVERIFY(!otherId.isEmpty());
+
+    control("TestDelayApply", {350});
+    int timerTicks = 0;
+    QTimer tickTimer;
+    QObject::connect(&tickTimer, &QTimer::timeout, &tickTimer, [&timerTicks] { ++timerTicks; });
+    tickTimer.start(25);
+
+    QSignalSpy activeSpy(profiles.get(), &ucc::ProfileManager::activeProfileChanged);
+    QElapsedTimer elapsed;
+    elapsed.start();
+    profiles->setActiveProfile(otherId);
+    QVERIFY2(elapsed.elapsed() < 150, "setActiveProfile must return immediately instead of blocking Qt event loop");
+    QTRY_VERIFY_WITH_TIMEOUT(timerTicks >= 4, 300);
+    QTRY_COMPARE_WITH_TIMEOUT(profiles->activeProfileId(), otherId, 1500);
+    QCOMPARE(activeSpy.count(), 1);
+  }
 void GuiAudit::prepareForSleepResumeSetsSidebarStatus() {
     control("TestVisualFixture");
     ucc::MainWindow window;
     QVERIFY(QMetaObject::invokeMethod(&window,"onPrepareForSleep",Qt::DirectConnection,Q_ARG(bool,false)));
     QVERIFY(window.statusBar()->currentMessage().contains("Resuming from sleep"));
-    bool foundLabel=false;
-    for(auto *lbl:window.findChildren<QLabel*>()) {
-      if(lbl->text().contains("Resuming from sleep")) {foundLabel=true;break;}
-    }
-    QVERIFY(foundLabel);
+    auto *sidebarText = window.findChild<QLabel*>("sidebarStatusText");
+    auto *sidebarDot = window.findChild<QLabel*>("sidebarStatusIndicator");
+    QVERIFY(sidebarText && sidebarDot);
+    // Simulate daemon drop during resume: sidebar must show resuming banner rather than "Service unavailable".
+    QVERIFY(QMetaObject::invokeMethod(&window, "updateSidebarConnectionStatus", Qt::DirectConnection, Q_ARG(bool, false)));
+    QCOMPARE(sidebarText->text(), QString("Resuming from sleep…"));
+    QCOMPARE(sidebarDot->property("status").toString(), QString("warning"));
+    // Once daemon reconnects, sidebar immediately restores "Service connected".
+    QVERIFY(QMetaObject::invokeMethod(&window, "updateSidebarConnectionStatus", Qt::DirectConnection, Q_ARG(bool, true)));
+    QCOMPARE(sidebarText->text(), QString("Service connected"));
+    QCOMPARE(sidebarDot->property("status").toString(), QString("success"));
   }
 void GuiAudit::deviceSupportStatusDistinguishesOfflineFromUnsupported() {
     QString detail;

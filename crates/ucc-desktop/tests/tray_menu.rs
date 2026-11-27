@@ -45,4 +45,22 @@ fn test_tray_menu_structure_and_actions() {
     assert!(ksni::Tray::tool_tip(&tray)
         .description
         .contains("Water Cooler: Connected"));
+
+    // TA-11: Distinguish enabled+disconnected ("Searching...") vs disabled ("Off")
+    tray.set_water_cooler_connected(false);
+    tray.set_water_cooler_enabled(false);
+    assert!(ksni::Tray::tool_tip(&tray)
+        .description
+        .contains("Water Cooler: Off"));
+    assert!(ksni::Tray::menu(&tray).iter().any(
+        |item| matches!(item, MenuItem::Standard(s) if s.label == "Water Cooler: Off")
+    ));
+
+    tray.set_water_cooler_enabled(true);
+    assert!(ksni::Tray::tool_tip(&tray)
+        .description
+        .contains("Water Cooler: Searching..."));
+    assert!(ksni::Tray::menu(&tray).iter().any(
+        |item| matches!(item, MenuItem::Standard(s) if s.label == "Water Cooler: Searching...")
+    ));
 }

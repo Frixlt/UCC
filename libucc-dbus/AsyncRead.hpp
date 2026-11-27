@@ -5,6 +5,7 @@
 #include <QDBusMessage>
 #include <QDBusPendingCallWatcher>
 #include <QObject>
+#include <QPointer>
 #include <QStringList>
 #include <QVariantMap>
 #include <functional>
@@ -35,13 +36,41 @@ inline void readUccdBatch(QObject *consumer, const QStringList &methods,
                           std::function<void(QVariantMap)> ready)
 {
   if (methods.isEmpty()) { ready({}); return; }
-  struct Batch { QVariantMap values; qsizetype remaining; };
-  auto batch = std::make_shared<Batch>();
-  batch->remaining = methods.size();
-  for (const auto &method : methods)
-    readUccdAsync(consumer, method, {}, [batch,method,ready](std::optional<QVariant> value) {
-      if (value) batch->values[method] = *value;
-      if (--batch->remaining == 0) ready(batch->values);
-    });
+  // Limit per-batch concurrent D-Bus calls below the daemon's 8-per-sender Polkit read cap
+  // so multi-metric refreshes do not trigger spurious transient auth rejections (`TA-16`).
+  static constexpr qsizetype kMaxBatchInFlight = 4;
+  struct BatchState : std::enable_shared_from_this<BatchState> {
+    QPointer<QObject> consumer;
+    QStringList methods;
+    std::function<void(QVariantMap)> ready;
+    QVariantMap values;
+    qsizetype nextIndex = 0;
+    qsizetype remaining = 0;
+    qsizetype inFlight = 0;
+
+    void pump() {
+      while (inFlight < kMaxBatchInFlight && nextIndex < methods.size()) {
+        if (!consumer) return;
+        const QString method = methods.at(nextIndex++);
+        ++inFlight;
+        auto self = shared_from_this();
+        readUccdAsync(consumer.data(), method, {}, [self, method](std::optional<QVariant> value) {
+          --self->inFlight;
+          if (value) self->values[method] = *value;
+          if (--self->remaining == 0) {
+            self->ready(self->values);
+          } else {
+            self->pump();
+          }
+        });
+      }
+    }
+  };
+  auto state = std::make_shared<BatchState>();
+  state->consumer = consumer;
+  state->methods = methods;
+  state->ready = std::move(ready);
+  state->remaining = methods.size();
+  state->pump();
 }
 }

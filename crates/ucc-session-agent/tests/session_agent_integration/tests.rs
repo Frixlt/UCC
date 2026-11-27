@@ -702,3 +702,74 @@ async fn sigterm_exits_cleanly_with_status_zero_and_drops_monitor() {
         "SIGTERM should exit cleanly with status 0, got {status:?}"
     );
 }
+
+#[tokio::test]
+async fn ta_14_sigterm_during_hung_driver_health_exits_promptly_and_reaps_monitor() {
+    let (bus_dir, bus_addr, mut _dbus_child) = spawn_isolated_dbus().await;
+    let runtime_dir = bus_dir.path().join("runtime");
+    let drm_dir = bus_dir.path().join("drm");
+    std::fs::create_dir_all(&runtime_dir).unwrap();
+    std::fs::create_dir_all(&drm_dir).unwrap();
+
+    struct HungHealthUccd;
+    #[zbus::interface(name = "com.uniwill.uccd")]
+    impl HungHealthUccd {
+        #[zbus(name = "GetPowerPolicyJSON")]
+        async fn get_power_policy_json(&self) -> String {
+            json!({"real_power_source": "ac", "current_mode": "ac"}).to_string()
+        }
+        #[zbus(name = "GetPowerDeviceSettingsJSON")]
+        async fn get_power_device_settings_json(&self) -> String {
+            "{}".to_string()
+        }
+        #[zbus(name = "GetActiveProfileJSON")]
+        async fn get_active_profile_json(&self) -> String {
+            "{}".to_string()
+        }
+        #[zbus(name = "GetDriverHealthJSON")]
+        async fn get_driver_health_json(&self) -> String {
+            tokio::time::sleep(Duration::from_secs(30)).await;
+            json!({"healthy": true}).to_string()
+        }
+    }
+
+    let svc_name = "org.test.uccd.session.hunghealth";
+    let _uccd_conn = zbus::connection::Builder::address(bus_addr.as_str())
+        .unwrap()
+        .name(svc_name)
+        .unwrap()
+        .serve_at("/com/uniwill/uccd", HungHealthUccd)
+        .unwrap()
+        .build()
+        .await
+        .unwrap();
+
+    let mut agent = Command::new(env!("CARGO_BIN_EXE_ucc-session-agent"))
+        .env("DBUS_SESSION_BUS_ADDRESS", &bus_addr)
+        .env("UCCD_DBUS_SERVICE", svc_name)
+        .env("UCC_LID_BUS_SESSION", "1")
+        .env("UCC_DRM_ROOT", &drm_dir)
+        .env("UCC_HEALTH_POLL_MS", "50")
+        .env("UCC_DBUS_TIMEOUT_MS", "5000")
+        .env("XDG_RUNTIME_DIR", &runtime_dir)
+        .env_remove("HYPRLAND_INSTANCE_SIGNATURE")
+        .env_remove("KDE_SESSION_VERSION")
+        .env_remove("XDG_CURRENT_DESKTOP")
+        .stdin(Stdio::null())
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .kill_on_drop(true)
+        .spawn()
+        .unwrap();
+
+    // Give agent time to enter hung GetDriverHealthJSON poll on health_tick
+    tokio::time::sleep(Duration::from_millis(200)).await;
+    let pid = nix::unistd::Pid::from_raw(agent.id().unwrap() as i32);
+    nix::sys::signal::kill(pid, nix::sys::signal::Signal::SIGTERM).unwrap();
+
+    let status = tokio::time::timeout(Duration::from_secs(1), agent.wait())
+        .await
+        .expect("TA-14: ucc-session-agent must exit within 1s on SIGTERM despite hung GetDriverHealthJSON")
+        .unwrap();
+    assert_eq!(status.code(), Some(0));
+}

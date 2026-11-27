@@ -330,6 +330,7 @@ void MonitorTab::setMonitoringActive( bool active )
     for ( auto &[key, info] : m_seriesMap )
     {
       info.buffer.clear();
+      info.lastTimestamp = 0;
       info.series->clear();
 
       QVariant uv = info.series->property( "_uniSeries" );
@@ -597,6 +598,7 @@ void MonitorTab::setTimeWindow( int seconds )
     for ( auto &[key, info] : m_seriesMap )
     {
       info.buffer.clear();
+      info.lastTimestamp = 0;
       info.series->clear();
       QVariant uv = info.series->property( "_uniSeries" );
       if ( uv.isValid() )
@@ -2116,7 +2118,13 @@ void MonitorTab::fetchData()
     m_coreLoadChartView->setUpdatesEnabled( true );
   m_fetchPending = true;
   const auto generation = m_fetchGeneration;
-  readUccdAsync(this, "GetMonitorDataSince", {QVariant::fromValue<qlonglong>(m_lastTimestamp)},
+  // Query with a small overlap window so late samples from asynchronous daemon producers
+  // (e.g. fan ticks vs CPU/GPU telemetry polls) are never skipped by a single global cursor (`TA-19`).
+  static constexpr qint64 kFetchOverlapMs = 2000;
+  const qint64 fetchSince = ( m_lastTimestamp > kFetchOverlapMs )
+    ? ( m_lastTimestamp - kFetchOverlapMs )
+    : 0;
+  readUccdAsync(this, "GetMonitorDataSince", {QVariant::fromValue<qlonglong>(fetchSince)},
     [this, generation](std::optional<QVariant> result) {
       m_fetchPending = false;
       if (!m_monitoringActive || m_paused || generation != m_fetchGeneration ||
@@ -2211,17 +2219,46 @@ void MonitorTab::applyBinaryData( const QByteArray &data )
 
       if ( valid )
       {
-        m_seriesMap[ kMetrics[ metricId ].key ].buffer.append(
-            QPointF( static_cast< qreal >( ts ), val ) );
+        auto &info = m_seriesMap[ kMetrics[ metricId ].key ];
+        const qreal tsReal = static_cast< qreal >( ts );
+        if ( info.buffer.isEmpty() || ts > info.lastTimestamp )
+        {
+          info.buffer.append( QPointF( tsReal, val ) );
+          if ( ts > info.lastTimestamp )
+            info.lastTimestamp = ts;
+        }
+        else
+        {
+          // Late sample from a slower producer inside the overlap window: insert in
+          // sorted order if not already present so zero points are lost or duplicated (`TA-19`).
+          qsizetype pos = info.buffer.size();
+          bool duplicate = false;
+          while ( pos > 0 )
+          {
+            const qint64 existingTs = qRound64( info.buffer[ pos - 1 ].x() );
+            if ( existingTs == ts )
+            {
+              duplicate = true;
+              break;
+            }
+            if ( existingTs < ts )
+              break;
+            --pos;
+          }
+          if ( !duplicate )
+          {
+            info.buffer.insert( pos, QPointF( tsReal, val ) );
+          }
+        }
         if ( ts > maxTs )
           maxTs = ts;
       }
     }
   }
 
-  // Advance cursor so the next fetch only returns new points.
+  // Advance high-water timestamp (without +1 skipping concurrent producers).
   if ( maxTs > m_lastTimestamp )
-    m_lastTimestamp = maxTs + 1;
+    m_lastTimestamp = maxTs;
 }
 
 void MonitorTab::trimSeries()

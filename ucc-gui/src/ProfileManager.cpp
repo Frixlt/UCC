@@ -275,37 +275,38 @@ void ProfileManager::setActiveProfile( const QString &profileId )
     }
   }
 
-  bool success = false;
+  const quint64 seq = ++m_activeProfileRequestSeq;
+  auto finish = [this, profileId, seq]( bool success, const QString &errMsg ) {
+    if ( seq != m_activeProfileRequestSeq )
+      return;
+
+    if ( success )
+    {
+      if ( m_activeProfileId != profileId )
+      {
+        m_activeProfileId = profileId;
+        emit activeProfileChanged();
+      }
+      updateAllProfiles();
+      updateActiveProfileIndex();
+    }
+    else
+    {
+      updateAllProfiles();
+      updateActiveProfileIndex();
+      emit error( errMsg.isEmpty()
+        ? QString( "Failed to activate profile: " + profileId )
+        : QString( "Failed to activate profile %1: %2" ).arg( profileId, errMsg ) );
+    }
+  };
+
   if ( isCustom && !profileData.isEmpty() )
   {
-    try {
-      success = m_client->applyProfile( profileData.toStdString() );
-    } catch ( const std::exception &e ) {
-      qWarning() << "Failed to apply custom profile:" << e.what();
-    }
-    qDebug() << "Custom profile applied:" << profileId;
+    m_client->applyProfileAsync( profileData.toStdString(), this, std::move( finish ) );
   }
   else
   {
-    try {
-      success = m_client->setActiveProfile( profileId.toStdString() );
-    } catch ( const std::exception &e ) {
-      qWarning() << "Failed to set active profile:" << e.what();
-    }
-    qDebug() << "Default profile activated:" << profileId;
-  }
-
-  if ( m_activeProfileId != profileId )
-  {
-    m_activeProfileId = profileId;
-    emit activeProfileChanged();
-  }
-  updateAllProfiles();
-  updateActiveProfileIndex();
-
-  if ( !success )
-  {
-    emit error( "Failed to activate profile: " + profileId );
+    m_client->setActiveProfileAsync( profileId.toStdString(), this, std::move( finish ) );
   }
 }
 

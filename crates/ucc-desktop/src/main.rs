@@ -9,13 +9,72 @@ use tracing::{info, warn};
 use ucc_dbus::{UccdProxy, DBUS_INTERFACE, DBUS_PATH, DBUS_SERVICE};
 use ucc_desktop::{
     activate_or_launch_gui, spawn_tray_bounded, update_active_profile, update_daemon_connected,
-    update_fan_auto, update_profiles, update_water_cooler_connected, TrayAction,
+    update_fan_auto, update_profiles, update_water_cooler_state, TrayAction,
 };
 use zbus::Connection;
 
 const TRAY_DBUS_SERVICE: &str = "com.uniwill.UccDesktopTray";
 const TRAY_PREVIEW_DBUS_SERVICE: &str = "com.uniwill.UccDesktopTrayPreview";
 const ACTION_CHANNEL_CAPACITY: usize = 32;
+const MAX_FAN_CURVES_JSON: &str = r#"{"cpu":[{"temp":20,"speed":100},{"temp":100,"speed":100}],"gpu":[{"temp":20,"speed":100},{"temp":100,"speed":100}],"waterCoolerFan":[{"temp":20,"speed":100},{"temp":100,"speed":100}]}"#;
+
+fn rpc_timeout_duration() -> Duration {
+    if let Ok(raw) = std::env::var("UCC_DBUS_TIMEOUT_MS") {
+        if let Ok(ms) = raw.trim().parse::<u64>() {
+            return Duration::from_millis(ms.max(50));
+        }
+    }
+    Duration::from_secs(3)
+}
+
+fn install_shutdown_watch() -> tokio::sync::watch::Receiver<bool> {
+    let (tx, rx) = tokio::sync::watch::channel(false);
+    tokio::spawn(async move {
+        let mut sigterm =
+            tokio::signal::unix::signal(tokio::signal::unix::SignalKind::terminate()).ok();
+        tokio::select! {
+            _ = tokio::signal::ctrl_c() => {
+                info!("Received SIGINT, closing tray");
+            }
+            _ = async {
+                match sigterm.as_mut() {
+                    Some(s) => s.recv().await,
+                    None => std::future::pending().await,
+                }
+            } => {
+                info!("Received SIGTERM, closing tray");
+            }
+        }
+        let _ = tx.send(true);
+    });
+    rx
+}
+
+async fn run_rpc_or_shutdown<F, T>(
+    shutdown_rx: &tokio::sync::watch::Receiver<bool>,
+    fut: F,
+) -> Option<Result<T, String>>
+where
+    F: std::future::Future<Output = Result<T, zbus::Error>>,
+{
+    if *shutdown_rx.borrow() {
+        return None;
+    }
+    let mut stop_rx = shutdown_rx.clone();
+    tokio::select! {
+        biased;
+        _ = stop_rx.wait_for(|&stop| stop) => None,
+        res = tokio::time::timeout(rpc_timeout_duration(), fut) => match res {
+            Ok(Ok(v)) => Some(Ok(v)),
+            Ok(Err(e)) => Some(Err(format!("D-Bus error: {e}"))),
+            Err(_) => Some(Err("D-Bus RPC timed out".to_string())),
+        }
+    }
+}
+
+fn next_wc_toggle_target(state: &DaemonSnapshot) -> bool {
+    !state.wc_enabled.unwrap_or(false)
+}
 
 fn is_running_as_root() -> bool {
     if let Ok(status) = std::fs::read_to_string("/proc/self/status") {
@@ -38,6 +97,7 @@ struct DaemonSnapshot {
     profile_ids: Vec<String>,
     profile_names: Vec<String>,
     active_idx: usize,
+    wc_enabled: Option<bool>,
     wc_connected: Option<bool>,
 }
 
@@ -140,40 +200,57 @@ fn filter_profiles_to_bound(
     }
 }
 
-async fn fetch_snapshot(proxy: &UccdProxy<'_>) -> Result<DaemonSnapshot, String> {
+async fn fetch_snapshot(
+    proxy: &UccdProxy<'_>,
+    shutdown_rx: &tokio::sync::watch::Receiver<bool>,
+) -> Result<DaemonSnapshot, String> {
     let mut any_ok = false;
     let mut list = Vec::new();
-    if let Ok(raw) = proxy.get_default_profiles_json().await {
-        any_ok = true;
-        parse_profiles_json(&raw, &mut list);
-    }
-    if let Ok(raw) = proxy.get_custom_profiles_json().await {
-        any_ok = true;
-        parse_profiles_json(&raw, &mut list);
-    }
-    if list.is_empty() {
-        if let Ok(raw) = proxy.get_profiles_json().await {
+    match run_rpc_or_shutdown(shutdown_rx, proxy.get_default_profiles_json()).await {
+        None => return Err("shutdown requested".to_string()),
+        Some(Ok(raw)) => {
             any_ok = true;
             parse_profiles_json(&raw, &mut list);
         }
+        Some(Err(_)) => {}
+    }
+    match run_rpc_or_shutdown(shutdown_rx, proxy.get_custom_profiles_json()).await {
+        None => return Err("shutdown requested".to_string()),
+        Some(Ok(raw)) => {
+            any_ok = true;
+            parse_profiles_json(&raw, &mut list);
+        }
+        Some(Err(_)) => {}
+    }
+    if list.is_empty() {
+        match run_rpc_or_shutdown(shutdown_rx, proxy.get_profiles_json()).await {
+            None => return Err("shutdown requested".to_string()),
+            Some(Ok(raw)) => {
+                any_ok = true;
+                parse_profiles_json(&raw, &mut list);
+            }
+            Some(Err(_)) => {}
+        }
     }
 
-    let bound_ids = match proxy.get_settings_json().await {
-        Ok(raw) => {
+    let bound_ids = match run_rpc_or_shutdown(shutdown_rx, proxy.get_settings_json()).await {
+        None => return Err("shutdown requested".to_string()),
+        Some(Ok(raw)) => {
             any_ok = true;
             parse_bound_profile_ids(&raw)
         }
-        Err(_) => Vec::new(),
+        Some(Err(_)) => Vec::new(),
     };
 
-    let active_id = match proxy.get_active_profile_json().await {
-        Ok(s) => {
+    let active_id = match run_rpc_or_shutdown(shutdown_rx, proxy.get_active_profile_json()).await {
+        None => return Err("shutdown requested".to_string()),
+        Some(Ok(s)) => {
             any_ok = true;
             serde_json::from_str::<Value>(&s)
                 .ok()
                 .and_then(|v| v.get("id").and_then(|id| id.as_str()).map(str::to_string))
         }
-        Err(_) => None,
+        Some(Err(_)) => None,
     };
 
     let list = filter_profiles_to_bound(list, &bound_ids, active_id.as_deref());
@@ -183,13 +260,24 @@ async fn fetch_snapshot(proxy: &UccdProxy<'_>) -> Result<DaemonSnapshot, String>
         .and_then(|id| list.iter().position(|(pid, _)| pid == id))
         .unwrap_or(0);
 
-    let wc_connected = match proxy.get_water_cooler_connected().await {
-        Ok(connected) => {
+    let wc_enabled = match run_rpc_or_shutdown(shutdown_rx, proxy.is_water_cooler_enabled()).await {
+        None => return Err("shutdown requested".to_string()),
+        Some(Ok(enabled)) => {
             any_ok = true;
-            Some(connected)
+            Some(enabled)
         }
-        Err(_) => None,
+        Some(Err(_)) => None,
     };
+
+    let wc_connected =
+        match run_rpc_or_shutdown(shutdown_rx, proxy.get_water_cooler_connected()).await {
+            None => return Err("shutdown requested".to_string()),
+            Some(Ok(connected)) => {
+                any_ok = true;
+                Some(connected)
+            }
+            Some(Err(_)) => None,
+        };
 
     if !any_ok {
         return Err("uccd D-Bus service unavailable".to_string());
@@ -200,6 +288,7 @@ async fn fetch_snapshot(proxy: &UccdProxy<'_>) -> Result<DaemonSnapshot, String>
         profile_ids,
         profile_names,
         active_idx,
+        wc_enabled,
         wc_connected,
     })
 }
@@ -261,17 +350,32 @@ async fn main() {
         }
     }
 
-    let mut conn_pair = connect_uccd().await.ok();
+    let shutdown_rx = install_shutdown_watch();
+
+    let mut conn_rx = shutdown_rx.clone();
+    let mut conn_pair = tokio::select! {
+        biased;
+        _ = conn_rx.wait_for(|&stop| stop) => return,
+        res = tokio::time::timeout(rpc_timeout_duration(), connect_uccd()) => {
+            res.ok().and_then(Result::ok)
+        }
+    };
     let (mut connected, mut state) = match conn_pair.as_ref() {
-        Some((_, proxy)) => match fetch_snapshot(proxy).await {
+        Some((_, proxy)) => match fetch_snapshot(proxy, &shutdown_rx).await {
             Ok(snap) => (true, snap),
             Err(err) => {
+                if *shutdown_rx.borrow() {
+                    return;
+                }
                 warn!("Initial uccd snapshot unavailable: {err}");
                 (false, DaemonSnapshot::default())
             }
         },
         None => (false, DaemonSnapshot::default()),
     };
+    if *shutdown_rx.borrow() {
+        return;
+    }
 
     let initial_names = if state.profile_names.is_empty() {
         vec!["Default".to_string()]
@@ -288,39 +392,42 @@ async fn main() {
         }
     };
     update_daemon_connected(&handle, connected).await;
-    if let Some(wc) = state.wc_connected {
-        update_water_cooler_connected(&handle, wc).await;
-    }
+    update_water_cooler_state(
+        &handle,
+        state.wc_enabled.unwrap_or(false),
+        state.wc_connected.unwrap_or(false),
+    )
+    .await;
     info!(
         "ucc-desktop-tray registered StatusNotifierItem (preview={preview}, connected={connected})"
     );
 
     let mut refresh = tokio::time::interval(Duration::from_secs(5));
     let mut fan_auto = true;
-    let mut sigterm =
-        tokio::signal::unix::signal(tokio::signal::unix::SignalKind::terminate()).ok();
 
     loop {
+        if *shutdown_rx.borrow() {
+            break;
+        }
+        let mut loop_stop_rx = shutdown_rx.clone();
+        let mut inner_stop_rx = shutdown_rx.clone();
         tokio::select! {
-            _ = tokio::signal::ctrl_c() => {
-                info!("Received SIGINT, closing tray");
-                break;
-            }
-            _ = async {
-                match sigterm.as_mut() {
-                    Some(s) => s.recv().await,
-                    None => std::future::pending().await,
-                }
-            } => {
-                info!("Received SIGTERM, closing tray");
+            biased;
+            _ = loop_stop_rx.wait_for(|&stop| stop) => {
                 break;
             }
             _ = refresh.tick() => {
                 if conn_pair.is_none() {
-                    conn_pair = connect_uccd().await.ok();
+                    conn_pair = tokio::select! {
+                        biased;
+                        _ = inner_stop_rx.wait_for(|&stop| stop) => break,
+                        res = tokio::time::timeout(rpc_timeout_duration(), connect_uccd()) => {
+                            res.ok().and_then(Result::ok)
+                        }
+                    };
                 }
                 if let Some((_, ref proxy)) = conn_pair {
-                    match fetch_snapshot(proxy).await {
+                    match fetch_snapshot(proxy, &shutdown_rx).await {
                         Ok(next) => {
                             if !connected {
                                 connected = true;
@@ -328,17 +435,27 @@ async fn main() {
                             }
                             if next.profile_names != state.profile_names && !next.profile_names.is_empty() {
                                 update_profiles(&handle, next.profile_names.clone(), next.active_idx).await;
+                                fan_auto = true;
+                                update_fan_auto(&handle, true).await;
                             } else if next.active_idx != state.active_idx {
                                 update_active_profile(&handle, next.active_idx).await;
+                                fan_auto = true;
+                                update_fan_auto(&handle, true).await;
                             }
-                            if let Some(wc) = next.wc_connected {
-                                if state.wc_connected != Some(wc) {
-                                    update_water_cooler_connected(&handle, wc).await;
-                                }
+                            if next.wc_enabled != state.wc_enabled || next.wc_connected != state.wc_connected {
+                                update_water_cooler_state(
+                                    &handle,
+                                    next.wc_enabled.unwrap_or(false),
+                                    next.wc_connected.unwrap_or(false),
+                                )
+                                .await;
                             }
                             state = next;
                         }
                         Err(_) => {
+                            if *shutdown_rx.borrow() {
+                                break;
+                            }
                             if connected {
                                 connected = false;
                                 update_daemon_connected(&handle, false).await;
@@ -371,11 +488,17 @@ async fn main() {
                             continue;
                         };
                         if let Some(id) = state.profile_ids.get(idx) {
-                            if proxy.set_active_profile(id).await.unwrap_or(false) {
-                                state.active_idx = idx;
-                                update_active_profile(&handle, idx).await;
-                            } else {
-                                warn!("Daemon rejected profile switch to {id}");
+                            match run_rpc_or_shutdown(&shutdown_rx, proxy.set_active_profile(id)).await {
+                                None => break,
+                                Some(Ok(true)) => {
+                                    state.active_idx = idx;
+                                    update_active_profile(&handle, idx).await;
+                                    fan_auto = true;
+                                    update_fan_auto(&handle, true).await;
+                                }
+                                Some(_) => {
+                                    warn!("Daemon rejected profile switch to {id}");
+                                }
                             }
                         }
                     }
@@ -389,13 +512,27 @@ async fn main() {
                             continue;
                         };
                         let ok = if fan_auto {
-                            proxy.apply_fan_profiles("{}").await.unwrap_or(false)
+                            match run_rpc_or_shutdown(
+                                &shutdown_rx,
+                                proxy.apply_fan_profiles(MAX_FAN_CURVES_JSON),
+                            )
+                            .await
+                            {
+                                None => break,
+                                Some(res) => res.unwrap_or(false),
+                            }
                         } else {
-                            proxy.revert_fan_profiles().await.unwrap_or(false)
+                            match run_rpc_or_shutdown(&shutdown_rx, proxy.revert_fan_profiles()).await
+                            {
+                                None => break,
+                                Some(res) => res.unwrap_or(false),
+                            }
                         };
                         if ok {
                             fan_auto = !fan_auto;
                             update_fan_auto(&handle, fan_auto).await;
+                        } else {
+                            warn!("Daemon rejected fan Auto/Max toggle");
                         }
                     }
                     TrayAction::ToggleWaterCooler => {
@@ -407,16 +544,44 @@ async fn main() {
                             warn!("Ignoring ToggleWaterCooler while uccd is disconnected");
                             continue;
                         };
-                        let target = !state.wc_connected.unwrap_or(false);
-                        if proxy.enable_water_cooler(target).await.unwrap_or(false) {
-                            match proxy.get_water_cooler_connected().await {
-                                Ok(confirmed) => {
-                                    state.wc_connected = Some(confirmed);
-                                    update_water_cooler_connected(&handle, confirmed).await;
-                                }
-                                Err(err) => {
-                                    warn!("Water cooler state readback failed after toggle: {err}");
-                                }
+                        let target = next_wc_toggle_target(&state);
+                        match run_rpc_or_shutdown(&shutdown_rx, proxy.enable_water_cooler(target))
+                            .await
+                        {
+                            None => break,
+                            Some(Ok(true)) => {
+                                let enabled = match run_rpc_or_shutdown(
+                                    &shutdown_rx,
+                                    proxy.is_water_cooler_enabled(),
+                                )
+                                .await
+                                {
+                                    None => break,
+                                    Some(Ok(v)) => v,
+                                    Some(Err(err)) => {
+                                        warn!("Water cooler enabled readback failed: {err}");
+                                        target
+                                    }
+                                };
+                                let wc_conn = match run_rpc_or_shutdown(
+                                    &shutdown_rx,
+                                    proxy.get_water_cooler_connected(),
+                                )
+                                .await
+                                {
+                                    None => break,
+                                    Some(Ok(v)) => v,
+                                    Some(Err(err)) => {
+                                        warn!("Water cooler state readback failed after toggle: {err}");
+                                        state.wc_connected.unwrap_or(false)
+                                    }
+                                };
+                                state.wc_enabled = Some(enabled);
+                                state.wc_connected = Some(wc_conn);
+                                update_water_cooler_state(&handle, enabled, wc_conn).await;
+                            }
+                            Some(_) => {
+                                warn!("Daemon rejected EnableWaterCooler({target})");
                             }
                         }
                     }
@@ -434,7 +599,10 @@ async fn main() {
 
 #[cfg(test)]
 mod tests {
-    use super::{filter_profiles_to_bound, parse_bound_profile_ids};
+    use super::{
+        filter_profiles_to_bound, next_wc_toggle_target, parse_bound_profile_ids, DaemonSnapshot,
+        MAX_FAN_CURVES_JSON,
+    };
 
     #[test]
     fn filters_tray_profiles_to_bound_state_map_entries_and_active_profile() {
@@ -467,5 +635,34 @@ mod tests {
 
         let fallback = filter_profiles_to_bound(all.clone(), &[], None);
         assert_eq!(fallback, all);
+    }
+
+    #[test]
+    fn ta_10_max_fan_curves_json_contains_valid_100_percent_curves() {
+        let val: serde_json::Value = serde_json::from_str(MAX_FAN_CURVES_JSON).unwrap();
+        for key in ["cpu", "gpu", "waterCoolerFan"] {
+            let pts = val[key].as_array().expect("fan curve array present");
+            assert!(pts.len() >= 2);
+            assert!(pts.iter().all(|pt| pt["speed"].as_u64() == Some(100)));
+        }
+    }
+
+    #[test]
+    fn ta_11_wc_toggle_targets_enabled_flag_not_connected_state() {
+        let scanning = DaemonSnapshot {
+            wc_enabled: Some(true),
+            wc_connected: Some(false),
+            ..Default::default()
+        };
+        assert!(
+            !next_wc_toggle_target(&scanning),
+            "clicking Water Cooler while enabled & searching must toggle enabled -> false"
+        );
+        let disabled = DaemonSnapshot {
+            wc_enabled: Some(false),
+            wc_connected: Some(false),
+            ..Default::default()
+        };
+        assert!(next_wc_toggle_target(&disabled));
     }
 }

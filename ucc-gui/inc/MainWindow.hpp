@@ -158,6 +158,7 @@ namespace ucc
     bool hasValidCtgpRange( int &defaultPower, int &maxPower ) const;
     void updateCtgpVisibility();
     void updateFanCrosshairs();
+    Q_INVOKABLE void updateSidebarConnectionStatus( bool connected );
 
     /** Parse a numeric value from a SystemMonitor formatted string (e.g. "65 degC" -> 65). */
     static std::optional< double > parseMonitorValue( const QString &str );
@@ -286,6 +287,9 @@ namespace ucc
 
     // Statusbar connection indicator
     QLabel *m_connectionLabel = nullptr;
+    QLabel *m_sidebarConnectionLabel = nullptr;
+    QLabel *m_sidebarConnectionIndicator = nullptr;
+    QTimer *m_resumeGraceTimer = nullptr;
 
     // Statusbar water-cooler status indicator (shown only when water-cooler is supported)
     QLabel *m_waterCoolerStatusBarLabel = nullptr;

@@ -68,7 +68,11 @@ private slots:
   void batterySettingsRaisesWindowSetsEndBeforeStart();
   void applyFailureDoesNotClaimSuccessOrSendWaterCooler();
   void asyncApplyAllowsImmediateWindowCloseWithoutLateWaterCooler();
+  void rejectedProfileSelectionKeepsPreviousActiveProfile();
+  void slowSetActiveProfileDoesNotBlockEventLoop();
   void prepareForSleepResumeSetsSidebarStatus();
+  void readUccdBatchBoundsConcurrencyAndCompletesAllMethods();
+  void monitorTabPreservesLateCrossProducerPointsWithoutDuplicates();
   void deviceSupportStatusDistinguishesOfflineFromUnsupported();
   void aboutTabStaysPinnedToSidebarBottom();
   void watercoolCrosshairsStayVisibleAcrossTabsAndPartialReads();

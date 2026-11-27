@@ -48,6 +48,7 @@ pub struct UccTray {
     profiles: Vec<String>,
     active_profile: Arc<AtomicUsize>,
     fan_auto: Arc<AtomicBool>,
+    water_cooler_enabled: Arc<AtomicBool>,
     water_cooler_connected: Arc<AtomicBool>,
     daemon_connected: Arc<AtomicBool>,
     action_tx: ActionSender,
@@ -94,6 +95,7 @@ impl UccTray {
             profiles,
             active_profile: Arc::new(AtomicUsize::new(valid_idx)),
             fan_auto: Arc::new(AtomicBool::new(true)),
+            water_cooler_enabled: Arc::new(AtomicBool::new(false)),
             water_cooler_connected: Arc::new(AtomicBool::new(false)),
             daemon_connected: Arc::new(AtomicBool::new(true)),
             action_tx,
@@ -132,9 +134,23 @@ impl UccTray {
         self.fan_auto.store(fan_auto, Ordering::SeqCst);
     }
 
+    pub fn set_water_cooler_enabled(&self, enabled: bool) {
+        self.water_cooler_enabled.store(enabled, Ordering::SeqCst);
+    }
+
     pub fn set_water_cooler_connected(&self, connected: bool) {
         self.water_cooler_connected
             .store(connected, Ordering::SeqCst);
+    }
+
+    fn water_cooler_status_text(&self) -> &'static str {
+        if self.water_cooler_connected.load(Ordering::SeqCst) {
+            "Connected"
+        } else if self.water_cooler_enabled.load(Ordering::SeqCst) {
+            "Searching..."
+        } else {
+            "Off"
+        }
     }
 }
 
@@ -167,11 +183,7 @@ impl Tray for UccTray {
             } else {
                 "Max"
             };
-            let wc = if self.water_cooler_connected.load(Ordering::SeqCst) {
-                "Connected"
-            } else {
-                "Disconnected"
-            };
+            let wc = self.water_cooler_status_text();
             format!("Profile: {profile}\nFan: {fan} · Water Cooler: {wc}")
         };
         ToolTip {
@@ -206,7 +218,7 @@ impl Tray for UccTray {
         let wc_tx = self.action_tx.clone();
         let quit_tx = self.action_tx.clone();
 
-        let wc_connected = self.water_cooler_connected.load(Ordering::SeqCst);
+        let wc_label = format!("Water Cooler: {}", self.water_cooler_status_text());
         let fan_auto = self.fan_auto.load(Ordering::SeqCst);
         let daemon_connected = self.daemon_connected.load(Ordering::SeqCst);
 
@@ -260,11 +272,7 @@ impl Tray for UccTray {
                 ..Default::default()
             }),
             MenuItem::Standard(StandardItem {
-                label: if wc_connected {
-                    "Water Cooler: Connected".into()
-                } else {
-                    "Water Cooler: Disconnected".into()
-                },
+                label: wc_label,
                 enabled: daemon_connected,
                 activate: Box::new(move |this: &mut Self| {
                     if this.daemon_connected.load(Ordering::SeqCst) {
@@ -346,6 +354,19 @@ pub async fn update_fan_auto(handle: &ksni::Handle<UccTray>, fan_auto: bool) {
 pub async fn update_water_cooler_connected(handle: &ksni::Handle<UccTray>, connected: bool) {
     let _ = handle
         .update(move |tray| {
+            tray.set_water_cooler_connected(connected);
+        })
+        .await;
+}
+
+pub async fn update_water_cooler_state(
+    handle: &ksni::Handle<UccTray>,
+    enabled: bool,
+    connected: bool,
+) {
+    let _ = handle
+        .update(move |tray| {
+            tray.set_water_cooler_enabled(enabled);
             tray.set_water_cooler_connected(connected);
         })
         .await;

@@ -87,6 +87,10 @@ public:
   bool setStateMap( const std::string &state, const std::string &profileId );
   bool setBatchStateMap( const std::map< std::string, std::string > &entries );
   bool setActiveProfile( const std::string &profileId );
+  QDBusPendingCallWatcher *setActiveProfileAsync(
+    const std::string &profileId,
+    QObject *context,
+    std::function< void( bool, const QString & ) > callback );
   bool applyProfile( const std::string &profileJSON );
   QDBusPendingCallWatcher *applyProfileAsync(
     const std::string &profileJSON,

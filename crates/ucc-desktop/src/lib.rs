@@ -15,5 +15,6 @@ pub use telemetry::{
 };
 pub use tray::{
     spawn_tray, spawn_tray_bounded, update_active_profile, update_daemon_connected,
-    update_fan_auto, update_profiles, update_water_cooler_connected, TrayAction, UccTray,
+    update_fan_auto, update_profiles, update_water_cooler_connected, update_water_cooler_state,
+    TrayAction, UccTray,
 };

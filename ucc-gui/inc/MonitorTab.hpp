@@ -125,10 +125,10 @@ private:
   void installHoverCallout( QChart *chart );
 
   /** Decode the binary payload returned by GetMonitorDataSince and append to buffers. */
-  void applyBinaryData( const QByteArray &data );
+  Q_INVOKABLE void applyBinaryData( const QByteArray &data );
 
   /** Push in-memory buffers into QLineSeries via replace() (single repaint per series). */
-  void commitSeries();
+  Q_INVOKABLE void commitSeries();
 
   /** Hide per-group chart views when all metrics in that group are disabled. */
   void updateGroupChartVisibility();
@@ -164,6 +164,7 @@ private:
     QString         label;
     QColor          color;
     QList< QPointF > buffer;   ///< In-memory point buffer (source of truth)
+    qint64          lastTimestamp = 0; ///< Per-series monotonic watermark (`TA-19`)
   };
 
   // One entry per metric key string (e.g. "cpuTemp")

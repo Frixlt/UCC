@@ -29,6 +29,7 @@
 #include "BatterySettingsWidget.hpp"
 #include <QTabBar>
 #include <QSignalBlocker>
+#include <QTimer>
 #include <QPainter>
 #include <QStyleOptionComboBox>
 #include "ProfileManager.hpp"
@@ -286,12 +287,22 @@ void MainWindow::setupUI()
     auto *badge=new QLabel("Read-only preview",footer);badge->setObjectName("previewBadge");
     badge->setToolTip("Hardware and settings commands are blocked in this build.");statusLayout->addWidget(badge);
   }
-  auto *connection=new QLabel(footer);
-  auto *connectionIndicator=addSidebarStatusRow(statusLayout,connection,"●");
+  m_sidebarConnectionLabel=new QLabel(footer);
+  m_sidebarConnectionIndicator=addSidebarStatusRow(statusLayout,m_sidebarConnectionLabel,"●");
   sideLayout->addWidget(footer);
-  auto updateSidebar=[connection,connectionIndicator](bool connected){connection->setText(connected ? "Service connected" : "Service unavailable");connectionIndicator->setText(connected ? "●" : "○");connectionIndicator->setProperty("status",connected ? "success" : "muted");connectionIndicator->style()->unpolish(connectionIndicator);connectionIndicator->style()->polish(connectionIndicator);};
-  updateSidebar(m_UccdClient->isConnected());
-  connect(m_UccdClient.get(),&UccdClient::connectionStatusChanged,sidebar,updateSidebar);
+  m_resumeGraceTimer = new QTimer( this );
+  m_resumeGraceTimer->setSingleShot( true );
+  m_resumeGraceTimer->setInterval( 15000 );
+  connect( m_resumeGraceTimer, &QTimer::timeout, this, [this] {
+    if ( !m_resumingFromSleep )
+      return;
+    m_resumingFromSleep = false;
+    updateSidebarConnectionStatus( m_UccdClient->isConnected() );
+    if ( m_connectionLabel && !m_UccdClient->isConnected() )
+      m_connectionLabel->setText( QStringLiteral( "Profile: —" ) );
+  } );
+  updateSidebarConnectionStatus(m_UccdClient->isConnected());
+  connect(m_UccdClient.get(),&UccdClient::connectionStatusChanged,this,&MainWindow::updateSidebarConnectionStatus);
   shellLayout->addWidget(sidebar);
   auto *content=new QWidget(shell);content->setObjectName("contentPane");content->setAttribute(Qt::WA_StyledBackground);auto *contentLayout=new QVBoxLayout(content);
   contentLayout->setContentsMargins(24,24,24,16);contentLayout->setSpacing(16);
@@ -1750,6 +1761,37 @@ void MainWindow::onAllProfilesChanged()
   m_saveButton->setEnabled( true );
 }
 
+void MainWindow::updateSidebarConnectionStatus( bool connected )
+{
+  if ( !m_sidebarConnectionLabel || !m_sidebarConnectionIndicator )
+    return;
+
+  if ( connected )
+  {
+    m_resumingFromSleep = false;
+    if ( m_resumeGraceTimer )
+      m_resumeGraceTimer->stop();
+    m_sidebarConnectionLabel->setText( QStringLiteral( "Service connected" ) );
+    m_sidebarConnectionIndicator->setText( QStringLiteral( "●" ) );
+    m_sidebarConnectionIndicator->setProperty( "status", QStringLiteral( "success" ) );
+  }
+  else if ( m_resumingFromSleep )
+  {
+    m_sidebarConnectionLabel->setText( QStringLiteral( "Resuming from sleep…" ) );
+    m_sidebarConnectionIndicator->setText( QStringLiteral( "○" ) );
+    m_sidebarConnectionIndicator->setProperty( "status", QStringLiteral( "warning" ) );
+  }
+  else
+  {
+    m_sidebarConnectionLabel->setText( QStringLiteral( "Service unavailable" ) );
+    m_sidebarConnectionIndicator->setText( QStringLiteral( "○" ) );
+    m_sidebarConnectionIndicator->setProperty( "status", QStringLiteral( "muted" ) );
+  }
+
+  m_sidebarConnectionIndicator->style()->unpolish( m_sidebarConnectionIndicator );
+  m_sidebarConnectionIndicator->style()->polish( m_sidebarConnectionIndicator );
+}
+
 void MainWindow::updateConnectionStatusLabel()
 {
   if ( !m_connectionLabel )
@@ -1759,7 +1801,6 @@ void MainWindow::updateConnectionStatusLabel()
   if ( !m_UccdClient->isConnected() )
     return;
 
-  m_resumingFromSleep = false;
   QString profileName = m_profileManager->activeProfileName();
   if ( profileName.isEmpty() )
     profileName = QStringLiteral( "Unknown" );
@@ -1773,6 +1814,10 @@ void MainWindow::onPrepareForSleep( bool goingToSleep )
   if ( goingToSleep )
     return;
   m_resumingFromSleep = true;
+  if ( m_resumeGraceTimer )
+    m_resumeGraceTimer->start();
+  if ( !m_UccdClient->isConnected() )
+    updateSidebarConnectionStatus( false );
   if ( m_connectionLabel )
     m_connectionLabel->setText( QStringLiteral( "Resuming from sleep…" ) );
   statusBar()->showMessage( QStringLiteral( "Resuming from sleep…" ), 5000 );

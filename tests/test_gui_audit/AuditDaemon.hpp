@@ -111,11 +111,11 @@ public:
     else if (method=="TestDelayApply") { applyDelayMs=msg.arguments().value(0).toInt();result=true; }
     else if (method=="TestDeviceSupported") { deviceSupported=msg.arguments().value(0).toBool();result=true; }
     else if (method=="TestFailReads") { failReads=msg.arguments().value(0).toBool();result=true; }
-    else if (method=="ApplyProfile" && applyDelayMs>0) {
+    else if ((method=="ApplyProfile" || method=="SetActiveProfile") && applyDelayMs>0) {
       const int delay=applyDelayMs;const bool fail=failControl;const QString arg=msg.arguments().value(0).toString();
-      QTimer::singleShot(delay,this,[this,msg,bus,fail,arg] {
+      QTimer::singleShot(delay,this,[this,msg,bus,fail,method,arg] {
         if(fail) {bus.send(msg.createReply(false));return;}
-        writes.append(QStringLiteral("ApplyProfile"));lastAppliedProfile=arg;bus.send(msg.createReply(true));
+        writes.append(method);if(method=="ApplyProfile") lastAppliedProfile=arg;bus.send(msg.createReply(true));
       });
       return true;
     }

@@ -261,6 +261,59 @@ impl SessionState {
     }
 }
 
+fn rpc_timeout_duration() -> Duration {
+    if let Ok(raw) = std::env::var("UCC_DBUS_TIMEOUT_MS") {
+        if let Ok(ms) = raw.trim().parse::<u64>() {
+            return Duration::from_millis(ms.max(50));
+        }
+    }
+    Duration::from_secs(3)
+}
+
+fn install_shutdown_watch() -> tokio::sync::watch::Receiver<bool> {
+    let (tx, rx) = tokio::sync::watch::channel(false);
+    tokio::spawn(async move {
+        let mut sigterm =
+            tokio::signal::unix::signal(tokio::signal::unix::SignalKind::terminate()).ok();
+        tokio::select! {
+            _ = tokio::signal::ctrl_c() => {
+                info!("Shutting down ucc-session-agent (SIGINT)");
+            }
+            _ = async {
+                match sigterm.as_mut() {
+                    Some(s) => s.recv().await,
+                    None => std::future::pending().await,
+                }
+            } => {
+                info!("Shutting down ucc-session-agent (SIGTERM)");
+            }
+        }
+        let _ = tx.send(true);
+    });
+    rx
+}
+
+async fn run_rpc_or_shutdown<F, T, E>(
+    shutdown_rx: &tokio::sync::watch::Receiver<bool>,
+    fut: F,
+) -> Option<Result<T, ()>>
+where
+    F: std::future::Future<Output = Result<T, E>>,
+{
+    if *shutdown_rx.borrow() {
+        return None;
+    }
+    let mut stop_rx = shutdown_rx.clone();
+    tokio::select! {
+        biased;
+        _ = stop_rx.wait_for(|&stop| stop) => None,
+        res = tokio::time::timeout(rpc_timeout_duration(), fut) => match res {
+            Ok(Ok(v)) => Some(Ok(v)),
+            _ => Some(Err(())),
+        }
+    }
+}
+
 #[tokio::main]
 async fn main() {
     let args: Vec<String> = std::env::args().collect();
@@ -284,10 +337,13 @@ async fn main() {
         return;
     };
 
-    let (_conn, proxy) = match connect_uccd().await {
-        Ok(pair) => pair,
-        Err(err) => {
-            eprintln!("Error: {err}");
+    let shutdown_rx = install_shutdown_watch();
+
+    let (_conn, proxy) = match run_rpc_or_shutdown(&shutdown_rx, connect_uccd()).await {
+        None => return,
+        Some(Ok(pair)) => pair,
+        Some(Err(())) => {
+            eprintln!("Error: failed to connect to uccd D-Bus service");
             std::process::exit(2);
         }
     };
@@ -362,28 +418,48 @@ async fn main() {
     };
 
     // Best-effort initial state hydration (minimal mocks may not implement every method).
-    if let Ok(policy_raw) = proxy.get_power_policy_json().await {
-        power_alert.on_policy_json(&policy_raw);
-        lid_handler.policy_changed(&policy_raw);
-        state.policy_source = parse_policy_source(&policy_raw);
+    match run_rpc_or_shutdown(&shutdown_rx, proxy.get_power_policy_json()).await {
+        None => return,
+        Some(Ok(policy_raw)) => {
+            power_alert.on_policy_json(&policy_raw);
+            lid_handler.policy_changed(&policy_raw);
+            state.policy_source = parse_policy_source(&policy_raw);
+        }
+        Some(Err(())) => {}
     }
-    if let Ok(dev_settings_raw) = proxy.get_power_device_settings_json().await {
-        lid_handler.device_settings_changed(&dev_settings_raw);
+    match run_rpc_or_shutdown(&shutdown_rx, proxy.get_power_device_settings_json()).await {
+        None => return,
+        Some(Ok(dev_settings_raw)) => {
+            lid_handler.device_settings_changed(&dev_settings_raw);
+        }
+        Some(Err(())) => {}
     }
-    if let Ok(prof_raw) = proxy.get_active_profile_json().await {
-        state.requested_hz = parse_requested_hz(&prof_raw);
+    match run_rpc_or_shutdown(&shutdown_rx, proxy.get_active_profile_json()).await {
+        None => return,
+        Some(Ok(prof_raw)) => {
+            state.requested_hz = parse_requested_hz(&prof_raw);
+        }
+        Some(Err(())) => {}
     }
     let mut login1_active = false;
     if let Some(ref lp) = login_proxy {
-        if let Ok(closed) = lp.lid_closed().await {
-            login1_active = true;
-            let _ = lid_handler.on_lid_state_changed(closed, &[]);
+        match run_rpc_or_shutdown(&shutdown_rx, lp.lid_closed()).await {
+            None => return,
+            Some(Ok(closed)) => {
+                login1_active = true;
+                let _ = lid_handler.on_lid_state_changed(closed, &[]);
+            }
+            Some(Err(())) => {}
         }
     }
     if !login1_active {
         if let Some(ref up) = upower_proxy {
-            if let Ok(closed) = up.lid_is_closed().await {
-                let _ = lid_handler.on_lid_state_changed(closed, &[]);
+            match run_rpc_or_shutdown(&shutdown_rx, up.lid_is_closed()).await {
+                None => return,
+                Some(Ok(closed)) => {
+                    let _ = lid_handler.on_lid_state_changed(closed, &[]);
+                }
+                Some(Err(())) => {}
             }
         }
     }
@@ -417,22 +493,15 @@ async fn main() {
     let mut monitor_state = spawn_monitor();
     let mut restart_at: Option<tokio::time::Instant> = None;
     let mut buf = [0u8; 4096];
-    let mut sigterm =
-        tokio::signal::unix::signal(tokio::signal::unix::SignalKind::terminate()).ok();
 
     loop {
+        if *shutdown_rx.borrow() {
+            break;
+        }
+        let mut loop_stop_rx = shutdown_rx.clone();
         tokio::select! {
-            _ = tokio::signal::ctrl_c() => {
-                info!("Shutting down ucc-session-agent (SIGINT)");
-                break;
-            }
-            _ = async {
-                match sigterm.as_mut() {
-                    Some(s) => s.recv().await,
-                    None => std::future::pending().await,
-                }
-            } => {
-                info!("Shutting down ucc-session-agent (SIGTERM)");
+            biased;
+            _ = loop_stop_rx.wait_for(|&stop| stop) => {
                 break;
             }
             Some(ev) = comp_rx.recv() => {
@@ -457,46 +526,49 @@ async fn main() {
                 }
             }
             _ = health_tick.tick() => {
-                if let Ok(raw) = proxy.get_driver_health_json().await {
-                    if let Ok(val) = serde_json::from_str::<Value>(&raw) {
-                        let (gen, action) = driver_alert.evaluate(&val);
-                        match action {
-                            DriverAlertAction::Notify(msg) => {
-                                warn!("UCC driver health alert: {msg}");
-                                let id = send_notify(
-                                    notif_proxy.as_ref(),
-                                    "dialog-warning",
-                                    "UCC Driver Alert",
-                                    &msg,
-                                    &[],
-                                    0,
-                                )
-                                .await;
-                                if let Some(stale) = driver_alert.on_notify_finished(gen, id) {
-                                    close_notify(notif_proxy.as_ref(), stale).await;
-                                }
+                let raw = match run_rpc_or_shutdown(&shutdown_rx, proxy.get_driver_health_json()).await {
+                    None => break,
+                    Some(Ok(r)) => r,
+                    Some(Err(())) => continue,
+                };
+                if let Ok(val) = serde_json::from_str::<Value>(&raw) {
+                    let (gen, action) = driver_alert.evaluate(&val);
+                    match action {
+                        DriverAlertAction::Notify(msg) => {
+                            warn!("UCC driver health alert: {msg}");
+                            let id = send_notify(
+                                notif_proxy.as_ref(),
+                                "dialog-warning",
+                                "UCC Driver Alert",
+                                &msg,
+                                &[],
+                                0,
+                            )
+                            .await;
+                            if let Some(stale) = driver_alert.on_notify_finished(gen, id) {
+                                close_notify(notif_proxy.as_ref(), stale).await;
                             }
-                            DriverAlertAction::Replace { close_id, problem } => {
-                                warn!("UCC driver health alert: {problem}");
-                                close_notify(notif_proxy.as_ref(), close_id).await;
-                                let id = send_notify(
-                                    notif_proxy.as_ref(),
-                                    "dialog-warning",
-                                    "UCC Driver Alert",
-                                    &problem,
-                                    &[],
-                                    0,
-                                )
-                                .await;
-                                if let Some(stale) = driver_alert.on_notify_finished(gen, id) {
-                                    close_notify(notif_proxy.as_ref(), stale).await;
-                                }
-                            }
-                            DriverAlertAction::Close(id) => {
-                                close_notify(notif_proxy.as_ref(), id).await;
-                            }
-                            DriverAlertAction::None => {}
                         }
+                        DriverAlertAction::Replace { close_id, problem } => {
+                            warn!("UCC driver health alert: {problem}");
+                            close_notify(notif_proxy.as_ref(), close_id).await;
+                            let id = send_notify(
+                                notif_proxy.as_ref(),
+                                "dialog-warning",
+                                "UCC Driver Alert",
+                                &problem,
+                                &[],
+                                0,
+                            )
+                            .await;
+                            if let Some(stale) = driver_alert.on_notify_finished(gen, id) {
+                                close_notify(notif_proxy.as_ref(), stale).await;
+                            }
+                        }
+                        DriverAlertAction::Close(id) => {
+                            close_notify(notif_proxy.as_ref(), id).await;
+                        }
+                        DriverAlertAction::None => {}
                     }
                 }
             }
@@ -516,17 +588,20 @@ async fn main() {
                 }
             }
             _ = state_tick.tick() => {
-                if let Ok(policy_raw) = proxy.get_power_policy_json().await {
-                    if power_alert.on_policy_json(&policy_raw) {
-                        power_notice_deadline = Some(tokio::time::Instant::now() + Duration::from_millis(800));
-                    }
-                    lid_handler.policy_changed(&policy_raw);
-                    let new_source = parse_policy_source(&policy_raw);
-                    if new_source != state.policy_source {
-                        state.invalidate_pending_refresh(notif_proxy.as_ref(), true).await;
-                        state.policy_source = new_source;
-                        state.schedule_refresh_check(&comp_tx);
-                    }
+                let policy_raw = match run_rpc_or_shutdown(&shutdown_rx, proxy.get_power_policy_json()).await {
+                    None => break,
+                    Some(Ok(r)) => r,
+                    Some(Err(())) => continue,
+                };
+                if power_alert.on_policy_json(&policy_raw) {
+                    power_notice_deadline = Some(tokio::time::Instant::now() + Duration::from_millis(800));
+                }
+                lid_handler.policy_changed(&policy_raw);
+                let new_source = parse_policy_source(&policy_raw);
+                if new_source != state.policy_source {
+                    state.invalidate_pending_refresh(notif_proxy.as_ref(), true).await;
+                    state.policy_source = new_source;
+                    state.schedule_refresh_check(&comp_tx);
                 }
             }
             _ = async {
@@ -551,14 +626,22 @@ async fn main() {
             }
             _ = next_optional(&mut profile_stream) => {
                 state.invalidate_pending_refresh(notif_proxy.as_ref(), true).await;
-                if let Ok(prof_raw) = proxy.get_active_profile_json().await {
-                    state.requested_hz = parse_requested_hz(&prof_raw);
-                    state.schedule_refresh_check(&comp_tx);
+                match run_rpc_or_shutdown(&shutdown_rx, proxy.get_active_profile_json()).await {
+                    None => break,
+                    Some(Ok(prof_raw)) => {
+                        state.requested_hz = parse_requested_hz(&prof_raw);
+                        state.schedule_refresh_check(&comp_tx);
+                    }
+                    Some(Err(())) => {}
                 }
             }
             _ = next_optional(&mut dev_status_stream) => {
-                if let Ok(settings_raw) = proxy.get_power_device_settings_json().await {
-                    lid_handler.device_settings_changed(&settings_raw);
+                match run_rpc_or_shutdown(&shutdown_rx, proxy.get_power_device_settings_json()).await {
+                    None => break,
+                    Some(Ok(settings_raw)) => {
+                        lid_handler.device_settings_changed(&settings_raw);
+                    }
+                    Some(Err(())) => {}
                 }
             }
             sig = next_optional(&mut action_stream) => {
@@ -625,16 +708,20 @@ async fn main() {
                     }
                     Ok(n) => {
                         if parser.feed_bytes(&buf[..n], Instant::now()) > 0 {
-                            let settings = proxy
-                                .get_lightbar_settings_json()
-                                .await
-                                .await_value_or_null();
-                            let policy = proxy
-                                .get_power_policy_json()
-                                .await
-                                .await_value_or_null();
+                            let settings = match run_rpc_or_shutdown(&shutdown_rx, proxy.get_lightbar_settings_json()).await {
+                                None => break,
+                                Some(Ok(s)) => serde_json::from_str::<Value>(&s).unwrap_or(Value::Null),
+                                Some(Err(())) => Value::Null,
+                            };
+                            let policy = match run_rpc_or_shutdown(&shutdown_rx, proxy.get_power_policy_json()).await {
+                                None => break,
+                                Some(Ok(s)) => serde_json::from_str::<Value>(&s).unwrap_or(Value::Null),
+                                Some(Err(())) => Value::Null,
+                            };
                             if lightbar_notify_enabled(&settings, &policy) {
-                                let _ = proxy.trigger_lightbar_animation(false).await;
+                                if run_rpc_or_shutdown(&shutdown_rx, proxy.trigger_lightbar_animation(false)).await.is_none() {
+                                    break;
+                                }
                             }
                         }
                     }
@@ -643,22 +730,14 @@ async fn main() {
         }
     }
 
+    if let Some((mut child, _)) = monitor_state.take() {
+        let _ = child.kill().await;
+        let _ = child.wait().await;
+    }
     if let Some(t) = state.refresh_task.take() {
         t.abort();
     }
     if let Some(t) = state.lid_task.take() {
         t.abort();
-    }
-}
-
-trait JsonResultExt {
-    fn await_value_or_null(self) -> Value;
-}
-
-impl JsonResultExt for zbus::Result<String> {
-    fn await_value_or_null(self) -> Value {
-        self.ok()
-            .and_then(|s| serde_json::from_str::<Value>(&s).ok())
-            .unwrap_or(Value::Null)
     }
 }
