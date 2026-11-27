@@ -256,3 +256,55 @@ fn test_permission_denied_on_readonly_directory() {
 
     let _ = fs::remove_dir_all(&temp_dir);
 }
+
+#[test]
+fn m2_5_legacy_settings_path_autosave_roundtrip_and_aquaris() {
+    use ucc_config::legacy::SettingsManager;
+
+    let _lock = ENV_LOCK.lock().unwrap();
+    let temp_dir = create_unique_temp_dir("m2_5_legacy");
+    let xdg_dir = temp_dir.join("xdg");
+    let ucc_dir = xdg_dir.join("ucc");
+    fs::create_dir_all(&ucc_dir).expect("create xdg ucc dir");
+
+    let legacy_settings_path = ucc_dir.join("settings");
+    let mut initial = create_default_settings();
+    initial.charging_profile = Some("stationary".to_string());
+    initial.charge_end_threshold = Some(80);
+    fs::write(&legacy_settings_path, initial.to_json_pretty().unwrap())
+        .expect("write extensionless settings");
+
+    let prev_xdg = std::env::var_os("XDG_CONFIG_HOME");
+    std::env::set_var("XDG_CONFIG_HOME", &xdg_dir);
+    let mgr = ConfigManager::with_custom_path(&legacy_settings_path);
+    let resolved = ucc_config::user_config_path();
+    assert_eq!(resolved.as_deref(), Some(legacy_settings_path.as_path()));
+
+    let mut loaded = mgr.load().expect("load extensionless legacy settings");
+    assert_eq!(loaded.charging_profile.as_deref(), Some("stationary"));
+    assert_eq!(loaded.charge_end_threshold, Some(80));
+
+    // Modify and save atomically -> creates .bak and preserves updated state.
+    loaded.charge_end_threshold = Some(75);
+    mgr.save(&loaded).expect("atomic save extensionless settings");
+    assert!(ucc_dir.join("settings.bak").is_file());
+    let reloaded = ConfigManager::load_from_path(&legacy_settings_path).expect("reload");
+    assert_eq!(reloaded.charge_end_threshold, Some(75));
+
+    // Legacy SettingsManager TccSettings JSON round-trip
+    let legacy_mgr = SettingsManager::new(&legacy_settings_path);
+    let tcc_parsed = legacy_mgr
+        .read_settings()
+        .expect("SettingsManager read extensionless settings");
+    let serialized = legacy_mgr
+        .settings_to_json(&tcc_parsed)
+        .expect("serialize TccSettings");
+    assert!(serialized.contains("\"stationary\""));
+
+    if let Some(prev) = prev_xdg {
+        std::env::set_var("XDG_CONFIG_HOME", prev);
+    } else {
+        std::env::remove_var("XDG_CONFIG_HOME");
+    }
+    let _ = fs::remove_dir_all(&temp_dir);
+}
