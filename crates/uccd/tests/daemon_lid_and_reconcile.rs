@@ -22,7 +22,7 @@ use ucc_dbus::UccdBackend;
 use ucc_hardware::{
     default_process_runner, CoolerPacketEncoder, DeviceCapabilities, DeviceVendor,
     MockPlatformBackend, MockSysfs, PlatformBackendKind, PlatformCapabilities,
-    PowerDeviceController, RgbState, RgbTarget, Sysfs, TelemetryConfig, CMD_RGB,
+    PowerDeviceController, RgbState, RgbTarget, Sysfs, TelemetryConfig, BLE_WRITE_GAP, CMD_RGB,
 };
 use ucc_lighting::{KeyboardCapabilities, LightbarCapabilities, MockLightingTransport};
 use uccd::{
@@ -305,26 +305,27 @@ fn v2_p1_03_acpi_wakeup_allowlist_preserves_lid_and_keyboard() {
     );
 }
 
-fn drain_cooler_packets(backend: &LiveUccdBackend, max_rounds: usize) -> Vec<[u8; 8]> {
+fn drain_cooler_packets(backend: &LiveUccdBackend, now: &mut Instant) -> Vec<[u8; 8]> {
     let mut out = Vec::new();
-    for round in 0..max_rounds {
-        if round > 0 {
-            std::thread::sleep(Duration::from_millis(90));
-        }
-        let batch = backend.drain_cooler_commands();
+    for _ in 0..16 {
+        let batch = backend.drain_cooler_commands_at(*now);
         if batch.is_empty() {
-            if !out.is_empty() {
+            *now += BLE_WRITE_GAP;
+            let retry = backend.drain_cooler_commands_at(*now);
+            if retry.is_empty() {
                 break;
             }
+            out.extend(retry);
         } else {
             out.extend(batch);
         }
+        *now += BLE_WRITE_GAP;
     }
     out
 }
 
 #[test]
-fn user_bug_2_wc_led_unset_restores_default_white_and_enqueues_ble_packet() {
+fn wc_led_unset_restores_default_white_and_enqueues_ble_packet() {
     let tmp = tempfile::tempdir().unwrap();
     let sysfs = Arc::new(MockSysfs::new());
     seed_basic_sysfs(tmp.path(), &sysfs);
@@ -347,11 +348,12 @@ fn user_bug_2_wc_led_unset_restores_default_white_and_enqueues_ble_packet() {
 
     backend.set_cooler_connected_state(true);
     assert_eq!(backend.cooler_desired_rgb(), RgbTarget::Unset);
+    let mut cooler_now = Instant::now();
 
     // Close lid -> turns off WC LED and queues TurnOffLed packet.
     assert!(backend.on_lid_state_changed(true));
     assert_eq!(backend.cooler_desired_rgb(), RgbTarget::Off);
-    let off_pkts = drain_cooler_packets(&backend, 8);
+    let off_pkts = drain_cooler_packets(&backend, &mut cooler_now);
     assert!(off_pkts.contains(&CoolerPacketEncoder::turn_off(CMD_RGB)));
 
     // Open lid -> must NOT leave hardware dark with Unset; restores default static white and queues RGB packet.
@@ -365,10 +367,93 @@ fn user_bug_2_wc_led_unset_restores_default_white_and_enqueues_ble_packet() {
             state: RgbState::Static,
         }
     );
-    let restore_pkts = drain_cooler_packets(&backend, 8);
+    let restore_pkts = drain_cooler_packets(&backend, &mut cooler_now);
     assert!(
         restore_pkts.contains(&CoolerPacketEncoder::rgb(255, 255, 255, RgbState::Static)),
-        "User Bug #2: lid open must enqueue an explicit RGB packet to wake BLE loop"
+        "lid open must enqueue an explicit RGB packet to wake BLE loop"
+    );
+}
+
+#[test]
+fn ble_queue_rate_limiter_enforces_80ms_gap_across_turn_off_and_rgb_restore() {
+    let tmp = tempfile::tempdir().unwrap();
+    let sysfs = Arc::new(MockSysfs::new());
+    seed_basic_sysfs(tmp.path(), &sysfs);
+    let (backend, _) = build_backend(tmp.path(), sysfs.clone());
+    backend.activate_hardware();
+
+    let pd_wc_off = json!({
+        "enabled": false,
+        "keepNvidiaAwake": false,
+        "lid": {
+            "ac": "ignore",
+            "type_c": "ignore",
+            "bat": "suspend",
+            "turnOffKeyboardBacklightOnLidClose": false,
+            "turnOffWaterCoolerLedOnLidClose": true
+        }
+    })
+    .to_string();
+    assert!(backend.set_power_device_settings_json(&pd_wc_off));
+
+    backend.set_cooler_connected_state(true);
+    assert!(backend.set_water_cooler_fan_speed(60));
+    assert!(backend.on_lid_state_changed(true));
+
+    let mut now = Instant::now();
+    let first = backend.drain_cooler_commands_at(now);
+    assert_eq!(
+        first.len(),
+        1,
+        "first BLE drain at t0 must emit exactly 1 packet"
+    );
+    assert!(
+        backend
+            .drain_cooler_commands_at(now + Duration::from_millis(79))
+            .is_empty(),
+        "BLE rate limiter must block a second packet within <80ms"
+    );
+
+    now += BLE_WRITE_GAP;
+    let second = backend.drain_cooler_commands_at(now);
+    assert_eq!(
+        second.len(),
+        1,
+        "BLE rate limiter must emit the next packet once >=80ms elapsed"
+    );
+
+    let mut off_pkts = Vec::new();
+    off_pkts.extend(first);
+    off_pkts.extend(second);
+    let mut last_sent = now;
+    for _ in 0..8 {
+        let next_ts = last_sent + BLE_WRITE_GAP;
+        let batch = backend.drain_cooler_commands_at(next_ts);
+        if batch.is_empty() {
+            break;
+        }
+        assert_eq!(batch.len(), 1);
+        off_pkts.extend(batch);
+        last_sent = next_ts;
+    }
+    assert!(
+        off_pkts.contains(&CoolerPacketEncoder::turn_off(CMD_RGB)),
+        "lid close must enqueue TurnOffLed packet: {off_pkts:?}"
+    );
+
+    // Open lid -> restores default static white and queues RGB(255, 255, 255).
+    assert!(backend.on_lid_state_changed(false));
+    assert!(
+        backend
+            .drain_cooler_commands_at(last_sent + Duration::from_millis(79))
+            .is_empty(),
+        "BLE rate limiter must still enforce 80ms gap before RGB restore packet"
+    );
+    let restore_pkts = backend.drain_cooler_commands_at(last_sent + BLE_WRITE_GAP);
+    assert_eq!(
+        restore_pkts,
+        vec![CoolerPacketEncoder::rgb(255, 255, 255, RgbState::Static)],
+        "lid open must emit RGB(255, 255, 255) once >=80ms elapsed since previous write"
     );
 }
 

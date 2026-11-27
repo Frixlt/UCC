@@ -1,51 +1,20 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 
-#[allow(unused_imports)]
-use super::common::*;
-#[allow(unused_imports)]
+use super::common::{build_test_backend, start_runtime};
 use serde_json::json;
-#[allow(unused_imports)]
-use std::collections::HashMap;
-#[allow(unused_imports)]
-use std::path::Path;
-#[allow(unused_imports)]
 use std::sync::Arc;
-#[allow(unused_imports)]
 use std::time::{Duration, Instant};
-#[allow(unused_imports)]
-use ucc_config::{
-    create_default_settings, default_high_performance_profile, default_quiet_profile, ConfigManager,
-};
-#[allow(unused_imports)]
-use ucc_dbus::{
-    AllowAllAuthorizer, UccdBackend, UccdLegacyProxy, UccdProxy, DBUS_PATH, DBUS_PATH_ALT,
-};
-#[allow(unused_imports)]
+use ucc_config::{create_default_settings, default_high_performance_profile, ConfigManager};
+use ucc_dbus::UccdBackend;
 use ucc_hardware::{
-    decode_history_binary, default_process_runner, DeviceCapabilities, DeviceVendor, MetricId,
-    MockPlatformBackend, MockSysfs, NvidiaPowerGuard, NvmlWrapper, PlatformBackend,
-    PlatformBackendKind, PlatformCapabilities, PlatformError, PlatformWrite, PowerDeviceController,
-    TelemetryConfig,
+    CoolerPacketEncoder, PumpVoltage, RealSysfs, RgbState, RgbTarget, BLE_WRITE_GAP, CMD_RGB,
 };
-#[allow(unused_imports)]
-use ucc_lighting::{KeyboardCapabilities, LightbarCapabilities, MockLightingTransport};
-#[allow(unused_imports)]
-use uccd::{
-    apply_wakeup_policy, is_allowed_wakeup_device, DaemonRuntime, LidAction, LidPolicyConfig,
-    LiveUccdBackend, UccdDependencies, WakeupApplyResult, WakeupPolicy,
-};
-#[allow(unused_imports)]
-use zbus::export::futures_core::Stream;
-#[allow(unused_imports)]
-use zbus::zvariant::OwnedValue;
+use uccd::{LiveUccdBackend, WakeupPolicy};
 
 #[tokio::test]
 async fn m8_10_lid_close_blanks_and_restores_keyboard_and_wc_led_in_ram_only() {
-    use ucc_dbus::UccdBackend;
-    use ucc_hardware::{CoolerPacketEncoder, RgbState, RgbTarget};
-
     let root = tempfile::tempdir().unwrap();
-    let (backend, _, _, lighting) = build_test_backend(root.path());
+    let (backend, _, _, _) = build_test_backend(root.path());
     let name = "org.test.uccd.m8_10_lid_lighting";
     let runtime = start_runtime(Arc::clone(&backend), name, false).await;
 
@@ -58,7 +27,6 @@ async fn m8_10_lid_close_blanks_and_restores_keyboard_and_wc_led_in_ram_only() {
     }])
     .to_string();
     assert!(backend.set_keyboard_backlight_states_json(&initial_kb));
-    let before_settings = std::fs::read_to_string(root.path().join("settings.json")).unwrap();
 
     // Configure both lid blanking toggles and connect water cooler with an active LED color.
     let pd_both = json!({
@@ -76,11 +44,11 @@ async fn m8_10_lid_close_blanks_and_restores_keyboard_and_wc_led_in_ram_only() {
     .to_string();
     assert!(backend.set_power_device_settings_json(&pd_both));
     backend.set_cooler_connected_state(true);
+    let mut cooler_now = Instant::now();
     assert!(backend.set_water_cooler_led_color(200, 30, 90, 0));
-    let _ = drain_cooler_packets(&backend, 5).await;
+    let _ = drain_cooler_packets(&backend, &mut cooler_now);
 
     let after_cfg_settings = std::fs::read_to_string(root.path().join("settings.json")).unwrap();
-    let _ = before_settings;
 
     // 1. Close lid: keyboard brightness becomes 0 and WC LED turns off without altering settings.json.
     backend.on_lid_state_changed(true);
@@ -89,9 +57,9 @@ async fn m8_10_lid_close_blanks_and_restores_keyboard_and_wc_led_in_ram_only() {
         serde_json::from_str(&backend.get_keyboard_backlight_states_json()).unwrap();
     assert_eq!(kb_while_closed[0]["brightness"].as_u64(), Some(0));
     assert_eq!(backend.cooler_desired_rgb(), RgbTarget::Off);
-    let pkts = drain_cooler_packets(&backend, 5).await;
+    let pkts = drain_cooler_packets(&backend, &mut cooler_now);
     assert!(
-        pkts.contains(&CoolerPacketEncoder::turn_off(ucc_hardware::CMD_RGB)),
+        pkts.contains(&CoolerPacketEncoder::turn_off(CMD_RGB)),
         "closing lid must enqueue TurnOffLed packet when WC LED blanking is enabled: {pkts:?}"
     );
     assert_eq!(
@@ -129,7 +97,6 @@ async fn m8_10_lid_close_blanks_and_restores_keyboard_and_wc_led_in_ram_only() {
             state: RgbState::Static
         }
     );
-    let _ = lighting;
 
     // 4. Disable both toggles: closing lid leaves keyboard & WC LED untouched.
     let pd_off = json!({
@@ -155,26 +122,27 @@ async fn m8_10_lid_close_blanks_and_restores_keyboard_and_wc_led_in_ram_only() {
     runtime.shutdown(Duration::from_secs(2)).await;
 }
 
-async fn drain_cooler_packets(backend: &LiveUccdBackend, max_rounds: usize) -> Vec<[u8; 8]> {
+fn drain_cooler_packets(backend: &LiveUccdBackend, now: &mut Instant) -> Vec<[u8; 8]> {
     let mut out = Vec::new();
-    for _ in 0..max_rounds {
-        tokio::time::sleep(Duration::from_millis(90)).await;
-        let batch = backend.drain_cooler_commands();
+    for _ in 0..16 {
+        let batch = backend.drain_cooler_commands_at(*now);
         if batch.is_empty() {
-            if !out.is_empty() {
+            *now += BLE_WRITE_GAP;
+            let retry = backend.drain_cooler_commands_at(*now);
+            if retry.is_empty() {
                 break;
             }
+            out.extend(retry);
         } else {
             out.extend(batch);
         }
+        *now += BLE_WRITE_GAP;
     }
     out
 }
 
 #[tokio::test]
 async fn m5_9_startup_auto_enables_wc_scan_when_power_wc_profile_requests_it() {
-    use ucc_dbus::UccdBackend;
-
     let root = tempfile::tempdir().unwrap();
     let mut ac_profile = default_high_performance_profile();
     ac_profile.id = "ac-no-wc".to_string();
@@ -208,9 +176,6 @@ async fn m5_9_startup_auto_enables_wc_scan_when_power_wc_profile_requests_it() {
 
 #[tokio::test]
 async fn m5_9_manual_wc_fan_and_pump_profile_apply_and_reconnect_replay() {
-    use ucc_dbus::UccdBackend;
-    use ucc_hardware::{CoolerPacketEncoder, PumpVoltage};
-
     let root = tempfile::tempdir().unwrap();
     let (backend, _, _, _) = build_test_backend(root.path());
     let runtime = start_runtime(Arc::clone(&backend), "org.test.uccd.m5_9_manual", false).await;
@@ -227,7 +192,8 @@ async fn m5_9_manual_wc_fan_and_pump_profile_apply_and_reconnect_replay() {
     assert_eq!(backend.get_water_cooler_pump_level(), 2);
 
     backend.set_cooler_connected_state(true);
-    let pkts = drain_cooler_packets(&backend, 4).await;
+    let mut cooler_now = Instant::now();
+    let pkts = drain_cooler_packets(&backend, &mut cooler_now);
     assert!(
         pkts.contains(&CoolerPacketEncoder::fan_speed(65).unwrap()),
         "manual fan speed 65% must be flushed on connect: {pkts:?}"
@@ -241,7 +207,7 @@ async fn m5_9_manual_wc_fan_and_pump_profile_apply_and_reconnect_replay() {
     backend.set_cooler_connected_state(false);
     backend.set_cooler_connected_state(true);
     backend.replay_active_cooler_profile();
-    let replayed = drain_cooler_packets(&backend, 4).await;
+    let replayed = drain_cooler_packets(&backend, &mut cooler_now);
     assert!(
         replayed.contains(&CoolerPacketEncoder::fan_speed(65).unwrap()),
         "manual fan speed 65% must replay after reconnect: {replayed:?}"
@@ -257,8 +223,6 @@ async fn m5_9_manual_wc_fan_and_pump_profile_apply_and_reconnect_replay() {
 #[tokio::test]
 async fn m5_9_auto_wc_curve_and_aquaris_led_restore_across_suspend_resume() {
     use ucc_core::{FanPoint, PumpPoint};
-    use ucc_dbus::UccdBackend;
-    use ucc_hardware::{CoolerPacketEncoder, PumpVoltage, RgbState, RgbTarget};
 
     let root = tempfile::tempdir().unwrap();
     let aquaris_path = root.path().join("aquaris.json");
@@ -332,7 +296,8 @@ async fn m5_9_auto_wc_curve_and_aquaris_led_restore_across_suspend_resume() {
         "auto WC pump curve at 62C must select discrete code 3 (8V)"
     );
 
-    let pkts = drain_cooler_packets(&backend, 5).await;
+    let mut cooler_now = Instant::now();
+    let pkts = drain_cooler_packets(&backend, &mut cooler_now);
     assert!(
         pkts.contains(&CoolerPacketEncoder::fan_speed(fan_pct as u8).unwrap()),
         "resumed auto WC fan speed packet missing: {pkts:?}"
@@ -352,7 +317,6 @@ async fn m5_9_auto_wc_curve_and_aquaris_led_restore_across_suspend_resume() {
 #[tokio::test]
 async fn full_27_01_sleep_state_survives_resume_until_daemon_consumes_it() {
     use std::os::unix::fs::MetadataExt;
-    use ucc_dbus::UccdBackend;
     use uccd::{resume_sleep, SleepOperations, SleepState, SleepStateStore};
 
     struct StartSucceedsImmediateOps;
@@ -436,8 +400,6 @@ async fn full_27_01_sleep_state_survives_resume_until_daemon_consumes_it() {
 
 #[test]
 fn apply_wakeup_policy_skips_symlink_loops_and_non_dirs() {
-    use ucc_hardware::RealSysfs;
-
     let tmp = tempfile::tempdir().unwrap();
     let pci_dev = tmp.path().join("sys/devices/pci0000:00/0000:00:14.0");
     std::fs::create_dir_all(pci_dev.join("power")).unwrap();
@@ -465,8 +427,6 @@ fn apply_wakeup_policy_skips_symlink_loops_and_non_dirs() {
 
 #[test]
 fn enable_water_cooler_false_stays_disabled_across_wc_to_ac_reconcile() {
-    use ucc_dbus::UccdBackend;
-
     let root = tempfile::tempdir().unwrap();
     let mut ac_profile = default_high_performance_profile();
     ac_profile.id = "ac-wc-on".to_string();
@@ -509,8 +469,6 @@ fn enable_water_cooler_false_stays_disabled_across_wc_to_ac_reconcile() {
 #[tokio::test]
 async fn per_profile_lid_lighting_overrides_global_power_devices_policy() {
     use ucc_core::ProfileLidLighting;
-    use ucc_dbus::UccdBackend;
-    use ucc_hardware::{CoolerPacketEncoder, RgbTarget};
 
     let root = tempfile::tempdir().unwrap();
     let (backend, _, _, _) = build_test_backend(root.path());
@@ -547,8 +505,9 @@ async fn per_profile_lid_lighting_overrides_global_power_devices_policy() {
     .to_string();
     assert!(backend.set_power_device_settings_json(&pd_global));
     backend.set_cooler_connected_state(true);
+    let mut cooler_now = Instant::now();
     assert!(backend.set_water_cooler_led_color(120, 40, 210, 0));
-    let _ = drain_cooler_packets(&backend, 4).await;
+    let _ = drain_cooler_packets(&backend, &mut cooler_now);
 
     // Profile with explicit override: keep keyboard lit, turn off WC LED on lid close.
     let mut keep_kbd = default_high_performance_profile();
@@ -576,8 +535,8 @@ async fn per_profile_lid_lighting_overrides_global_power_devices_policy() {
         RgbTarget::Off,
         "profile override turnOffWaterCoolerLedOnLidClose=true must blank WC LED"
     );
-    let pkts = drain_cooler_packets(&backend, 4).await;
-    assert!(pkts.contains(&CoolerPacketEncoder::turn_off(ucc_hardware::CMD_RGB)));
+    let pkts = drain_cooler_packets(&backend, &mut cooler_now);
+    assert!(pkts.contains(&CoolerPacketEncoder::turn_off(CMD_RGB)));
 
     // Opening lid restores WC LED.
     backend.on_lid_state_changed(false);
@@ -632,85 +591,68 @@ async fn ta_05_ta_06_lid_wc_led_unset_and_disconnected_reconnect_restore() {
 
     // TA-05: Clean boot with RgbTarget::Unset and cooler connected still blanks LED on lid close
     backend.set_cooler_connected_state(true);
-    assert_eq!(backend.cooler_desired_rgb(), ucc_hardware::RgbTarget::Unset);
+    let mut cooler_now = Instant::now();
+    assert_eq!(backend.cooler_desired_rgb(), RgbTarget::Unset);
     backend.on_lid_state_changed(true);
     assert_eq!(
         backend.cooler_desired_rgb(),
-        ucc_hardware::RgbTarget::Off,
+        RgbTarget::Off,
         "TA-05: lid close must queue WC LED Off even when RGB state was Unset"
     );
-    let off_pkts = drain_cooler_packets(&backend, 4).await;
-    assert!(
-        off_pkts.contains(&ucc_hardware::CoolerPacketEncoder::turn_off(
-            ucc_hardware::CMD_RGB
-        ))
-    );
-    // User Bug #2: Opening lid after blanking an Unset LED restores default static white
+    let off_pkts = drain_cooler_packets(&backend, &mut cooler_now);
+    assert!(off_pkts.contains(&CoolerPacketEncoder::turn_off(CMD_RGB)));
+    // Opening lid after blanking an Unset LED restores default static white
     // and enqueues a real RGB packet so the hardware LED does not stay off.
     backend.on_lid_state_changed(false);
     assert_eq!(
         backend.cooler_desired_rgb(),
-        ucc_hardware::RgbTarget::Color {
+        RgbTarget::Color {
             red: 255,
             green: 255,
             blue: 255,
-            state: ucc_hardware::RgbState::Static,
+            state: RgbState::Static,
         }
     );
-    let restore_pkts = drain_cooler_packets(&backend, 4).await;
-    assert!(
-        restore_pkts.contains(&ucc_hardware::CoolerPacketEncoder::rgb(
-            255,
-            255,
-            255,
-            ucc_hardware::RgbState::Static
-        ))
-    );
+    let restore_pkts = drain_cooler_packets(&backend, &mut cooler_now);
+    assert!(restore_pkts.contains(&CoolerPacketEncoder::rgb(255, 255, 255, RgbState::Static)));
 
     // TA-06: Known color saved on lid close, BLE disconnects, lid opens while disconnected ->
     // reconnecting restores saved color rather than staying Off!
     assert!(backend.set_water_cooler_led_color(10, 20, 30, 0));
-    let _ = drain_cooler_packets(&backend, 4).await;
+    let _ = drain_cooler_packets(&backend, &mut cooler_now);
     backend.on_lid_state_changed(true);
-    assert_eq!(backend.cooler_desired_rgb(), ucc_hardware::RgbTarget::Off);
-    let _ = drain_cooler_packets(&backend, 4).await;
+    assert_eq!(backend.cooler_desired_rgb(), RgbTarget::Off);
+    let _ = drain_cooler_packets(&backend, &mut cooler_now);
 
     backend.set_cooler_connected_state(false);
     backend.on_lid_state_changed(false);
     backend.set_cooler_connected_state(true);
     assert_eq!(
         backend.cooler_desired_rgb(),
-        ucc_hardware::RgbTarget::Color {
+        RgbTarget::Color {
             red: 10,
             green: 20,
             blue: 30,
-            state: ucc_hardware::RgbState::Static,
+            state: RgbState::Static,
         },
         "TA-06: opening lid during BLE disconnect must still restore saved WC RGB on reconnect"
     );
-    let restored_pkts = drain_cooler_packets(&backend, 4).await;
-    assert!(
-        restored_pkts.contains(&ucc_hardware::CoolerPacketEncoder::rgb(
-            10,
-            20,
-            30,
-            ucc_hardware::RgbState::Static
-        ))
-    );
+    let restored_pkts = drain_cooler_packets(&backend, &mut cooler_now);
+    assert!(restored_pkts.contains(&CoolerPacketEncoder::rgb(10, 20, 30, RgbState::Static)));
 
     // Also test WC connecting while lid is already closed -> turns off LED and restores on open
     backend.set_cooler_connected_state(false);
     backend.on_lid_state_changed(true);
     backend.set_cooler_connected_state(true);
-    assert_eq!(backend.cooler_desired_rgb(), ucc_hardware::RgbTarget::Off);
+    assert_eq!(backend.cooler_desired_rgb(), RgbTarget::Off);
     backend.on_lid_state_changed(false);
     assert_eq!(
         backend.cooler_desired_rgb(),
-        ucc_hardware::RgbTarget::Color {
+        RgbTarget::Color {
             red: 10,
             green: 20,
             blue: 30,
-            state: ucc_hardware::RgbState::Static,
+            state: RgbState::Static,
         }
     );
 

@@ -1316,10 +1316,20 @@ impl LiveUccdBackend {
             .desired_rgb_target()
     }
 
+    /// Flushes ready BLE cooler commands using the current monotonic clock,
+    /// enforcing the 80ms [`ucc_hardware::BLE_WRITE_GAP`] rate-limiter.
     pub fn drain_cooler_commands(&self) -> Vec<[u8; 8]> {
+        self.drain_cooler_commands_at(Instant::now())
+    }
+
+    /// Flushes ready BLE cooler commands evaluated at an explicit monotonic timestamp `now`.
+    ///
+    /// Preserves the 80ms [`ucc_hardware::BLE_WRITE_GAP`] rate-limiter identically to
+    /// [`Self::drain_cooler_commands`] while enabling deterministic, sleep-free tests.
+    pub fn drain_cooler_commands_at(&self, now: Instant) -> Vec<[u8; 8]> {
         let sink = MockBleTransport::new(true);
         let mut cooler = self.lock_mutex(&self.cooler_controller);
-        let _ = cooler.flush_ready(&sink, Instant::now());
+        let _ = cooler.flush_ready(&sink, now);
         sink.packets()
     }
 }
