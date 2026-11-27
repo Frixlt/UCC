@@ -162,12 +162,14 @@
     ]
   },
   "last_verified": {
-    "command": "cargo clippy --workspace --all-targets --locked --offline -- -D warnings; cargo run -p xtask --locked --offline -- check-versions; dbus-run-session -- cargo test --workspace --locked --offline --no-fail-fast; ctest --output-on-failure",
-    "top_suites": 94,
-    "top_passed": 482,
+    "command": "cargo clippy --workspace --all-targets --locked --offline -- -D warnings; cargo run -p xtask --locked --offline -- check-versions; dbus-run-session -- cargo test --workspace --locked --offline; env CARGO_HOME=$(mktemp -d) UCC_INTEROP_DAEMON_BIN=... ctest --output-on-failure",
+    "top_suites": 95,
+    "top_passed": 488,
     "top_failed": 0,
     "top_ignored": 0,
     "clippy_warnings": 0,
+    "full_acceptance_probes_passed": 5,
+    "full_acceptance_probes_consecutive_runs": 3,
     "outcomes_recheck_probes_passed": 5,
     "outcomes_recheck_consecutive_runs": 4,
     "neighbor_recheck_probes_passed": 7,
@@ -176,8 +178,8 @@
     "transaction_recheck_probes_passed": 15,
     "config_backup_umask_probe_passed": 1,
     "cpp_ctest_passed": 42,
-    "cross_lang_interop": "test_rust_uccd_interop (8/8 QtTest slots) passed against live Rust LiveUccdBackend on private bus (913d1ef)",
-    "standalone_gui_ldd": "ucc-gui verified clean of KF6/Qt6Qml/Qt6Quick/Qt6Bluetooth/libucc-dbus links under UCC_PACKAGE_RUST_RUNTIME=ON",
+    "cross_lang_interop": "test_rust_uccd_interop passed with empty CARGO_HOME and prebuilt UCC_INTEROP_DAEMON_BIN (full-d494935 remediation)",
+    "standalone_gui_ldd": "ucc-gui verified clean of missing shared libraries and KF6/Qt6Qml/Qt6Quick/Qt6Bluetooth/libucc-dbus links under UCC_PACKAGE_RUST_RUNTIME=ON",
     "cpu_restore_handoff": "failed_cpu_restore_is_carried_to_the_next_daemon passed on a private bus",
     "runtime_staging": "all seven Cargo-built executables, both XDG autostarts, systemd sleep alias, D-Bus policy, man and completions verified",
     "offline_source_archive": "make dist from 610f8a8; Cargo metadata and workspace binaries checked offline with an empty CARGO_HOME",
@@ -186,6 +188,7 @@
     "read_only_preview": "ucc-gui compiled with UCC_READ_ONLY_PREVIEW=ON in an isolated CMake build"
   },
   "completed_in_current_wave": [
+    "full-d494935 audit remediation (2f4b1f2 FULL-27-01, dd25f24+da07526 FULL-27-02..04, c618614 FULL-27-05..06, 09dbe15 FULL-27-07): Resolved all 7 independent audit findings (3 P1 + 4 P2): preserved /run/ucc/sleep-state.json across resume_sleep when was_active=true, loading in uccd-prime and clearing after activate_hardware() succeeds; moved charging/cTGP/keyboard RGB inside Phase 2/Phase 3 seqlock + reconcile_to_latest_committed; added sysfs readback verification and epoch-guarded rollback on charging writes while skipping when no battery device exists; made active DeleteCustomProfile apply fallback hardware before disk mutation; wired org.freedesktop.Notifications Notify/CloseNotification, self-bus filter, RefreshAdvisor interactive switching, and login1/UPower LidDisplayHandler DPMS in ucc-session-agent with end-to-end integration tests; decoupled CTest rust interop and CI from empty Cargo cache via prebuilt interop_daemon artifact. Verified with 5/5 full_acceptance_probes.rs x3 consecutive runs, 488/488 Rust workspace tests across 95 suites (0 Clippy warnings, 6/6 manifest parity 0.3.0), clean ucc-gui ldd, and 42/42 cold-cache CTest passes.",
     "Wave 5 code closure (8bd11e9 M12.10, 0bad2d6 M13.10, 17d16df M1.5/M10.2-M10.4, 2d87c27 M2.5, 42bbccd M12.1/M12.5/M12.8): Added rustfmt.toml, .editorconfig, cliff.toml, CONTRIBUTING.md, .github/workflows/release.yml, and xtask check-versions/release automation; renamed project and Arch packaging identity to ucc-rusted; wired ksni::current_xdg_activation_token() handoff and 0 MB Qt background lifecycle (splitting DesktopTray.cpp out of ucc-desktop-support); added legacy extensionless settings autosave round-trip test (M2.5), dist RELEASE_MANIFEST.json + Cargo.lock CycloneDX SBOM generation, CI version check, and parser/protocol fuzz-smoke tests. Verified 482/482 Rust workspace tests across 94 suites (0 Clippy warnings), 6/6 manifest version parity, clean ldd linkage on ucc-gui, and 42/42 CTest targets. Added lid logo LED (048D:7001/048D:7000) to F46 and M15.4. M13.11 (final EN/RU documentation) deferred until end of M13 per user instruction.",
     "Wave 4 (bc7d14f M10.8/M10.9, fb3cf39 M8.10, 9906087/bc1db6a M5.9): Added distinct sidebar icons for Power & Devices / Lightbar / Battery & Processes plus the Experimental tab in ucc-gui; added RAM-only lid-close keyboard backlight & optional water cooler LED blank/restore with login1/UPower listeners and PowerDevicesTab Lid toggles; fixed all 5 Rust water cooler profile/LED/suspend-resume/power_wc auto-scan causes with 3 m5_9_* regression tests. Verified 474/474 Rust workspace tests across 94 suites (0 Clippy warnings) and 42/42 CTest targets (including test_gui_audit and test_rust_uccd_interop).",
     "Wave 1 (d81a9f3: BUILD-01, IPC-03, DESK-01, M9.7) & Wave 2 (913d1ef: M3.7, M8.8 private-bus interop): Fixed CI MSRV matrix [\"1.89.0\", \"1.99.1\"] (.github/workflows/build.yml); added global read Polkit semaphore (32, 2s timeout), per-sender read (8) & interactive (2) RAII admission guards, and 256 KiB JSON payload bounds across all 14 D-Bus mutators (crates/ucc-dbus); hardened tray bounded action channel (32), disconnect/reconnect loop with disabled controls, confirmed water-cooler readback, non-root guard, session singleton, and ActivateWithToken/preview activation (crates/ucc-desktop); added cross-language C++ UccdClient <-> live Rust LiveUccdBackend private-bus interop suite (crates/uccd/examples/interop_daemon.rs + tests/test_rust_uccd_interop.cpp). Verified 470/470 Rust workspace tests across 94 suites (0 Clippy warnings), 42/42 CTest suites (including test_rust_uccd_interop 8/8), and clean ldd linkage on ucc-gui.",
