@@ -1054,15 +1054,18 @@ impl UccdBackend for LiveUccdBackend {
 
     fn get_nvidia_power_ctrl_default_power_limit(&self) -> i32 {
         if let Some((_, base_w)) = *self.lock_mutex(&self.nvidia_default_power_limit_w) {
-            return base_w.round() as i32;
+            if base_w.is_finite() && base_w > 0.0 {
+                return base_w.round() as i32;
+            }
         }
         self.read_rw(&self.latest_telemetry)
             .as_ref()
             .and_then(|s| s.dgpu.as_ref())
             .and_then(|d| {
                 d.default_power_limit_w
-                    .or(d.max_power_limit_w)
-                    .or(d.enforced_power_limit_w)
+                    .filter(|w| w.is_finite() && *w > 0.0)
+                    .or_else(|| d.max_power_limit_w.filter(|w| w.is_finite() && *w > 0.0))
+                    .or_else(|| d.enforced_power_limit_w.filter(|w| w.is_finite() && *w > 0.0))
             })
             .map(|w| w.round() as i32)
             .unwrap_or(0)
@@ -1072,7 +1075,7 @@ impl UccdBackend for LiveUccdBackend {
         self.read_rw(&self.latest_telemetry)
             .as_ref()
             .and_then(|s| s.dgpu.as_ref())
-            .and_then(|d| d.max_power_limit_w)
+            .and_then(|d| d.max_power_limit_w.filter(|w| w.is_finite() && *w > 0.0))
             .map(|w| w.round() as i32)
             .unwrap_or(0)
     }
@@ -1085,7 +1088,7 @@ impl UccdBackend for LiveUccdBackend {
             .read_rw(&self.latest_telemetry)
             .as_ref()
             .and_then(|s| s.dgpu.as_ref())
-            .is_some_and(|d| d.max_power_limit_w.is_some());
+            .is_some_and(|d| d.max_power_limit_w.is_some_and(|w| w.is_finite() && w > 0.0));
         has_nvml_limit || self.nvidia_ctgp_sysfs_path().is_some()
     }
 

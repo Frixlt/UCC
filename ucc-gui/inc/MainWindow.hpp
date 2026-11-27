@@ -147,6 +147,8 @@ namespace ucc
     void setupFanControlTab();
     void connectFanControlTab();
     void updateProfileEditingWidgets( bool isCustom );
+    void refreshCtgpCapabilities();
+    bool hasValidCtgpRange( int &defaultPower, int &maxPower ) const;
     void updateCtgpVisibility();
     void updateFanCrosshairs();
 
@@ -263,8 +265,10 @@ namespace ucc
     // Device capability flags (queried from daemon at startup)
     bool m_waterCoolerSupported = false;
     bool m_cTGPAdjustmentSupported = false;
+    bool m_nvidiaPowerCtrlAvailable = false;
     bool m_hwpDynamicBoostSupported = false;
     int m_gpuDefaultPowerLimit = 0;  // Default GPU power limit in watts, queried from daemon
+    int m_gpuMaxPowerLimit = 0;      // Max GPU power limit in watts, queried from daemon
 
     // Statusbar connection indicator
     QLabel *m_connectionLabel = nullptr;

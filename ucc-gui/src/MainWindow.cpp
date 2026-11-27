@@ -138,12 +138,9 @@ MainWindow::MainWindow( QWidget *parent )
   // Query device capabilities from daemon
   if ( auto waterCooler = m_UccdClient->getWaterCoolerSupported() )
     m_waterCoolerSupported = *waterCooler;
-  if ( auto ctgp = m_UccdClient->getCTGPAdjustmentSupported() )
-    m_cTGPAdjustmentSupported = *ctgp;
   if ( auto hwpBoost = m_UccdClient->getHwpDynamicBoostSupported() )
     m_hwpDynamicBoostSupported = *hwpBoost;
-  if ( auto gpuDefault = m_UccdClient->getNVIDIAPowerCTRLDefaultPowerLimit() )
-    m_gpuDefaultPowerLimit = *gpuDefault;
+  refreshCtgpCapabilities();
 
   setWindowTitle( "ucc-rusted" );
   resize(1280,900);
@@ -724,10 +721,12 @@ void MainWindow::setupProfilesPage()
 
   // cTGP slider widget (hidden when not supported)
   m_ctgpWidget = new QWidget();
+  m_ctgpWidget->setObjectName("ctgpWidget");
   QHBoxLayout *ctgpLayout = new QHBoxLayout( m_ctgpWidget );
   ctgpLayout->setContentsMargins( 0, 0, 0, 0 );
   m_ctgpLabel = new QLabel( "Configurable TGP" );
   m_ctgpSlider = new QSlider( Qt::Horizontal );
+  m_ctgpSlider->setObjectName("ctgpSlider");
   m_ctgpSlider->setMinimum( 0 );
   m_ctgpSlider->setMaximum( 175 );
   m_ctgpSlider->setValue( 0 );
@@ -2006,14 +2005,13 @@ void MainWindow::loadProfileDetails( const QString &profileId )
     }
   }
   // Load GPU Power (cTGP) setting
-  if ( m_ctgpSlider && m_cTGPAdjustmentSupported )
+  refreshCtgpCapabilities();
+  updateCtgpVisibility();
+  int defaultPower = 0;
+  int maxPower = 0;
+  if ( m_ctgpSlider && hasValidCtgpRange( defaultPower, maxPower ) )
   {
     int ctgpOffset = obj.value( "nvidiaCTGPOffset" ).toInt( 0 );
-
-    int defaultPower = m_gpuDefaultPowerLimit > 0 ? m_gpuDefaultPowerLimit : 80;
-    int maxPower = 175;
-    if ( auto v = m_UccdClient->getNVIDIAPowerCTRLMaxPowerLimit() )
-      maxPower = *v;
 
     m_ctgpSlider->blockSignals( true );
     m_ctgpSlider->setMinimum( defaultPower );
@@ -2201,13 +2199,47 @@ void MainWindow::updateProfileEditingWidgets( bool isCustom )
   if ( m_odmPowerLimit3Slider ) m_odmPowerLimit3Slider->setEnabled( isCustom );
 
   // GPU Power (cTGP) slider
-  if ( m_ctgpSlider ) m_ctgpSlider->setEnabled( isCustom );
+  int ctgpDefault = 0;
+  int ctgpMax = 0;
+  if ( m_ctgpSlider ) m_ctgpSlider->setEnabled( isCustom && hasValidCtgpRange( ctgpDefault, ctgpMax ) );
   // Charging profile
+}
+
+void MainWindow::refreshCtgpCapabilities()
+{
+  m_cTGPAdjustmentSupported = false;
+  m_nvidiaPowerCtrlAvailable = false;
+  m_gpuDefaultPowerLimit = 0;
+  m_gpuMaxPowerLimit = 0;
+  if ( !m_UccdClient )
+    return;
+
+  if ( auto ctgp = m_UccdClient->getCTGPAdjustmentSupported() )
+    m_cTGPAdjustmentSupported = *ctgp;
+  if ( auto avail = m_UccdClient->getNVIDIAPowerCTRLAvailable() )
+    m_nvidiaPowerCtrlAvailable = *avail;
+  if ( auto gpuDefault = m_UccdClient->getNVIDIAPowerCTRLDefaultPowerLimit() )
+    m_gpuDefaultPowerLimit = *gpuDefault;
+  if ( auto gpuMax = m_UccdClient->getNVIDIAPowerCTRLMaxPowerLimit() )
+    m_gpuMaxPowerLimit = *gpuMax;
+}
+
+bool MainWindow::hasValidCtgpRange( int &defaultPower, int &maxPower ) const
+{
+  if ( !m_cTGPAdjustmentSupported || !m_nvidiaPowerCtrlAvailable )
+    return false;
+  if ( m_gpuDefaultPowerLimit <= 0 || m_gpuMaxPowerLimit < m_gpuDefaultPowerLimit )
+    return false;
+  defaultPower = m_gpuDefaultPowerLimit;
+  maxPower = m_gpuMaxPowerLimit;
+  return true;
 }
 
 void MainWindow::updateCtgpVisibility()
 {
-  const bool visible = m_cTGPAdjustmentSupported;
+  int defaultPower = 0;
+  int maxPower = 0;
+  const bool visible = hasValidCtgpRange( defaultPower, maxPower );
 
   if ( m_ctgpHeader )
     m_ctgpHeader->setVisible( visible );
@@ -2295,8 +2327,10 @@ QString MainWindow::buildProfileJSON() const
   m_cpuCoreSelection->writeProfile(cpuObj);
   cpuObj["governor"]                   = m_governorCombo->currentData().toString();
   cpuObj["energyPerformancePreference"] = m_eppCombo ? m_eppCombo->currentData().toString() : QString();
-  cpuObj["scalingMinFrequency"]         = std::clamp( m_minFrequencySlider->value(), m_cpuMinFreqKHz, m_cpuMaxFreqKHz );
-  cpuObj["scalingMaxFrequency"]         = std::clamp( m_maxFrequencySlider->value(), m_cpuMinFreqKHz, m_cpuMaxFreqKHz );
+  const int cpuMinFreqKHz = std::min( m_cpuMinFreqKHz, m_cpuMaxFreqKHz );
+  const int cpuMaxFreqKHz = std::max( m_cpuMinFreqKHz, m_cpuMaxFreqKHz );
+  cpuObj["scalingMinFrequency"]         = std::clamp( m_minFrequencySlider->value(), cpuMinFreqKHz, cpuMaxFreqKHz );
+  cpuObj["scalingMaxFrequency"]         = std::clamp( m_maxFrequencySlider->value(), cpuMinFreqKHz, cpuMaxFreqKHz );
   if ( m_hwpDynamicBoostCheckBox && m_hwpDynamicBoostSupported )
     cpuObj["hwpDynamicBoost"]           = m_hwpDynamicBoostCheckBox->isChecked();
   profileObj["cpu"] = cpuObj;
@@ -2311,12 +2345,20 @@ QString MainWindow::buildProfileJSON() const
   profileObj["odmPowerLimits"] = odmObj;
 
   // GPU Power (cTGP) - embed cTGP offset directly in the profile
-  if ( m_ctgpSlider && m_cTGPAdjustmentSupported )
+  int ctgpDefaultPower = 0;
+  int ctgpMaxPower = 0;
+  if ( m_ctgpSlider && hasValidCtgpRange( ctgpDefaultPower, ctgpMaxPower ) )
   {
-    int sliderValue = m_ctgpSlider->value();
-    int defaultPower = m_gpuDefaultPowerLimit > 0 ? m_gpuDefaultPowerLimit : 80;
-    int ctgpOffset = sliderValue - defaultPower;
+    int sliderValue = std::clamp( m_ctgpSlider->value(), ctgpDefaultPower, ctgpMaxPower );
+    int ctgpOffset = sliderValue - ctgpDefaultPower;
     profileObj["nvidiaCTGPOffset"] = ctgpOffset;
+  }
+  else
+  {
+    const QJsonObject existingObj =
+      QJsonDocument::fromJson( m_profileManager->getProfileDetails( profileId ).toUtf8() ).object();
+    if ( existingObj.contains( "nvidiaCTGPOffset" ) )
+      profileObj["nvidiaCTGPOffset"] = existingObj.value( "nvidiaCTGPOffset" );
   }
 
   // Keyboard - only store the profile reference, not the full state data
@@ -2801,10 +2843,7 @@ void MainWindow::onUccdConnectionChanged( bool connected )
   // Re-query capabilities that are only set at startup
   if ( auto waterCooler = m_UccdClient->getWaterCoolerSupported() )
     m_waterCoolerSupported = *waterCooler;
-  if ( auto ctgp = m_UccdClient->getCTGPAdjustmentSupported() )
-    m_cTGPAdjustmentSupported = *ctgp;
-  if ( auto gpuDefault = m_UccdClient->getNVIDIAPowerCTRLDefaultPowerLimit() )
-    m_gpuDefaultPowerLimit = *gpuDefault;
+  refreshCtgpCapabilities();
 
   updateCtgpVisibility();
 

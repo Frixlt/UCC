@@ -156,6 +156,7 @@ if(DBUS_RUN_SESSION_EXECUTABLE AND BUILD_GUI)
     profileRefreshRateSavesAndChargingLivesOutsideProfiles
     individualCpuSelectionSavesIdsAndPreservesKernelLockedCpu
     profilesUseOneCompactSelector
+    ctgpSliderGuardsUnavailableAndInvertedBounds
     profilePayloadPreservesManualWaterCoolerValues
     batterySettingsRaisesWindowSetsEndBeforeStart
     fanControlPumpComboFindsDiscreteIntCodes

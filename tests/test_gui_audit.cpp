@@ -47,6 +47,8 @@ class AuditDaemon : public QDBusVirtualObject {
   bool coolerAuto=false;
   bool coolerEnabled=false;
   bool chargeWindowTest=false;
+  bool ctgpTest=false,ctgpSupported=false,ctgpAvailable=false;
+  int ctgpDefault=0,ctgpMax=0;
   int chargeStart=40,chargeEnd=80;
   QString chargeType="Custom";
   QString customProfile,lastSavedProfile,chargingMode="stationary";
@@ -84,13 +86,18 @@ public:
     else if(method=="IsWaterCoolerAutoControlEnabled") result=coolerAuto;
     else if (method=="TestVisualFixture") {visualFixture=true;result=true;}
     else if (method=="TestChargeWindow") {chargeWindowTest=true;chargeStart=40;chargeEnd=80;chargeType="Custom";result=true;}
+    else if (method=="TestCtgp") {ctgpTest=true;ctgpSupported=msg.arguments().value(0).toBool();ctgpAvailable=msg.arguments().value(1).toBool();ctgpDefault=msg.arguments().value(2).toInt();ctgpMax=msg.arguments().value(3).toInt();result=true;}
+    else if (ctgpTest && method=="GetCTGPAdjustmentSupported") {result=ctgpSupported;}
+    else if (ctgpTest && method=="GetNVIDIAPowerCTRLAvailable") {result=ctgpAvailable;}
+    else if (ctgpTest && method=="GetNVIDIAPowerCTRLDefaultPowerLimit") {result=ctgpDefault;}
+    else if (ctgpTest && method=="GetNVIDIAPowerCTRLMaxPowerLimit") {result=ctgpMax;}
     else if (chargeWindowTest && method=="GetChargeStartAvailableThresholds") {result=QString("[40,60]");}
     else if (chargeWindowTest && method=="GetChargeEndAvailableThresholds") {result=QString("[80,90,100]");}
     else if (chargeWindowTest && method=="GetChargeType") {result=chargeType;}
     else if (chargeWindowTest && method=="GetChargeStartThreshold") {result=chargeStart;}
     else if (chargeWindowTest && method=="GetChargeEndThreshold") {result=chargeEnd;}
     else if (method=="TestStats") result=QString::fromUtf8(QJsonDocument(QJsonObject{{"writes",writes},{"reads",reads}}).toJson());
-    else if (method=="TestReset") { customProfile.clear();lastSavedProfile.clear();chargingMode="stationary";writes={};reads={};runtimeProfile.clear();driverHealth.clear();lastAppliedProfile.clear();lastDeviceSettings.clear();lastLightbar.clear();failReads=false;failControl=false;visualFixture=false;coolerAuto=false;coolerEnabled=false;chargeWindowTest=false;chargeStart=40;chargeEnd=80;chargeType="Custom";result=true; }
+    else if (method=="TestReset") { customProfile.clear();lastSavedProfile.clear();chargingMode="stationary";writes={};reads={};runtimeProfile.clear();driverHealth.clear();lastAppliedProfile.clear();lastDeviceSettings.clear();lastLightbar.clear();failReads=false;failControl=false;visualFixture=false;coolerAuto=false;coolerEnabled=false;chargeWindowTest=false;ctgpTest=false;ctgpSupported=false;ctgpAvailable=false;ctgpDefault=0;ctgpMax=0;chargeStart=40;chargeEnd=80;chargeType="Custom";result=true; }
     else if (method=="TestFailReads") { failReads=msg.arguments().value(0).toBool();result=true; }
     else if (method=="TriggerLightbarAnimation" || method=="ScanPowerDevices" || method.startsWith("Register") || method.startsWith("Unregister") || method.startsWith("Set") || method.startsWith("TurnOff") || method=="EnableWaterCooler" || method.startsWith("Apply") || method.startsWith("Save") || method.startsWith("Delete") || method.startsWith("Revert")) {
       if(failControl) {bus.send(msg.createReply(false));return true;}
@@ -689,6 +696,39 @@ private slots:
     QCOMPARE(window.findChild<QTextEdit*>()->toPlainText(),QString("Low noise"));
     combo->setCurrentIndex(2);QCOMPARE(combo->currentData().toString(),QString("performance"));
     QVERIFY(stats().value("writes").toArray().isEmpty());
+  }
+  void ctgpSliderGuardsUnavailableAndInvertedBounds() {
+    control("TestVisualFixture");
+    control("TestCustomProfile",{QString(R"({"id":"ctgp-edge","name":"cTGP Edge","nvidiaCTGPOffset":20,"fan":{"fanProfile":"balanced-cooling"}})")});
+    for(const auto& [sup,avail,defW,maxW] : std::array<std::tuple<bool,bool,int,int>,3>{{
+        {true,false,0,0},
+        {true,true,80,0},
+        {true,true,120,80},
+    }}) {
+      control("TestCtgp",{sup,avail,defW,maxW});
+      ucc::MainWindow window;window.resize(1280,900);window.show();
+      auto* nav=window.findChild<QListWidget*>("navigation");QVERIFY(nav);
+      nav->setCurrentRow(1);
+      auto* names=window.findChild<QComboBox*>("profileName");QVERIFY(names);
+      names->setCurrentIndex(names->findData("ctgp-edge"));
+      auto* widget=window.findChild<QWidget*>("ctgpWidget");
+      auto* slider=window.findChild<QSlider*>("ctgpSlider");
+      QVERIFY(widget);QVERIFY(slider);
+      QVERIFY(!widget->isVisible());
+      QVERIFY(!slider->isEnabled());
+    }
+    control("TestCtgp",{true,true,80,175});
+    ucc::MainWindow window;window.resize(1280,900);window.show();
+    window.findChild<QListWidget*>("navigation")->setCurrentRow(1);
+    auto* names=window.findChild<QComboBox*>("profileName");
+    names->setCurrentIndex(names->findData("ctgp-edge"));
+    auto* widget=window.findChild<QWidget*>("ctgpWidget");
+    auto* slider=window.findChild<QSlider*>("ctgpSlider");
+    QVERIFY(widget->isVisibleTo(&window));
+    QVERIFY(slider->isEnabled());
+    QCOMPARE(slider->minimum(),80);
+    QCOMPARE(slider->maximum(),175);
+    QCOMPARE(slider->value(),100);
   }
   void pageEntranceFinishesAfterRapidNavigation() {
     control("TestVisualFixture");
