@@ -13,6 +13,7 @@ pub mod error;
 pub mod legacy;
 pub mod manager;
 pub mod persistence;
+pub mod platform_paths;
 pub mod settings;
 
 pub use defaults::*;
@@ -20,5 +21,6 @@ pub use error::*;
 pub use legacy::*;
 pub use manager::*;
 pub use persistence::*;
+pub use platform_paths::*;
 pub use settings::*;
 pub use ucc_core::*;

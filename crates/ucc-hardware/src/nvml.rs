@@ -580,12 +580,20 @@ pub struct NvmlWrapper {
 }
 
 impl NvmlWrapper {
-    /// Attempts to load `libnvidia-ml.so.1` or `libnvidia-ml.so` (and lazily `libnvidia-api.so.1`)
+    /// Attempts to load `libnvidia-ml.so.1`/`libnvidia-ml.so` (Unix) or `nvml.dll` (Windows)
     pub fn new(power_guard: NvidiaPowerGuard) -> Result<Self, NvmlError> {
-        let lib = unsafe {
-            Library::new("libnvidia-ml.so.1").or_else(|_| Library::new("libnvidia-ml.so"))?
-        };
-        Self::from_library(power_guard, lib, Some(PathBuf::from("libnvidia-api.so.1")))
+        #[cfg(unix)]
+        {
+            let lib = unsafe {
+                Library::new("libnvidia-ml.so.1").or_else(|_| Library::new("libnvidia-ml.so"))?
+            };
+            Self::from_library(power_guard, lib, Some(PathBuf::from("libnvidia-api.so.1")))
+        }
+        #[cfg(windows)]
+        {
+            let lib = unsafe { Library::new("nvml.dll")? };
+            Self::from_library(power_guard, lib, Some(PathBuf::from("nvapi64.dll")))
+        }
     }
 
     /// Loads NVML symbols from an explicit shared-library path without touching host `libnvidia-api.so.1`.

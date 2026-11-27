@@ -6,6 +6,7 @@
 pub mod auth;
 pub mod backend;
 pub mod interface;
+pub mod ipc;
 pub mod proxy;
 
 pub use auth::{
@@ -15,6 +16,10 @@ pub use auth::{
 };
 pub use backend::{DefaultUccdBackend, UccdBackend};
 pub use interface::{UccdInterface, UccdLegacyInterface};
+pub use ipc::{
+    decode_frame, dispatch_json_rpc, encode_frame, IpcRequest, IpcResponse, IpcTransportKind,
+    WINDOWS_NAMED_PIPE_PATH,
+};
 pub use proxy::{UccdLegacyProxy, UccdProxy};
 
 pub const DBUS_SERVICE: &str = "com.uniwill.uccd";

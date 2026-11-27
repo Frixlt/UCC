@@ -5,10 +5,15 @@
 //! is `std::mem::size_of::<*const ()>()` (8 bytes), NOT `4`. This module strictly preserves this
 //! kernel ABI.
 
+#[cfg(unix)]
 use nix::libc;
 use std::ffi::CStr;
-use std::fs::{File, OpenOptions};
+use std::fs::File;
+#[cfg(unix)]
+use std::fs::OpenOptions;
+#[cfg(unix)]
 use std::os::unix::fs::OpenOptionsExt;
+#[cfg(unix)]
 use std::os::unix::io::AsRawFd;
 use std::path::{Path, PathBuf};
 use thiserror::Error;
@@ -238,6 +243,7 @@ impl TuxedoIoDevice {
     pub const DEFAULT_PATH: &'static str = "/dev/tuxedo_io";
 
     /// Opens the device at the given path.
+    #[cfg(unix)]
     pub fn open(path: impl AsRef<Path>) -> Result<Self, IoctlError> {
         let path_buf = path.as_ref().to_path_buf();
         let file = OpenOptions::new()
@@ -255,6 +261,11 @@ impl TuxedoIoDevice {
         })
     }
 
+    #[cfg(not(unix))]
+    pub fn open(_path: impl AsRef<Path>) -> Result<Self, IoctlError> {
+        Err(IoctlError::DeviceUnavailable)
+    }
+
     /// Returns the device path.
     pub fn path(&self) -> &Path {
         &self.path
@@ -265,6 +276,7 @@ impl TuxedoIoDevice {
     /// # Safety
     /// Caller must ensure that `request` is a valid ioctl request code whose ABI expects
     /// a pointer to an `int32_t`.
+    #[cfg(unix)]
     pub unsafe fn read_i32(&self, request: u64) -> Result<i32, IoctlError> {
         if !is_valid_tuxedo_read_i32(request) {
             return Err(IoctlError::PreconditionFailed(
@@ -283,11 +295,17 @@ impl TuxedoIoDevice {
         Ok(val)
     }
 
+    #[cfg(not(unix))]
+    pub unsafe fn read_i32(&self, _request: u64) -> Result<i32, IoctlError> {
+        Err(IoctlError::DeviceUnavailable)
+    }
+
     /// Write an `i32` value via ioctl.
     ///
     /// # Safety
     /// Caller must ensure that `request` is a valid ioctl request code whose ABI expects
     /// a pointer to an `int32_t`.
+    #[cfg(unix)]
     pub unsafe fn write_i32(&self, request: u64, mut val: i32) -> Result<(), IoctlError> {
         if !is_valid_tuxedo_write_i32(request) {
             return Err(IoctlError::PreconditionFailed(
@@ -304,10 +322,16 @@ impl TuxedoIoDevice {
         Ok(())
     }
 
+    #[cfg(not(unix))]
+    pub unsafe fn write_i32(&self, _request: u64, _val: i32) -> Result<(), IoctlError> {
+        Err(IoctlError::DeviceUnavailable)
+    }
+
     /// Execute an ioctl without arguments (such as `W_UW_FANAUTO`).
     ///
     /// # Safety
     /// Caller must ensure that `request` is an `_IO` request code taking no arguments.
+    #[cfg(unix)]
     pub unsafe fn call_none(&self, request: u64) -> Result<(), IoctlError> {
         if !is_valid_tuxedo_call_none(request) {
             return Err(IoctlError::PreconditionFailed(
@@ -322,6 +346,11 @@ impl TuxedoIoDevice {
             });
         }
         Ok(())
+    }
+
+    #[cfg(not(unix))]
+    pub unsafe fn call_none(&self, _request: u64) -> Result<(), IoctlError> {
+        Err(IoctlError::DeviceUnavailable)
     }
 
     /// Maximum buffer size for module and interface version strings per kernel ABI (20 bytes).
@@ -349,6 +378,7 @@ impl TuxedoIoDevice {
     ///
     /// # Safety
     /// Caller must ensure `request` expects a char buffer of at least `max_len` bytes.
+    #[cfg(unix)]
     pub unsafe fn read_str(&self, request: u64, max_len: usize) -> Result<String, IoctlError> {
         if !is_valid_tuxedo_read_str(request) {
             return Err(IoctlError::PreconditionFailed(
@@ -380,10 +410,17 @@ impl TuxedoIoDevice {
         Ok(c_str.to_str()?.to_string())
     }
 
+    #[cfg(not(unix))]
+    pub unsafe fn read_str(&self, _request: u64, _max_len: usize) -> Result<String, IoctlError> {
+        let _ = CStr::from_bytes_until_nul(b"\0");
+        Err(IoctlError::DeviceUnavailable)
+    }
+
     /// Low-level raw ioctl invocation with caller-managed buffer pointers and invariants.
     ///
     /// # Safety
     /// Caller must guarantee `arg` points to valid memory corresponding to `request` ABI requirements.
+    #[cfg(unix)]
     pub unsafe fn raw_ioctl(
         &self,
         request: u64,
@@ -400,8 +437,16 @@ impl TuxedoIoDevice {
     }
 
     /// Checks if this device instance is open and valid.
+    #[cfg(unix)]
     pub fn is_available(&self) -> bool {
+        let _ = &self.file;
         self.file.as_raw_fd() >= 0
+    }
+
+    #[cfg(not(unix))]
+    pub fn is_available(&self) -> bool {
+        let _ = &self.file;
+        false
     }
 
     /// Checks whether the character device file exists on the filesystem.

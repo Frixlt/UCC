@@ -27,6 +27,7 @@ use thiserror::Error;
 pub enum PlatformBackendKind {
     TuxedoIo,
     Uwcc,
+    WindowsWmi,
     Mock,
     #[default]
     Unsupported,

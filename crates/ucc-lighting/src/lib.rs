@@ -4,9 +4,15 @@
 //! `tuxedo_nb04`, `tuxedo_nb05`) via [`SysfsLedTransport`] and deterministic unit testing via
 //! [`MockLightingTransport`], with a clean seam for direct USB `hidraw` transport in `M14`.
 
+pub mod hid_transport;
 pub mod keyboard;
 pub mod lightbar;
 pub mod transport;
+
+pub use hid_transport::{
+    HidDeviceInfo, HidDeviceTransport, MockHidTransport, UniwillHidTransport,
+    ITE_KEYBOARD_PRODUCT_ID, ITE_LIGHTBAR_PRODUCT_IDS, ITE_VENDOR_ID,
+};
 
 pub use keyboard::{
     map_states_by_led_id, BufferInputGuard, KeyboardBacklightController, MECHREVO_ENTER_LED_ID,

@@ -1,10 +1,13 @@
 //! Sysfs and Procfs abstraction layer with type safety, path sandbox isolation,
 //! and write journaling for non-destructive testing and hardware resilience.
 
+#[cfg(unix)]
 use nix::libc;
 use std::fs::{self, OpenOptions};
 use std::io::{self, Write};
+#[cfg(unix)]
 use std::os::unix::fs::OpenOptionsExt;
+#[cfg(unix)]
 use std::os::unix::io::AsRawFd;
 use std::path::{Component, Path, PathBuf};
 use std::str::FromStr;
@@ -200,10 +203,11 @@ impl SysfsRoot {
     pub fn write_string(&self, path: impl AsRef<Path>, data: &str) -> Result<(), SysfsError> {
         let full_path = self.resolve(path.as_ref())?;
         let res = (|| -> io::Result<()> {
-            let mut file = OpenOptions::new()
-                .write(true)
-                .custom_flags(libc::O_NOFOLLOW)
-                .open(&full_path)?;
+            let mut opts = OpenOptions::new();
+            opts.write(true);
+            #[cfg(unix)]
+            opts.custom_flags(libc::O_NOFOLLOW);
+            let mut file = opts.open(&full_path)?;
 
             #[cfg(target_os = "linux")]
             {

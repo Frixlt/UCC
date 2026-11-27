@@ -10,6 +10,7 @@ pub mod platform;
 pub mod sysfs;
 pub mod telemetry;
 pub mod traits;
+pub mod windows_wmi;
 
 pub use cpu::{
     find_closest_value, parse_cpu_range_list, CpuController, CpuInfo, CpuTopology, CpuWorker,
@@ -67,4 +68,7 @@ pub use traits::{
     Clock, GpuBackend, GpuTelemetry, GpuWrite, HardwareIo, HardwareIoWrite, MockClock,
     MockGpuBackend, MockHardwareIo, MockProcessRunner, MockSysfs, ProcessExecution, ProcessOutput,
     ProcessRunner, RealClock, RealProcessRunner, RealSysfs, Sysfs, SysfsWrite,
+};
+pub use windows_wmi::{
+    ec_reg, MockWmiEcTransport, WindowsWmiEcBackend, WmiEcOp, WmiEcTransport, WmiPlatformLimits,
 };
