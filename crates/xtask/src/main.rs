@@ -43,6 +43,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     match task.as_str() {
         "dist" => {
             let target = std::env::var_os("CARGO_TARGET_DIR")
+                .filter(|v| !v.is_empty())
                 .map(PathBuf::from)
                 .unwrap_or_else(|| repo_root().join("target"));
             let dest = args
@@ -727,6 +728,7 @@ fn generate_all_manpages(out_dir: &Path) -> Result<(), Box<dyn std::error::Error
 fn build_fixtures() -> Result<PathBuf, Box<dyn std::error::Error>> {
     let root = repo_root();
     let base_dir = std::env::var_os("UCC_FIXTURES_DIR")
+        .filter(|v| !v.is_empty())
         .map(PathBuf::from)
         .unwrap_or_else(|| {
             std::env::temp_dir().join(format!("ucc-fixtures-{}", std::process::id()))

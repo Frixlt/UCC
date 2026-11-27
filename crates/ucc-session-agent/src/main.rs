@@ -27,14 +27,24 @@ use ucc_session_agent::{
 use zbus::Connection;
 
 fn acquire_single_instance_lock() -> Option<std::fs::File> {
-    let runtime = std::env::var("XDG_RUNTIME_DIR").unwrap_or_else(|_| "/tmp".to_string());
-    let lock_path = PathBuf::from(runtime).join("ucc-session-agent.lock");
-    let file = OpenOptions::new()
-        .create(true)
-        .write(true)
-        .truncate(false)
-        .open(lock_path)
-        .ok()?;
+    let lock_path = match std::env::var("XDG_RUNTIME_DIR") {
+        Ok(dir) if !dir.trim().is_empty() => PathBuf::from(dir).join("ucc-session-agent.lock"),
+        _ => {
+            let uid = unsafe { nix::libc::geteuid() };
+            PathBuf::from(format!("/tmp/ucc-session-agent-{uid}.lock"))
+        }
+    };
+    let mut opts = OpenOptions::new();
+    opts.create(true).write(true).truncate(false);
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::OpenOptionsExt;
+        opts.mode(0o600).custom_flags(nix::libc::O_NOFOLLOW);
+    }
+    let file = opts.open(lock_path).ok()?;
+    if !file.metadata().is_ok_and(|m| m.is_file()) {
+        return None;
+    }
     let rc = unsafe { nix::libc::flock(file.as_raw_fd(), nix::libc::LOCK_EX | nix::libc::LOCK_NB) };
     if rc == 0 {
         Some(file)

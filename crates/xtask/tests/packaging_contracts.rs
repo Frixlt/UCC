@@ -346,3 +346,49 @@ fn t_m11_8_research_probes_excluded_from_runtime_and_attribution_preserved() {
         );
     }
 }
+
+#[test]
+fn t_pkg_09_gui_ldd_invariant_script_and_ci_wiring() {
+    let root = repo_root();
+
+    let script_path = root.join("scripts/check_gui_ldd.sh");
+    assert!(
+        script_path.is_file(),
+        "scripts/check_gui_ldd.sh must exist to enforce ucc-gui shared-library invariants"
+    );
+    let script = std::fs::read_to_string(&script_path)
+        .expect("scripts/check_gui_ldd.sh must be readable UTF-8");
+    assert!(
+        script.contains("ldd"),
+        "scripts/check_gui_ldd.sh must inspect ucc-gui dynamic dependencies via ldd"
+    );
+    assert!(
+        script.contains("not found"),
+        "scripts/check_gui_ldd.sh must fail on unresolved 'not found' shared libraries"
+    );
+    assert!(
+        script.contains("KF6"),
+        "scripts/check_gui_ldd.sh must forbid KF6 linkage in ucc-gui"
+    );
+    let checks_qml_quick = (script.contains("Qt6Qml") && script.contains("Qt6Quick"))
+        || (script.contains("Qt6") && script.contains("Qml") && script.contains("Quick"));
+    assert!(
+        checks_qml_quick,
+        "scripts/check_gui_ldd.sh must forbid Qt6Qml/Qt6Quick linkage in ucc-gui"
+    );
+    assert!(
+        script.contains("Qt6Bluetooth"),
+        "scripts/check_gui_ldd.sh must forbid Qt6Bluetooth linkage in ucc-gui"
+    );
+    assert!(
+        script.contains("libucc-dbus.so") || script.contains(r"libucc-dbus\.so"),
+        "scripts/check_gui_ldd.sh must forbid dynamic libucc-dbus.so linkage in ucc-gui"
+    );
+
+    let build_yml = std::fs::read_to_string(root.join(".github/workflows/build.yml"))
+        .expect(".github/workflows/build.yml must exist");
+    assert!(
+        build_yml.contains("scripts/check_gui_ldd.sh"),
+        ".github/workflows/build.yml must invoke scripts/check_gui_ldd.sh in CI"
+    );
+}

@@ -175,19 +175,44 @@ fn read_json_value(path: &Path) -> Result<Value, String> {
 }
 
 fn write_private_file(path: &Path, content: &str, mode: u32) -> Result<(), String> {
+    use std::io::Write as _;
+
     if let Some(parent) = path.parent() {
         fs::create_dir_all(parent)
             .map_err(|e| format!("Failed to create {}: {e}", parent.display()))?;
     }
-    let tmp = path.with_extension("tmp");
-    fs::write(&tmp, content).map_err(|e| format!("Failed to write {}: {e}", tmp.display()))?;
+    let tmp = path.with_extension(format!("tmp.{}", std::process::id()));
+    let _ = fs::remove_file(&tmp);
+    let mut opts = fs::OpenOptions::new();
+    opts.write(true).create_new(true);
     #[cfg(unix)]
     {
-        use std::os::unix::fs::PermissionsExt;
-        fs::set_permissions(&tmp, fs::Permissions::from_mode(mode))
-            .map_err(|e| format!("Failed to chmod {}: {e}", tmp.display()))?;
+        use std::os::unix::fs::OpenOptionsExt;
+        opts.mode(mode).custom_flags(o_nofollow_flag());
     }
-    fs::rename(&tmp, path).map_err(|e| format!("Failed to replace {}: {e}", path.display()))?;
+    let mut file = opts
+        .open(&tmp)
+        .map_err(|e| format!("Failed to create {}: {e}", tmp.display()))?;
+    let write_res = (|| -> io::Result<()> {
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            file.set_permissions(fs::Permissions::from_mode(mode))?;
+        }
+        file.write_all(content.as_bytes())?;
+        file.sync_all()
+    })();
+    if let Err(e) = write_res {
+        let _ = fs::remove_file(&tmp);
+        return Err(format!("Failed to write {}: {e}", tmp.display()));
+    }
+    drop(file);
+    if let Err(e) = fs::rename(&tmp, path) {
+        let _ = fs::remove_file(&tmp);
+        return Err(format!("Failed to replace {}: {e}", path.display()));
+    }
+    #[cfg(not(unix))]
+    let _ = mode;
     Ok(())
 }
 
@@ -918,14 +943,8 @@ pub fn prepare_deployment(
     fs::create_dir_all(&etc_ucc).map_err(|e| format!("mkdir etc/ucc failed: {e}"))?;
     set_dir_mode(&etc_ucc, 0o755)?;
     let staged_settings = etc_ucc.join("settings");
-    fs::copy(import_dir.join("settings"), &staged_settings)
+    copy_private_regular_file(&import_dir.join("settings"), &staged_settings)
         .map_err(|e| format!("Copy settings failed: {e}"))?;
-    #[cfg(unix)]
-    {
-        use std::os::unix::fs::PermissionsExt;
-        fs::set_permissions(&staged_settings, fs::Permissions::from_mode(0o600))
-            .map_err(|e| format!("chmod staged settings failed: {e}"))?;
-    }
 
     let repo_str = repo_root.display().to_string();
     let commit = run_checked(runner, "git", &["-C", &repo_str, "rev-parse", "HEAD"], &[])?
@@ -1076,6 +1095,29 @@ pub struct DeploymentState {
     pub units: BTreeMap<String, UnitSnapshot>,
 }
 
+fn sanitize_root_relative_path(abs_path: &str) -> Result<PathBuf, String> {
+    if abs_path.is_empty() || abs_path.contains('\0') {
+        return Err(format!("Invalid deployment path: {abs_path:?}"));
+    }
+    let stripped = abs_path.trim_start_matches('/');
+    let mut rel = PathBuf::new();
+    for comp in Path::new(stripped).components() {
+        match comp {
+            Component::Normal(seg) => rel.push(seg),
+            Component::CurDir => {}
+            Component::ParentDir | Component::RootDir | Component::Prefix(_) => {
+                return Err(format!(
+                    "Path traversal or invalid component rejected in deployment path: {abs_path}"
+                ));
+            }
+        }
+    }
+    if rel.as_os_str().is_empty() {
+        return Err(format!("Empty relative deployment path: {abs_path:?}"));
+    }
+    Ok(rel)
+}
+
 /// Manages staged package installation, post-install verification, and atomic rollback.
 pub struct DeploymentManager<'a> {
     pub bundle: PathBuf,
@@ -1118,26 +1160,7 @@ impl<'a> DeploymentManager<'a> {
     }
 
     fn sanitize_root_relative_path(abs_path: &str) -> Result<PathBuf, String> {
-        if abs_path.is_empty() || abs_path.contains('\0') {
-            return Err(format!("Invalid deployment path: {abs_path:?}"));
-        }
-        let stripped = abs_path.trim_start_matches('/');
-        let mut rel = PathBuf::new();
-        for comp in Path::new(stripped).components() {
-            match comp {
-                Component::Normal(seg) => rel.push(seg),
-                Component::CurDir => {}
-                Component::ParentDir | Component::RootDir | Component::Prefix(_) => {
-                    return Err(format!(
-                        "Path traversal or invalid component rejected in deployment path: {abs_path}"
-                    ));
-                }
-            }
-        }
-        if rel.as_os_str().is_empty() {
-            return Err(format!("Empty relative deployment path: {abs_path:?}"));
-        }
-        Ok(rel)
+        sanitize_root_relative_path(abs_path)
     }
 
     fn path(&self, abs_path: &str) -> Result<PathBuf, String> {
@@ -1767,12 +1790,24 @@ impl<'a> DesktopTransition<'a> {
         let _ = run_unchecked(self.runner, "systemctl", &stop_args);
 
         for (relative, existed) in &state.files {
-            let target = self.home.join(relative);
+            if relative.starts_with('/') {
+                return Err(format!("Absolute transition path rejected: {relative}"));
+            }
+            let safe_rel = sanitize_root_relative_path(relative)?;
+            let target = self.home.join(&safe_rel);
+            if let Ok(meta) = fs::symlink_metadata(&target) {
+                if meta.file_type().is_symlink() {
+                    return Err(format!(
+                        "Refusing to restore desktop file over symlink: {}",
+                        target.display()
+                    ));
+                }
+            }
             if *existed {
                 if let Some(parent) = target.parent() {
                     fs::create_dir_all(parent).map_err(|e| format!("mkdir restore failed: {e}"))?;
                 }
-                fs::copy(self.directory.join("files").join(relative), &target)
+                fs::copy(self.directory.join("files").join(&safe_rel), &target)
                     .map_err(|e| format!("Restore copy failed for {}: {e}", target.display()))?;
             } else {
                 match fs::remove_file(&target) {
