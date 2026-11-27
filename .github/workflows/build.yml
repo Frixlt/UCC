@@ -130,6 +130,9 @@ jobs:
       - name: Build
         run: runuser -u ucc-ci -- cmake --build build --parallel 2
 
+      - name: Verify ucc-gui ldd invariants (M12.7 / ADR-01)
+        run: runuser -u ucc-ci -- bash scripts/check_gui_ldd.sh build/bin/ucc-gui
+
       - name: Run tests
         working-directory: build
         run: |
@@ -146,7 +149,7 @@ jobs:
             -DBUILD_TRAY=OFF \
             -DBUILD_TESTS=ON
           runuser -u ucc-ci -- cmake --build build-rust-runtime --parallel 2
-          ! runuser -u ucc-ci -- ldd build-rust-runtime/bin/ucc-gui | grep -q 'not found'
+          runuser -u ucc-ci -- bash scripts/check_gui_ldd.sh build-rust-runtime/bin/ucc-gui
           runuser -u ucc-ci -- env UCC_INTEROP_DAEMON_BIN="$GITHUB_WORKSPACE/ci-interop/interop_daemon" \
             ctest --test-dir build-rust-runtime --output-on-failure --parallel 2
 
@@ -161,7 +164,8 @@ jobs:
             -DBUILD_TRAY=OFF \
             -DBUILD_TESTS=ON
           runuser -u ucc-ci -- cmake --build build-preview --parallel 2 --target test_gui_audit test_gui_instance test_app_logging ucc-gui
-          runuser -u ucc-ci -- ctest --test-dir build-preview -R "^(test_gui_audit_preview_gallery|test_gui_instance|test_app_logging)$" --output-on-failure
+          runuser -u ucc-ci -- bash scripts/check_gui_ldd.sh build-preview/bin/ucc-gui
+          runuser -u ucc-ci -- ctest --test-dir build-preview -R "^(test_gui_audit_preview_gallery|test_gui_instance|test_app_logging|test_gui_ldd_invariants)$" --output-on-failure
 
       - name: Capture current GUI pages on an isolated bus
         run: runuser -u ucc-ci -- python3 contrib/frixit/capture-gallery.py --build build --output artifacts/ci-gallery

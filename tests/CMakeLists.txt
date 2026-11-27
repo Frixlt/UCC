@@ -291,6 +291,12 @@ if(BUILD_GUI)
   if(UCC_READ_ONLY_PREVIEW)
     target_compile_definitions(test_app_logging PRIVATE UCC_READ_ONLY_PREVIEW)
   endif()
+  if(TARGET ucc-gui)
+    add_test(
+      NAME test_gui_ldd_invariants
+      COMMAND bash ${CMAKE_SOURCE_DIR}/scripts/check_gui_ldd.sh $<TARGET_FILE:ucc-gui>
+    )
+  endif()
 endif()
 
 if(TARGET test_gui_audit)

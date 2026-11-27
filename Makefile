@@ -1,4 +1,4 @@
-.PHONY: all dist clean distclean print-name help build rpm srpm deb arch nix
+.PHONY: all dist clean distclean print-name help build check-gui-ldd rpm srpm deb arch nix
 
 # Extract version from CMakeLists.txt (preferred method)
 VERSION := $(shell grep -E 'VERSION\s+[0-9]+\.[0-9]+\.[0-9]+' CMakeLists.txt | head -1 | grep -oE '[0-9]+\.[0-9]+\.[0-9]+')
@@ -31,6 +31,7 @@ help:
 	@echo ""
 	@echo "Build targets:"
 	@echo "  make build              Build the project locally"
+	@echo "  make check-gui-ldd      Verify ucc-gui ldd invariants (M12.7 / ADR-01)"
 	@echo "  make clean              Clean build artifacts"
 	@echo ""
 	@echo "Package targets:"
@@ -53,6 +54,9 @@ build:
 		-DCMAKE_INSTALL_PREFIX=/usr -DCMAKE_INSTALL_LIBDIR=lib \
 		-DBUILD_TRAY=OFF -DBUILD_CLI=OFF -DUCC_PACKAGE_RUST_RUNTIME=ON
 	cmake --build build --parallel 2
+
+check-gui-ldd:
+	bash scripts/check_gui_ldd.sh build/bin/ucc-gui
 
 clean:
 	@echo "Cleaning build artifacts..."

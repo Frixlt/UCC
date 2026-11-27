@@ -114,18 +114,12 @@ include_directories( ${CMAKE_SOURCE_DIR}/include ${CMAKE_BINARY_DIR}/include )
 
 
 # Subdirectories
-# User-initiated tray activation on Wayland needs the compositor's token.
+# User-initiated tray activation on Wayland uses native Qt6 XDG_ACTIVATION_TOKEN
+# forwarding (ADR-01 / M12.7: ucc-gui must never link KF6WindowSystem).
 add_library(ucc-window-activation INTERFACE)
-if(BUILD_GUI AND NOT UCC_PACKAGE_RUST_RUNTIME)
-  find_package(KF6WindowSystem QUIET)
-  if(TARGET KF6::WindowSystem)
-    target_link_libraries(ucc-window-activation INTERFACE KF6::WindowSystem)
-    target_compile_definitions(ucc-window-activation INTERFACE UCC_HAVE_KWINDOWSYSTEM)
-  endif()
-endif()
 
 add_library(ucc-native-tray INTERFACE)
-if((BUILD_GUI OR BUILD_DESKTOP_TRAY) AND NOT UCC_PACKAGE_RUST_RUNTIME)
+if(BUILD_DESKTOP_TRAY AND NOT UCC_PACKAGE_RUST_RUNTIME)
   find_package(KF6StatusNotifierItem QUIET)
   if(TARGET KF6::StatusNotifierItem)
     target_link_libraries(ucc-native-tray INTERFACE KF6::StatusNotifierItem)
