@@ -78,7 +78,8 @@
       "actual": "References point to non-existent uccd/src/config/ProfileState.h and Config.h",
       "consequence": "Agent confusion and file-not-found errors",
       "suggested_direction": "Map references to uccd/inc/TccSettings.hpp, PowerPolicy.hpp, SettingsManager.hpp",
-      "status": "open"
+      "status": "resolved",
+      "resolution": "Verified zero remaining references to non-existent uccd/src/config/ProfileState.h or Config.h across docs/rust/."
     },
     {
       "id": "FINDING-V2-06",
@@ -948,7 +949,7 @@
     {
       "id": "IPC-03",
       "priority": "P1",
-      "verification": "source_review",
+      "verification": "verified",
       "title": "Доверие и нагрузка Polkit не ограничены на границе",
       "locations": [
         "crates/ucc-dbus/src/auth.rs:87",
@@ -958,8 +959,8 @@
       ],
       "evidence": "Отсутствующий sender проходит. Переменная окружения отключает проверку. `unix-process` строится только по PID с нулевым start-time. Нет подтверждённых лимитов payload, concurrent prompts, cancellation на disconnect или backend queue. Для обычного system bus sender даёт шина, обход через отсутствующий sender на ней не заявлен.",
       "acceptance": "Явно ограничить trusted peer/test bypass. Использовать устойчивые credentials, bounded admission, deadlines и размер запросов. Прогнать разные UID, PID reuse, disconnect, slow Polkit, перегрузку и чтения без UI prompt.",
-      "status": "open",
-      "resolution": "Interactive authorization is concurrency-limited and timed out. Read authorization has a deadline. Per-client read-load behavior and the full overload matrix await acceptance."
+      "status": "resolved",
+      "resolution": "d81a9f3 added global read Polkit semaphore (32, 2s timeout), per-sender read (8) and interactive (2) RAII admission guards, and 256 KiB JSON payload bounds across all 14 D-Bus mutators, verified by t_sec_ipc03_per_sender_read_load_bounded_without_starving_other_clients and t_sec_ipc03_oversized_json_payloads_rejected_before_auth_and_backend in crates/ucc-dbus/tests/audit_security_regressions.rs."
     },
     {
       "id": "IPC-04",
@@ -1096,7 +1097,7 @@
     {
       "id": "DESK-01",
       "priority": "P2",
-      "verification": "reproduced",
+      "verification": "verified",
       "title": "Трей принимает отправку в очередь за применение настройки",
       "locations": [
         "crates/ucc-desktop/src/tray.rs:26",
@@ -1105,13 +1106,13 @@
       ],
       "evidence": "Receiver существует и получил ToggleFanAuto, но ещё ничего не применил. Трей сразу показывает Max. Аналогичное обновление есть для профиля, очередь unbounded. Закрытый канал уже не обновляет состояние.",
       "acceptance": "Отдельные pending и подтверждённый state от backend, bounded queue, отказ и sync после reconnect. Проверить отрицательное подтверждение, перестановку ответов и invalid profile id.",
-      "status": "open",
-      "resolution": "Tray now waits for the daemon RPC response for profile switches. Reconnect and confirmed water cooler state when readback fails still need acceptance."
+      "status": "resolved",
+      "resolution": "d81a9f3 added bounded mpsc::channel(32) tray action queue, daemon disconnect/reconnect loop with disabled controls and \"Service unavailable\" state, confirmed water-cooler readback, non-root guard, session D-Bus singleton, and ActivateWithToken/preview activation, verified by crates/ucc-desktop/tests/desk01_and_activation.rs."
     },
     {
       "id": "BUILD-01",
       "priority": "P1",
-      "verification": "source_review",
+      "verification": "verified",
       "title": "Заявленный MSRV 1.85 несовместим с зависимостями из lockfile",
       "locations": [
         "Cargo.toml:15",
@@ -1119,8 +1120,8 @@
       ],
       "evidence": "`rust-version` не наследуется крейтами. Lockfile разрешает активные Linux зависимости `zbus 5.19.0` с Rust 1.87 и `uuid 1.29.1` с 1.89. Прогоны сделаны на 1.99.1.",
       "acceptance": "Выбрать фактический MSRV, наследовать его, закрепить проверяемый toolchain и добавить locked CI на MSRV и актуальном toolchain.",
-      "status": "partial",
-      "resolution": "Workspace MSRV and locked dependency metadata agree at 1.89. Workspace and Clippy verified using pinned Rust 1.99.1; CI at the minimum remains open."
+      "status": "resolved",
+      "resolution": "d81a9f3 added locked CI MSRV matrix [\"1.89.0\", \"1.99.1\"] using dtolnay/rust-toolchain@master in .github/workflows/build.yml."
     },
     {
       "id": "TEST-01",

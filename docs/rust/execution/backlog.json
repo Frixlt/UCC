@@ -877,8 +877,8 @@
       "milestone": "M3",
       "wave": "V3",
       "title": "Проверить Rust CLI → C++ daemon и C++ test-client → Rust fake/daemon backend на private bus.",
-      "status": "partially_verified; pending_cross_language_daemon_test",
-      "status_basis": "Rust CLI validated against pure-Rust D-Bus daemon backend on private session bus in crates/ucc-cli/tests/cli_daemon_integration.rs; bidirectional cross-language verification (Rust CLI -> C++ daemon and C++ test-client -> Rust backend) requires built C++ binary in integration environment",
+      "status": "done",
+      "status_basis": "Bidirectional cross-language verification complete on private D-Bus: Rust CLI against pure-Rust D-Bus backend (crates/ucc-cli/tests/cli_daemon_integration.rs) and C++ Qt6 UccdClient against live Rust LiveUccdBackend (tests/test_rust_uccd_interop.cpp + crates/uccd/examples/interop_daemon.rs) passed 8/8 slots in CTest (913d1ef).",
       "suggested_role": "R2",
       "assigned_agent_id": "dc3756a1-00c7-4a63-bba9-a45584f5f133",
       "depends_on": [
@@ -887,18 +887,23 @@
       ],
       "dependency_refinement_required": false,
       "owned_paths": [
-        "crates/ucc-cli/tests/cli_daemon_integration.rs"
+        "crates/ucc-cli/tests/cli_daemon_integration.rs",
+        "crates/uccd/examples/interop_daemon.rs",
+        "tests/test_rust_uccd_interop.cpp",
+        "tests/run_rust_interop_test.sh"
       ],
       "feature_ids": [],
       "test_ids": [
-        "cli_daemon_integration"
+        "cli_daemon_integration",
+        "test_rust_uccd_interop"
       ],
       "implementation_sha": "7210962",
       "r1_review": "accepted",
       "r2_evidence": [
-        "crates/ucc-cli/tests/cli_daemon_integration.rs"
+        "crates/ucc-cli/tests/cli_daemon_integration.rs",
+        "tests/test_rust_uccd_interop.cpp"
       ],
-      "integration_sha": "9d15b7c",
+      "integration_sha": "913d1ef",
       "children": [],
       "blockers": []
     },
@@ -2027,19 +2032,27 @@
       "milestone": "M8",
       "wave": "V8",
       "title": "Старый C++ GUI/CLI тестируется с новым Rust daemon на изолированной шине и затем в управляемом аппаратном переходе.",
-      "status": "planned",
-      "status_basis": "No Rust implementation or test result is claimed.",
+      "status": "verified_on_private_bus; physical_host_acceptance_open",
+      "status_basis": "C++ Qt6 UccdClient interoperability with live Rust LiveUccdBackend verified across 8/8 QtTest slots (metadata, false propagation T-CLIENT-01, water cooler/keyboard custom profiles T-CLIENT-02, profile signals, snapshot/binary history, and daemon restart reconnect T-CLIENT-12) in tests/test_rust_uccd_interop.cpp (913d1ef); live hardware host cutover remains open.",
       "suggested_role": null,
       "assigned_agent_id": null,
       "depends_on": [],
-      "dependency_refinement_required": true,
-      "owned_paths": [],
+      "dependency_refinement_required": false,
+      "owned_paths": [
+        "crates/uccd/examples/interop_daemon.rs",
+        "tests/test_rust_uccd_interop.cpp",
+        "tests/run_rust_interop_test.sh"
+      ],
       "feature_ids": [],
-      "test_ids": [],
-      "implementation_sha": null,
+      "test_ids": [
+        "test_rust_uccd_interop"
+      ],
+      "implementation_sha": "913d1ef",
       "r1_review": null,
-      "r2_evidence": [],
-      "integration_sha": null,
+      "r2_evidence": [
+        "tests/test_rust_uccd_interop.cpp"
+      ],
+      "integration_sha": "913d1ef",
       "children": [],
       "blockers": []
     },
@@ -2207,19 +2220,27 @@
       "milestone": "M9",
       "wave": "V9",
       "title": "Реализовать GUI activation endpoint с token forwarding и отдельные service names preview.",
-      "status": "planned",
-      "status_basis": "No Rust implementation or test result is claimed.",
+      "status": "done",
+      "status_basis": "Implemented ActivateWithToken / Activate D-Bus handoff, preview bus names (com.uniwill.UccGuiPreview / com.uniwill.UccDesktopTrayPreview), --show launch fallback, singleton lock, and non-root guard in crates/ucc-desktop, verified by crates/ucc-desktop/tests/desk01_and_activation.rs (d81a9f3).",
       "suggested_role": null,
       "assigned_agent_id": null,
       "depends_on": [],
-      "dependency_refinement_required": true,
-      "owned_paths": [],
+      "dependency_refinement_required": false,
+      "owned_paths": [
+        "crates/ucc-desktop/src/launcher.rs",
+        "crates/ucc-desktop/src/main.rs",
+        "crates/ucc-desktop/tests/desk01_and_activation.rs"
+      ],
       "feature_ids": [],
-      "test_ids": [],
-      "implementation_sha": null,
+      "test_ids": [
+        "desk01_and_activation"
+      ],
+      "implementation_sha": "d81a9f3",
       "r1_review": null,
-      "r2_evidence": [],
-      "integration_sha": null,
+      "r2_evidence": [
+        "crates/ucc-desktop/tests/desk01_and_activation.rs"
+      ],
+      "integration_sha": "d81a9f3",
       "children": [],
       "blockers": []
     },
