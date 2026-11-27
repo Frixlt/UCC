@@ -56,7 +56,7 @@ pub use ioctl::{
     TuxedoIoDevice,
 };
 pub use nvml::{
-    windows_nvml_candidate_paths, GpuRuntimeStatus, NvidiaPowerGuard, NvmlError, NvmlMemory,
+    windows_nvapi_candidate_path, windows_nvml_candidate_paths, GpuRuntimeStatus, NvidiaPowerGuard, NvmlError, NvmlMemory,
     NvmlTelemetry, NvmlTelemetrySnapshot, NvmlUtilization, NvmlWrapper,
 };
 pub use platform::{
