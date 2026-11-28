@@ -695,3 +695,127 @@ async fn t_sec_ipc03_oversized_json_payloads_rejected_before_auth_and_backend() 
         auth.recorded_actions()
     );
 }
+
+struct LaneIsolationBackend {
+    charging_in_flight: AtomicUsize,
+    charging_gate: Arc<tokio::sync::Notify>,
+    display_calls: AtomicUsize,
+    lighting_calls: AtomicUsize,
+}
+
+impl UccdBackend for LaneIsolationBackend {
+    fn set_charge_start_threshold(&self, _value: i32) -> bool {
+        self.charging_in_flight.fetch_add(1, Ordering::SeqCst);
+        let rt = tokio::runtime::Builder::new_current_thread()
+            .enable_time()
+            .build()
+            .unwrap();
+        rt.block_on(async {
+            let _ = tokio::time::timeout(Duration::from_secs(3), self.charging_gate.notified())
+                .await;
+        });
+        self.charging_in_flight.fetch_sub(1, Ordering::SeqCst);
+        true
+    }
+
+    fn set_display_brightness(&self, _brightness: i32) -> bool {
+        self.display_calls.fetch_add(1, Ordering::SeqCst);
+        true
+    }
+
+    fn trigger_lightbar_animation(&self, _force: bool) -> bool {
+        self.lighting_calls.fetch_add(1, Ordering::SeqCst);
+        true
+    }
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn offload_lane_isolation_across_independent_lanes() {
+    let daemon = PrivateDbusDaemon::spawn();
+    let backend = Arc::new(LaneIsolationBackend {
+        charging_in_flight: AtomicUsize::new(0),
+        charging_gate: Arc::new(tokio::sync::Notify::new()),
+        display_calls: AtomicUsize::new(0),
+        lighting_calls: AtomicUsize::new(0),
+    });
+
+    let server_conn = Builder::address(daemon.address.as_str())
+        .unwrap()
+        .name("com.uniwill.uccd")
+        .unwrap()
+        .build()
+        .await
+        .unwrap();
+    register_uccd_service(&server_conn, backend.clone(), Arc::new(AllowAllAuthorizer))
+        .await
+        .unwrap();
+
+    let client_conn = Builder::address(daemon.address.as_str())
+        .unwrap()
+        .build()
+        .await
+        .unwrap();
+    let proxy = UccdProxy::builder(&client_conn)
+        .destination("com.uniwill.uccd")
+        .unwrap()
+        .path(DBUS_PATH)
+        .unwrap()
+        .build()
+        .await
+        .unwrap();
+
+    // Saturate the Charging lane (capacity = 4) with 6 blocked calls.
+    let mut charging_handles = Vec::new();
+    for _ in 0..6 {
+        let p = proxy.clone();
+        charging_handles.push(tokio::spawn(async move {
+            p.set_charge_start_threshold(40).await
+        }));
+    }
+
+    // Wait until all 4 Charging lane permits are occupied.
+    for _ in 0..100 {
+        if backend.charging_in_flight.load(Ordering::SeqCst) == 4 {
+            break;
+        }
+        tokio::time::sleep(Duration::from_millis(10)).await;
+    }
+    assert_eq!(
+        backend.charging_in_flight.load(Ordering::SeqCst),
+        4,
+        "Charging lane must be saturated with 4 in-flight calls"
+    );
+
+    // Independent Display and Lighting lanes must complete promptly without blocking.
+    let display_ok = tokio::time::timeout(
+        Duration::from_millis(400),
+        proxy.set_display_brightness(80),
+    )
+    .await
+    .expect("Display lane must not be blocked by saturated Charging lane")
+    .expect("SetDisplayBrightness RPC should succeed");
+    assert!(display_ok);
+
+    let lighting_ok = tokio::time::timeout(
+        Duration::from_millis(400),
+        proxy.trigger_lightbar_animation(true),
+    )
+    .await
+    .expect("Lighting lane must not be blocked by saturated Charging lane")
+    .expect("TriggerLightbarAnimation RPC should succeed");
+    assert!(lighting_ok);
+
+    assert_eq!(backend.display_calls.load(Ordering::SeqCst), 1);
+    assert_eq!(backend.lighting_calls.load(Ordering::SeqCst), 1);
+    assert_eq!(
+        backend.charging_in_flight.load(Ordering::SeqCst),
+        4,
+        "Charging lane should still be blocked while Display and Lighting completed"
+    );
+
+    // Release blocked Charging lane workers cleanly.
+    backend.charging_gate.notify_waiters();
+    for handle in charging_handles {
+        let _ = handle.await;
+    }
+}

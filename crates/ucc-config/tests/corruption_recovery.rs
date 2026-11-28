@@ -648,3 +648,64 @@ fn m12_5_fuzz_smoke_malformed_settings_never_panics() {
         let _ = is_valid_settings_content(&lossy);
     }
 }
+
+#[test]
+fn readonly_target_file_rejected_cross_platform_and_no_temp_left() {
+    #[cfg(unix)]
+    {
+        if unsafe { libc::geteuid() == 0 } {
+            return;
+        }
+    }
+
+    struct ReadonlyGuard(PathBuf);
+    impl Drop for ReadonlyGuard {
+        fn drop(&mut self) {
+            if let Ok(meta) = fs::metadata(&self.0) {
+                let mut perms = meta.permissions();
+                #[allow(clippy::permissions_set_readonly_false)]
+                perms.set_readonly(false);
+                let _ = fs::set_permissions(&self.0, perms);
+            }
+        }
+    }
+
+    let temp_dir = tempfile::tempdir().expect("create tempdir");
+    let config_file = temp_dir.path().join("settings.json");
+    let mgr = ConfigManager::with_custom_path(&config_file);
+
+    let initial = create_default_settings();
+    mgr.save(&initial).expect("initial write");
+    let initial_content = fs::read_to_string(&config_file).expect("read initial");
+
+    let mut perms = fs::metadata(&config_file)
+        .expect("read metadata")
+        .permissions();
+    perms.set_readonly(true);
+    fs::set_permissions(&config_file, perms).expect("set readonly");
+    let _guard = ReadonlyGuard(config_file.clone());
+
+    let mut modified = initial;
+    modified.charging_profile = Some("should_not_persist".to_string());
+    let err = mgr
+        .save(&modified)
+        .expect_err("write to readonly target must fail");
+    assert!(
+        matches!(err, ConfigError::PermissionDenied(_)),
+        "expected PermissionDenied, got {err:?}"
+    );
+
+    let content_after = fs::read_to_string(&config_file).expect("read after failed write");
+    assert_eq!(content_after, initial_content);
+
+    let temp_files_count = fs::read_dir(temp_dir.path())
+        .expect("read tempdir")
+        .filter_map(Result::ok)
+        .filter(|e| {
+            let name = e.file_name();
+            let s = name.to_string_lossy();
+            s.contains(".tmp.") || s.contains(".tmp_restore.")
+        })
+        .count();
+    assert_eq!(temp_files_count, 0, "no temporary files may remain");
+}

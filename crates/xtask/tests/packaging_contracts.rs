@@ -392,3 +392,157 @@ fn t_pkg_09_gui_ldd_invariant_script_and_ci_wiring() {
         ".github/workflows/build.yml must invoke scripts/check_gui_ldd.sh in CI"
     );
 }
+
+#[test]
+fn check_versions_cli_and_kernel_dkms_packaging_contracts() {
+    use std::process::Command;
+
+    let root = repo_root();
+    let output = Command::new(env!("CARGO_BIN_EXE_xtask"))
+        .arg("check-versions")
+        .output()
+        .expect("xtask check-versions must run");
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        output.status.success(),
+        "xtask check-versions failed:\nstdout:\n{stdout}\nstderr:\n{stderr}"
+    );
+
+    let workspace_version = stdout
+        .lines()
+        .find_map(|line| line.strip_prefix("Cargo.toml: "))
+        .map(str::trim)
+        .expect("check-versions output must report Cargo.toml version");
+    assert!(
+        !workspace_version.is_empty(),
+        "Cargo.toml workspace version must not be empty"
+    );
+
+    for manifest in [
+        "Cargo.toml",
+        "CMakeLists.txt",
+        "PKGBUILD",
+        "ucc.spec",
+        "package.nix",
+        "debian/changelog",
+    ] {
+        let expected_line = format!("{manifest}: {workspace_version}");
+        assert!(
+            stdout.lines().any(|line| line.trim() == expected_line),
+            "check-versions output missing '{expected_line}':\n{stdout}"
+        );
+    }
+    let summary = format!("All 6 versioned manifests match {workspace_version}");
+    assert!(
+        stdout.contains(&summary),
+        "check-versions summary missing '{summary}':\n{stdout}"
+    );
+
+    let dkms_conf = std::fs::read_to_string(root.join("kernel/uwcc-rs/dkms.conf"))
+        .expect("kernel/uwcc-rs/dkms.conf must exist");
+    assert!(
+        dkms_conf.contains("PACKAGE_NAME=\"uwcc-rs\""),
+        "kernel/uwcc-rs/dkms.conf must set PACKAGE_NAME=\"uwcc-rs\""
+    );
+    let expected_dkms_ver = format!("PACKAGE_VERSION=\"{workspace_version}\"");
+    assert!(
+        dkms_conf.contains(&expected_dkms_ver),
+        "kernel/uwcc-rs/dkms.conf must contain {expected_dkms_ver}"
+    );
+    assert!(
+        dkms_conf.contains("BUILT_MODULE_NAME[0]=\"uwcc_rs\""),
+        "kernel/uwcc-rs/dkms.conf must build uwcc_rs module"
+    );
+    assert!(
+        dkms_conf.contains("AUTOINSTALL=\"yes\""),
+        "kernel/uwcc-rs/dkms.conf must set AUTOINSTALL=\"yes\""
+    );
+
+    let kernel_pkgbuild =
+        std::fs::read_to_string(root.join("kernel/uwcc-rs/packaging/arch/PKGBUILD"))
+            .expect("kernel/uwcc-rs/packaging/arch/PKGBUILD must exist");
+    assert!(
+        kernel_pkgbuild.contains("pkgname=uwcc-dkms"),
+        "kernel PKGBUILD must define pkgname=uwcc-dkms"
+    );
+    let expected_pkgver = format!("pkgver={workspace_version}");
+    assert!(
+        kernel_pkgbuild.contains(&expected_pkgver),
+        "kernel PKGBUILD must contain {expected_pkgver}"
+    );
+    assert!(
+        kernel_pkgbuild.contains("conflicts=('tuxedo-drivers-dkms')"),
+        "kernel PKGBUILD must conflict with tuxedo-drivers-dkms"
+    );
+    assert!(
+        kernel_pkgbuild.contains("provides=('uwcc-driver')"),
+        "kernel PKGBUILD must provide uwcc-driver"
+    );
+
+    for rel in [
+        "Kbuild",
+        "Makefile",
+        "dkms.conf",
+        "include/uapi/uwcc.h",
+        "src/acpi_shim.h",
+        "src/acpi_shim.c",
+        "src/uwcc_rs.rs",
+        "src/ring_buffer.rs",
+        "src/validation.rs",
+        "udev/99-uwcc.rules",
+        "modprobe/uwcc-blacklist-tuxedo.conf",
+    ] {
+        assert!(
+            kernel_pkgbuild.contains(rel),
+            "kernel PKGBUILD must install {rel}"
+        );
+        assert!(
+            root.join("kernel/uwcc-rs").join(rel).is_file(),
+            "kernel/uwcc-rs/{rel} referenced by kernel PKGBUILD must exist"
+        );
+    }
+}
+
+#[test]
+fn migration_plan_and_russian_readme_packaging_contracts() {
+    let root = repo_root();
+
+    let migration_plan_path = root.join("docs/rust/MIGRATION_PLAN.md");
+    assert!(
+        migration_plan_path.is_file(),
+        "docs/rust/MIGRATION_PLAN.md must exist"
+    );
+    let migration_plan = std::fs::read_to_string(&migration_plan_path)
+        .expect("docs/rust/MIGRATION_PLAN.md must be readable UTF-8");
+    assert!(
+        !migration_plan.trim().is_empty(),
+        "docs/rust/MIGRATION_PLAN.md must not be empty"
+    );
+    assert!(
+        migration_plan.contains("kernel/uwcc-rs/") && migration_plan.contains("uccd"),
+        "docs/rust/MIGRATION_PLAN.md must document uccd and kernel/uwcc-rs/"
+    );
+
+    let readme_ru_path = root.join("README.ru.md");
+    assert!(readme_ru_path.is_file(), "README.ru.md must exist");
+    let readme_ru =
+        std::fs::read_to_string(&readme_ru_path).expect("README.ru.md must be readable UTF-8");
+    assert!(
+        !readme_ru.trim().is_empty(),
+        "README.ru.md must not be empty"
+    );
+
+    let cmake = std::fs::read_to_string(root.join("CMakeLists.txt"))
+        .expect("CMakeLists.txt must exist");
+    let installs_readme_ru = cmake.lines().any(|line| {
+        let trimmed = line.trim();
+        trimmed.starts_with("install(FILES")
+            && trimmed.contains("README.ru.md")
+            && trimmed.contains("DESTINATION share/doc/ucc")
+    });
+    assert!(
+        installs_readme_ru,
+        "CMakeLists.txt must install README.ru.md to share/doc/ucc"
+    );
+}

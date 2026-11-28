@@ -197,3 +197,73 @@ fn test_atomic_write_backup_and_recovery() {
         "Must recover data from previous version"
     );
 }
+
+#[test]
+fn legacy_settings_manager_backup_recovery_extensions() {
+    // 1. Recovery from `<path>.bak` when primary is corrupted
+    {
+        let dir = tempdir().expect("create tempdir for .bak");
+        let primary = dir.path().join("settings.json");
+        let bak = dir.path().join("settings.json.bak");
+        fs::write(&primary, "{corrupted primary").expect("write corrupted primary");
+        fs::write(&bak, r#"{"keyboardLayout":"from-dot-bak","fahrenheit":true}"#)
+            .expect("write .bak");
+
+        let mgr = SettingsManager::new(&primary);
+        let recovered = mgr.read_settings().expect("recover from .bak");
+        assert_eq!(recovered.keyboard_layout, "from-dot-bak");
+        assert!(recovered.fahrenheit);
+    }
+
+    // 2. Recovery from `<path>.backup` when primary and `<path>.bak` are corrupted
+    {
+        let dir = tempdir().expect("create tempdir for .backup");
+        let primary = dir.path().join("settings.json");
+        let bak = dir.path().join("settings.json.bak");
+        let backup = dir.path().join("settings.json.backup");
+        fs::write(&primary, "not json").expect("write corrupted primary");
+        fs::write(&bak, "{also corrupted").expect("write corrupted .bak");
+        fs::write(
+            &backup,
+            r#"{"keyboardLayout":"from-dot-backup","cpuSettingsEnabled":false}"#,
+        )
+        .expect("write .backup");
+
+        let mgr = SettingsManager::new(&primary);
+        let recovered = mgr.read_settings().expect("recover from .backup");
+        assert_eq!(recovered.keyboard_layout, "from-dot-backup");
+        assert!(!recovered.cpu_settings_enabled);
+    }
+
+    // 3. Recovery from `.json.backup` (extensionless primary `settings` -> `settings.json.backup`)
+    {
+        let dir = tempdir().expect("create tempdir for .json.backup");
+        let primary = dir.path().join("settings");
+        let json_backup = dir.path().join("settings.json.backup");
+        fs::write(&primary, "{broken primary").expect("write corrupted primary");
+        fs::write(
+            &json_backup,
+            r#"{"keyboardLayout":"from-json-backup","fanControlEnabled":false}"#,
+        )
+        .expect("write .json.backup");
+
+        let mgr = SettingsManager::new(&primary);
+        let recovered = mgr.read_settings().expect("recover from .json.backup");
+        assert_eq!(recovered.keyboard_layout, "from-json-backup");
+        assert!(!recovered.fan_control_enabled);
+    }
+
+    // 4. All primary and backup candidates corrupted -> ConfigError::ParseError
+    {
+        let dir = tempdir().expect("create tempdir for all corrupted");
+        let primary = dir.path().join("settings");
+        fs::write(&primary, "bad").expect("write bad primary");
+        fs::write(dir.path().join("settings.bak"), "bad").expect("write bad .bak");
+        fs::write(dir.path().join("settings.backup"), "bad").expect("write bad .backup");
+        fs::write(dir.path().join("settings.json.backup"), "bad").expect("write bad .json.backup");
+
+        let mgr = SettingsManager::new(&primary);
+        let err = mgr.read_settings().expect_err("all corrupted must fail");
+        assert!(matches!(err, ConfigError::ParseError));
+    }
+}

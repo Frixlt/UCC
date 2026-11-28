@@ -226,3 +226,94 @@ fn host_default_helpers_match_host_platform_convention() {
         );
     }
 }
+
+#[test]
+fn windows_platform_paths_handles_unicode_spaces_and_fallbacks() {
+    use std::ffi::OsStr;
+
+    // 1. Unicode + spaces in PROGRAMDATA and APPDATA
+    let unicode_paths = resolve_platform_paths(PathPlatform::Windows, |key| match key {
+        "PROGRAMDATA" => Some(r"D:\Данные Программ\Frixit Data".to_string()),
+        "APPDATA" => Some(r"C:\Users\Иван Петров\AppData\Roaming".to_string()),
+        "USERPROFILE" => Some(r"C:\Users\Ignored User".to_string()),
+        _ => None,
+    });
+    let expected_unicode_sys = Path::new(r"D:\Данные Программ\Frixit Data").join("ucc-rusted");
+    let expected_unicode_run = expected_unicode_sys.join("run");
+    let expected_unicode_user =
+        Path::new(r"C:\Users\Иван Петров\AppData\Roaming").join("ucc-rusted");
+
+    assert_eq!(unicode_paths.system_config_dir, expected_unicode_sys);
+    assert_eq!(
+        unicode_paths.system_settings_file,
+        expected_unicode_sys.join("settings.json")
+    );
+    assert_eq!(unicode_paths.user_config_dir, expected_unicode_user);
+    assert_eq!(unicode_paths.runtime_dir, expected_unicode_run);
+    assert_eq!(
+        unicode_paths.sleep_state_file,
+        expected_unicode_run.join("sleep-state.json")
+    );
+
+    // 2. Trailing slashes (both backslash and forward slash)
+    let trailing_paths = resolve_platform_paths(PathPlatform::Windows, |key| match key {
+        "PROGRAMDATA" => Some(r"C:\ProgramData\".to_string()),
+        "APPDATA" => Some("D:/Users/User Name/AppData/Roaming/".to_string()),
+        _ => None,
+    });
+    assert_eq!(
+        trailing_paths.system_config_dir,
+        Path::new(r"C:\ProgramData\").join("ucc-rusted")
+    );
+    assert_eq!(
+        trailing_paths.user_config_dir,
+        Path::new("D:/Users/User Name/AppData/Roaming/").join("ucc-rusted")
+    );
+    assert_eq!(
+        trailing_paths.system_settings_file.file_name(),
+        Some(OsStr::new("settings.json"))
+    );
+    assert_eq!(
+        trailing_paths.sleep_state_file.file_name(),
+        Some(OsStr::new("sleep-state.json"))
+    );
+
+    // 3. Missing PROGRAMDATA & APPDATA -> default C:\ProgramData + USERPROFILE Unicode fallback
+    let missing_primary = resolve_platform_paths(PathPlatform::Windows, |key| match key {
+        "PROGRAMDATA" => None,
+        "APPDATA" => Some("   ".to_string()),
+        "USERPROFILE" => Some(r"C:\Users\Анна Смирнова".to_string()),
+        _ => None,
+    });
+    let default_sys = Path::new(r"C:\ProgramData").join("ucc-rusted");
+    assert_eq!(missing_primary.system_config_dir, default_sys);
+    assert_eq!(
+        missing_primary.user_config_dir,
+        Path::new(r"C:\Users\Анна Смирнова\AppData\Roaming").join("ucc-rusted")
+    );
+
+    // 4. Missing APPDATA & USERPROFILE -> falls back to custom PROGRAMDATA
+    let programdata_only = resolve_platform_paths(PathPlatform::Windows, |key| match key {
+        "PROGRAMDATA" => Some(r"E:\Общие Данные\Config".to_string()),
+        "APPDATA" => None,
+        "USERPROFILE" => Some("\t ".to_string()),
+        _ => None,
+    });
+    let expected_pd_sys = Path::new(r"E:\Общие Данные\Config").join("ucc-rusted");
+    assert_eq!(programdata_only.system_config_dir, expected_pd_sys);
+    assert_eq!(programdata_only.user_config_dir, expected_pd_sys);
+    assert_eq!(programdata_only.runtime_dir, expected_pd_sys.join("run"));
+
+    // 5. All Windows env vars missing -> C:\ProgramData fallback for all paths
+    let all_missing = resolve_platform_paths(PathPlatform::Windows, |_| None);
+    assert_eq!(all_missing.system_config_dir, default_sys);
+    assert_eq!(all_missing.user_config_dir, default_sys);
+    assert_eq!(
+        all_missing.system_settings_file,
+        default_sys.join("settings.json")
+    );
+    assert_eq!(
+        all_missing.sleep_state_file,
+        default_sys.join("run").join("sleep-state.json")
+    );
+}

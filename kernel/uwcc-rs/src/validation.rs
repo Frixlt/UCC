@@ -369,4 +369,44 @@ mod tests {
         assert_eq!(ValidationError::InvalidArgument.to_errno(), -22);
         assert_eq!(ValidationError::PermissionDenied.to_errno(), -1);
     }
+
+    #[test]
+    fn ec_write_rejects_nonzero_pad_and_mux_rejects_missing_sys_admin() {
+        assert_eq!(
+            validate_ec_write(0x0783, 1, true, true),
+            Err(ValidationError::InvalidArgument)
+        );
+        assert_eq!(
+            validate_ec_write(0x0783, 0xFF, true, true),
+            Err(ValidationError::InvalidArgument)
+        );
+        assert_eq!(
+            validate_ec_write(0x0783, 1, false, true),
+            Err(ValidationError::PermissionDenied)
+        );
+        assert_eq!(
+            validate_mux_set(0, 2, true, false),
+            Err(ValidationError::PermissionDenied)
+        );
+
+        for addr in [0x0741, 0x0751, 0x0752, 0x0753, 0x0783, 0x0786] {
+            assert_eq!(validate_ec_write(addr, 0, true, true), Ok(()));
+        }
+        for addr in [0x07B9, 0x07CC, 0x0F00, 0x0F5F, 0x1804, 0x1809] {
+            assert_eq!(validate_ec_write(addr, 0, true, true), Ok(()));
+        }
+
+        for addr in [0x0740, 0x0750, 0x0754, 0x0782, 0x0787, 0x07B8, 0x07BA] {
+            assert_eq!(
+                validate_ec_write(addr, 0, true, true),
+                Err(ValidationError::ReadOnlyOrForbidden)
+            );
+        }
+        for addr in [0x07CB, 0x07CD, 0x0EFF, 0x0F60, 0x1803, 0x1808, 0x180A] {
+            assert_eq!(
+                validate_ec_write(addr, 0, true, true),
+                Err(ValidationError::ReadOnlyOrForbidden)
+            );
+        }
+    }
 }

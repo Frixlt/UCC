@@ -894,6 +894,38 @@ private slots:
     QVERIFY2(!m_client->getDGpuMemClockOffsetMHz().has_value(),
              "M-GUI-05: getDGpuMemClockOffsetMHz must reject -999 sentinel");
   }
+
+  // Wave-2: SystemMonitor asynchronous snapshot updates CPU/GPU/fan metrics and
+  // preserves negative dGPU clock offsets without blocking or losing state on deactivate.
+  void system_monitor_snapshot_updates_metrics_and_preserves_negative_clock_offsets() {
+    control(QStringLiteral("TestVisualFixture"));
+    control(QStringLiteral("TestDGpuInfo"),
+            {QStringLiteral(
+                R"({"temp":54,"coreFrequency":1850,"powerDraw":68.5,"computeUtilPct":12,"memoryUtilPct":6,"currentPstate":2,"grClockOffsetMHz":-120,"memClockOffsetMHz":-200})")});
+
+    ucc::SystemMonitor monitor;
+    QSignalSpy updatedSpy(&monitor, &ucc::SystemMonitor::metricsUpdated);
+    QVERIFY(updatedSpy.isValid());
+
+    monitor.setMonitoringActive(true);
+    QVERIFY(monitor.monitoringActive());
+    QTRY_VERIFY_WITH_TIMEOUT(updatedSpy.count() >= 1, 3000);
+
+    QCOMPARE(monitor.cpuTemp(), QStringLiteral("52\u00b0C"));
+    QCOMPARE(monitor.cpuFanSpeed(), QStringLiteral("31 %"));
+    QCOMPARE(monitor.gpuFanSpeed(), QStringLiteral("31 %"));
+    QCOMPARE(monitor.gpuTemp(), QStringLiteral("54\u00b0C"));
+    QCOMPARE(monitor.gpuFrequency(), QStringLiteral("1850 MHz"));
+    QCOMPARE(monitor.gpuPower(), QStringLiteral("68.5 W"));
+    QCOMPARE(monitor.dGpuComputeUtil(), 12);
+    QCOMPARE(monitor.dGpuMemoryUtil(), 6);
+    QCOMPARE(monitor.dGpuPstate(), 2);
+    QCOMPARE(monitor.dGpuGrClockOffset(), -120);
+    QCOMPARE(monitor.dGpuMemClockOffset(), -200);
+
+    monitor.setMonitoringActive(false);
+    QVERIFY(!monitor.monitoringActive());
+  }
 };
 
 int main(int argc, char **argv) {

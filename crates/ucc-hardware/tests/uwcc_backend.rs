@@ -712,3 +712,506 @@ fn uwcc_backend_decodes_12byte_dsdt_bx90_smrw_and_merges_0x07a7_ceiling() {
     backend.set_tdp(1, 210).unwrap();
     backend.set_tdp(2, 250).unwrap();
 }
+
+#[test]
+fn uapi_gpu_power_and_mux_ioctl_abi_match_kernel_header() {
+    use ucc_hardware::{
+        UwccGpuPower, UwccMuxState, UWCC_IOC_GPU_POWER, UWCC_IOC_MUX_GET, UWCC_IOC_MUX_SET,
+        UWCC_NR_GPU_POWER, UWCC_NR_MUX_GET, UWCC_NR_MUX_SET,
+    };
+
+    assert_eq!(size_of::<UwccGpuPower>(), 8);
+    assert_eq!(align_of::<UwccGpuPower>(), 4);
+    assert_eq!(size_of::<UwccMuxState>(), 8);
+    assert_eq!(align_of::<UwccMuxState>(), 4);
+
+    let decode = |ioc: u64| -> (u64, u64, u64, u64) {
+        let nr = ioc & 0xFF;
+        let ty = (ioc >> 8) & 0xFF;
+        let sz = (ioc >> 16) & 0x3FFF;
+        let dir = (ioc >> 30) & 0x3;
+        (dir, ty, nr, sz)
+    };
+
+    assert_eq!(
+        decode(UWCC_IOC_GPU_POWER),
+        (1, u64::from(UWCC_MAGIC), u64::from(UWCC_NR_GPU_POWER), 8)
+    );
+    assert_eq!(
+        decode(UWCC_IOC_MUX_GET),
+        (2, u64::from(UWCC_MAGIC), u64::from(UWCC_NR_MUX_GET), 8)
+    );
+    assert_eq!(
+        decode(UWCC_IOC_MUX_SET),
+        (1, u64::from(UWCC_MAGIC), u64::from(UWCC_NR_MUX_SET), 8)
+    );
+}
+
+#[test]
+fn uwcc_backend_smrw_fallback_on_corrupt_or_unavailable_table() {
+    use ucc_hardware::{UwccTransport, UWCC_SMRW_MAX_LEN};
+
+    let expected = SmrwPowerLimits::chassis_0x1a_default();
+
+    // 1. Corrupt SMRW table with min > max must fall back to chassis_0x1a_default()
+    let corrupt_transport = Arc::new(MockUwccTransport::chassis_0x1a_default());
+    let mut corrupt_limits = SmrwPowerLimits::chassis_0x1a_default();
+    corrupt_limits.pl1_min_w = 120;
+    corrupt_limits.pl1_max_w = 60;
+    corrupt_transport.set_smrw_table(SMRW_POWER_LIMITS_OFFSET, corrupt_limits.encode());
+    let corrupt_backend = UwccBackend::new(corrupt_transport, None, None);
+    assert_eq!(corrupt_backend.smrw_limits(), expected);
+
+    // 2. Zeroed SMRW buffer must fall back to chassis_0x1a_default()
+    let zero_transport = Arc::new(MockUwccTransport::chassis_0x1a_default());
+    zero_transport.set_smrw_table(SMRW_POWER_LIMITS_OFFSET, [0u8; UWCC_SMRW_MAX_LEN]);
+    let zero_backend = UwccBackend::new(zero_transport, None, None);
+    assert_eq!(zero_backend.smrw_limits(), expected);
+
+    // 3. Unavailable transport during probe must fall back to chassis_0x1a_default()
+    let unavail_transport = Arc::new(MockUwccTransport::chassis_0x1a_default());
+    unavail_transport.set_available(false);
+    let unavail_backend = UwccBackend::new(unavail_transport, None, None);
+    assert_eq!(unavail_backend.smrw_limits(), expected);
+
+    // 4. Available transport whose smrw() explicitly returns Err(Unavailable)
+    struct FailingSmrwTransport(MockUwccTransport);
+    impl UwccTransport for FailingSmrwTransport {
+        fn is_available(&self) -> bool {
+            self.0.is_available()
+        }
+        fn get_info(&self) -> Result<UwccInfo, PlatformError> {
+            self.0.get_info()
+        }
+        fn ec_read(&self, addr: u16) -> Result<u8, PlatformError> {
+            self.0.ec_read(addr)
+        }
+        fn ec_write(&self, addr: u16, val: u8) -> Result<(), PlatformError> {
+            self.0.ec_write(addr, val)
+        }
+        fn smrw(&self, _req: UwccSmrw) -> Result<UwccSmrw, PlatformError> {
+            Err(PlatformError::Unavailable)
+        }
+        fn pwup(&self, enable: bool, level: u32) -> Result<(), PlatformError> {
+            self.0.pwup(enable, level)
+        }
+        fn poll_event(&self) -> Result<Option<UwccWmiEvent>, PlatformError> {
+            self.0.poll_event()
+        }
+    }
+
+    let failing_smrw = Arc::new(FailingSmrwTransport(
+        MockUwccTransport::chassis_0x1a_default(),
+    ));
+    let failing_backend = UwccBackend::new(failing_smrw, None, None);
+    assert_eq!(failing_backend.smrw_limits(), expected);
+}
+
+#[test]
+fn uwcc_backend_ctgp_and_db_respect_pwbt_pwdb_flags_and_fail_writes() {
+    use ucc_hardware::{
+        UwccTransport, UWCC_FLAG_HAS_EC, UWCC_FLAG_HAS_PWBT, UWCC_FLAG_HAS_PWDB,
+        UWCC_GPU_POWER_OP_BASE_TGP, UWCC_GPU_POWER_OP_DYNAMIC_BOOST,
+    };
+
+    // Without UWCC_FLAG_HAS_PWBT / UWCC_FLAG_HAS_PWDB, only EC registers are written
+    let transport = Arc::new(MockUwccTransport::chassis_0x1a_default());
+    let mut info = transport.get_info().unwrap();
+    info.flags = UWCC_FLAG_HAS_EC;
+    transport.set_info(info);
+
+    let backend = UwccBackend::new(Arc::clone(&transport) as _, None, None);
+    transport.clear_journal();
+
+    backend.set_ctgp(120).unwrap();
+    backend.set_dynamic_boost(20).unwrap();
+    assert_eq!(transport.get_reg(uwcc_ec_reg::CTGP_WATTS), Some(120));
+    assert_eq!(transport.get_reg(uwcc_ec_reg::DYNAMIC_BOOST_WATTS), Some(20));
+
+    let journal = transport.journal();
+    assert!(!journal
+        .iter()
+        .any(|w| matches!(w, UwccTransportWrite::GpuPower { .. })));
+
+    // Only UWCC_FLAG_HAS_PWBT enabled: cTGP dispatches BASE_TGP, DB does not dispatch DYNAMIC_BOOST
+    let pwbt_only = Arc::new(MockUwccTransport::chassis_0x1a_default());
+    let mut pwbt_info = pwbt_only.get_info().unwrap();
+    pwbt_info.flags = UWCC_FLAG_HAS_EC | UWCC_FLAG_HAS_PWBT;
+    pwbt_only.set_info(pwbt_info);
+
+    let pwbt_backend = UwccBackend::new(Arc::clone(&pwbt_only) as _, None, None);
+    pwbt_only.clear_journal();
+    pwbt_backend.set_ctgp(130).unwrap();
+    pwbt_backend.set_dynamic_boost(15).unwrap();
+    let pwbt_journal = pwbt_only.journal();
+    assert!(pwbt_journal.contains(&UwccTransportWrite::GpuPower {
+        op: UWCC_GPU_POWER_OP_BASE_TGP,
+        value: 130,
+    }));
+    assert!(!pwbt_journal.iter().any(|w| matches!(
+        w,
+        UwccTransportWrite::GpuPower {
+            op: UWCC_GPU_POWER_OP_DYNAMIC_BOOST,
+            ..
+        }
+    )));
+
+    // Only UWCC_FLAG_HAS_PWDB enabled: DB dispatches DYNAMIC_BOOST, cTGP does not dispatch BASE_TGP
+    let pwdb_only = Arc::new(MockUwccTransport::chassis_0x1a_default());
+    let mut pwdb_info = pwdb_only.get_info().unwrap();
+    pwdb_info.flags = UWCC_FLAG_HAS_EC | UWCC_FLAG_HAS_PWDB;
+    pwdb_only.set_info(pwdb_info);
+
+    let pwdb_backend = UwccBackend::new(Arc::clone(&pwdb_only) as _, None, None);
+    pwdb_only.clear_journal();
+    pwdb_backend.set_ctgp(125).unwrap();
+    pwdb_backend.set_dynamic_boost(25).unwrap();
+    let pwdb_journal = pwdb_only.journal();
+    assert!(pwdb_journal.contains(&UwccTransportWrite::GpuPower {
+        op: UWCC_GPU_POWER_OP_DYNAMIC_BOOST,
+        value: 25,
+    }));
+    assert!(!pwdb_journal.iter().any(|w| matches!(
+        w,
+        UwccTransportWrite::GpuPower {
+            op: UWCC_GPU_POWER_OP_BASE_TGP,
+            ..
+        }
+    )));
+
+    // With set_fail_writes(true), both set_ctgp and set_dynamic_boost fail closed
+    let fail_transport = Arc::new(MockUwccTransport::chassis_0x1a_default());
+    let fail_backend = UwccBackend::new(Arc::clone(&fail_transport) as _, None, None);
+    fail_transport.clear_journal();
+    fail_transport.set_fail_writes(true);
+
+    assert!(matches!(
+        fail_backend.set_ctgp(120),
+        Err(PlatformError::Unavailable)
+    ));
+    assert!(matches!(
+        fail_backend.set_dynamic_boost(20),
+        Err(PlatformError::Unavailable)
+    ));
+    assert!(fail_transport.journal().is_empty());
+}
+
+#[test]
+fn uwcc_backend_manual_fan_speed_bounds_and_unavailable_transport() {
+    let transport = Arc::new(MockUwccTransport::chassis_0x1a_default());
+    let backend = UwccBackend::new(Arc::clone(&transport) as _, None, None);
+
+    // Valid fan indices (0 = CPU, 1 = GPU) across boundary percentages 0, 50, 100
+    for (percent, expected_raw) in [(0u8, 0u8), (50, 100), (100, 200)] {
+        backend.set_fan_speed_percent(0, percent).unwrap();
+        assert_eq!(
+            transport.get_reg(uwcc_ec_reg::CPU_FAN_DUTY_WRITE),
+            Some(expected_raw)
+        );
+        assert_ne!(
+            transport
+                .get_reg(uwcc_ec_reg::FAN_MANUAL_MODE)
+                .unwrap_or_default()
+                & uwcc_ec_reg::FAN_MODE_USER_BIT,
+            0
+        );
+
+        backend.set_fan_speed_percent(1, percent).unwrap();
+        assert_eq!(
+            transport.get_reg(uwcc_ec_reg::GPU_FAN_DUTY_WRITE),
+            Some(expected_raw)
+        );
+    }
+
+    // Invalid fan index 2 and out-of-range percentage 101 rejected before EC write
+    transport.clear_journal();
+    assert!(matches!(
+        backend.set_fan_speed_percent(2, 50),
+        Err(PlatformError::InvalidArgument(_))
+    ));
+    assert!(matches!(
+        backend.set_fan_speed_percent(0, 101),
+        Err(PlatformError::InvalidArgument(_))
+    ));
+    assert!(matches!(
+        backend.set_fan_speed_percent(1, 101),
+        Err(PlatformError::InvalidArgument(_))
+    ));
+    assert!(transport.journal().is_empty());
+
+    // Disconnected/unavailable transport fails closed on reads and writes
+    transport.set_available(false);
+    assert!(!backend.is_available());
+    assert!(matches!(
+        backend.set_fan_speed_percent(0, 50),
+        Err(PlatformError::Unavailable)
+    ));
+    assert!(matches!(
+        backend.set_fans_auto(),
+        Err(PlatformError::Unavailable)
+    ));
+    assert!(matches!(
+        backend.read_fan_speed_percent(0),
+        Err(PlatformError::Unavailable)
+    ));
+    assert!(matches!(
+        backend.read_fan_rpm(0),
+        Err(PlatformError::Unavailable)
+    ));
+    assert!(matches!(
+        backend.read_fan_temp(0),
+        Err(PlatformError::Unavailable)
+    ));
+}
+
+#[test]
+fn ramfan_validation_matrix_and_fan_boost_transitions() {
+    use ucc_hardware::RAMFAN_MAX_TEMP_C;
+
+    let transport = Arc::new(MockUwccTransport::chassis_0x1a_default());
+    let controller = RamFanController::new(Arc::clone(&transport) as _);
+    transport.clear_journal();
+
+    // 1. Duty > 100 rejected on CPU and GPU
+    let mut bad_cpu_duty = RamFanCurve::balanced_default();
+    bad_cpu_duty.cpu[RAMFAN_POINTS - 1].duty_percent = 101;
+    assert!(matches!(
+        controller.apply_curve(&bad_cpu_duty),
+        Err(PlatformError::InvalidArgument(_))
+    ));
+
+    let mut bad_gpu_duty = RamFanCurve::balanced_default();
+    bad_gpu_duty.gpu[RAMFAN_POINTS - 1].duty_percent = 101;
+    assert!(matches!(
+        controller.apply_curve(&bad_gpu_duty),
+        Err(PlatformError::InvalidArgument(_))
+    ));
+
+    // 2. Temp > 115 C rejected on CPU and GPU
+    let mut bad_cpu_temp = RamFanCurve::balanced_default();
+    bad_cpu_temp.cpu[RAMFAN_POINTS - 1].temp_c = RAMFAN_MAX_TEMP_C + 1;
+    assert!(matches!(
+        controller.apply_curve(&bad_cpu_temp),
+        Err(PlatformError::InvalidArgument(_))
+    ));
+
+    let mut bad_gpu_temp = RamFanCurve::balanced_default();
+    bad_gpu_temp.gpu[RAMFAN_POINTS - 1].temp_c = RAMFAN_MAX_TEMP_C + 1;
+    assert!(matches!(
+        controller.apply_curve(&bad_gpu_temp),
+        Err(PlatformError::InvalidArgument(_))
+    ));
+
+    // 3. Non-monotonic duty rejected on CPU and GPU
+    let mut non_mono_cpu_duty = RamFanCurve::balanced_default();
+    non_mono_cpu_duty.cpu[6].duty_percent = non_mono_cpu_duty.cpu[5].duty_percent - 1;
+    assert!(matches!(
+        controller.apply_curve(&non_mono_cpu_duty),
+        Err(PlatformError::InvalidArgument(_))
+    ));
+
+    let mut non_mono_gpu_duty = RamFanCurve::balanced_default();
+    non_mono_gpu_duty.gpu[6].duty_percent = non_mono_gpu_duty.gpu[5].duty_percent - 1;
+    assert!(matches!(
+        controller.apply_curve(&non_mono_gpu_duty),
+        Err(PlatformError::InvalidArgument(_))
+    ));
+
+    assert!(transport.journal().is_empty());
+    assert!(!controller.is_custom_active());
+
+    // 4. Fan boost transitions WITHOUT active custom curve
+    controller.set_fan_boost(true).unwrap();
+    assert!(controller.is_fan_boost_enabled());
+    assert!(!controller.is_custom_active());
+    assert_eq!(
+        transport.get_reg(ramfan_reg::CTRL),
+        Some(ramfan_flags::FAN_BOOST)
+    );
+    assert_eq!(transport.get_reg(ramfan_reg::COMMIT), Some(0x01));
+
+    controller.set_fan_boost(false).unwrap();
+    assert!(!controller.is_fan_boost_enabled());
+    assert_eq!(transport.get_reg(ramfan_reg::CTRL), Some(0x00));
+    assert_eq!(transport.get_reg(ramfan_reg::COMMIT), Some(0x00));
+
+    // 5. Fan boost transitions WITH active custom curve
+    let valid_curve = RamFanCurve::balanced_default();
+    controller.apply_curve(&valid_curve).unwrap();
+    assert!(controller.is_custom_active());
+
+    controller.set_fan_boost(true).unwrap();
+    assert!(controller.is_fan_boost_enabled());
+    assert_eq!(
+        transport.get_reg(ramfan_reg::CTRL),
+        Some(ramfan_flags::CUME | ramfan_flags::UFME | ramfan_flags::FAN_BOOST)
+    );
+    assert_eq!(transport.get_reg(ramfan_reg::COMMIT), Some(0x01));
+
+    controller.set_fan_boost(false).unwrap();
+    assert!(!controller.is_fan_boost_enabled());
+    assert!(controller.is_custom_active());
+    assert_eq!(
+        transport.get_reg(ramfan_reg::CTRL),
+        Some(ramfan_flags::CUME | ramfan_flags::UFME)
+    );
+    assert_eq!(transport.get_reg(ramfan_reg::COMMIT), Some(0x01));
+
+    // Unavailable transport fails closed
+    transport.set_available(false);
+    assert!(matches!(
+        controller.set_fan_boost(true),
+        Err(PlatformError::Unavailable)
+    ));
+}
+
+#[test]
+fn usb_webcam_vid_pid_filter_multi_cam_and_errors() {
+    use ucc_hardware::UsbWebcamController;
+
+    let sysfs = Arc::new(MockSysfs::new());
+
+    // Camera 1: integrated RGB+IR webcam at 1-6
+    sysfs.set_file("/sys/bus/usb/devices/1-6/authorized", "1");
+    sysfs.set_file("/sys/bus/usb/devices/1-6/idVendor", "04f2");
+    sysfs.set_file("/sys/bus/usb/devices/1-6/idProduct", "b751");
+    sysfs.set_file("/sys/bus/usb/devices/1-6/product", "Integrated Camera");
+    sysfs.set_file("/sys/bus/usb/devices/1-6:1.0/bInterfaceClass", "0e");
+
+    // Camera 2: external USB UVC webcam at 2-3
+    sysfs.set_file("/sys/bus/usb/devices/2-3/authorized", "1");
+    sysfs.set_file("/sys/bus/usb/devices/2-3/idVendor", "046d");
+    sysfs.set_file("/sys/bus/usb/devices/2-3/idProduct", "0825");
+    sysfs.set_file("/sys/bus/usb/devices/2-3/product", "External UVC Cam");
+    sysfs.set_file("/sys/bus/usb/devices/2-3:1.0/bInterfaceClass", "0E");
+
+    // Non-camera HID device at 1-4
+    sysfs.set_file("/sys/bus/usb/devices/1-4/authorized", "1");
+    sysfs.set_file("/sys/bus/usb/devices/1-4/idVendor", "048d");
+    sysfs.set_file("/sys/bus/usb/devices/1-4/idProduct", "600b");
+    sysfs.set_file("/sys/bus/usb/devices/1-4:1.0/bInterfaceClass", "03");
+
+    // Unfiltered controller discovers and toggles both cameras
+    let all_cams = UsbWebcamController::new(Arc::clone(&sysfs) as _);
+    let discovered = all_cams.discover_webcams().unwrap();
+    assert_eq!(discovered.len(), 2);
+    assert_eq!(discovered[0].vendor_id, "04f2");
+    assert_eq!(discovered[0].product_id, "b751");
+    assert_eq!(discovered[1].vendor_id, "046d");
+    assert_eq!(discovered[1].product_id, "0825");
+
+    all_cams.set_enabled(false).unwrap();
+    assert!(!all_cams.is_enabled().unwrap());
+    assert_eq!(
+        sysfs.get_file("/sys/bus/usb/devices/1-6/authorized").as_deref(),
+        Some("0")
+    );
+    assert_eq!(
+        sysfs.get_file("/sys/bus/usb/devices/2-3/authorized").as_deref(),
+        Some("0")
+    );
+    assert_eq!(
+        sysfs.get_file("/sys/bus/usb/devices/1-4/authorized").as_deref(),
+        Some("1")
+    );
+
+    all_cams.set_enabled(true).unwrap();
+    assert!(all_cams.is_enabled().unwrap());
+
+    // VID/PID filter (case-insensitive) restricts discovery and toggling to matching camera
+    let filtered =
+        UsbWebcamController::new(Arc::clone(&sysfs) as _).with_vid_pid_filter("04F2", "B751");
+    let matched = filtered.discover_webcams().unwrap();
+    assert_eq!(matched.len(), 1);
+    assert_eq!(matched[0].vendor_id, "04f2");
+
+    filtered.set_enabled(false).unwrap();
+    assert!(!filtered.is_enabled().unwrap());
+    assert_eq!(
+        sysfs.get_file("/sys/bus/usb/devices/1-6/authorized").as_deref(),
+        Some("0")
+    );
+    assert_eq!(
+        sysfs.get_file("/sys/bus/usb/devices/2-3/authorized").as_deref(),
+        Some("1")
+    );
+
+    // Non-matching VID/PID filter yields Unsupported on read/write
+    let no_match =
+        UsbWebcamController::new(Arc::clone(&sysfs) as _).with_vid_pid_filter("dead", "beef");
+    assert!(no_match.discover_webcams().unwrap().is_empty());
+    assert!(matches!(
+        no_match.is_enabled(),
+        Err(PlatformError::Unsupported(_))
+    ));
+    assert!(matches!(
+        no_match.set_enabled(false),
+        Err(PlatformError::Unsupported(_))
+    ));
+
+    // Missing /sys/bus/usb/devices root returns Unsupported
+    let empty_sysfs = Arc::new(MockSysfs::new());
+    let missing_root = UsbWebcamController::new(empty_sysfs);
+    assert!(matches!(
+        missing_root.discover_webcams(),
+        Err(PlatformError::Unsupported(_))
+    ));
+    assert!(matches!(
+        missing_root.is_enabled(),
+        Err(PlatformError::Unsupported(_))
+    ));
+    assert!(matches!(
+        missing_root.set_enabled(true),
+        Err(PlatformError::Unsupported(_))
+    ));
+}
+
+#[test]
+fn wmi_uinput_mock_emitter_error_propagation_and_unknown_codes() {
+    let emitter = MockUinputEmitter::new();
+    emitter.set_fail(true);
+
+    // Known WMI codes attempt key emission and propagate Unavailable when failing
+    let known_evt = UwccWmiEvent {
+        timestamp_ns: 1000,
+        code: wmi_code::FN_LOCK_TOGGLE,
+        payload: 1,
+    };
+    assert!(matches!(
+        emitter.handle_wmi_event(known_evt),
+        Err(PlatformError::Unavailable)
+    ));
+    assert!(matches!(
+        emitter.emit_hotkey(UwccHotkeyEvent::WebcamToggle),
+        Err(PlatformError::Unavailable)
+    ));
+    assert!(emitter.emitted_keys().is_empty());
+
+    // Unknown WMI codes do not emit keys, so they succeed cleanly even when set_fail(true)
+    let unknown_evt = UwccWmiEvent {
+        timestamp_ns: 2000,
+        code: 0xBEEF,
+        payload: 0,
+    };
+    assert_eq!(
+        emitter.handle_wmi_event(unknown_evt).unwrap(),
+        UwccHotkeyEvent::Unknown(0xBEEF)
+    );
+    assert!(!emitter.emit_hotkey(UwccHotkeyEvent::Unknown(0xCAFE)).unwrap());
+    assert!(emitter.emitted_keys().is_empty());
+
+    // Recovering emitter resumes normal key emission
+    emitter.set_fail(false);
+    let webcam_evt = UwccWmiEvent {
+        timestamp_ns: 3000,
+        code: wmi_code::WEBCAM_TOGGLE,
+        payload: 1,
+    };
+    assert_eq!(
+        emitter.handle_wmi_event(webcam_evt).unwrap(),
+        UwccHotkeyEvent::WebcamToggle
+    );
+    assert_eq!(emitter.emitted_keys(), vec![linux_key::KEY_CAMERA]);
+    emitter.clear();
+    assert!(emitter.emitted_keys().is_empty());
+}

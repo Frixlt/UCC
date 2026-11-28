@@ -747,3 +747,54 @@ fn p0_02_lighting_power_lid_and_restore_no_abba_deadlock() {
         "P0-02: concurrent on_lid_state_changed + restore_lid_lighting deadlocked past 5s deadline",
     );
 }
+
+#[test]
+fn water_cooler_led_mode_and_pump_bounds_validation() {
+    let tmp = tempfile::tempdir().unwrap();
+    let backend = build_backend(tmp.path(), true);
+
+    // Valid LED modes (0=Static, 1=Breathe, 2=Colorful, 3=BreatheColor) with valid RGB bounds.
+    for mode in 0..=3 {
+        assert!(
+            backend.set_water_cooler_led_color(64, 128, 255, mode),
+            "valid LED mode {mode} with in-range RGB must be accepted"
+        );
+    }
+
+    // Unknown/out-of-range LED mode falls back safely to Static (returns true) when RGB is valid,
+    // whereas out-of-range RGB channels (< 0 or > 255) must be rejected.
+    assert!(backend.set_water_cooler_led_color(10, 20, 30, -1));
+    assert!(backend.set_water_cooler_led_color(10, 20, 30, 99));
+    assert!(!backend.set_water_cooler_led_color(-1, 128, 128, 0));
+    assert!(!backend.set_water_cooler_led_color(128, 256, 128, 1));
+    assert!(!backend.set_water_cooler_led_color(128, 128, 300, 2));
+    assert!(!backend.set_water_cooler_led_color(-5, 300, -1, 99));
+
+    // Pump voltage bounds: discrete code 1 (V12) is hardware-forbidden and must always be rejected,
+    // along with out-of-range codes (< 0 or > 4).
+    assert!(
+        !backend.set_water_cooler_pump_voltage(1),
+        "forbidden pump voltage code 1 (V12) must be rejected"
+    );
+    assert_eq!(backend.get_water_cooler_pump_level(), -1);
+
+    for invalid_code in [-1, 1, 5, 99] {
+        assert!(
+            !backend.set_water_cooler_pump_voltage(invalid_code),
+            "invalid/forbidden pump voltage code {invalid_code} must be rejected"
+        );
+    }
+
+    // Allowed discrete codes: 0 (V11), 2 (V7), 3 (V8), 4 (Off).
+    for valid_code in [0, 2, 3, 4] {
+        assert!(
+            backend.set_water_cooler_pump_voltage(valid_code),
+            "valid pump voltage code {valid_code} must be accepted"
+        );
+        assert_eq!(backend.get_water_cooler_pump_level(), valid_code);
+    }
+
+    // Re-verify forbidden V12 (1) does not clobber the last valid pump level (4).
+    assert!(!backend.set_water_cooler_pump_voltage(1));
+    assert_eq!(backend.get_water_cooler_pump_level(), 4);
+}

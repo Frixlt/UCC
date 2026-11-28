@@ -330,3 +330,208 @@ fn m_cli_01_mutating_commands_do_not_mask_dbus_errors_with_unwrap_or_false() {
         "M-CLI-01: mutating CLI commands must not mask D-Bus RPC errors with `.await.unwrap_or(false)`; offenders: {offenders:?}"
     );
 }
+
+fn nested_fan_entry(timestamp: i64, data: i32) -> OwnedValue {
+    let inner = HashMap::from([
+        ("timestamp".to_string(), OwnedValue::from(timestamp)),
+        ("data".to_string(), OwnedValue::from(data)),
+    ]);
+    OwnedValue::try_from(zbus::zvariant::Value::from(inner)).expect("encode nested fan sample")
+}
+
+struct FanMetricsEdgeMockBackend {
+    cpu: HashMap<String, OwnedValue>,
+    gpu1: HashMap<String, OwnedValue>,
+    gpu2: HashMap<String, OwnedValue>,
+}
+
+impl UccdBackend for FanMetricsEdgeMockBackend {
+    fn get_fan_data_cpu(&self) -> HashMap<String, OwnedValue> {
+        self.cpu.clone()
+    }
+
+    fn get_fan_data_gpu1(&self) -> HashMap<String, OwnedValue> {
+        self.gpu1.clone()
+    }
+
+    fn get_fan_data_gpu2(&self) -> HashMap<String, OwnedValue> {
+        self.gpu2.clone()
+    }
+}
+
+async fn run_status_json_with_fan_backend(
+    daemon: &PrivateDbusDaemon,
+    tag: &str,
+    backend: FanMetricsEdgeMockBackend,
+) -> Value {
+    let svc = unique_service_name(tag);
+    let _conn = Builder::address(daemon.address.as_str())
+        .unwrap()
+        .name(svc.as_str())
+        .unwrap()
+        .build()
+        .await
+        .unwrap();
+    register_uccd_service(&_conn, Arc::new(backend), Arc::new(AllowAllAuthorizer))
+        .await
+        .unwrap();
+
+    let out = run_cli_on_bus(&daemon.address, &svc, &["status", "--json"]);
+    assert!(
+        out.status.success(),
+        "status --json failed for {tag}: {}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    serde_json::from_slice(&out.stdout).unwrap_or_else(|e| {
+        panic!(
+            "invalid status --json output for {tag}: {e}; stdout={}",
+            String::from_utf8_lossy(&out.stdout)
+        )
+    })
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn fan_metrics_real_rpm_valid_zero_and_stale_timestamp_edge_cases() {
+    let daemon = PrivateDbusDaemon::spawn();
+
+    // 1. Valid realRpm overrides the estimated speed * 60 RPM calculation.
+    let valid_rpm = run_status_json_with_fan_backend(
+        &daemon,
+        "fan_real_rpm_valid",
+        FanMetricsEdgeMockBackend {
+            cpu: HashMap::from([
+                ("timestamp".to_string(), OwnedValue::from(1_700_000_000_i64)),
+                ("temp".to_string(), OwnedValue::from(62_i32)),
+                ("speed".to_string(), OwnedValue::from(50_i32)),
+                ("realRpm".to_string(), OwnedValue::from(2450_i32)),
+            ]),
+            gpu1: HashMap::new(),
+            gpu2: HashMap::new(),
+        },
+    )
+    .await;
+    assert_eq!(valid_rpm["cpu"]["temperature"].as_i64(), Some(62));
+    assert_eq!(valid_rpm["cpu"]["fanPercent"].as_i64(), Some(50));
+    assert_eq!(valid_rpm["cpu"]["fanRPM"].as_i64(), Some(2450));
+
+    // 2. realRpm == 0 is a valid tachometer reading (stopped fan) and overrides speed * 60.
+    let zero_rpm = run_status_json_with_fan_backend(
+        &daemon,
+        "fan_real_rpm_zero",
+        FanMetricsEdgeMockBackend {
+            cpu: HashMap::from([
+                ("timestamp".to_string(), OwnedValue::from(1_700_000_001_i64)),
+                ("speed".to_string(), OwnedValue::from(40_i32)),
+                ("realRpm".to_string(), OwnedValue::from(0_i32)),
+            ]),
+            gpu1: HashMap::new(),
+            gpu2: HashMap::new(),
+        },
+    )
+    .await;
+    assert_eq!(zero_rpm["cpu"]["fanPercent"].as_i64(), Some(40));
+    assert_eq!(zero_rpm["cpu"]["fanRPM"].as_i64(), Some(0));
+
+    // 3. Stale top-level timestamp == 0 drops all fan metrics (temp, speed, realRpm).
+    let stale_top = run_status_json_with_fan_backend(
+        &daemon,
+        "fan_stale_top_ts",
+        FanMetricsEdgeMockBackend {
+            cpu: HashMap::from([
+                ("timestamp".to_string(), OwnedValue::from(0_i64)),
+                ("temp".to_string(), OwnedValue::from(71_i32)),
+                ("speed".to_string(), OwnedValue::from(55_i32)),
+                ("realRpm".to_string(), OwnedValue::from(3100_i32)),
+            ]),
+            gpu1: HashMap::new(),
+            gpu2: HashMap::new(),
+        },
+    )
+    .await;
+    assert!(stale_top["cpu"]["temperature"].is_null());
+    assert!(stale_top["cpu"]["fanPercent"].is_null());
+    assert!(stale_top["cpu"]["fanRPM"].is_null());
+
+    // 4. Stale nested realRpm (timestamp == 0) is ignored while fresh nested speed falls back to speed * 60.
+    let stale_nested_rpm = run_status_json_with_fan_backend(
+        &daemon,
+        "fan_stale_nested_rpm",
+        FanMetricsEdgeMockBackend {
+            cpu: HashMap::from([
+                ("speed".to_string(), nested_fan_entry(1_700_000_002, 45)),
+                ("realRpm".to_string(), nested_fan_entry(0, 4200)),
+            ]),
+            gpu1: HashMap::new(),
+            gpu2: HashMap::new(),
+        },
+    )
+    .await;
+    assert_eq!(stale_nested_rpm["cpu"]["fanPercent"].as_i64(), Some(45));
+    assert_eq!(stale_nested_rpm["cpu"]["fanRPM"].as_i64(), Some(45 * 60));
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn fan_metrics_single_gpu_fan_vs_dual_gpu_fans() {
+    let daemon = PrivateDbusDaemon::spawn();
+
+    // Single GPU fan (only gpu1 populated) with realRpm.
+    let single_gpu1 = run_status_json_with_fan_backend(
+        &daemon,
+        "fan_single_gpu1",
+        FanMetricsEdgeMockBackend {
+            cpu: HashMap::new(),
+            gpu1: HashMap::from([
+                ("timestamp".to_string(), OwnedValue::from(100_i64)),
+                ("speed".to_string(), OwnedValue::from(60_i32)),
+                ("realRpm".to_string(), OwnedValue::from(3150_i32)),
+            ]),
+            gpu2: HashMap::new(),
+        },
+    )
+    .await;
+    assert_eq!(single_gpu1["gpu"]["fanPercent"].as_i64(), Some(60));
+    assert_eq!(single_gpu1["gpu"]["fanRPM"].as_i64(), Some(3150));
+
+    // Single GPU fan (only gpu2 populated, gpu1 stale) without realRpm -> falls back to speed * 60.
+    let single_gpu2 = run_status_json_with_fan_backend(
+        &daemon,
+        "fan_single_gpu2",
+        FanMetricsEdgeMockBackend {
+            cpu: HashMap::new(),
+            gpu1: HashMap::from([
+                ("timestamp".to_string(), OwnedValue::from(0_i64)),
+                ("speed".to_string(), OwnedValue::from(90_i32)),
+                ("realRpm".to_string(), OwnedValue::from(5000_i32)),
+            ]),
+            gpu2: HashMap::from([
+                ("timestamp".to_string(), OwnedValue::from(100_i64)),
+                ("speed".to_string(), OwnedValue::from(70_i32)),
+            ]),
+        },
+    )
+    .await;
+    assert_eq!(single_gpu2["gpu"]["fanPercent"].as_i64(), Some(70));
+    assert_eq!(single_gpu2["gpu"]["fanRPM"].as_i64(), Some(70 * 60));
+
+    // Dual GPU fans (both gpu1 and gpu2 populated) average both fanPercent and realRpm.
+    let dual_gpu = run_status_json_with_fan_backend(
+        &daemon,
+        "fan_dual_gpu",
+        FanMetricsEdgeMockBackend {
+            cpu: HashMap::new(),
+            gpu1: HashMap::from([
+                ("timestamp".to_string(), OwnedValue::from(100_i64)),
+                ("speed".to_string(), OwnedValue::from(40_i32)),
+                ("realRpm".to_string(), OwnedValue::from(2000_i32)),
+            ]),
+            gpu2: HashMap::from([
+                ("timestamp".to_string(), OwnedValue::from(100_i64)),
+                ("speed".to_string(), OwnedValue::from(80_i32)),
+                ("realRpm".to_string(), OwnedValue::from(4000_i32)),
+            ]),
+        },
+    )
+    .await;
+    assert_eq!(dual_gpu["gpu"]["fanPercent"].as_i64(), Some(60));
+    assert_eq!(dual_gpu["gpu"]["fanRPM"].as_i64(), Some(3000));
+}

@@ -663,3 +663,246 @@ fn select_best_lighting_transport_respects_prefer_hidraw() {
     );
     assert!(fallback.detect_lightbar().expect("detect").is_some());
 }
+
+#[cfg(target_os = "linux")]
+#[test]
+fn hidraw_open_rejects_non_char_traversal_and_invalid_lengths() {
+    use ucc_lighting::HIDRAW_MAX_FEATURE_REPORT_LEN;
+
+    let tmp = TempDir::new().expect("temp dir");
+    let sysfs_root = tmp.path().join("sysfs");
+    let dev_root = tmp.path().join("dev");
+    fs::create_dir_all(&sysfs_root).expect("create sysfs root");
+    fs::create_dir_all(&dev_root).expect("create dev root");
+
+    let regular_hidraw = dev_root.join("hidraw0");
+    fs::write(&regular_hidraw, b"regular file").expect("write regular file");
+    let regular_path = regular_hidraw.to_string_lossy().into_owned();
+
+    let hidraw = HidrawDeviceTransport::with_roots(sysfs_root.as_path(), dev_root.as_path());
+
+    // Regular file (non-character device) must be rejected before ioctl.
+    assert!(matches!(
+        hidraw.send_feature_report(&regular_path, &[0x08, 0x01, 10, 0, 0, 0, 0, 0]),
+        Err(LightingError::InvalidConfig(_))
+    ));
+    assert!(matches!(
+        hidraw.get_feature_report(&regular_path, 8),
+        Err(LightingError::InvalidConfig(_))
+    ));
+
+    // Path traversal attempts must be rejected.
+    let nested_traversal = format!("{}/../hidraw0", dev_root.display());
+    for bad_path in ["../hidraw0", nested_traversal.as_str()] {
+        assert!(matches!(
+            hidraw.send_feature_report(bad_path, &[0x08, 0x01]),
+            Err(LightingError::InvalidConfig(_))
+        ));
+        assert!(matches!(
+            hidraw.get_feature_report(bad_path, 8),
+            Err(LightingError::InvalidConfig(_))
+        ));
+    }
+
+    // Invalid feature report lengths: len == 0 and len > 0x3FFF (plus 0x3FFF + 1 Report ID).
+    assert!(matches!(
+        hidraw.send_feature_report(&regular_path, &[]),
+        Err(LightingError::InvalidConfig(_))
+    ));
+    assert!(matches!(
+        hidraw.get_feature_report(&regular_path, 0),
+        Err(LightingError::InvalidConfig(_))
+    ));
+    let oversized = vec![0x01u8; HIDRAW_MAX_FEATURE_REPORT_LEN + 1];
+    assert!(matches!(
+        hidraw.send_feature_report(&regular_path, &oversized),
+        Err(LightingError::InvalidConfig(_))
+    ));
+    assert!(matches!(
+        hidraw.send_feature_report(&regular_path, &oversized[..HIDRAW_MAX_FEATURE_REPORT_LEN]),
+        Err(LightingError::InvalidConfig(_))
+    ));
+    assert!(matches!(
+        hidraw.get_feature_report(&regular_path, HIDRAW_MAX_FEATURE_REPORT_LEN + 1),
+        Err(LightingError::InvalidConfig(_))
+    ));
+}
+
+#[test]
+fn uniwill_hid_empty_zones_and_partial_chunk_failure_preserves_cache() {
+    struct PartialFailHidTransport {
+        devices: Vec<HidDeviceInfo>,
+        fail_on_call: Mutex<Option<usize>>,
+        call_count: Mutex<usize>,
+        sent: Mutex<Vec<Vec<u8>>>,
+    }
+
+    impl PartialFailHidTransport {
+        fn new(devices: Vec<HidDeviceInfo>) -> Self {
+            Self {
+                devices,
+                fail_on_call: Mutex::new(None),
+                call_count: Mutex::new(0),
+                sent: Mutex::new(Vec::new()),
+            }
+        }
+
+        fn arm_fail_on_call(&self, call_idx: usize) {
+            *self.call_count.lock().unwrap_or_else(|e| e.into_inner()) = 0;
+            *self.fail_on_call.lock().unwrap_or_else(|e| e.into_inner()) = Some(call_idx);
+        }
+
+        fn clear_sent(&self) {
+            self.sent.lock().unwrap_or_else(|e| e.into_inner()).clear();
+        }
+
+        fn sent_count(&self) -> usize {
+            self.sent.lock().unwrap_or_else(|e| e.into_inner()).len()
+        }
+    }
+
+    impl HidDeviceTransport for PartialFailHidTransport {
+        fn enumerate_devices(&self) -> Result<Vec<HidDeviceInfo>, LightingError> {
+            Ok(self.devices.clone())
+        }
+
+        fn send_feature_report(&self, _path: &str, report: &[u8]) -> Result<(), LightingError> {
+            let mut count = self.call_count.lock().unwrap_or_else(|e| e.into_inner());
+            let current = *count;
+            *count += 1;
+            drop(count);
+
+            if *self.fail_on_call.lock().unwrap_or_else(|e| e.into_inner()) == Some(current) {
+                return Err(LightingError::WriteFailed(
+                    "Simulated mid-chunk HID failure".into(),
+                ));
+            }
+            self.sent
+                .lock()
+                .unwrap_or_else(|e| e.into_inner())
+                .push(report.to_vec());
+            Ok(())
+        }
+
+        fn get_feature_report(&self, _path: &str, len: usize) -> Result<Vec<u8>, LightingError> {
+            Ok(vec![0u8; len])
+        }
+    }
+
+    let hid = Arc::new(PartialFailHidTransport::new(vec![
+        HidDeviceInfo {
+            vendor_id: ITE_VENDOR_ID,
+            product_id: ITE_KEYBOARD_PRODUCT_ID,
+            path: "/dev/hidraw2".to_string(),
+        },
+        HidDeviceInfo {
+            vendor_id: ITE_VENDOR_ID,
+            product_id: ITE_LIGHTBAR_PRODUCT_ID_4ZONE,
+            path: "/dev/hidraw3".to_string(),
+        },
+    ]));
+    let transport = UniwillHidTransport::new(Arc::clone(&hid) as _);
+
+    // Empty keyboard zone slice succeeds with zero HID reports and empty cache.
+    transport.write_keyboard_zones(&[]).expect("empty kbd zones");
+    assert_eq!(hid.sent_count(), 0);
+    assert!(transport.read_keyboard_colors().expect("read").is_empty());
+
+    // Empty lightbar zone slice is rejected with InvalidConfig and zero HID reports.
+    assert!(matches!(
+        transport.write_lightbar_zones(&[]),
+        Err(LightingError::InvalidConfig(_))
+    ));
+    assert_eq!(hid.sent_count(), 0);
+
+    // Seed known keyboard colors in cache.
+    let initial = vec![RgbColor::new(1, 2, 3), RgbColor::new(4, 5, 6)];
+    transport
+        .write_keyboard_zones(&initial)
+        .expect("seed initial keyboard zones");
+    assert_eq!(transport.read_keyboard_colors().expect("read"), initial);
+
+    // 20 zones split into 2 chunks (16 + 4); fail on chunk index 1 (second call).
+    hid.clear_sent();
+    hid.arm_fail_on_call(1);
+    let twenty_zones = vec![RgbColor::new(200, 100, 50); 20];
+    assert!(matches!(
+        transport.write_keyboard_zones(&twenty_zones),
+        Err(LightingError::WriteFailed(_))
+    ));
+    assert_eq!(hid.sent_count(), 1);
+    assert_eq!(
+        transport.read_keyboard_colors().expect("cached colors"),
+        initial
+    );
+}
+
+#[test]
+fn hidraw_malformed_uevent_and_missing_sysfs_root() {
+    let tmp = TempDir::new().expect("temp dir");
+
+    // Non-existent sysfs root returns Ok(vec![]).
+    let missing_root = tmp.path().join("nonexistent_sysfs");
+    let missing_transport = HidrawDeviceTransport::with_sysfs_root(missing_root.as_path());
+    assert_eq!(
+        missing_transport
+            .enumerate_devices()
+            .expect("missing root must return empty vec"),
+        Vec::new()
+    );
+
+    // Direct malformed HID_ID parser checks.
+    assert_eq!(parse_hid_id_from_uevent("HID_ID=0003:0000048D\n"), None);
+    assert_eq!(
+        parse_hid_id_from_uevent("HID_ID=0003:0000048D:0000600B:0001\n"),
+        None
+    );
+    assert_eq!(
+        parse_hid_id_from_uevent("HID_ID=0003:00010000:0000600B\n"),
+        None
+    );
+    assert_eq!(
+        parse_hid_id_from_uevent("HID_ID=0003:0000048D:00010000\n"),
+        None
+    );
+
+    // Sysfs root containing only malformed / missing uevents returns Ok(vec![]).
+    let malformed_root = tmp.path().join("malformed_sysfs");
+    let cases = [
+        ("hidraw0", Some("HID_ID=0003:0000048D:0000600B:EXTRA\n")),
+        ("hidraw1", Some("HID_ID=0003:GGGG:0000600B\n")),
+        ("hidraw2", Some("HID_ID=0003:00010000:0000600B\n")),
+        ("hidraw3", Some("HID_NAME=MissingHidId\n")),
+        ("hidraw4", None),
+        ("not_hidraw", Some("HID_ID=0003:0000048D:0000600B\n")),
+    ];
+    for (dir_name, uevent) in cases {
+        let dev_dir = malformed_root.join(dir_name).join("device");
+        fs::create_dir_all(&dev_dir).expect("create mock hidraw dir");
+        if let Some(content) = uevent {
+            fs::write(dev_dir.join("uevent"), content).expect("write uevent");
+        }
+    }
+
+    let malformed_transport = HidrawDeviceTransport::with_sysfs_root(malformed_root.as_path());
+    assert_eq!(
+        malformed_transport
+            .enumerate_devices()
+            .expect("malformed uevents must be skipped"),
+        Vec::new()
+    );
+}
+
+#[cfg(not(target_os = "linux"))]
+#[test]
+fn hidraw_non_linux_stubs_return_unavailable() {
+    let hidraw = HidrawDeviceTransport::new();
+    assert!(matches!(
+        hidraw.send_feature_report("/dev/hidraw0", &[0x08, 0x01]),
+        Err(LightingError::Unavailable)
+    ));
+    assert!(matches!(
+        hidraw.get_feature_report("/dev/hidraw0", 8),
+        Err(LightingError::Unavailable)
+    ));
+}

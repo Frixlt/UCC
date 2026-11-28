@@ -312,3 +312,107 @@ fn m2_5_legacy_settings_path_autosave_roundtrip_and_aquaris() {
     }
     let _ = fs::remove_dir_all(&temp_dir);
 }
+
+#[test]
+fn write_atomic_sequential_and_backup_rotation_cross_platform() {
+    use ucc_config::{cleanup_temp_files, write_atomic};
+
+    let _lock = ENV_LOCK.lock().unwrap();
+    let root = tempfile::tempdir().expect("create tempdir");
+    let nested = root
+        .path()
+        .join("Мои Настройки UCC")
+        .join("профиль config 01");
+    let target = nested.join("настройки settings.json");
+    let bak = PathBuf::from(format!("{}.bak", target.display()));
+    let backup = PathBuf::from(format!("{}.backup", target.display()));
+
+    // 1. First atomic write creates parent Unicode/space dirs and target, with no backup yet
+    let mut v1 = create_default_settings();
+    v1.charging_profile = Some("balanced".to_string());
+    v1.charge_end_threshold = Some(80);
+    let v1_json = v1.to_json_pretty().expect("serialize v1");
+    write_atomic(&target, v1_json.as_bytes()).expect("write v1");
+
+    assert!(target.is_file());
+    assert!(!bak.exists());
+    assert!(!backup.exists());
+    let loaded_v1 = ConfigManager::load_from_path(&target).expect("load v1");
+    assert_eq!(loaded_v1.charging_profile.as_deref(), Some("balanced"));
+    assert_eq!(loaded_v1.charge_end_threshold, Some(80));
+
+    // 2. Second atomic write rotates v1 into .bak and .backup
+    let mut v2 = v1.clone();
+    v2.charging_profile = Some("stationary".to_string());
+    v2.charge_end_threshold = Some(75);
+    let v2_json = v2.to_json_pretty().expect("serialize v2");
+    write_atomic(&target, v2_json.as_bytes()).expect("write v2");
+
+    assert!(bak.is_file());
+    assert!(backup.is_file());
+    assert_eq!(
+        ConfigManager::load_from_path(&target)
+            .expect("load v2")
+            .charging_profile
+            .as_deref(),
+        Some("stationary")
+    );
+    assert_eq!(
+        ConfigManager::load_from_path(&bak)
+            .expect("load bak v1")
+            .charging_profile
+            .as_deref(),
+        Some("balanced")
+    );
+    assert_eq!(
+        ConfigManager::load_from_path(&backup)
+            .expect("load backup v1")
+            .charge_end_threshold,
+        Some(80)
+    );
+
+    // 3. Third atomic write rotates v2 into .bak and .backup
+    let mut v3 = v2.clone();
+    v3.charging_profile = Some("high_capacity".to_string());
+    v3.charge_end_threshold = Some(95);
+    let v3_json = v3.to_json_pretty().expect("serialize v3");
+    write_atomic(&target, v3_json.as_bytes()).expect("write v3");
+
+    assert_eq!(
+        ConfigManager::load_from_path(&target)
+            .expect("load v3")
+            .charging_profile
+            .as_deref(),
+        Some("high_capacity")
+    );
+    assert_eq!(
+        ConfigManager::load_from_path(&bak)
+            .expect("load rotated bak v2")
+            .charging_profile
+            .as_deref(),
+        Some("stationary")
+    );
+
+    // 4. Corrupt primary file and restore v2 via restore_from_backup
+    fs::write(&target, "{truncated_unicode_payload").expect("corrupt target");
+    assert!(ConfigManager::load_from_path(&target).is_err());
+
+    let restored = ConfigManager::restore_from_backup(&target).expect("restore from backup");
+    assert_eq!(restored.charging_profile.as_deref(), Some("stationary"));
+    assert_eq!(restored.charge_end_threshold, Some(75));
+    let reloaded = ConfigManager::load_from_path(&target).expect("reload restored");
+    assert_eq!(reloaded.charging_profile.as_deref(), Some("stationary"));
+
+    // 5. Orphaned temp files in Unicode/space directory are cleaned up without touching config/backups
+    let orphan_tmp = nested.join(".настройки settings.json.tmp.1234.999999");
+    let orphan_restore = nested.join(".настройки settings.json.tmp_restore.5678.999999");
+    fs::write(&orphan_tmp, b"stale tmp").expect("write orphan tmp");
+    fs::write(&orphan_restore, b"stale restore").expect("write orphan restore");
+
+    let removed = cleanup_temp_files(&nested).expect("cleanup temp files");
+    assert_eq!(removed, 2);
+    assert!(!orphan_tmp.exists());
+    assert!(!orphan_restore.exists());
+    assert!(target.is_file());
+    assert!(bak.is_file());
+}

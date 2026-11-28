@@ -145,3 +145,100 @@ fn v2_p2_10_map_perf_profile_never_falls_back_to_host_fs_when_sysfs_is_some() {
         "V2-P2-10: map_perf_profile_code_to_str must not fall back to host std::fs when sysfs is Some"
     );
 }
+
+#[test]
+fn tuxedo_io_platform_profile_priority_and_ibpg10amd_quirk() {
+    use ucc_hardware::{DmiInfo, UniwillDeviceID};
+
+    let tuxedo_profile =
+        Path::new("/sys/bus/platform/devices/tuxedo_platform_profile/platform_profile");
+    let tuxedo_choices =
+        Path::new("/sys/bus/platform/devices/tuxedo_platform_profile/platform_profile_choices");
+    let acpi_profile = Path::new("/sys/firmware/acpi/platform_profile");
+    let acpi_choices = Path::new("/sys/firmware/acpi/platform_profile_choices");
+
+    // 1. tuxedo_platform_profile takes priority over /sys/firmware/acpi/platform_profile
+    let hw_prio = MockHardwareIo::new();
+    hw_prio.set_i32_read(requests::R_HWCHECK_UW, 1);
+    hw_prio.set_i32_read(requests::R_UW_PROFS_AVAILABLE, 0);
+
+    let sysfs_prio = Arc::new(MockSysfs::new());
+    sysfs_prio.set_file(tuxedo_profile, "low-power\n");
+    sysfs_prio.set_file(tuxedo_choices, "low-power balanced performance\n");
+    sysfs_prio.set_file(acpi_profile, "performance\n");
+    sysfs_prio.set_file(acpi_choices, "low-power balanced performance\n");
+
+    let backend_prio = TuxedoIoBackend::with_sysfs(hw_prio, None, Arc::clone(&sysfs_prio) as _);
+    assert_eq!(backend_prio.read_perf_profile().unwrap(), 1);
+    backend_prio.set_perf_profile(2).unwrap();
+    assert!(sysfs_prio
+        .journal()
+        .iter()
+        .any(|w| w.path == tuxedo_profile && w.content == "balanced"));
+    assert!(!sysfs_prio.journal().iter().any(|w| w.path == acpi_profile));
+
+    // 2. Non-quirked device falls back to /sys/firmware/acpi/platform_profile when tuxedo path is absent
+    let hw_acpi = MockHardwareIo::new();
+    hw_acpi.set_i32_read(requests::R_HWCHECK_UW, 1);
+    hw_acpi.set_i32_read(requests::R_UW_PROFS_AVAILABLE, 0);
+
+    let sysfs_acpi = Arc::new(MockSysfs::new());
+    sysfs_acpi.set_file(acpi_profile, "performance\n");
+    sysfs_acpi.set_file(acpi_choices, "low-power balanced performance\n");
+
+    let stellaris_dmi = DmiInfo {
+        sys_vendor: "TUXEDO".into(),
+        product_sku: "STELLARIS16I07".into(),
+        ..Default::default()
+    };
+    let backend_acpi =
+        TuxedoIoBackend::with_sysfs(hw_acpi, Some(&stellaris_dmi), Arc::clone(&sysfs_acpi) as _);
+    assert_eq!(backend_acpi.read_perf_profile().unwrap(), 3);
+
+    // 3. IBPG10AMD quirk: /sys/firmware/acpi/platform_profile must be ignored completely
+    let hw_quirk = MockHardwareIo::new();
+    hw_quirk.set_i32_read(requests::R_HWCHECK_UW, 1);
+    hw_quirk.set_i32_read(requests::R_UW_PROFS_AVAILABLE, 0);
+
+    let sysfs_quirk = Arc::new(MockSysfs::new());
+    sysfs_quirk.set_file(acpi_profile, "balanced\n");
+    sysfs_quirk.set_file(acpi_choices, "low-power balanced performance\n");
+
+    let ibpg10_dmi = DmiInfo {
+        sys_vendor: "TUXEDO".into(),
+        product_sku: "IBP14A10MK1 / IBP15A10MK1".into(),
+        ..Default::default()
+    };
+    let backend_quirk =
+        TuxedoIoBackend::with_sysfs(hw_quirk, Some(&ibpg10_dmi), Arc::clone(&sysfs_quirk) as _);
+    assert_eq!(
+        backend_quirk.capabilities().device.device_id,
+        Some(UniwillDeviceID::IBPG10AMD)
+    );
+    assert!(matches!(
+        backend_quirk.read_perf_profile(),
+        Err(PlatformError::Unsupported(_))
+    ));
+    assert!(matches!(
+        backend_quirk.set_perf_profile(2),
+        Err(PlatformError::Unsupported(_))
+    ));
+    assert!(sysfs_quirk.journal().is_empty());
+
+    // 4. IBPG10AMD still works if tuxedo_platform_profile is present
+    let hw_quirk_tux = MockHardwareIo::new();
+    hw_quirk_tux.set_i32_read(requests::R_HWCHECK_UW, 1);
+    hw_quirk_tux.set_i32_read(requests::R_UW_PROFS_AVAILABLE, 0);
+
+    let sysfs_quirk_tux = Arc::new(MockSysfs::new());
+    sysfs_quirk_tux.set_file(tuxedo_profile, "balanced\n");
+    sysfs_quirk_tux.set_file(tuxedo_choices, "low-power balanced performance\n");
+    sysfs_quirk_tux.set_file(acpi_profile, "performance\n");
+
+    let backend_quirk_tux = TuxedoIoBackend::with_sysfs(
+        hw_quirk_tux,
+        Some(&ibpg10_dmi),
+        Arc::clone(&sysfs_quirk_tux) as _,
+    );
+    assert_eq!(backend_quirk_tux.read_perf_profile().unwrap(), 2);
+}

@@ -755,3 +755,172 @@ fn deep_20_tcc_converter_preserves_utf8_in_double_quoted_profile_names() {
     let presets = read_tcc_fan_presets(&archive).unwrap();
     assert_eq!(presets["Тихий"].table_gpu[0].speed, 15);
 }
+
+#[test]
+fn tcc_asar_and_mechrevo_import_edge_cases() {
+    // 1. ASAR archive with Windows CRLF line endings and multiple presets
+    let crlf_js = concat!(
+        "export const defaultFanProfiles = [\r\n",
+        "{name: 'Silent', tableCPU: [{temp: 0, speed: 0}, {temp: 100, speed: 80}], ",
+        "tableGPU: [{temp: 0, speed: 5}, {temp: 100, speed: 85}]},\r\n",
+        "{name: 'Turbo', tableCPU: [{temp: 0, speed: 20}, {temp: 100, speed: 100}], ",
+        "tableGPU: [{temp: 0, speed: 25}, {temp: 100, speed: 100}]},\r\n",
+        "];\r\n",
+    );
+    let tmp = TempDir::new().expect("create tempdir");
+    let archive = tmp.path().join("crlf_app.asar");
+    build_asar_archive(&archive, crlf_js.as_bytes());
+
+    let presets = read_tcc_fan_presets(&archive).expect("parse CRLF ASAR presets");
+    assert_eq!(presets.len(), 2);
+    assert_eq!(presets["Silent"].table_cpu[1].speed, 80);
+    assert_eq!(presets["Turbo"].table_gpu[0].speed, 25);
+
+    // Malformed / truncated ASAR header must error cleanly
+    let bad_archive = tmp.path().join("empty.asar");
+    fs::write(&bad_archive, b"").expect("write empty asar");
+    assert!(read_tcc_fan_presets(&bad_archive).is_err());
+
+    // 2. convert_mechrevo_tcc with multiple profiles and Windows CRLF JSON payloads
+    let (mut settings, profiles_val, mut user, curves, hardware) = mechrevo_fixture();
+    settings["stateMap"]["power_bat"] = json!("quiet-work");
+    let mut multi_profiles = profiles_val.as_array().unwrap().clone();
+    multi_profiles.push(json!({
+        "id": "quiet-work",
+        "name": "Quiet Work",
+        "display": { "refreshRate": 60 },
+        "cpu": { "governor": "powersave", "useMaxPerfGov": false },
+        "fan": {
+            "fanProfile": "Balanced",
+            "useControl": true,
+            "minimumFanspeed": 0,
+            "maximumFanspeed": 70,
+            "offsetFanspeed": 0
+        },
+        "odmPowerLimits": { "tdpValues": [25, 35, 45] }
+    }));
+    let saved_pretty_crlf = serde_json::to_string_pretty(
+        &serde_json::from_str::<Value>(user["aquarisSaveState"].as_str().unwrap()).unwrap(),
+    )
+    .unwrap()
+    .replace('\n', "\r\n");
+    user["aquarisSaveState"] = json!(saved_pretty_crlf);
+
+    let settings_crlf: Value = serde_json::from_str(
+        &serde_json::to_string_pretty(&settings)
+            .unwrap()
+            .replace('\n', "\r\n"),
+    )
+    .expect("parse CRLF settings");
+    let profiles_crlf: Value = serde_json::from_str(
+        &serde_json::to_string_pretty(&Value::Array(multi_profiles))
+            .unwrap()
+            .replace('\n', "\r\n"),
+    )
+    .expect("parse CRLF profiles");
+
+    let (converted, cooler) =
+        convert_mechrevo_tcc(&settings_crlf, &profiles_crlf, &user, &curves, &hardware)
+            .expect("convert multi-profile CRLF mechrevo TCC");
+    assert_eq!(converted["profiles"].as_object().unwrap().len(), 2);
+    assert_eq!(
+        converted["profiles"]["quiet-work"]["odmPowerLimits"]["tdpValues"],
+        json!([25, 35, 45])
+    );
+    assert_eq!(converted["stateMap"]["power_bat"], json!("quiet-work"));
+    assert_eq!(cooler["address"], json!("02:00:00:00:00:01"));
+
+    // Empty / malformed inputs to convert_mechrevo_tcc
+    assert!(convert_mechrevo_tcc(&json!([]), &profiles_crlf, &user, &curves, &hardware).is_err());
+    assert!(convert_mechrevo_tcc(&settings_crlf, &json!({}), &user, &curves, &hardware).is_err());
+    assert!(convert_mechrevo_tcc(
+        &settings_crlf,
+        &json!([{ "name": "Missing ID" }]),
+        &user,
+        &curves,
+        &hardware
+    )
+    .is_err());
+    let mut bad_user = user.clone();
+    bad_user["aquarisSaveState"] = json!("{malformed-json");
+    assert!(
+        convert_mechrevo_tcc(&settings_crlf, &profiles_crlf, &bad_user, &curves, &hardware)
+            .is_err()
+    );
+
+    // 3. convert_offline_import from CRLF Data/ JSON files with multiple profiles + malformed edge cases
+    let data_dir = tmp.path().join("crlf_data");
+    fs::create_dir_all(&data_dir).expect("create crlf_data dir");
+    let write_crlf_json = |name: &str, val: &Value| {
+        let crlf = serde_json::to_string_pretty(val)
+            .unwrap()
+            .replace('\n', "\r\n");
+        fs::write(data_dir.join(name), crlf).expect("write crlf json");
+    };
+    write_crlf_json(
+        "config.json",
+        &json!({
+            "settings": {
+                "ac": { "tuxedo_profile_id": "ac-base", "cpu_profile": "performance" },
+                "type_c": { "tuxedo_profile_id": "typec-base", "cpu_profile": "balanced" },
+                "bat": { "tuxedo_profile_id": "bat-base", "cpu_profile": "power-saver" }
+            },
+            "devices": []
+        }),
+    );
+    write_crlf_json("keyboard_colors.json", &json!({ "0": [10, 20, 30] }));
+    write_crlf_json("lightbar.json", &json!({ "silent_mode": false }));
+    write_crlf_json("gui_settings.json", &json!({ "theme": "dark" }));
+
+    let crlf_data = OfflineUserData::from_dir(&data_dir).expect("load CRLF OfflineUserData");
+    let multi_base_crlf: Value = serde_json::from_str(
+        &serde_json::to_string_pretty(&json!({
+            "profiles": {
+                "ac-base": { "id": "ac-base", "name": "AC Base", "odmPowerLimits": { "tdpValues": [55, 65, 75] } },
+                "typec-base": { "id": "typec-base", "name": "TypeC Base", "odmPowerLimits": { "tdpValues": [35, 45, 55] } },
+                "bat-base": { "id": "bat-base", "name": "Bat Base", "odmPowerLimits": { "tdpValues": [15, 20, 25] } }
+            },
+            "stateMap": {},
+            "keyboardBacklightStates": [
+                { "brightness": 20, "red": 1, "green": 2, "blue": 3 },
+                { "brightness": 20, "red": 1, "green": 2, "blue": 3 },
+                { "brightness": 20, "red": 1, "green": 2, "blue": 3 },
+                { "brightness": 20, "red": 1, "green": 2, "blue": 3 }
+            ]
+        }))
+        .unwrap()
+        .replace('\n', "\r\n"),
+    )
+    .expect("parse CRLF multi-profile base");
+    let caps = sample_caps();
+
+    let out = convert_offline_import(&crlf_data, &multi_base_crlf, &caps, Some(25))
+        .expect("convert CRLF multi-profile offline import");
+    assert!(out.report["unresolvedProfiles"]
+        .as_array()
+        .unwrap()
+        .is_empty());
+    assert_eq!(
+        out.settings["profiles"]["frixit-ac"]["odmPowerLimits"]["tdpValues"],
+        json!([55, 65, 75])
+    );
+    assert_eq!(
+        out.settings["profiles"]["frixit-type_c"]["odmPowerLimits"]["tdpValues"],
+        json!([35, 45, 55])
+    );
+    assert_eq!(
+        out.settings["profiles"]["frixit-bat"]["odmPowerLimits"]["tdpValues"],
+        json!([15, 20, 25])
+    );
+
+    // Malformed / empty inputs to convert_offline_import must error cleanly
+    assert!(convert_offline_import(&crlf_data, &json!([]), &caps, None).is_err());
+    assert!(convert_offline_import(&crlf_data, &multi_base_crlf, &json!({}), None).is_err());
+    let empty_data = OfflineUserData {
+        config: json!(null),
+        keyboard_colors: json!({}),
+        lightbar: json!({}),
+        gui_settings: json!({}),
+    };
+    assert!(convert_offline_import(&empty_data, &multi_base_crlf, &caps, Some(25)).is_err());
+}

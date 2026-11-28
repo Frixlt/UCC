@@ -457,3 +457,86 @@ fn uwcc_system_info_reports_hardware_mux_state_when_supported() {
     assert_eq!(info["mux"]["activeGpu"], "igpu");
     assert_eq!(info["mux"]["bootMode"], "dynamic");
 }
+
+#[test]
+fn windows_wmi_driver_health_reports_healthy_or_wmi_error_never_tuxedo() {
+    let tmp = tempfile::tempdir().expect("tempdir");
+    let sysfs = Arc::new(MockSysfs::new());
+
+    let platform = make_mock_platform(PlatformBackendKind::WindowsWmi);
+    let backend = build_backend_with_platform(tmp.path(), Arc::clone(&platform) as _, sysfs);
+
+    let healthy_json: Value =
+        serde_json::from_str(&backend.get_driver_health_json()).expect("valid driver health json");
+    assert_eq!(healthy_json["platformBackend"], "windows_wmi");
+    assert_eq!(healthy_json["healthy"], true);
+    let healthy_msg = healthy_json["message"].as_str().unwrap_or_default();
+    assert!(
+        !healthy_msg.contains("TUXEDO") && !healthy_msg.contains("DKMS"),
+        "WindowsWmi healthy payload must never mention Linux TUXEDO/DKMS: {healthy_msg}"
+    );
+
+    platform.set_available(false);
+    let err_json: Value =
+        serde_json::from_str(&backend.get_driver_health_json()).expect("valid driver health json");
+    assert_eq!(err_json["platformBackend"], "windows_wmi");
+    assert_eq!(err_json["healthy"], false);
+    let err_msg = err_json["message"].as_str().unwrap_or_default();
+    assert!(
+        err_msg.contains("WMI") || err_msg.contains("AcpiTest_MULong"),
+        "expected Windows WMI diagnostic when WindowsWmi is unavailable, got: {err_msg}"
+    );
+    assert!(
+        !err_msg.contains("TUXEDO") && !err_msg.contains("DKMS"),
+        "WindowsWmi failure must NEVER report Linux TUXEDO DKMS error: {err_msg}"
+    );
+}
+
+#[test]
+fn uwcc_system_info_handles_mux_active_dgpu_and_discrete_boot_mode() {
+    use ucc_hardware::{
+        UwccMuxState, UwccTransport, UWCC_FLAG_HAS_MUX, UWCC_MUX_ACTIVE_DGPU,
+        UWCC_MUX_MODE_DGPU_ONLY,
+    };
+
+    let tmp = tempfile::tempdir().expect("tempdir");
+    let sysfs = Arc::new(MockSysfs::new());
+
+    // 1. Active dGPU + discrete (dgpu_only) boot mode serialized under `mux`.
+    let transport = Arc::new(MockUwccTransport::chassis_0x1a_default());
+    transport.set_mux_state(UwccMuxState {
+        active_gpu: UWCC_MUX_ACTIVE_DGPU,
+        boot_mode: UWCC_MUX_MODE_DGPU_ONLY,
+    });
+    let uwcc_platform: Arc<dyn PlatformBackend> = Arc::new(UwccBackend::new(
+        Arc::clone(&transport) as Arc<dyn UwccTransport>,
+        None,
+        Some(Arc::clone(&sysfs) as Arc<dyn Sysfs>),
+    ));
+    let backend = build_backend_with_platform(tmp.path(), uwcc_platform, Arc::clone(&sysfs));
+
+    let info: Value =
+        serde_json::from_str(&backend.get_system_info_json()).expect("valid system info json");
+    assert_eq!(info["mux"]["supported"], true);
+    assert_eq!(info["mux"]["activeGpu"], "dgpu");
+    assert_eq!(info["mux"]["bootMode"], "dgpu_only");
+
+    // 2. Omit `mux` completely when hardware does not advertise UWCC_FLAG_HAS_MUX.
+    let no_mux_transport = Arc::new(MockUwccTransport::chassis_0x1a_default());
+    let mut info_without_mux = no_mux_transport.get_info().expect("mock uwcc info");
+    info_without_mux.flags &= !UWCC_FLAG_HAS_MUX;
+    no_mux_transport.set_info(info_without_mux);
+    let no_mux_platform: Arc<dyn PlatformBackend> = Arc::new(UwccBackend::new(
+        Arc::clone(&no_mux_transport) as Arc<dyn UwccTransport>,
+        None,
+        Some(Arc::clone(&sysfs) as Arc<dyn Sysfs>),
+    ));
+    let no_mux_backend = build_backend_with_platform(tmp.path(), no_mux_platform, sysfs);
+
+    let no_mux_info: Value = serde_json::from_str(&no_mux_backend.get_system_info_json())
+        .expect("valid system info json");
+    assert!(
+        no_mux_info.get("mux").is_none(),
+        "system info must omit `mux` when MUX is unsupported, got: {no_mux_info}"
+    );
+}

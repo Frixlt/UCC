@@ -775,3 +775,74 @@ fn prop_cooling_controller_hw_limits_filtering_and_critical_override() {
     assert_eq!(merged_gpu.table_cpu, base.table_cpu);
     assert_eq!(merged_gpu.table_gpu, temp.gpu);
 }
+
+#[test]
+fn temperature_filter_alpha_extremes_and_pump_duplicate_temps() {
+    // 1. Uninitialized TemperatureFilter reports false / 0.
+    let uninit = TemperatureFilter::new(0.0, 0.0);
+    assert!(!uninit.is_initialized());
+    assert_eq!(uninit.filtered_value(), 0);
+
+    // 2. alpha_rising = 0.0, alpha_falling = 0.0: latches first sample forever.
+    let mut frozen = TemperatureFilter::new(0.0, 0.0);
+    frozen.add_value(45);
+    assert!(frozen.is_initialized());
+    assert_eq!(frozen.filtered_value(), 45);
+    frozen.add_value(95);
+    assert_eq!(frozen.filtered_value(), 45);
+    frozen.add_value(10);
+    assert_eq!(frozen.filtered_value(), 45);
+
+    // 3. alpha_rising = 1.0, alpha_falling = 1.0: tracks every sample with zero lag.
+    let mut passthrough = TemperatureFilter::new(1.0, 1.0);
+    for sample in [40, 88, 22, -5, 100] {
+        passthrough.add_value(sample);
+        assert_eq!(passthrough.filtered_value(), sample);
+    }
+
+    // 4. Asymmetric extremes: (1.0, 0.0) acts as a peak-hold ratchet, (0.0, 1.0) as min-hold.
+    let mut peak_hold = TemperatureFilter::new(1.0, 0.0);
+    peak_hold.add_value(40);
+    peak_hold.add_value(75);
+    assert_eq!(peak_hold.filtered_value(), 75);
+    peak_hold.add_value(30);
+    assert_eq!(peak_hold.filtered_value(), 75);
+    peak_hold.add_value(85);
+    assert_eq!(peak_hold.filtered_value(), 85);
+
+    let mut min_hold = TemperatureFilter::new(0.0, 1.0);
+    min_hold.add_value(70);
+    min_hold.add_value(95);
+    assert_eq!(min_hold.filtered_value(), 70);
+    min_hold.add_value(35);
+    assert_eq!(min_hold.filtered_value(), 35);
+    min_hold.add_value(80);
+    assert_eq!(min_hold.filtered_value(), 35);
+
+    // 5. get_pump_speed_for_temp determinism with duplicate temperatures.
+    //    Because sort_by_key is stable, the last matching entry at a duplicated temperature wins.
+    let dup_table = [
+        PumpPoint::new(50, 1), // V7
+        PumpPoint::new(50, 3), // V11 (last at 50C)
+        PumpPoint::new(70, 2), // V8
+        PumpPoint::new(70, 1), // V7 (last at 70C)
+    ];
+    for _ in 0..10 {
+        assert_eq!(get_pump_speed_for_temp(&dup_table, 49), PumpVoltage::Off);
+        assert_eq!(get_pump_speed_for_temp(&dup_table, 50), PumpVoltage::V11);
+        assert_eq!(get_pump_speed_for_temp(&dup_table, 65), PumpVoltage::V11);
+        assert_eq!(get_pump_speed_for_temp(&dup_table, 70), PumpVoltage::V7);
+        assert_eq!(get_pump_speed_for_temp(&dup_table, 95), PumpVoltage::V7);
+    }
+
+    // Unsorted table with duplicate temperatures still resolves deterministically via stable sort,
+    // and legacy speed level 4 (V12) is still clamped to V11.
+    let unsorted_dup = [
+        PumpPoint::new(70, 2),
+        PumpPoint::new(50, 1),
+        PumpPoint::new(50, 4), // legacy V12 -> clamped to V11
+    ];
+    assert_eq!(get_pump_speed_for_temp(&unsorted_dup, 50), PumpVoltage::V11);
+    assert_eq!(get_pump_speed_for_temp(&unsorted_dup, 69), PumpVoltage::V11);
+    assert_eq!(get_pump_speed_for_temp(&unsorted_dup, 70), PumpVoltage::V8);
+}

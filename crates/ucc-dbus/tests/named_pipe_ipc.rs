@@ -535,3 +535,460 @@ fn profile_negative_manual_pump_voltage_sentinel_is_not_escalated_and_v12_is_rej
     };
     assert!(dispatch_json_rpc_with_identity(&backend, &req_fan, &interactive).ok);
 }
+
+#[test]
+fn ipc_monitor_data_since_and_fan_data_zvariant_conversion() {
+    use std::collections::HashMap;
+    use std::sync::Mutex;
+    use ucc_dbus::UccdBackend;
+    use zbus::zvariant::{OwnedValue, Value};
+
+    struct TelemetryAndFnLockBackend {
+        since_calls: Mutex<Vec<i64>>,
+    }
+
+    impl UccdBackend for TelemetryAndFnLockBackend {
+        fn get_monitor_data_since(&self, since_timestamp_ms: i64) -> Vec<u8> {
+            self.since_calls.lock().unwrap().push(since_timestamp_ms);
+            if since_timestamp_ms >= 1_000 {
+                vec![0x10, 0x20, 0x30, 0x40]
+            } else {
+                vec![0x01, 0x02]
+            }
+        }
+
+        fn get_fan_data_cpu(&self) -> HashMap<String, OwnedValue> {
+            let mut map = HashMap::new();
+            map.insert("u8_val".to_string(), OwnedValue::from(7u8));
+            map.insert("active".to_string(), OwnedValue::from(true));
+            map.insert("i16_val".to_string(), OwnedValue::from(-12i16));
+            map.insert("u16_val".to_string(), OwnedValue::from(3400u16));
+            map.insert("temp_c".to_string(), OwnedValue::from(68i32));
+            map.insert("rpm".to_string(), OwnedValue::from(4200u32));
+            map.insert("ts_ms".to_string(), OwnedValue::from(1_700_000_000_000i64));
+            map.insert("ticks".to_string(), OwnedValue::from(99_999u64));
+            map.insert("duty_f64".to_string(), OwnedValue::from(55.5f64));
+            map.insert("nan_f64".to_string(), OwnedValue::from(f64::NAN));
+            map.insert(
+                "label".to_string(),
+                OwnedValue::try_from(Value::from("cpu-fan")).unwrap(),
+            );
+            map.insert(
+                "curve".to_string(),
+                OwnedValue::try_from(Value::from(vec![30i32, 50, 80])).unwrap(),
+            );
+
+            let mut nested_dict: HashMap<String, OwnedValue> = HashMap::new();
+            nested_dict.insert(
+                "mode".to_string(),
+                OwnedValue::try_from(Value::from("auto")).unwrap(),
+            );
+            nested_dict.insert("min_rpm".to_string(), OwnedValue::from(1200u32));
+            map.insert(
+                "meta".to_string(),
+                OwnedValue::try_from(Value::from(nested_dict)).unwrap(),
+            );
+
+            let wrapped = Value::Value(Box::new(Value::from("nested-variant")));
+            map.insert("wrapped".to_string(), OwnedValue::try_from(wrapped).unwrap());
+            map
+        }
+
+        fn get_fan_data_gpu1(&self) -> HashMap<String, OwnedValue> {
+            let mut map = HashMap::new();
+            map.insert("speed".to_string(), OwnedValue::from(62i32));
+            map.insert("temp".to_string(), OwnedValue::from(71.25f64));
+            let mut tags: HashMap<String, String> = HashMap::new();
+            tags.insert("sensor".to_string(), "dgpu1".to_string());
+            map.insert(
+                "tags".to_string(),
+                OwnedValue::try_from(Value::from(tags)).unwrap(),
+            );
+            map
+        }
+
+        fn get_fan_data_gpu2(&self) -> HashMap<String, OwnedValue> {
+            let mut map = HashMap::new();
+            map.insert("rpm".to_string(), OwnedValue::from(2800u32));
+            map.insert(
+                "samples".to_string(),
+                OwnedValue::try_from(Value::from(vec![25u16, 40, 60])).unwrap(),
+            );
+            map
+        }
+
+        fn set_fn_lock_status(&self, status: bool) -> Result<(), String> {
+            if status {
+                Ok(())
+            } else {
+                Err("fn-lock hardware write failed".to_string())
+            }
+        }
+    }
+
+    let backend = TelemetryAndFnLockBackend {
+        since_calls: Mutex::new(Vec::new()),
+    };
+    let caller = CallerIdentity::interactive("IU:pid:5001");
+
+    // GetMonitorDataSince with camelCase and snake_case params
+    let mon_camel = dispatch_json_rpc_with_identity(
+        &backend,
+        &IpcRequest {
+            id: 1,
+            method: "GetMonitorDataSince".to_string(),
+            params: json!({ "sinceTimestampMs": 1_500 }),
+        },
+        &caller,
+    );
+    assert!(mon_camel.ok);
+    assert_eq!(mon_camel.result, Some(json!([16, 32, 48, 64])));
+
+    let mon_snake = dispatch_json_rpc_with_identity(
+        &backend,
+        &IpcRequest {
+            id: 2,
+            method: "GetMonitorDataSince".to_string(),
+            params: json!({ "since_timestamp_ms": 500 }),
+        },
+        &caller,
+    );
+    assert!(mon_snake.ok);
+    assert_eq!(mon_snake.result, Some(json!([1, 2])));
+    assert_eq!(*backend.since_calls.lock().unwrap(), vec![1_500, 500]);
+
+    let mon_missing = dispatch_json_rpc_with_identity(
+        &backend,
+        &IpcRequest {
+            id: 3,
+            method: "GetMonitorDataSince".to_string(),
+            params: json!({}),
+        },
+        &caller,
+    );
+    assert!(!mon_missing.ok);
+    assert!(mon_missing
+        .error
+        .as_deref()
+        .unwrap_or("")
+        .contains("sinceTimestampMs"));
+
+    // GetFanDataCPU nested zvariant::Value conversion
+    let cpu_resp = dispatch_json_rpc_with_identity(
+        &backend,
+        &IpcRequest {
+            id: 4,
+            method: "GetFanDataCPU".to_string(),
+            params: json!({}),
+        },
+        &caller,
+    );
+    assert!(cpu_resp.ok);
+    let cpu_obj = cpu_resp.result.expect("cpu fan result");
+    assert_eq!(cpu_obj["u8_val"], json!(7));
+    assert_eq!(cpu_obj["active"], json!(true));
+    assert_eq!(cpu_obj["i16_val"], json!(-12));
+    assert_eq!(cpu_obj["u16_val"], json!(3400));
+    assert_eq!(cpu_obj["temp_c"], json!(68));
+    assert_eq!(cpu_obj["rpm"], json!(4200));
+    assert_eq!(cpu_obj["ts_ms"], json!(1_700_000_000_000_i64));
+    assert_eq!(cpu_obj["ticks"], json!(99_999));
+    assert_eq!(cpu_obj["duty_f64"], json!(55.5));
+    assert_eq!(cpu_obj["nan_f64"], json!(null));
+    assert_eq!(cpu_obj["label"], json!("cpu-fan"));
+    assert_eq!(cpu_obj["curve"], json!([30, 50, 80]));
+    assert_eq!(cpu_obj["meta"]["mode"], json!("auto"));
+    assert_eq!(cpu_obj["meta"]["min_rpm"], json!(1200));
+    assert_eq!(cpu_obj["wrapped"], json!("nested-variant"));
+
+    // GetFanDataGPU1 & GetFanDataGPU2
+    let gpu1_resp = dispatch_json_rpc_with_identity(
+        &backend,
+        &IpcRequest {
+            id: 5,
+            method: "GetFanDataGPU1".to_string(),
+            params: json!({}),
+        },
+        &caller,
+    );
+    assert!(gpu1_resp.ok);
+    let gpu1_obj = gpu1_resp.result.expect("gpu1 fan result");
+    assert_eq!(gpu1_obj["speed"], json!(62));
+    assert_eq!(gpu1_obj["temp"], json!(71.25));
+    assert_eq!(gpu1_obj["tags"]["sensor"], json!("dgpu1"));
+
+    let gpu2_resp = dispatch_json_rpc_with_identity(
+        &backend,
+        &IpcRequest {
+            id: 6,
+            method: "GetFanDataGPU2".to_string(),
+            params: json!({}),
+        },
+        &caller,
+    );
+    assert!(gpu2_resp.ok);
+    let gpu2_obj = gpu2_resp.result.expect("gpu2 fan result");
+    assert_eq!(gpu2_obj["rpm"], json!(2800));
+    assert_eq!(gpu2_obj["samples"], json!([25, 40, 60]));
+
+    // SetFnLockStatus Ok and Err propagation over IPC
+    let fn_ok = dispatch_json_rpc_with_identity(
+        &backend,
+        &IpcRequest {
+            id: 7,
+            method: "SetFnLockStatus".to_string(),
+            params: json!({ "status": true }),
+        },
+        &caller,
+    );
+    assert!(fn_ok.ok);
+    assert_eq!(fn_ok.result, Some(json!(true)));
+    assert!(fn_ok.error.is_none());
+
+    let fn_err = dispatch_json_rpc_with_identity(
+        &backend,
+        &IpcRequest {
+            id: 8,
+            method: "SetFnLockStatus".to_string(),
+            params: json!({ "status": false }),
+        },
+        &caller,
+    );
+    assert!(!fn_err.ok);
+    assert!(fn_err.result.is_none());
+    assert_eq!(
+        fn_err.error.as_deref(),
+        Some("fn-lock hardware write failed")
+    );
+}
+
+#[test]
+fn ipc_register_power_request_passes_caller_principal() {
+    use std::sync::Mutex;
+    use ucc_dbus::UccdBackend;
+
+    struct PowerRequestSpyBackend {
+        registered: Mutex<Vec<(String, String, String, String)>>,
+        unregistered: Mutex<Vec<(String, String)>>,
+    }
+
+    impl UccdBackend for PowerRequestSpyBackend {
+        fn register_power_request_with_sender(
+            &self,
+            sender: &str,
+            name: &str,
+            reason: &str,
+            mode_val: &str,
+        ) -> bool {
+            self.registered.lock().unwrap().push((
+                sender.to_string(),
+                name.to_string(),
+                reason.to_string(),
+                mode_val.to_string(),
+            ));
+            true
+        }
+
+        fn unregister_power_request_with_sender(&self, sender: &str, name: &str) -> bool {
+            self.unregistered
+                .lock()
+                .unwrap()
+                .push((sender.to_string(), name.to_string()));
+            true
+        }
+    }
+
+    let backend = Arc::new(PowerRequestSpyBackend {
+        registered: Mutex::new(Vec::new()),
+        unregistered: Mutex::new(Vec::new()),
+    });
+
+    // Direct dispatch with interactive caller principal
+    let interactive = CallerIdentity::interactive("IU:pid:9876");
+    let reg_resp = dispatch_json_rpc_with_identity(
+        backend.as_ref(),
+        &IpcRequest {
+            id: 1,
+            method: "RegisterPowerRequest".to_string(),
+            params: json!({
+                "name": "game-boost",
+                "reason": "shader compilation",
+                "mode": "performance"
+            }),
+        },
+        &interactive,
+    );
+    assert!(reg_resp.ok);
+    assert_eq!(reg_resp.result, Some(json!(true)));
+
+    let unreg_resp = dispatch_json_rpc_with_identity(
+        backend.as_ref(),
+        &IpcRequest {
+            id: 2,
+            method: "UnregisterPowerRequest".to_string(),
+            params: json!({ "name": "game-boost" }),
+        },
+        &interactive,
+    );
+    assert!(unreg_resp.ok);
+    assert_eq!(unreg_resp.result, Some(json!(true)));
+
+    // Through NamedPipeServer session with privileged caller principal and mode_val alias
+    let transport = MockNamedPipeTransport::default_secure();
+    let reg_wire = encode_frame(&IpcRequest {
+        id: 3,
+        method: "RegisterPowerRequest".to_string(),
+        params: json!({
+            "name": "backup-job",
+            "reason": "nightly snapshot",
+            "mode_val": "balanced"
+        }),
+    })
+    .unwrap();
+    let unreg_wire = encode_frame(&IpcRequest {
+        id: 4,
+        method: "UnregisterPowerRequest".to_string(),
+        params: json!({ "name": "backup-job" }),
+    })
+    .unwrap();
+    let out = transport.enqueue_session(
+        CallerIdentity::privileged("BA:pid:4321"),
+        vec![reg_wire, unreg_wire],
+    );
+
+    let server = NamedPipeServer::new(transport, backend.clone());
+    let stats = server.run_until_shutdown().unwrap();
+    assert_eq!(stats.connections_served, 1);
+    assert_eq!(stats.requests_served, 2);
+    assert_eq!(stats.rejected_frames, 0);
+
+    let resps: Vec<IpcResponse> = out
+        .lock()
+        .unwrap()
+        .iter()
+        .map(|w| decode_frame(w).unwrap())
+        .collect();
+    assert_eq!(resps.len(), 2);
+    assert!(resps[0].ok);
+    assert!(resps[1].ok);
+
+    assert_eq!(
+        *backend.registered.lock().unwrap(),
+        vec![
+            (
+                "IU:pid:9876".to_string(),
+                "game-boost".to_string(),
+                "shader compilation".to_string(),
+                "performance".to_string(),
+            ),
+            (
+                "BA:pid:4321".to_string(),
+                "backup-job".to_string(),
+                "nightly snapshot".to_string(),
+                "balanced".to_string(),
+            ),
+        ]
+    );
+    assert_eq!(
+        *backend.unregistered.lock().unwrap(),
+        vec![
+            ("IU:pid:9876".to_string(), "game-boost".to_string()),
+            ("BA:pid:4321".to_string(), "backup-job".to_string()),
+        ]
+    );
+}
+
+#[cfg(windows)]
+#[test]
+fn win32_named_pipe_roundtrip_and_sddl_enforcement() {
+    use std::thread;
+    use std::time::Duration;
+    use ucc_dbus::{NamedPipeError, Win32NamedPipeClient, Win32NamedPipeTransport};
+
+    let pipe_path = format!(r"\\.\pipe\ucc-rusted-test-{}", std::process::id());
+
+    // Reject overly permissive SDDL (Everyone / WD) before creating any Win32 pipe handle.
+    let bad_sddl = Win32NamedPipeTransport::new(
+        &pipe_path,
+        "D:P(A;;GA;;;SY)(A;;GA;;;BA)(A;;GRGW;;;IU)(A;;GR;;;WD)",
+    );
+    assert!(matches!(
+        bad_sddl,
+        Err(NamedPipeError::InvalidAcl(PipeAclError::ForbiddenAllowSid(sid))) if sid == "WD"
+    ));
+
+    let transport = Win32NamedPipeTransport::new(&pipe_path, WINDOWS_PIPE_SDDL)
+        .expect("valid SDDL must construct Win32NamedPipeTransport");
+    assert_eq!(transport.pipe_path(), pipe_path);
+    assert_eq!(transport.acl_policy().sddl(), WINDOWS_PIPE_SDDL);
+
+    let server = NamedPipeServer::new(transport, Arc::new(DefaultUccdBackend));
+    let server_handle = thread::spawn(move || {
+        let mut conn = server
+            .transport()
+            .accept()
+            .expect("accept should succeed")
+            .expect("Win32 accept should yield a connection");
+        server
+            .serve_connection(&mut conn)
+            .expect("serve_connection should finish cleanly on client EOF")
+    });
+
+    let mut client_opt = None;
+    for _ in 0..50 {
+        match Win32NamedPipeClient::connect(&pipe_path) {
+            Ok(c) => {
+                client_opt = Some(c);
+                break;
+            }
+            Err(_) => thread::sleep(Duration::from_millis(20)),
+        }
+    }
+    let mut client = client_opt.expect("Win32NamedPipeClient should connect to test pipe");
+
+    // Multi-frame roundtrip on the same Win32 Named Pipe connection
+    let resp1 = client
+        .call(&IpcRequest {
+            id: 1,
+            method: "GetDeviceName".to_string(),
+            params: json!({}),
+        })
+        .expect("GetDeviceName roundtrip");
+    assert!(resp1.ok);
+    assert_eq!(resp1.id, 1);
+    assert_eq!(resp1.result, Some(json!("ucc-rusted Laptop")));
+
+    let resp2 = client
+        .call(&IpcRequest {
+            id: 2,
+            method: "UccdVersion".to_string(),
+            params: json!({}),
+        })
+        .expect("UccdVersion roundtrip");
+    assert!(resp2.ok);
+    assert_eq!(resp2.id, 2);
+    assert!(resp2
+        .result
+        .as_ref()
+        .and_then(|v| v.as_str())
+        .is_some_and(|s| !s.is_empty()));
+
+    let resp3 = client
+        .call(&IpcRequest {
+            id: 3,
+            method: "SetDisplayBrightness".to_string(),
+            params: json!({ "brightness": 65 }),
+        })
+        .expect("SetDisplayBrightness roundtrip");
+    assert!(resp3.ok);
+    assert_eq!(resp3.id, 3);
+    assert_eq!(resp3.result, Some(json!(true)));
+
+    // Dropping the client closes the pipe handle and triggers clean EOF on the server.
+    drop(client);
+    let (requests_served, rejected_frames) = server_handle
+        .join()
+        .expect("Win32 Named Pipe server thread should join cleanly");
+    assert_eq!(requests_served, 3);
+    assert_eq!(rejected_frames, 0);
+}

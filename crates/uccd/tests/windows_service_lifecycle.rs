@@ -218,3 +218,118 @@ fn win32_control_and_power_event_decoders_map_standard_codes() {
         ServiceControl::Unknown(255)
     );
 }
+
+#[test]
+fn windows_service_start_pending_abort_and_nonzero_exit_code() {
+    // 1. StartPending -> StopPending -> Stopped(exit_code)
+    let mut abort_via_stop = ServiceLifecycle::new(
+        WindowsServiceConfig::default(),
+        MockServiceStatusReporter::new(),
+    );
+    abort_via_stop.begin_start().unwrap();
+    assert_eq!(abort_via_stop.state(), ServiceState::StartPending);
+
+    let after_stop = abort_via_stop
+        .handle_control(ServiceControl::Stop)
+        .unwrap();
+    assert_eq!(after_stop, ServiceState::StopPending);
+    assert!(abort_via_stop.is_stop_requested());
+    assert!(abort_via_stop.stop_flag().load(Ordering::SeqCst));
+
+    abort_via_stop.mark_stopped(1066).unwrap();
+    assert_eq!(abort_via_stop.state(), ServiceState::Stopped);
+
+    let history = abort_via_stop.reporter().history();
+    assert_eq!(history.len(), 3);
+    assert_eq!(history[0].state, ServiceState::StartPending);
+    assert_eq!(history[0].win32_exit_code, 0);
+    assert_eq!(history[1].state, ServiceState::StopPending);
+    assert_eq!(history[1].win32_exit_code, 0);
+    assert_eq!(history[2].state, ServiceState::Stopped);
+    assert_eq!(history[2].checkpoint, 0);
+    assert_eq!(history[2].wait_hint_ms, 0);
+    assert_eq!(history[2].accepted_controls, 0);
+    assert_eq!(history[2].win32_exit_code, 1066);
+
+    // 2. StartPending -> Stopped(exit_code) direct startup failure
+    let mut direct_fail = ServiceLifecycle::new(
+        WindowsServiceConfig::default(),
+        MockServiceStatusReporter::new(),
+    );
+    direct_fail.begin_start().unwrap();
+    assert_eq!(direct_fail.state(), ServiceState::StartPending);
+
+    direct_fail.mark_stopped(5).unwrap();
+    assert_eq!(direct_fail.state(), ServiceState::Stopped);
+
+    let fail_history = direct_fail.reporter().history();
+    assert_eq!(fail_history.len(), 2);
+    assert_eq!(fail_history[0].state, ServiceState::StartPending);
+    assert_eq!(fail_history[1].state, ServiceState::Stopped);
+    assert_eq!(fail_history[1].checkpoint, 0);
+    assert_eq!(fail_history[1].wait_hint_ms, 0);
+    assert_eq!(fail_history[1].accepted_controls, 0);
+    assert_eq!(fail_history[1].win32_exit_code, 5);
+}
+
+#[test]
+fn windows_service_interrogate_preserves_pending_hints() {
+    let cfg = WindowsServiceConfig {
+        startup_wait_hint_ms: 7_500,
+        shutdown_wait_hint_ms: 9_250,
+        ..WindowsServiceConfig::default()
+    };
+    let mut lifecycle = ServiceLifecycle::new(cfg, MockServiceStatusReporter::new());
+
+    lifecycle.begin_start().unwrap();
+    let cp = lifecycle.advance_start_checkpoint().unwrap();
+    assert_eq!(cp, 2);
+
+    // Interrogate during StartPending preserves checkpoint and startup_wait_hint_ms.
+    assert_eq!(
+        lifecycle
+            .handle_control(ServiceControl::Interrogate)
+            .unwrap(),
+        ServiceState::StartPending
+    );
+    let hist_start = lifecycle.reporter().history();
+    let last_start = hist_start.last().unwrap();
+    assert_eq!(last_start.state, ServiceState::StartPending);
+    assert_eq!(last_start.checkpoint, 2);
+    assert_eq!(last_start.wait_hint_ms, 7_500);
+    assert_eq!(last_start.accepted_controls, 0);
+
+    lifecycle.mark_running().unwrap();
+    assert_eq!(
+        lifecycle.handle_control(ServiceControl::Stop).unwrap(),
+        ServiceState::StopPending
+    );
+
+    // Interrogate during StopPending preserves checkpoint and shutdown_wait_hint_ms.
+    assert_eq!(
+        lifecycle
+            .handle_control(ServiceControl::Interrogate)
+            .unwrap(),
+        ServiceState::StopPending
+    );
+    let hist_stop = lifecycle.reporter().history();
+    let last_stop = hist_stop.last().unwrap();
+    assert_eq!(last_stop.state, ServiceState::StopPending);
+    assert_eq!(last_stop.checkpoint, 1);
+    assert_eq!(last_stop.wait_hint_ms, 9_250);
+    assert_eq!(last_stop.accepted_controls, 0);
+}
+
+#[cfg(windows)]
+#[test]
+fn win32_run_windows_service_returns_scm_error_outside_scm() {
+    let err = uccd::windows_service::run_windows_service(
+        WindowsServiceConfig::default(),
+        |_stop_flag| 0,
+    )
+    .expect_err("running outside Windows SCM must return ServiceError::ScmError");
+    assert!(
+        matches!(err, ServiceError::ScmError { code, .. } if code != 0),
+        "expected ServiceError::ScmError with non-zero Win32 error code, got: {err:?}"
+    );
+}

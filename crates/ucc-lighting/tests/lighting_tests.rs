@@ -223,3 +223,227 @@ fn lightbar_controller_lifecycle_flash_silent_and_auto_majority_color() {
         Err(LightingError::InvalidConfig(_))
     ));
 }
+
+#[test]
+fn lightbar_welcome_skip_shutdown_and_keyboard_changed_guards() {
+    let mock = Arc::new(MockLightingTransport::new());
+    mock.set_lightbar_caps(Some(LightbarCapabilities {
+        zones: 4,
+        max_brightness: 255,
+    }));
+    mock.set_keyboard_colors(vec![RgbColor::new(10, 20, 30)]);
+
+    // 1. One-shot welcome_anim triggers on first managed configure, not on subsequent configures.
+    let mut lb = LightbarController::new(Arc::clone(&mock));
+    lb.configure(&json!({
+        "managed": true,
+        "welcome_anim": true,
+        "power_settings": {
+            "ac": {
+                "enabled": true,
+                "brightness_val": 180,
+                "mode": "Pulse (stays on)",
+                "color_mode": "Auto"
+            }
+        }
+    }))
+    .expect("first managed configure triggers welcome");
+    assert!(lb.is_animating());
+
+    lb.advance(LightbarAnimation::Pulse.duration_ms());
+    assert!(!lb.is_animating());
+
+    lb.configure(&json!({
+        "managed": true,
+        "welcome_anim": true,
+        "power_settings": {
+            "ac": {
+                "enabled": true,
+                "brightness_val": 180,
+                "mode": "Pulse (stays on)",
+                "color_mode": "Auto"
+            }
+        }
+    }))
+    .expect("second managed configure must not replay welcome");
+    assert!(!lb.is_animating());
+
+    // 2. skip_welcome() suppresses welcome_anim even on the first managed configure.
+    let mut lb_skipped = LightbarController::new(Arc::clone(&mock));
+    lb_skipped.skip_welcome();
+    lb_skipped
+        .configure(&json!({
+            "managed": true,
+            "welcome_anim": true
+        }))
+        .expect("configure after skip_welcome");
+    assert!(!lb_skipped.is_animating());
+
+    // 3. keyboard_changed() updates idle color when managed + Auto + idle + not flash_off.
+    mock.set_keyboard_colors(vec![RgbColor::new(50, 100, 150)]);
+    mock.clear_ops();
+    lb.keyboard_changed();
+    assert_eq!(
+        mock.ops(),
+        vec![
+            LightingOp::WriteLightbarColor(RgbColor::new(50, 100, 150)),
+            LightingOp::WriteLightbarBrightness(180),
+        ]
+    );
+
+    // Guard: keyboard_changed() is a no-op while animating.
+    assert!(lb.trigger(true));
+    assert!(lb.is_animating());
+    mock.clear_ops();
+    lb.keyboard_changed();
+    assert!(mock.ops().is_empty());
+    lb.advance(LightbarAnimation::Pulse.duration_ms());
+    assert!(!lb.is_animating());
+
+    // Guard: keyboard_changed() is a no-op when flash_off is active.
+    lb.configure(&json!({
+        "managed": true,
+        "welcome_anim": false,
+        "power_settings": {
+            "ac": {
+                "enabled": true,
+                "brightness_val": 180,
+                "mode": "Flash (stays off)",
+                "color_mode": "Auto"
+            }
+        }
+    }))
+    .expect("configure flash");
+    assert!(lb.is_flash_off());
+    mock.clear_ops();
+    lb.keyboard_changed();
+    assert!(mock.ops().is_empty());
+
+    // Guard: keyboard_changed() is a no-op when color_mode is Fixed.
+    lb.configure(&json!({
+        "managed": true,
+        "welcome_anim": false,
+        "power_settings": {
+            "ac": {
+                "enabled": true,
+                "brightness_val": 180,
+                "mode": "Pulse (stays on)",
+                "color_mode": [1, 2, 3]
+            }
+        }
+    }))
+    .expect("configure fixed");
+    mock.clear_ops();
+    lb.keyboard_changed();
+    assert!(mock.ops().is_empty());
+
+    // 4. shutdown() stops animation, marks unmanaged, and turns off lightbar once.
+    assert!(lb.trigger(true));
+    assert!(lb.is_animating());
+    mock.clear_ops();
+    lb.shutdown().expect("shutdown managed lightbar");
+    assert!(!lb.is_animating());
+    assert_eq!(lb.status_json()["managed"], false);
+    assert_eq!(
+        mock.ops(),
+        vec![LightingOp::WriteLightbarColor(RgbColor::BLACK)]
+    );
+
+    // Guard: second shutdown() and keyboard_changed() after shutdown are no-ops.
+    mock.clear_ops();
+    lb.shutdown().expect("second shutdown no-op");
+    lb.keyboard_changed();
+    assert!(mock.ops().is_empty());
+}
+
+#[test]
+fn lightbar_settings_normalize_json_invalid_types_and_roundtrip() {
+    use ucc_lighting::{LightbarColorMode, LightbarSettings};
+
+    let invalid_inputs = [
+        json!([]),
+        json!("not-an-object"),
+        json!(42),
+        json!({ "managed": "true" }),
+        json!({ "silent_mode": 1 }),
+        json!({ "welcome_anim": null }),
+        json!({ "power_settings": [] }),
+        json!({ "power_settings": { "unknown_mode": {} } }),
+        json!({ "power_settings": { "ac": "not-an-object" } }),
+        json!({ "power_settings": { "ac": { "enabled": 1 } } }),
+        json!({ "power_settings": { "ac": { "brightness_val": true } } }),
+        json!({ "power_settings": { "ac": { "brightness_val": "200" } } }),
+        json!({ "power_settings": { "ac": { "brightness_val": -1 } } }),
+        json!({ "power_settings": { "ac": { "brightness_val": 256 } } }),
+        json!({ "power_settings": { "ac": { "brightness_val": 12.5 } } }),
+        json!({ "power_settings": { "ac": { "mode": 123 } } }),
+        json!({ "power_settings": { "ac": { "mode": "Bogus" } } }),
+        json!({ "power_settings": { "ac": { "color_mode": "Manual" } } }),
+        json!({ "power_settings": { "ac": { "color_mode": [1, 2] } } }),
+        json!({ "power_settings": { "ac": { "color_mode": [1, 2, 3, 4] } } }),
+        json!({ "power_settings": { "ac": { "color_mode": [true, 0, 0] } } }),
+        json!({ "power_settings": { "ac": { "color_mode": ["255", 0, 0] } } }),
+        json!({ "power_settings": { "ac": { "color_mode": [-1, 0, 0] } } }),
+        json!({ "power_settings": { "ac": { "color_mode": [0, 256, 0] } } }),
+    ];
+
+    for bad in &invalid_inputs {
+        assert!(
+            matches!(
+                LightbarSettings::normalize_json(bad),
+                Err(LightingError::InvalidConfig(_))
+            ),
+            "expected InvalidConfig for {bad}"
+        );
+    }
+
+    let valid_input = json!({
+        "managed": true,
+        "silent_mode": true,
+        "welcome_anim": true,
+        "power_settings": {
+            "ac": {
+                "enabled": true,
+                "brightness_val": 210,
+                "mode": "Rainbow",
+                "color_mode": [10, 20, 30]
+            },
+            "type_c": {
+                "enabled": true,
+                "brightness_val": 120,
+                "mode": "Police Strobe",
+                "color_mode": "Auto"
+            },
+            "bat": {
+                "enabled": false,
+                "brightness_val": 40,
+                "mode": "Disco",
+                "color_mode": [0, 255, 128]
+            }
+        }
+    });
+
+    let parsed = LightbarSettings::normalize_json(&valid_input).expect("valid settings");
+    assert!(parsed.managed);
+    assert!(parsed.silent_mode);
+    assert!(parsed.welcome_anim);
+    assert_eq!(parsed.ac.brightness_val, 210);
+    assert_eq!(parsed.ac.mode, LightbarAnimation::Rainbow);
+    assert_eq!(
+        parsed.ac.color_mode,
+        LightbarColorMode::Fixed(RgbColor::new(10, 20, 30))
+    );
+    assert_eq!(parsed.type_c.mode, LightbarAnimation::PoliceStrobe);
+    assert_eq!(parsed.type_c.color_mode, LightbarColorMode::Auto);
+    assert!(!parsed.bat.enabled);
+    assert_eq!(parsed.bat.mode, LightbarAnimation::Disco);
+    assert_eq!(
+        parsed.bat.color_mode,
+        LightbarColorMode::Fixed(RgbColor::new(0, 255, 128))
+    );
+
+    let roundtripped_json = parsed.to_json();
+    let reparsed = LightbarSettings::normalize_json(&roundtripped_json).expect("roundtrip parse");
+    assert_eq!(parsed, reparsed);
+    assert_eq!(roundtripped_json, valid_input);
+}

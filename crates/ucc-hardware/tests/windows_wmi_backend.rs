@@ -371,3 +371,253 @@ fn fault_injection_unavailable_transport_and_poisoned_mutex_recovery() {
     backend.set_fan_boost(true).unwrap();
     assert!(backend.read_fan_boost().unwrap());
 }
+
+#[test]
+fn windows_wmi_backend_webcam_and_ec_switch_write_failures() {
+    let transport = Arc::new(MockWmiEcTransport::new(true));
+    // Seed initial register state so we can confirm failed writes leave state intact.
+    transport.set_reg(ec_reg::PL1_WATTS, 35);
+    transport.set_reg(ec_reg::PL2_WATTS, 55);
+    transport.set_reg(ec_reg::PL4_WATTS, 75);
+    transport.set_reg(ec_reg::FAN_MANUAL_MODE, 0);
+    transport.set_reg(ec_reg::CPU_FAN_DUTY, 40);
+    transport.set_reg(ec_reg::GPU_FAN_DUTY, 40);
+    transport.set_reg(ec_reg::CHARGE_START_THRESHOLD, 40);
+    transport.set_reg(ec_reg::CHARGE_END_THRESHOLD, 80);
+    transport.set_reg(ec_reg::FN_LOCK, 0);
+    transport.set_reg(ec_reg::WEBCAM_SWITCH, 1);
+    transport.set_reg(ec_reg::LIGHTBAR_POWER, 0);
+    transport.set_reg(ec_reg::FAN_BOOST, 0);
+
+    let backend =
+        WindowsWmiEcBackend::new(Arc::clone(&transport) as _, WmiPlatformLimits::default());
+
+    // set_tdp write failures across PL1/PL2/PL4.
+    for (idx, reg, watts, prev) in [
+        (0, ec_reg::PL1_WATTS, 45, 35u8),
+        (1, ec_reg::PL2_WATTS, 65, 55u8),
+        (2, ec_reg::PL4_WATTS, 95, 75u8),
+    ] {
+        transport.set_fail_write_reg(Some(reg));
+        assert!(matches!(
+            backend.set_tdp(idx, watts),
+            Err(PlatformError::Unavailable)
+        ));
+        assert_eq!(transport.get_reg(reg), Some(prev));
+    }
+
+    // set_fan_speed_percent write failure on FAN_MANUAL_MODE and on GPU_FAN_DUTY.
+    transport.set_fail_write_reg(Some(ec_reg::FAN_MANUAL_MODE));
+    assert!(matches!(
+        backend.set_fan_speed_percent(0, 60),
+        Err(PlatformError::Unavailable)
+    ));
+    assert_eq!(transport.get_reg(ec_reg::FAN_MANUAL_MODE), Some(0));
+    assert_eq!(transport.get_reg(ec_reg::CPU_FAN_DUTY), Some(40));
+
+    transport.set_fail_write_reg(Some(ec_reg::GPU_FAN_DUTY));
+    assert!(matches!(
+        backend.set_fan_speed_percent(1, 70),
+        Err(PlatformError::Unavailable)
+    ));
+    assert_eq!(transport.get_reg(ec_reg::FAN_MANUAL_MODE), Some(0));
+    assert_eq!(transport.get_reg(ec_reg::GPU_FAN_DUTY), Some(40));
+
+    // set_charge_thresholds write failure on start register and on end register (with rollback).
+    transport.set_fail_write_reg(Some(ec_reg::CHARGE_START_THRESHOLD));
+    assert!(matches!(
+        backend.set_charge_thresholds(50, 90),
+        Err(PlatformError::Unavailable)
+    ));
+    assert_eq!(transport.get_reg(ec_reg::CHARGE_START_THRESHOLD), Some(40));
+    assert_eq!(transport.get_reg(ec_reg::CHARGE_END_THRESHOLD), Some(80));
+
+    transport.set_fail_write_reg(Some(ec_reg::CHARGE_END_THRESHOLD));
+    assert!(matches!(
+        backend.set_charge_thresholds(50, 90),
+        Err(PlatformError::Unavailable)
+    ));
+    assert_eq!(transport.get_reg(ec_reg::CHARGE_START_THRESHOLD), Some(40));
+    assert_eq!(transport.get_reg(ec_reg::CHARGE_END_THRESHOLD), Some(80));
+
+    // set_fn_lock write failure.
+    transport.set_fail_write_reg(Some(ec_reg::FN_LOCK));
+    assert!(matches!(
+        backend.set_fn_lock(true),
+        Err(PlatformError::Unavailable)
+    ));
+    assert_eq!(transport.get_reg(ec_reg::FN_LOCK), Some(0));
+
+    // set_webcam / set_webcam_switch write failure.
+    transport.set_fail_write_reg(Some(ec_reg::WEBCAM_SWITCH));
+    assert!(matches!(
+        backend.set_webcam(false),
+        Err(PlatformError::Unavailable)
+    ));
+    assert!(matches!(
+        backend.set_webcam_switch(false),
+        Err(PlatformError::Unavailable)
+    ));
+    assert_eq!(transport.get_reg(ec_reg::WEBCAM_SWITCH), Some(1));
+
+    // set_lightbar_power write failure.
+    transport.set_fail_write_reg(Some(ec_reg::LIGHTBAR_POWER));
+    assert!(matches!(
+        backend.set_lightbar_power(true),
+        Err(PlatformError::Unavailable)
+    ));
+    assert_eq!(transport.get_reg(ec_reg::LIGHTBAR_POWER), Some(0));
+
+    // set_fan_boost write failure.
+    transport.set_fail_write_reg(Some(ec_reg::FAN_BOOST));
+    assert!(matches!(
+        backend.set_fan_boost(true),
+        Err(PlatformError::Unavailable)
+    ));
+    assert_eq!(transport.get_reg(ec_reg::FAN_BOOST), Some(0));
+
+    // Clearing failure injection restores writes.
+    transport.set_fail_write_reg(None);
+    backend.set_webcam(false).unwrap();
+    assert_eq!(transport.get_reg(ec_reg::WEBCAM_SWITCH), Some(0));
+}
+
+#[test]
+fn windows_wmi_backend_unavailable_transport_fail_closed() {
+    let transport = Arc::new(MockWmiEcTransport::new(false));
+    let backend =
+        WindowsWmiEcBackend::new(Arc::clone(&transport) as _, WmiPlatformLimits::default());
+
+    assert!(!backend.is_available());
+
+    // All reads must fail closed with PlatformError::Unavailable.
+    assert!(matches!(
+        backend.read_fan_temp(0),
+        Err(PlatformError::Unavailable)
+    ));
+    assert!(matches!(
+        backend.read_fan_temp(1),
+        Err(PlatformError::Unavailable)
+    ));
+    assert!(matches!(
+        backend.read_fan_speed_percent(0),
+        Err(PlatformError::Unavailable)
+    ));
+    assert!(matches!(
+        backend.read_fan_speed_percent(1),
+        Err(PlatformError::Unavailable)
+    ));
+    assert!(matches!(
+        backend.read_tdp(0),
+        Err(PlatformError::Unavailable)
+    ));
+    assert!(matches!(
+        backend.read_tdp(1),
+        Err(PlatformError::Unavailable)
+    ));
+    assert!(matches!(
+        backend.read_tdp(2),
+        Err(PlatformError::Unavailable)
+    ));
+    assert!(matches!(
+        backend.read_perf_profile(),
+        Err(PlatformError::Unavailable)
+    ));
+    assert!(matches!(
+        backend.read_webcam(),
+        Err(PlatformError::Unavailable)
+    ));
+    assert!(matches!(
+        backend.read_webcam_switch(),
+        Err(PlatformError::Unavailable)
+    ));
+    assert!(matches!(
+        backend.read_charge_thresholds(),
+        Err(PlatformError::Unavailable)
+    ));
+    assert!(matches!(
+        backend.read_fn_lock(),
+        Err(PlatformError::Unavailable)
+    ));
+    assert!(matches!(
+        backend.read_lightbar_power(),
+        Err(PlatformError::Unavailable)
+    ));
+    assert!(matches!(
+        backend.read_fan_boost(),
+        Err(PlatformError::Unavailable)
+    ));
+    assert!(matches!(
+        backend.read_ctgp_offset_watts(),
+        Err(PlatformError::Unavailable)
+    ));
+    assert!(matches!(
+        backend.read_dynamic_boost_watts(),
+        Err(PlatformError::Unavailable)
+    ));
+
+    // All writes must fail closed with PlatformError::Unavailable.
+    assert!(matches!(
+        backend.set_fan_speed_percent(0, 50),
+        Err(PlatformError::Unavailable)
+    ));
+    assert!(matches!(
+        backend.set_fans_auto(),
+        Err(PlatformError::Unavailable)
+    ));
+    assert!(matches!(
+        backend.set_tdp(0, 45),
+        Err(PlatformError::Unavailable)
+    ));
+    assert!(matches!(
+        backend.set_perf_profile(2),
+        Err(PlatformError::Unavailable)
+    ));
+    assert!(matches!(
+        backend.set_mode_enable(true),
+        Err(PlatformError::Unavailable)
+    ));
+    assert!(matches!(
+        backend.set_mode(2),
+        Err(PlatformError::Unavailable)
+    ));
+    assert!(matches!(
+        backend.set_webcam(true),
+        Err(PlatformError::Unavailable)
+    ));
+    assert!(matches!(
+        backend.set_webcam_switch(false),
+        Err(PlatformError::Unavailable)
+    ));
+    assert!(matches!(
+        backend.set_charge_thresholds(40, 80),
+        Err(PlatformError::Unavailable)
+    ));
+    assert!(matches!(
+        backend.set_fn_lock(true),
+        Err(PlatformError::Unavailable)
+    ));
+    assert!(matches!(
+        backend.set_lightbar_power(true),
+        Err(PlatformError::Unavailable)
+    ));
+    assert!(matches!(
+        backend.set_fan_boost(true),
+        Err(PlatformError::Unavailable)
+    ));
+    assert!(matches!(
+        backend.set_ctgp_offset_watts(10),
+        Err(PlatformError::Unavailable)
+    ));
+    assert!(matches!(
+        backend.set_dynamic_boost_watts(15),
+        Err(PlatformError::Unavailable)
+    ));
+    assert!(matches!(
+        transport.call_wmi_method(WMI_METHOD_ID_EC_RW, encode_ec_read_arg(ec_reg::CPU_TEMP_C)),
+        Err(PlatformError::Unavailable)
+    ));
+
+    // Unavailable transport must not record any executed EC operations.
+    assert!(transport.ops().is_empty());
+}
