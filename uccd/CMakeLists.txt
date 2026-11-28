@@ -121,9 +121,12 @@ target_compile_options(uccd PRIVATE
   -fexceptions
   # Security hardening
   -fstack-protector-strong
-  -D_FORTIFY_SOURCE=2
   -fPIE
 )
+
+if(NOT "${CMAKE_CXX_FLAGS} ${CMAKE_CXX_FLAGS_RELEASE}" MATCHES "_FORTIFY_SOURCE")
+  target_compile_options(uccd PRIVATE -D_FORTIFY_SOURCE=2)
+endif()
 
 # Linker hardening flags
 target_link_options(uccd PRIVATE

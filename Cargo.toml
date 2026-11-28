@@ -19,7 +19,6 @@ edition = "2021"
 rust-version = "1.89"
 authors = ["Frixit <05mba0622@gmail.com>"]
 license = "GPL-3.0-or-later"
-repository = "https://github.com/Frixlt/UCC"
 
 [workspace.dependencies]
 serde = { version = "1.0", features = ["derive"] }
@@ -37,5 +36,4 @@ ucc-core = { path = "crates/ucc-core" }
 ucc-config = { path = "crates/ucc-config" }
 ucc-hardware = { path = "crates/ucc-hardware" }
 ucc-dbus = { path = "crates/ucc-dbus" }
-ucc-desktop = { path = "crates/ucc-desktop" }
 ucc-lighting = { path = "crates/ucc-lighting" }
