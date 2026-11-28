@@ -159,7 +159,7 @@ fn p0_11_hid_lightbar_addresses_all_zones_and_caps_600b_brightness_to_50() {
         "P0-11: ITE 048D:600B keyboard brightness byte must be capped/scaled to <= 50, got {brightness_byte}"
     );
 
-    // 2. Lightbar 0x7001 has 4 zones; write_lightbar_color must address all 4 zones, not only zone 1.
+    // 2. Lightbar 0x7001 static mode (0x08 ... 0x01) reads 1-based slot 1; write_lightbar_color writes slots 0 and 1.
     transport
         .write_lightbar_color(RgbColor::new(10, 20, 30))
         .unwrap();

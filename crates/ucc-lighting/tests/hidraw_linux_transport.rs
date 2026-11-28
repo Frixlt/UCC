@@ -1153,3 +1153,134 @@ fn ite8233_zone3_lid_logo_hid_and_ec_hook_roundtrip() {
         Some((false, RgbColor::BLACK, 0))
     );
 }
+
+#[test]
+fn ite8233_zero_brightness_and_managed_false_teardown() {
+    let mock_hid = Arc::new(MockHidTransport::new(vec![HidDeviceInfo {
+        vendor_id: ITE_VENDOR_ID,
+        product_id: ITE_LIGHTBAR_PRODUCT_ID_4ZONE,
+        path: "/dev/hidraw0".to_string(),
+    }]));
+    let ec_power: Arc<Mutex<Vec<bool>>> = Arc::new(Mutex::new(Vec::new()));
+    let ec_power_cb = Arc::clone(&ec_power);
+    let ec_logo: Arc<Mutex<Vec<(bool, RgbColor, u8)>>> = Arc::new(Mutex::new(Vec::new()));
+    let ec_logo_cb = Arc::clone(&ec_logo);
+
+    let transport = Arc::new(
+        UniwillHidTransport::new(Arc::clone(&mock_hid) as _)
+            .with_ec_lightbar_power_hook(Arc::new(move |en| {
+                ec_power_cb
+                    .lock()
+                    .unwrap_or_else(|e| e.into_inner())
+                    .push(en);
+                Ok(())
+            }))
+            .with_ec_lid_logo_hook(Arc::new(move |en, rgb, br| {
+                ec_logo_cb
+                    .lock()
+                    .unwrap_or_else(|e| e.into_inner())
+                    .push((en, rgb, br));
+                Ok(())
+            })),
+    );
+
+    // 1. write_lightbar_brightness(0) on 048D:7001 sends 0x09 0x02 0, 0x08 0x01, and EC power off.
+    transport.write_lightbar_brightness(0).expect("8233 off");
+    let off_br = mock_hid.recorded_reports();
+    assert_eq!(off_br.len(), 2);
+    assert_eq!(off_br[0].1, vec![0x09, 0x02, 0, 0, 0, 0, 0, 0]);
+    assert_eq!(off_br[1].1, vec![0x08, 0x01, 0, 0, 0, 0, 0, 0]);
+    assert_eq!(*ec_power.lock().unwrap_or_else(|e| e.into_inner()), vec![false]);
+
+    // 2. managed: true -> false tears down both lid logo and front lightbar.
+    let mut lb = LightbarController::new(Arc::clone(&transport) as _);
+    lb.configure(&json!({
+        "managed": true,
+        "welcome_anim": false,
+        "lid_logo": {
+            "enabled": true,
+            "brightness": 255,
+            "color": [0, 200, 255]
+        }
+    }))
+    .expect("enable managed with lid logo");
+
+    mock_hid.clear_reports();
+    lb.configure(&json!({ "managed": false }))
+        .expect("disable managed");
+    let teardown = mock_hid.recorded_reports();
+    assert!(teardown
+        .iter()
+        .any(|(_, p)| p == &vec![0x12, 0x00, 0x03, 0, 0, 0, 0, 0]));
+    assert!(teardown
+        .iter()
+        .any(|(_, p)| p == &vec![0x1A, 0x03, 0x00, 0, 0, 0, 0, 0x01]));
+    assert!(teardown
+        .iter()
+        .any(|(_, p)| p == &vec![0x14, 0x00, 1, 0, 0, 0, 0, 0]));
+    assert_eq!(
+        ec_logo
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .last()
+            .copied(),
+        Some((false, RgbColor::BLACK, 0))
+    );
+}
+
+#[test]
+fn ite7000_five_zone_disabled_lid_logo_stays_off_after_configure_and_animation() {
+    let mock_hid = Arc::new(MockHidTransport::new(vec![HidDeviceInfo {
+        vendor_id: ITE_VENDOR_ID,
+        product_id: ITE_LIGHTBAR_PRODUCT_ID_5ZONE,
+        path: "/dev/hidraw0".to_string(),
+    }]));
+    let transport = Arc::new(UniwillHidTransport::new(Arc::clone(&mock_hid) as _));
+    let mut lb = LightbarController::new(Arc::clone(&transport) as _);
+
+    mock_hid.clear_reports();
+    lb.configure(&json!({
+        "managed": true,
+        "silent_mode": false,
+        "welcome_anim": false,
+        "power_settings": {
+            "ac": {
+                "enabled": true,
+                "brightness_val": 255,
+                "mode": "Pulse (stays on)",
+                "color_mode": [10, 20, 30]
+            }
+        },
+        "lid_logo": {
+            "enabled": false,
+            "brightness": 0,
+            "color": [0, 0, 0]
+        }
+    }))
+    .expect("configure 5-zone with disabled lid logo");
+
+    let cfg_zone5: Vec<Vec<u8>> = mock_hid
+        .recorded_reports()
+        .into_iter()
+        .map(|(_, p)| p)
+        .filter(|p| p.len() >= 3 && p[0] == 0x14 && p[2] == LIGHTBAR_LID_LOGO_ZONE_ID)
+        .collect();
+    assert_eq!(
+        cfg_zone5.last(),
+        Some(&vec![0x14, 0x00, LIGHTBAR_LID_LOGO_ZONE_ID, 0, 0, 0, 0, 0])
+    );
+
+    mock_hid.clear_reports();
+    assert!(lb.trigger(true));
+    lb.advance(LightbarAnimation::Pulse.duration_ms());
+    let anim_zone5: Vec<Vec<u8>> = mock_hid
+        .recorded_reports()
+        .into_iter()
+        .map(|(_, p)| p)
+        .filter(|p| p.len() >= 3 && p[0] == 0x14 && p[2] == LIGHTBAR_LID_LOGO_ZONE_ID)
+        .collect();
+    assert_eq!(
+        anim_zone5.last(),
+        Some(&vec![0x14, 0x00, LIGHTBAR_LID_LOGO_ZONE_ID, 0, 0, 0, 0, 0])
+    );
+}

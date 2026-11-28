@@ -1,5 +1,6 @@
 //! Front lightbar controller (`M6.3`–`M6.6`) ported from `LightbarController.hpp`.
 
+use crate::hid_transport::LIGHTBAR_FRONT_ZONES;
 use crate::transport::{LightbarCapabilities, LightingError, LightingTransport, RgbColor};
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
@@ -472,6 +473,7 @@ impl LightbarController {
     pub fn configure(&mut self, input: &Value) -> Result<(), LightingError> {
         let normalized = LightbarSettings::normalize_json(input)?;
         let was_managed = self.config.managed;
+        let had_lid_logo = self.config.lid_logo.is_some();
         self.animating = false;
         self.anim_started = None;
         self.flash_off = false;
@@ -487,6 +489,11 @@ impl LightbarController {
                 }
             }
         } else if was_managed {
+            if (had_lid_logo || self.config.lid_logo.is_some())
+                && self.transport.has_lid_logo().unwrap_or(false)
+            {
+                let _ = self.transport.write_lid_logo(false, RgbColor::BLACK, 0);
+            }
             self.write_color_result(RgbColor::BLACK)?;
         }
         Ok(())
@@ -659,13 +666,18 @@ impl LightbarController {
             };
             let _ = self.write_color(final_color);
             if let Some(logo) = self.config.lid_logo {
-                if logo.enabled
-                    && logo.brightness > 0
-                    && self.transport.has_lid_logo().unwrap_or(false)
-                {
-                    let _ = self
-                        .transport
-                        .write_lid_logo(true, logo.color, logo.brightness);
+                if self.transport.has_lid_logo().unwrap_or(false) {
+                    let shared_zone_logo = self
+                        .caps
+                        .as_ref()
+                        .is_some_and(|c| c.zones > LIGHTBAR_FRONT_ZONES);
+                    if logo.enabled && logo.brightness > 0 {
+                        let _ = self
+                            .transport
+                            .write_lid_logo(true, logo.color, logo.brightness);
+                    } else if shared_zone_logo {
+                        let _ = self.transport.write_lid_logo(false, RgbColor::BLACK, 0);
+                    }
                 }
             }
             return;
@@ -734,10 +746,14 @@ impl LightbarController {
             RgbColor::BLACK
         };
         let has_logo = self.transport.has_lid_logo().unwrap_or(false);
-        // Disable lid logo BEFORE enabling front lightbar so 048D:7001 stop_fx (0x08 0x05)
+        let shared_zone_logo = self
+            .caps
+            .as_ref()
+            .is_some_and(|c| c.zones > LIGHTBAR_FRONT_ZONES);
+        // Disable non-shared lid logo BEFORE enabling front lightbar so 048D:7001 stop_fx (0x08 0x05)
         // never extinguishes the front bar.
         if let Some(logo) = self.config.lid_logo {
-            if has_logo && (!logo.enabled || logo.brightness == 0) {
+            if has_logo && !shared_zone_logo && (!logo.enabled || logo.brightness == 0) {
                 if let Err(e) = self.transport.write_lid_logo(false, RgbColor::BLACK, 0) {
                     self.last_ok = false;
                     self.last_error = e.to_string();
@@ -748,16 +764,25 @@ impl LightbarController {
         // Clear Flash/PulseOff idle color before restoring front lightbar brightness.
         self.write_color_result(idle_color)?;
         self.write_brightness_result(prof.brightness_val)?;
-        // Apply enabled lid logo AFTER front lightbar so 048D:7000 zone 5 is not overwritten.
+        // Apply enabled lid logo (or disabled shared-zone 048D:7000 zone 5) AFTER front lightbar
+        // so 048D:7000 zone 5 is not overwritten by write_lightbar_color.
         if let Some(logo) = self.config.lid_logo {
-            if has_logo && logo.enabled && logo.brightness > 0 {
-                if let Err(e) = self
-                    .transport
-                    .write_lid_logo(true, logo.color, logo.brightness)
-                {
-                    self.last_ok = false;
-                    self.last_error = e.to_string();
-                    return Err(e);
+            if has_logo {
+                if logo.enabled && logo.brightness > 0 {
+                    if let Err(e) = self
+                        .transport
+                        .write_lid_logo(true, logo.color, logo.brightness)
+                    {
+                        self.last_ok = false;
+                        self.last_error = e.to_string();
+                        return Err(e);
+                    }
+                } else if shared_zone_logo {
+                    if let Err(e) = self.transport.write_lid_logo(false, RgbColor::BLACK, 0) {
+                        self.last_ok = false;
+                        self.last_error = e.to_string();
+                        return Err(e);
+                    }
                 }
             }
         }

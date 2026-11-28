@@ -45,8 +45,8 @@ pub const EC_LIGHTBAR_POWER_REG_SECONDARY: u16 = 0x0748;
 /// (`0x0748` `EC_ADDR_LIGHTBAR_AC_CTRL` `BIT(0)`) when integrated with `UwccBackend`.
 pub type EcLightbarPowerHook = Arc<dyn Fn(bool) -> Result<(), LightingError> + Send + Sync>;
 
-/// Optional EC persistence callback for lid logo LED (`0x0767`, `0x07C5`, `0x0769..=0x076B`,
-/// `0x07AB`, `0x078C`) paired with `048D:7001` HID Zone 3 commands.
+/// Optional EC persistence callback for lid logo LED (`0x07C5`, `0x0769..=0x076B`, `0x07AB`,
+/// `0x078C`) paired with `048D:7001` HID Zone 3 commands.
 pub type EcLidLogoHook = Arc<dyn Fn(bool, RgbColor, u8) -> Result<(), LightingError> + Send + Sync>;
 
 /// USB HID device identity enumerated by host transport.

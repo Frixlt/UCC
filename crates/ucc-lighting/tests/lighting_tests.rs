@@ -358,7 +358,7 @@ fn lightbar_welcome_skip_shutdown_and_keyboard_changed_guards() {
 
 #[test]
 fn lightbar_settings_normalize_json_invalid_types_and_roundtrip() {
-    use ucc_lighting::{LightbarColorMode, LightbarSettings};
+    use ucc_lighting::{LidLogoSettings, LightbarColorMode, LightbarSettings};
 
     let invalid_inputs = [
         json!([]),
@@ -385,6 +385,12 @@ fn lightbar_settings_normalize_json_invalid_types_and_roundtrip() {
         json!({ "power_settings": { "ac": { "color_mode": ["255", 0, 0] } } }),
         json!({ "power_settings": { "ac": { "color_mode": [-1, 0, 0] } } }),
         json!({ "power_settings": { "ac": { "color_mode": [0, 256, 0] } } }),
+        json!({ "lid_logo": "not-an-object" }),
+        json!({ "lid_logo": { "enabled": 1 } }),
+        json!({ "lid_logo": { "brightness": true } }),
+        json!({ "lid_logo": { "brightness": 256 } }),
+        json!({ "lid_logo": { "color": [1, 2] } }),
+        json!({ "lid_logo": { "color": [0, 256, 0] } }),
     ];
 
     for bad in &invalid_inputs {
@@ -420,6 +426,11 @@ fn lightbar_settings_normalize_json_invalid_types_and_roundtrip() {
                 "mode": "Disco",
                 "color_mode": [0, 255, 128]
             }
+        },
+        "lid_logo": {
+            "enabled": true,
+            "brightness": 180,
+            "color": [0, 200, 255]
         }
     });
 
@@ -437,6 +448,31 @@ fn lightbar_settings_normalize_json_invalid_types_and_roundtrip() {
     assert_eq!(parsed.type_c.color_mode, LightbarColorMode::Auto);
     assert!(!parsed.bat.enabled);
     assert_eq!(parsed.bat.mode, LightbarAnimation::Disco);
+    assert_eq!(
+        LightbarAnimation::parse("Pulse (stays off)"),
+        Some(LightbarAnimation::PulseOff)
+    );
+    assert_eq!(LightbarAnimation::PulseOff.as_str(), "Pulse (stays off)");
+    assert_eq!(
+        parsed.lid_logo,
+        Some(LidLogoSettings {
+            enabled: true,
+            brightness: 180,
+            color: RgbColor::new(0, 200, 255),
+        })
+    );
+    assert_eq!(
+        LightbarAnimation::PulseOff.frame(0, RgbColor::new(0, 200, 255)),
+        RgbColor::BLACK
+    );
+    assert_eq!(
+        LightbarAnimation::PulseOff.frame(820, RgbColor::new(0, 200, 255)),
+        RgbColor::new(0, 200, 255)
+    );
+    assert_eq!(
+        LightbarAnimation::PulseOff.frame(1640, RgbColor::new(0, 200, 255)),
+        RgbColor::BLACK
+    );
     assert_eq!(
         parsed.bat.color_mode,
         LightbarColorMode::Fixed(RgbColor::new(0, 255, 128))
