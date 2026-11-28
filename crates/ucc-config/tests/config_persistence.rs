@@ -84,7 +84,7 @@ fn test_atomic_write_creates_bak_file_with_previous_state() {
     );
 
     // Write revision 2
-    let mut v2 = v1.clone();
+    let mut v2 = v1;
     v2.charging_profile = Some("stationary".to_string());
     mgr.save(&v2).expect("save v2");
 
@@ -342,7 +342,7 @@ fn write_atomic_sequential_and_backup_rotation_cross_platform() {
     assert_eq!(loaded_v1.charge_end_threshold, Some(80));
 
     // 2. Second atomic write rotates v1 into .bak and .backup
-    let mut v2 = v1.clone();
+    let mut v2 = v1;
     v2.charging_profile = Some("stationary".to_string());
     v2.charge_end_threshold = Some(75);
     let v2_json = v2.to_json_pretty().expect("serialize v2");
@@ -372,7 +372,7 @@ fn write_atomic_sequential_and_backup_rotation_cross_platform() {
     );
 
     // 3. Third atomic write rotates v2 into .bak and .backup
-    let mut v3 = v2.clone();
+    let mut v3 = v2;
     v3.charging_profile = Some("high_capacity".to_string());
     v3.charge_end_threshold = Some(95);
     let v3_json = v3.to_json_pretty().expect("serialize v3");

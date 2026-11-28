@@ -82,7 +82,7 @@ fn config_manager_roundtrips_126_zone_fixture_in_tempdir() {
     settings.keyboard_backlight_states = Some(zones.clone());
     settings
         .custom_keyboard_profiles
-        .get_or_insert_with(Default::default)
+        .get_or_insert_default()
         .insert(
             "fixture-126".to_string(),
             CustomKeyboardProfile {

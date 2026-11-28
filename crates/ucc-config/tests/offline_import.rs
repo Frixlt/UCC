@@ -584,7 +584,7 @@ fn mechrevo_preserves_disabled_cooler_outputs_and_rejects_v12_and_bad_address() 
     let mut v12_saved = saved.clone();
     v12_saved["pumpOn"] = json!(true);
     v12_saved["pumpVoltage"] = json!(1);
-    let mut bad_user = user.clone();
+    let mut bad_user = user;
     bad_user["aquarisSaveState"] = json!(v12_saved.to_string());
     let err = convert_mechrevo_tcc(&settings, &profiles, &bad_user, &curves, &hardware)
         .unwrap_err()
