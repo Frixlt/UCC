@@ -14,7 +14,7 @@
 namespace ucc {
 namespace {
 const QStringList modes={"ac","type_c","bat"};
-const QStringList animations={"Pulse (stays on)","Flash (stays off)","Rainbow","Police Strobe","Disco"};
+const QStringList animations={"Pulse (stays on)","Pulse (stays off)","Flash (stays off)","Rainbow","Police Strobe","Disco"};
 class Selector:public QComboBox {public:using QComboBox::QComboBox;protected:void wheelEvent(QWheelEvent *e) override {e->ignore();}};
 class Brightness:public QSpinBox {public:using QSpinBox::QSpinBox;protected:void wheelEvent(QWheelEvent *e) override {e->ignore();}};
 }

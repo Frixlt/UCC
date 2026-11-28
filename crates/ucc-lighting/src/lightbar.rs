@@ -14,6 +14,7 @@ pub const LIGHTBAR_FRAME_INTERVAL: Duration = Duration::from_millis(20);
 pub enum LightbarAnimation {
     #[default]
     Pulse,
+    PulseOff,
     Flash,
     Rainbow,
     PoliceStrobe,
@@ -21,8 +22,9 @@ pub enum LightbarAnimation {
 }
 
 impl LightbarAnimation {
-    pub const ALL: [Self; 5] = [
+    pub const ALL: [Self; 6] = [
         Self::Pulse,
+        Self::PulseOff,
         Self::Flash,
         Self::Rainbow,
         Self::PoliceStrobe,
@@ -32,6 +34,7 @@ impl LightbarAnimation {
     pub const fn as_str(self) -> &'static str {
         match self {
             Self::Pulse => "Pulse (stays on)",
+            Self::PulseOff => "Pulse (stays off)",
             Self::Flash => "Flash (stays off)",
             Self::Rainbow => "Rainbow",
             Self::PoliceStrobe => "Police Strobe",
@@ -42,6 +45,7 @@ impl LightbarAnimation {
     pub fn parse(s: &str) -> Option<Self> {
         match s {
             "Pulse (stays on)" => Some(Self::Pulse),
+            "Pulse (stays off)" => Some(Self::PulseOff),
             "Flash (stays off)" => Some(Self::Flash),
             "Rainbow" => Some(Self::Rainbow),
             "Police Strobe" => Some(Self::PoliceStrobe),
@@ -55,7 +59,7 @@ impl LightbarAnimation {
             Self::Rainbow => 3000,
             Self::PoliceStrobe => 1440,
             Self::Disco => 1350,
-            Self::Pulse | Self::Flash => 1640,
+            Self::Pulse | Self::PulseOff | Self::Flash => 1640,
         }
     }
 
@@ -75,12 +79,17 @@ impl LightbarAnimation {
                     hue_to_rgb(hue as f64 / 360.0)
                 }
             }
-            Self::Pulse | Self::Flash => {
-                let pulse = (1.0 - elapsed_ms as f64 / 820.0).abs();
-                let factor = if self == Self::Flash {
-                    1.0 - pulse
-                } else {
-                    pulse
+            Self::Pulse | Self::PulseOff | Self::Flash => {
+                let factor = match self {
+                    Self::PulseOff => {
+                        let phase = (elapsed_ms as f64 / 1640.0).clamp(0.0, 1.0);
+                        0.5 * (1.0 - (std::f64::consts::TAU * phase).cos())
+                    }
+                    Self::Pulse => {
+                        let phase = (elapsed_ms as f64 / 1640.0).clamp(0.0, 1.0);
+                        0.5 * (1.0 + (std::f64::consts::TAU * phase).cos())
+                    }
+                    _ => (1.0 - (1.0 - elapsed_ms as f64 / 820.0).abs()).clamp(0.0, 1.0),
                 }
                 .clamp(0.0, 1.0);
                 RgbColor::new(
@@ -561,7 +570,10 @@ impl LightbarController {
         if elapsed_ms >= self.active_animation.duration_ms() {
             self.animating = false;
             self.anim_started = None;
-            self.flash_off = self.active_animation == LightbarAnimation::Flash;
+            self.flash_off = matches!(
+                self.active_animation,
+                LightbarAnimation::Flash | LightbarAnimation::PulseOff
+            );
             let final_color = if self.flash_off {
                 RgbColor::BLACK
             } else {
@@ -612,7 +624,10 @@ impl LightbarController {
 
     fn apply_idle_result(&mut self) -> Result<(), LightingError> {
         let prof = self.current_profile().clone();
-        self.flash_off = prof.mode == LightbarAnimation::Flash;
+        self.flash_off = matches!(
+            prof.mode,
+            LightbarAnimation::Flash | LightbarAnimation::PulseOff
+        );
         self.last_ok = true;
         self.last_error.clear();
 

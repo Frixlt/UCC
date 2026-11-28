@@ -40,7 +40,7 @@ build() {
     -DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREFIX=/usr -DCMAKE_INSTALL_LIBDIR=lib \
     -DBUILD_GUI=ON -DBUILD_CLI=ON -DBUILD_DESKTOP_TRAY=ON -DBUILD_SESSION_AGENT=ON \
     -DBUILD_TRAY=OFF -DBUILD_GNOME=ON -DBUILD_TESTS=ON -DUCC_PACKAGE_RUST_RUNTIME=ON
-  cmake --build "$srcdir/build" -j2
+  cmake --build "$srcdir/build" -j"$(nproc)"
 }
 
 check() {

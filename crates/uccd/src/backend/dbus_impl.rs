@@ -1059,6 +1059,11 @@ impl UccdBackend for LiveUccdBackend {
     }
 
     fn get_nvidia_power_ctrl_default_power_limit(&self) -> i32 {
+        if self.nvidia_ctgp_sysfs_path().is_none() {
+            if let Some((min_w, _)) = self.platform.read_ctgp_limits() {
+                return min_w;
+            }
+        }
         if let Some((_, base_w)) = *self.lock_mutex(&self.nvidia_default_power_limit_w) {
             if base_w.is_finite() && base_w > 0.0 {
                 return base_w.round() as i32;
@@ -1081,6 +1086,11 @@ impl UccdBackend for LiveUccdBackend {
     }
 
     fn get_nvidia_power_ctrl_max_power_limit(&self) -> i32 {
+        if self.nvidia_ctgp_sysfs_path().is_none() {
+            if let Some((_, max_w)) = self.platform.read_ctgp_limits() {
+                return max_w;
+            }
+        }
         self.read_rw(&self.latest_telemetry)
             .as_ref()
             .and_then(|s| s.dgpu.as_ref())
@@ -1101,7 +1111,9 @@ impl UccdBackend for LiveUccdBackend {
                 d.max_power_limit_w
                     .is_some_and(|w| w.is_finite() && w > 0.0)
             });
-        has_nvml_limit || self.nvidia_ctgp_sysfs_path().is_some()
+        has_nvml_limit
+            || self.nvidia_ctgp_sysfs_path().is_some()
+            || self.platform.read_ctgp_limits().is_some()
     }
 
     fn set_nvidia_power_offset(&self, offset: i32) -> bool {

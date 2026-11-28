@@ -513,15 +513,29 @@ impl LightingTransport for UniwillHidTransport {
             return Err(LightingError::Unavailable);
         };
         let level = Self::scale_keyboard_brightness(brightness);
-        if level > 0 {
+        if dev.product_id == ITE_LIGHTBAR_PRODUCT_ID_4ZONE {
+            let lb_level = if brightness == 0 {
+                0
+            } else {
+                (((brightness.min(255) * 100) + 127) / 255).clamp(1, 100) as u8
+            };
+            if lb_level > 0 {
+                self.set_lightbar_ec_power(true)?;
+                let on_packet = [0x08, 0x02, 0x01, 0x05, 50, 0x01, 0x00, 0x00];
+                self.hid.send_feature_report(&dev.path, &on_packet)?;
+                let br_packet = [0x09, 0x02, lb_level, 0x00, 0x00, 0x00, 0x00, 0x00];
+                self.hid.send_feature_report(&dev.path, &br_packet)?;
+            } else {
+                let br_packet = [0x09, 0x02, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00];
+                self.hid.send_feature_report(&dev.path, &br_packet)?;
+                let off_packet = [0x08, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00];
+                self.hid.send_feature_report(&dev.path, &off_packet)?;
+                self.set_lightbar_ec_power(false)?;
+            }
+        } else if level > 0 {
             self.set_lightbar_ec_power(true)?;
             let packet = [0x08, 0x02, 0x01, 0x05, level, 0x01, 0x00, 0x00];
             self.hid.send_feature_report(&dev.path, &packet)?;
-            if dev.product_id == ITE_LIGHTBAR_PRODUCT_ID_4ZONE {
-                let lb_level = (((brightness.min(255) * 100) + 127) / 255).clamp(1, 100) as u8;
-                let br_packet = [0x09, 0x02, lb_level, 0x00, 0x00, 0x00, 0x00, 0x00];
-                self.hid.send_feature_report(&dev.path, &br_packet)?;
-            }
         } else {
             let packet = [0x08, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00];
             self.hid.send_feature_report(&dev.path, &packet)?;
@@ -538,10 +552,8 @@ impl LightingTransport for UniwillHidTransport {
             self.ensure_lightbar_ec_power_on()?;
         }
         if dev.product_id == ITE_LIGHTBAR_PRODUCT_ID_4ZONE {
-            for slot in 0..ITE_LIGHTBAR_8233_SLOTS as u8 {
-                let packet = [0x14, 0x00, slot, rgb.r, rgb.g, rgb.b, 0x00, 0x00];
-                self.hid.send_feature_report(&dev.path, &packet)?;
-            }
+            let packet = [0x14, 0x00, 0x00, rgb.r, rgb.g, rgb.b, 0x00, 0x00];
+            self.hid.send_feature_report(&dev.path, &packet)?;
         } else {
             let zones = Self::lightbar_zone_count(dev.product_id) as u8;
             for zone in 1..=zones {
