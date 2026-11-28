@@ -21,7 +21,7 @@ fn sample_ite_windows_devices() -> Vec<WinHidDeviceRecord> {
             product_id: ITE_KEYBOARD_PRODUCT_ID,
             usage_page: 0x0001,
             usage: 0x0006,
-            feature_report_byte_length: 9,
+            feature_report_byte_length: 0,
             output_report_byte_length: 0,
         },
         // Keyboard vendor lighting interface (UsagePage 0xFF89, 8B feature + 64B row output).
@@ -282,11 +282,7 @@ fn windows_hid_126_key_calibration_lid_logo_zone5_and_ec_hook() {
     );
     // Enter = LED 56 -> row 2, col 14.
     assert_eq!(
-        (
-            kbd_reports[6].1[44 + 14],
-            kbd_reports[6].1[23 + 14],
-            kbd_reports[6].1[2 + 14],
-        ),
+        (kbd_reports[6].1[44 + 14], kbd_reports[6].1[23 + 14], kbd_reports[6].1[2 + 14]),
         (77, 88, 99)
     );
 
