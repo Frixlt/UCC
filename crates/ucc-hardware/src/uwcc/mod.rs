@@ -174,6 +174,9 @@ pub mod uwcc_ec_reg {
 
     /// Read-only chassis project identifier (`0x1A` on MECHREVO X6AR55xY).
     pub const PROJECT_ID: u16 = 0x0740;
+    /// `0x0741` (`EC_ADDR_AP_OEM`): `BIT(0)` (`ENABLE_MANUAL_CTRL`) latches manual TDP writes (`0x0783..=0x0785`).
+    pub const AP_OEM: u16 = 0x0741;
+    pub const AP_OEM_ENABLE_MANUAL_CTRL_BIT: u8 = 1 << 0;
 
     /// Power and thermal limit registers (aligned with upstream Linux `uniwill-acpi.c`).
     pub const PL1_WATTS: u16 = 0x0783;
@@ -843,6 +846,16 @@ impl PlatformBackend for UwccBackend {
         let reg = Self::tdp_reg(index)?;
         let raw = u8::try_from(watts)
             .map_err(|_| PlatformError::InvalidArgument("Power limit out of byte range"))?;
+        // Latch EC_ADDR_AP_OEM BIT(0) (ENABLE_MANUAL_CTRL) via RMW so the EC does not
+        // reset 0x0783..=0x0785 back to 0 within 1s on Uniwill 0x1A firmware.
+        if let Ok(prev_oem) = self.transport.ec_read(uwcc_ec_reg::AP_OEM) {
+            if (prev_oem & uwcc_ec_reg::AP_OEM_ENABLE_MANUAL_CTRL_BIT) == 0 {
+                self.transport.ec_write(
+                    uwcc_ec_reg::AP_OEM,
+                    prev_oem | uwcc_ec_reg::AP_OEM_ENABLE_MANUAL_CTRL_BIT,
+                )?;
+            }
+        }
         self.transport.ec_write(reg, raw)
     }
 

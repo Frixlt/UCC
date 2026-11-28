@@ -1606,3 +1606,18 @@ fn webcam_ttl_cache_and_bounded_sysfs_journal_and_d3cold_temp_guard() {
         Err(PlatformError::SensorUnavailable(0))
     ));
 }
+
+#[test]
+fn set_tdp_latches_ap_oem_manual_ctrl_preserving_upper_bits() {
+    let transport = Arc::new(MockUwccTransport::new());
+    transport.set_reg(uwcc_ec_reg::AP_OEM, 0x80);
+    let backend = UwccBackend::new(transport.clone(), None, None);
+
+    backend.set_tdp(0, 120).expect("set PL1");
+    assert_eq!(
+        transport.get_reg(uwcc_ec_reg::AP_OEM),
+        Some(0x81),
+        "set_tdp must RMW BIT(0) on 0x0741 without clobbering upper bits"
+    );
+    assert_eq!(transport.get_reg(uwcc_ec_reg::PL1_WATTS), Some(120));
+}
