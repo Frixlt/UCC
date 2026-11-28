@@ -77,6 +77,8 @@ namespace ucc
     void onIGpuTempChanged();
     void onFanSpeedChanged();
     void onGpuFanSpeedChanged();
+    void onCpuFanRpmChanged();
+    void onGpuFanRpmChanged();
     void onDGpuComputeUtilChanged();
     void onDGpuMemoryUtilChanged();
     void onDGpuPstateChanged();
@@ -111,7 +113,9 @@ namespace ucc
     QLabel *m_gpuTempLabel = nullptr;
     QLabel *m_gpuFrequencyLabel = nullptr;
     QLabel *m_fanSpeedLabel = nullptr;
+    QLabel *m_fanRpmLabel = nullptr;
     QLabel *m_gpuFanSpeedLabel = nullptr;
+    QLabel *m_gpuFanRpmLabel = nullptr;
     QLabel *m_cpuPowerLabel = nullptr;
     QLabel *m_gpuPowerLabel = nullptr;
     QLabel *m_iGpuTempLabel = nullptr;

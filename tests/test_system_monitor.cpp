@@ -45,8 +45,10 @@ public:
     } else if (name == "GetIGpuInfoValuesJSON") value = QString("{\"temp\":42,\"coreFrequency\":350,\"powerDraw\":0.7}");
     else if (name == "GetCpuPowerValuesJSON") value = QString("{\"powerDraw\":21}");
     else if (name.startsWith("GetFanData")) {
+      const int rpm = name == "GetFanDataCPU" ? 1992 : 2002;
       value = QVariantMap{{"temp",QVariantMap{{"timestamp",qlonglong(1)},{"data",55}}},
-                          {"speed",QVariantMap{{"timestamp",qlonglong(1)},{"data",40}}}};
+                          {"speed",QVariantMap{{"timestamp",qlonglong(1)},{"data",40}}},
+                          {"realRpm",QVariantMap{{"timestamp",qlonglong(1)},{"data",rpm}}}};
     } else if (name == "GetCpuFrequencyMHz") value = 2400;
     else if (name == "GetWaterCoolerFanSpeed") value = 100;
     else if (name == "GetWaterCoolerPumpLevel") value = 3;
@@ -89,6 +91,8 @@ private slots:
     QVERIFY2(beats >= elapsed.elapsed()/20,"Slow daemon replies must not block the UI event loop");
     QCOMPARE(monitor.gpuTemp(),QString("52°C"));
     QCOMPARE(monitor.gpuPower(),QString("45.0 W"));
+    QCOMPARE(monitor.cpuFanRpm(),1992);
+    QCOMPARE(monitor.gpuFanRpm(),2002);
     monitor.setMonitoringActive(false);
     const int reads = gpuReads();
     QTest::qWait(2100);

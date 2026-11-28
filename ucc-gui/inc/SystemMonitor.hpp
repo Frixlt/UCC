@@ -46,6 +46,8 @@ class SystemMonitor : public QObject
   Q_PROPERTY( QString iGpuTemp READ iGpuTemp NOTIFY iGpuTempChanged )
   Q_PROPERTY( QString cpuFanSpeed READ cpuFanSpeed NOTIFY fanSpeedChanged )
   Q_PROPERTY( QString gpuFanSpeed READ gpuFanSpeed NOTIFY gpuFanSpeedChanged )
+  Q_PROPERTY( int cpuFanRpm READ cpuFanRpm NOTIFY cpuFanRpmChanged )
+  Q_PROPERTY( int gpuFanRpm READ gpuFanRpm NOTIFY gpuFanRpmChanged )
   Q_PROPERTY( int dGpuComputeUtil   READ dGpuComputeUtil   NOTIFY dGpuComputeUtilChanged )
   Q_PROPERTY( int dGpuMemoryUtil    READ dGpuMemoryUtil    NOTIFY dGpuMemoryUtilChanged )
   Q_PROPERTY( int dGpuPstate        READ dGpuPstate        NOTIFY dGpuPstateChanged )
@@ -85,6 +87,8 @@ public:
   QString iGpuTemp() const { return m_iGpuTemp; }
   QString cpuFanSpeed() const { return m_fanSpeed; }
   QString gpuFanSpeed() const { return m_gpuFanSpeed; }
+  int cpuFanRpm() const { return m_cpuFanRpm; }
+  int gpuFanRpm() const { return m_gpuFanRpm; }
   int dGpuComputeUtil()    const { return m_dGpuComputeUtil; }
   int dGpuMemoryUtil()     const { return m_dGpuMemoryUtil; }
   int dGpuPstate()         const { return m_dGpuPstate; }
@@ -136,6 +140,8 @@ signals:
   void iGpuTempChanged();
   void fanSpeedChanged();
   void gpuFanSpeedChanged();
+  void cpuFanRpmChanged();
+  void gpuFanRpmChanged();
   void dGpuComputeUtilChanged();
   void dGpuMemoryUtilChanged();
   void dGpuPstateChanged();
@@ -183,6 +189,8 @@ private:
   QString m_iGpuTemp = "0\u00b0C";
   QString m_fanSpeed = "0 RPM";
   QString m_gpuFanSpeed = "0 RPM";
+  int m_cpuFanRpm = -1;
+  int m_gpuFanRpm = -1;
   int m_dGpuComputeUtil    = -1;
   int m_dGpuMemoryUtil     = -1;
   int m_dGpuPstate         = -1;

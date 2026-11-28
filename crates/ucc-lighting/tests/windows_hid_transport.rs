@@ -114,22 +114,24 @@ fn windows_hid_transport_selects_vendor_usage_page_over_boot_keyboard() {
         .unwrap();
 
     let reports = sys.sent_reports();
-    // 3 keyboard reports + 1 lightbar brightness + 5 lightbar/logo zone reports = 9 total.
-    assert_eq!(reports.len(), 9);
+    // 14 keyboard reports (1 brightness + 6*(0x16 + 64B row) + 1 latch) + 1 lightbar brightness + 5 lightbar/logo zone reports = 20 total.
+    assert_eq!(reports.len(), 20);
 
     // Every keyboard report targets the vendor lighting interface, never the boot keyboard.
-    for (path, buf) in &reports[..3] {
+    for (path, buf) in &reports[..14] {
         assert_eq!(path, WIN_KBD_VENDOR_PATH);
         assert_eq!(buf.len(), 65);
         assert_eq!(buf[0], 0x00);
     }
-    // Brightness report: [0x00, 0x08, 0x02, 0x01, 0x05, 50, ...]
-    assert_eq!(&reports[1].1[1..6], &[0x08, 0x02, 0x01, 0x05, 50]);
-    // Zone chunk report: [0x00, 0x14, 0, 2, 10, 20, 30, 40, 50, 60, ...]
-    assert_eq!(&reports[2].1[1..10], &[0x14, 0, 2, 10, 20, 30, 40, 50, 60]);
+    // Brightness report: [0x00, 0x08, 0x02, 0x33, 0x00, 50, ...]
+    assert_eq!(&reports[0].1[1..6], &[0x08, 0x02, 0x33, 0x00, 50]);
+    // Row 0 select + planar BGR row report (col 0 = 10,20,30; col 1 = 40,50,60).
+    assert_eq!(&reports[1].1[1..4], &[0x16, 0x00, 0x00]);
+    assert_eq!((reports[2].1[44], reports[2].1[23], reports[2].1[2]), (10, 20, 30));
+    assert_eq!((reports[2].1[45], reports[2].1[24], reports[2].1[3]), (40, 50, 60));
 
     // Every lightbar report targets 048D:7000 with exact 9-byte framed buffer.
-    for (path, buf) in &reports[3..] {
+    for (path, buf) in &reports[14..] {
         assert_eq!(path, WIN_LIGHTBAR_PATH);
         assert_eq!(buf.len(), 9);
         assert_eq!(buf[0], 0x00);
@@ -238,28 +240,22 @@ fn windows_hid_126_key_calibration_lid_logo_zone5_and_ec_hook() {
     kbd.apply_states(&states).expect("apply 126-key profile");
 
     let kbd_reports = sys.sent_reports();
-    // 1 buffer enable + 1 brightness + 8 zone chunks (ceil(126/16)) + 1 buffer disable = 11.
-    assert_eq!(kbd_reports.len(), 11);
+    // 1 brightness + 6 * (SET_ROW_INDEX 0x16 + 64B row) + 1 latch = 14.
+    assert_eq!(kbd_reports.len(), 14);
     for (path, buf) in &kbd_reports {
         assert_eq!(path, WIN_KBD_VENDOR_PATH);
         assert_eq!(buf.len(), 65);
         assert_eq!(buf[0], 0x00);
     }
-    assert_eq!(&kbd_reports[0].1[1..4], &[0x09, 0x02, 0x01]);
-    assert_eq!(&kbd_reports[1].1[1..6], &[0x08, 0x02, 0x01, 0x05, 50]);
-    assert_eq!(&kbd_reports[10].1[1..4], &[0x09, 0x02, 0x00]);
+    assert_eq!(&kbd_reports[0].1[1..6], &[0x08, 0x02, 0x33, 0x00, 50]);
+    assert_eq!(&kbd_reports[13].1[1..6], &[0x08, 0x02, 0x33, 0x00, 50]);
 
-    // Framed zone chunks: [0x00, 0x14, chunk_idx, count, r0, g0, b0, ...].
-    let zone_frames: Vec<&Vec<u8>> = kbd_reports[2..10].iter().map(|(_, b)| b).collect();
-    for frame in &zone_frames {
-        assert_eq!(frame[1], 0x14);
-    }
-    // LCtrl = LED 0 -> chunk 0, offset 0 => bytes 4..7.
-    assert_eq!(&zone_frames[0][4..7], &[11, 22, 33]);
-    // LShift = LED 21 -> chunk 1 (16..32), offset 5 => bytes 4 + 5*3 = 19..22.
-    assert_eq!(&zone_frames[1][19..22], &[44, 55, 66]);
-    // Enter = LED 56 -> chunk 3 (48..64), offset 8 => bytes 4 + 8*3 = 28..31.
-    assert_eq!(&zone_frames[3][28..31], &[77, 88, 99]);
+    // LCtrl = LED 0 -> row 0, col 0 (buf[0]=0x00 report id, buf[1]=0x00 pad, B=2, G=23, R=44).
+    assert_eq!((kbd_reports[2].1[44], kbd_reports[2].1[23], kbd_reports[2].1[2]), (11, 22, 33));
+    // LShift = LED 21 -> row 1, col 0.
+    assert_eq!((kbd_reports[4].1[44], kbd_reports[4].1[23], kbd_reports[4].1[2]), (44, 55, 66));
+    // Enter = LED 56 -> row 2, col 14.
+    assert_eq!((kbd_reports[6].1[44 + 14], kbd_reports[6].1[23 + 14], kbd_reports[6].1[2 + 14]), (77, 88, 99));
 
     // 2. LightbarController + lid logo zone 5 + write_lightbar_zones + EC hook.
     let mut lb = LightbarController::new(Arc::clone(&transport) as _);
@@ -306,20 +302,20 @@ fn windows_hid_126_key_calibration_lid_logo_zone5_and_ec_hook() {
     );
 
     let all_reports = sys.sent_reports();
-    // 11 kbd + 5 configure color + 1 configure brightness + 1 off + 1 lid logo + 5 zones = 24.
-    assert_eq!(all_reports.len(), 24);
-    for (path, buf) in &all_reports[11..] {
+    // 14 kbd + 5 configure color + 1 configure brightness + 1 off + 1 lid logo + 5 zones = 27.
+    assert_eq!(all_reports.len(), 27);
+    for (path, buf) in &all_reports[14..] {
         assert_eq!(path, WIN_LIGHTBAR_PATH);
         assert_eq!(buf.len(), 9);
         assert_eq!(buf[0], 0x00);
     }
     assert_eq!(
-        all_reports[18].1,
-        vec![0x00, 0x14, LIGHTBAR_LID_LOGO_ZONE_ID, 12, 34, 56, 0, 0, 0]
+        all_reports[21].1,
+        vec![0x00, 0x14, 0x00, LIGHTBAR_LID_LOGO_ZONE_ID, 12, 34, 56, 0, 0]
     );
     assert_eq!(
-        all_reports[23].1,
-        vec![0x00, 0x14, 5, 200, 100, 50, 0, 0, 0]
+        all_reports[26].1,
+        vec![0x00, 0x14, 0x00, 5, 200, 100, 50, 0, 0]
     );
 }
 

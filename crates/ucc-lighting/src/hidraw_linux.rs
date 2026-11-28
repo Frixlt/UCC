@@ -318,6 +318,30 @@ impl HidDeviceTransport for HidrawDeviceTransport {
     }
 
     #[cfg(target_os = "linux")]
+    fn send_output_report(&self, path: &str, report: &[u8]) -> Result<(), LightingError> {
+        use std::io::Write;
+
+        if report.is_empty() || report.len() > 64 {
+            return Err(LightingError::InvalidConfig(format!(
+                "Invalid HID output report length: {}",
+                report.len()
+            )));
+        }
+        // Linux `hidraw` `write()` treats `buf[0]` as the HID Report ID (`0x00` for unnumbered
+        // ITE 8291r3 64-byte per-key row output reports).
+        let mut file = self.open_hidraw_file(path)?;
+        let mut buf = Vec::with_capacity(report.len() + 1);
+        buf.push(0x00);
+        buf.extend_from_slice(report);
+        file.write_all(&buf).map_err(LightingError::Io)
+    }
+
+    #[cfg(not(target_os = "linux"))]
+    fn send_output_report(&self, _path: &str, _report: &[u8]) -> Result<(), LightingError> {
+        Err(LightingError::Unavailable)
+    }
+
+    #[cfg(target_os = "linux")]
     fn get_feature_report(&self, path: &str, len: usize) -> Result<Vec<u8>, LightingError> {
         use std::os::unix::io::AsRawFd;
 

@@ -95,9 +95,15 @@ void SystemMonitor::updateMetrics()
       if (field != value) { field = value; (this->*changed)(); }
     };
     const auto cpuFan = snapshot.value("GetFanDataCPU");
-    const int gpu1 = fanValue(snapshot.value("GetFanDataGPU1"), "speed");
-    const int gpu2 = fanValue(snapshot.value("GetFanDataGPU2"), "speed");
+    const auto gpuFan1Data = snapshot.value("GetFanDataGPU1");
+    const auto gpuFan2Data = snapshot.value("GetFanDataGPU2");
+    const int gpu1 = fanValue(gpuFan1Data, "speed");
+    const int gpu2 = fanValue(gpuFan2Data, "speed");
     const int gpuFan = gpu1 < 0 ? gpu2 : gpu2 < 0 ? gpu1 : (gpu1 + gpu2) / 2;
+    const int cpuRpmVal = fanValue(cpuFan, "realRpm");
+    const int gpu1Rpm = fanValue(gpuFan1Data, "realRpm");
+    const int gpu2Rpm = fanValue(gpuFan2Data, "realRpm");
+    const int gpuRpmVal = gpu1Rpm < 0 ? gpu2Rpm : gpu2Rpm < 0 ? gpu1Rpm : (gpu1Rpm + gpu2Rpm) / 2;
     const int cpuTempVal = fanValue(cpuFan, "temp");
     if (snapshot.contains("GetFanDataCPU") && (cpuTempVal >= 0 || m_cpuTemp == "--"))
       setText(m_cpuTemp, formatted(cpuTempVal, "°C"), &SystemMonitor::cpuTempChanged);
@@ -114,6 +120,10 @@ void SystemMonitor::updateMetrics()
       setText(m_fanSpeed, formatted(cpuSpeedVal, " %"), &SystemMonitor::fanSpeedChanged);
     if ((snapshot.contains("GetFanDataGPU1") || snapshot.contains("GetFanDataGPU2")) && (gpuFan >= 0 || m_gpuFanSpeed == "--"))
       setText(m_gpuFanSpeed, formatted(gpuFan, " %"), &SystemMonitor::gpuFanSpeedChanged);
+    if (snapshot.contains("GetFanDataCPU") && (cpuRpmVal >= 0 || m_cpuFanRpm < 0))
+      setInt(m_cpuFanRpm, cpuRpmVal, &SystemMonitor::cpuFanRpmChanged);
+    if ((snapshot.contains("GetFanDataGPU1") || snapshot.contains("GetFanDataGPU2")) && (gpuRpmVal >= 0 || m_gpuFanRpm < 0))
+      setInt(m_gpuFanRpm, gpuRpmVal, &SystemMonitor::gpuFanRpmChanged);
     setInt(m_dGpuComputeUtil, gpu.value("computeUtilPct").toInt(-1), &SystemMonitor::dGpuComputeUtilChanged);
     setInt(m_dGpuMemoryUtil, gpu.value("memoryUtilPct").toInt(-1), &SystemMonitor::dGpuMemoryUtilChanged);
     setInt(m_dGpuPstate, gpu.value("currentPstate").toInt(-1), &SystemMonitor::dGpuPstateChanged);

@@ -367,25 +367,34 @@ fn ite_600b_preserves_physical_calibration_and_caps_brightness_to_50() {
     kbd.apply_states(&states).expect("apply 126-key profile");
 
     let reports = mock_hid.recorded_reports();
-    // 1 buffer enable + 1 brightness + 8 zone chunks (ceil(126/16)) + 1 buffer disable = 11
-    assert_eq!(reports.len(), 11);
-    assert_eq!(reports[0].1, vec![0x09, 0x02, 0x01, 0, 0, 0, 0, 0]);
-    assert_eq!(reports[1].1, vec![0x08, 0x02, 0x01, 0x05, 50, 0, 0, 0]);
-    assert_eq!(reports[10].1, vec![0x09, 0x02, 0x00, 0, 0, 0, 0, 0]);
+    // 1 brightness (UserEffect 0x33) + 6 * (SET_ROW_INDEX 0x16 + 64-byte planar BGR row) + 1 latch = 14.
+    // buffer_input acquire/release must NOT send 0x09 (SET_BRIGHTNESS).
+    assert_eq!(reports.len(), 14);
+    assert!(
+        !reports.iter().any(|(_, r)| r.first() == Some(&0x09)),
+        "buffer_input must not overwrite ITE 8291r3 brightness via command 0x09"
+    );
+    assert_eq!(reports[0].1, vec![0x08, 0x02, 0x33, 0x00, 50, 0, 0, 0]);
+    assert_eq!(reports[13].1, vec![0x08, 0x02, 0x33, 0x00, 50, 0, 0, 0]);
 
-    // Verify every chunked 0x14 frame is <= 64 bytes and preserves calibrated LED offsets
-    let zone_frames: Vec<&Vec<u8>> = reports[2..10].iter().map(|(_, r)| r).collect();
-    for frame in &zone_frames {
-        assert!(frame.len() <= 64);
-        assert_eq!(frame[0], 0x14);
+    // Verify 6 rows x (8-byte SET_ROW_INDEX + 64-byte planar BGR output report)
+    for row in 0..6usize {
+        let sel = &reports[1 + row * 2].1;
+        let data = &reports[2 + row * 2].1;
+        assert_eq!(sel, &vec![0x16, 0x00, row as u8, 0, 0, 0, 0, 0]);
+        assert_eq!(data.len(), 64);
+        assert_eq!(data[0], 0x00);
     }
 
-    // LCtrl = LED 0 -> chunk 0, key offset 0
-    assert_eq!(&zone_frames[0][3..6], &[11, 22, 33]);
-    // LShift = LED 21 -> chunk 1 (16..32), key offset 5 => byte offset 3 + 5*3 = 18..21
-    assert_eq!(&zone_frames[1][18..21], &[44, 55, 66]);
-    // Enter = LED 56 -> chunk 3 (48..64), key offset 8 => byte offset 3 + 8*3 = 27..30
-    assert_eq!(&zone_frames[3][27..30], &[77, 88, 99]);
+    // LCtrl = LED 0 -> row 0, col 0 (B=1+0, G=22+0, R=43+0)
+    let row0 = &reports[2].1;
+    assert_eq!((row0[43], row0[22], row0[1]), (11, 22, 33));
+    // LShift = LED 21 -> row 1, col 0
+    let row1 = &reports[4].1;
+    assert_eq!((row1[43], row1[22], row1[1]), (44, 55, 66));
+    // Enter = LED 56 -> row 2, col 14 (56 = 2*21 + 14)
+    let row2 = &reports[6].1;
+    assert_eq!((row2[43 + 14], row2[22 + 14], row2[1 + 14]), (77, 88, 99));
 
     assert_eq!(
         transport.read_keyboard_brightness().expect("read b"),
@@ -431,10 +440,10 @@ fn ite_lightbar_zones_lid_logo_and_ec_power_hook() {
         .expect("write 4 zones");
     let reports_7001 = mock_7001.recorded_reports();
     assert_eq!(reports_7001.len(), 4);
-    assert_eq!(reports_7001[0].1, vec![0x14, 1, 255, 0, 0, 0, 0, 0]);
-    assert_eq!(reports_7001[1].1, vec![0x14, 2, 0, 255, 0, 0, 0, 0]);
-    assert_eq!(reports_7001[2].1, vec![0x14, 3, 0, 0, 255, 0, 0, 0]);
-    assert_eq!(reports_7001[3].1, vec![0x14, 4, 255, 255, 0, 0, 0, 0]);
+    assert_eq!(reports_7001[0].1, vec![0x14, 0x00, 1, 255, 0, 0, 0, 0]);
+    assert_eq!(reports_7001[1].1, vec![0x14, 0x00, 2, 0, 255, 0, 0, 0]);
+    assert_eq!(reports_7001[2].1, vec![0x14, 0x00, 3, 0, 0, 255, 0, 0]);
+    assert_eq!(reports_7001[3].1, vec![0x14, 0x00, 4, 255, 255, 0, 0, 0]);
 
     // Passing 5 zones to a 4-zone controller must be rejected
     assert!(matches!(
@@ -488,8 +497,9 @@ fn ite_lightbar_zones_lid_logo_and_ec_power_hook() {
     );
     let reports_7000 = mock_7000.recorded_reports();
     assert_eq!(reports_7000.len(), 3);
-    assert_eq!(reports_7000[0].1, vec![0x08, 0x01, 200, 0, 0, 0, 0, 0]);
-    assert_eq!(reports_7000[1].1, vec![0x14, 5, 12, 34, 56, 0, 0, 0]);
+    let expected_lvl = UniwillHidTransport::scale_keyboard_brightness(200);
+    assert_eq!(reports_7000[0].1, vec![0x08, 0x02, 0x01, 0x05, expected_lvl, 0x01, 0, 0]);
+    assert_eq!(reports_7000[1].1, vec![0x14, 0x00, 5, 12, 34, 56, 0, 0]);
     assert_eq!(reports_7000[2].1, vec![0x08, 0x01, 0, 0, 0, 0, 0, 0]);
 
     // Writing all 5 zones (4 front + lid logo) re-enables EC power automatically for non-black
@@ -510,7 +520,7 @@ fn ite_lightbar_zones_lid_logo_and_ec_power_hook() {
     );
     let zone_reports = mock_7000.recorded_reports();
     assert_eq!(zone_reports.len(), 5);
-    assert_eq!(zone_reports[4].1, vec![0x14, 5, 200, 100, 50, 0, 0, 0]);
+    assert_eq!(zone_reports[4].1, vec![0x14, 0x00, 5, 200, 100, 50, 0, 0]);
 }
 
 #[test]
@@ -587,7 +597,7 @@ fn lightbar_controller_over_hid_preserves_all_5_animations_and_flash_stays_off()
         if anim == LightbarAnimation::Flash {
             assert!(lb.is_flash_off());
             for (idx, (_, r)) in final_reports.iter().enumerate() {
-                assert_eq!(r, &vec![0x14, (idx + 1) as u8, 0, 0, 0, 0, 0, 0]);
+                assert_eq!(r, &vec![0x14, 0x00, (idx + 1) as u8, 0, 0, 0, 0, 0]);
             }
         } else {
             assert!(!lb.is_flash_off());
@@ -596,11 +606,11 @@ fn lightbar_controller_over_hid_preserves_all_5_animations_and_flash_stays_off()
                     r,
                     &vec![
                         0x14,
+                        0x00,
                         (idx + 1) as u8,
                         base_rgb.r,
                         base_rgb.g,
                         base_rgb.b,
-                        0,
                         0,
                         0
                     ]

@@ -108,7 +108,7 @@ fn buffer_input_guard_resets_even_when_zone_write_fails() {
     }));
     mock.set_fail_on_keyboard_zones(true);
 
-    let mut kbd = KeyboardBacklightController::new(mock.clone());
+    let mut kbd = KeyboardBacklightController::new(Arc::clone(&mock));
     kbd.init().unwrap();
     let err = kbd
         .apply_states(&[KeyboardBacklightState {
@@ -146,7 +146,7 @@ fn lightbar_controller_lifecycle_flash_silent_and_auto_majority_color() {
         RgbColor::new(255, 0, 0),
     ]);
 
-    let mut lb = LightbarController::new(mock.clone());
+    let mut lb = LightbarController::new(Arc::clone(&mock));
 
     // 1. Default managed=false: configure writes NOTHING
     lb.configure(&json!({ "managed": false })).unwrap();

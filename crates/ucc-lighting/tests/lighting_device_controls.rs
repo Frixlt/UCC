@@ -58,7 +58,7 @@ fn keyboard_propagates_buffer_enable_mid_write_and_release_failures() {
     // 1. Enable failure aborts immediately without zone writes
     let mock = Arc::new(MockLightingTransport::new());
     mock.set_keyboard_caps(caps.clone());
-    let mut kbd = KeyboardBacklightController::new(mock.clone());
+    let mut kbd = KeyboardBacklightController::new(Arc::clone(&mock));
     kbd.init().unwrap();
     mock.set_fail_on_buffer_input(true, false);
     assert!(matches!(
@@ -139,7 +139,7 @@ fn mechrevo_126_zone_profile_preserves_physical_led_ids_when_a_zone_is_missing()
     profile_states[MECHREVO_LSHIFT_LED_ID as usize].green = 22;
     profile_states[MECHREVO_ENTER_LED_ID as usize].blue = 33;
 
-    let mut kbd = KeyboardBacklightController::new(mock.clone());
+    let mut kbd = KeyboardBacklightController::new(Arc::clone(&mock));
     kbd.init().unwrap();
     kbd.apply_states(&profile_states).unwrap();
 

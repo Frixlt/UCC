@@ -188,7 +188,7 @@ void DashboardTab::setupUI()
   connect(manage,&QPushButton::clicked,this,[this]{if(auto *pages=window()->findChild<QTabWidget*>("pages")) pages->setCurrentIndex(1);});
   layout->addWidget(profile);
   auto *metrics=new QHBoxLayout;metrics->setSpacing(16);
-  auto addMetrics=[&](QVBoxLayout *l,QLabel *&temperature,QLabel *&fan,QLabel *&frequency,QLabel *&power){
+  auto addMetrics=[&](QVBoxLayout *l,QLabel *&temperature,QLabel *&fan,QLabel *&frequency,QLabel *&power,QLabel **fanRpm=nullptr,const char *rpmObjectName=nullptr){
     l->setSpacing(0);
     l->addSpacing(4);
     auto *statsWidget=new QWidget;statsWidget->setObjectName("primaryMetrics");
@@ -197,7 +197,19 @@ void DashboardTab::setupUI()
     for(auto field: {std::tuple<QString,QString,QLabel**>{"Temperature","°C",&temperature},{"Fan","%",&fan},{"Frequency","GHz",&frequency},{"Power","W",&power}}){
       auto *caption=muted(std::get<0>(field));caption->setWordWrap(false);
       stats->addWidget(caption,0,col);
-      stats->addWidget(value(*std::get<2>(field),std::get<1>(field),col==0),1,col,Qt::AlignBottom);
+      if(col==2 && fanRpm){
+        auto *fanCell=new QWidget;auto *fanCol=new QVBoxLayout(fanCell);fanCol->setContentsMargins(0,0,0,0);fanCol->setSpacing(1);
+        fanCol->addWidget(value(*std::get<2>(field),std::get<1>(field),false));
+        auto *rpmLabel=muted("");rpmLabel->setWordWrap(false);
+        if(rpmObjectName) rpmLabel->setObjectName(rpmObjectName);
+        rpmLabel->setStyleSheet("font-size: 11px;");
+        rpmLabel->hide();
+        *fanRpm=rpmLabel;
+        fanCol->addWidget(rpmLabel);
+        stats->addWidget(fanCell,1,col,Qt::AlignBottom);
+      } else {
+        stats->addWidget(value(*std::get<2>(field),std::get<1>(field),col==0),1,col,Qt::AlignBottom);
+      }
       stats->setColumnStretch(col,1);
       if(col<6){auto *line=new QFrame;line->setObjectName("metricDivider");line->setFixedWidth(1);stats->addWidget(line,0,col+1,2,1);}
       col+=2;
@@ -207,14 +219,14 @@ void DashboardTab::setupUI()
   auto *cpu=FluentTheme::createCard();auto *cpuLayout=new QVBoxLayout(cpu);cpuLayout->setContentsMargins(16,16,16,16);cpuLayout->setSpacing(0);cpuLayout->setAlignment(Qt::AlignTop);
   auto *cpuHead=title("CPU");cpuHead->setFixedHeight(24);cpuLayout->addWidget(cpuHead);cpuLayout->addSpacing(4);
   auto *cpuModel=muted(m_cpuModel.isEmpty() ? "Processor" : m_cpuModel);cpuModel->setFixedHeight(28);cpuModel->setAlignment(Qt::AlignLeft|Qt::AlignTop);cpuLayout->addWidget(cpuModel);
-  addMetrics(cpuLayout,m_cpuTempLabel,m_fanSpeedLabel,m_cpuFrequencyLabel,m_cpuPowerLabel);metrics->addWidget(cpu,1);
+  addMetrics(cpuLayout,m_cpuTempLabel,m_fanSpeedLabel,m_cpuFrequencyLabel,m_cpuPowerLabel,&m_fanRpmLabel,"cpuFanRpmLabel");metrics->addWidget(cpu,1);
   auto *gpu=FluentTheme::createCard();auto *gpuLayout=new QVBoxLayout(gpu);gpuLayout->setContentsMargins(16,16,16,16);gpuLayout->setSpacing(0);gpuLayout->setAlignment(Qt::AlignTop);
   auto *gpuHeader=new QWidget;gpuHeader->setFixedHeight(24);auto *gpuHead=new QHBoxLayout(gpuHeader);gpuHead->setContentsMargins(0,0,0,0);gpuHead->addWidget(title("GPU"),1);
   m_gpuToggleButton=new QPushButton("Show iGPU");m_gpuToggleButton->setStyleSheet("padding: 3px 8px; min-height: 14px;");m_gpuToggleButton->hide();gpuHead->addWidget(m_gpuToggleButton);gpuLayout->addWidget(gpuHeader);gpuLayout->addSpacing(4);
   m_gpuHeaderLabel=muted(!m_dGpuModel.isEmpty() ? m_dGpuModel : m_iGpuModel.isEmpty() ? "Graphics processor" : m_iGpuModel);
   m_gpuHeaderLabel->setFixedHeight(28);m_gpuHeaderLabel->setAlignment(Qt::AlignLeft|Qt::AlignTop);gpuLayout->addWidget(m_gpuHeaderLabel);
   m_dGpuGaugeContainer=new QWidget;auto *dLayout=new QVBoxLayout(m_dGpuGaugeContainer);dLayout->setContentsMargins(0,0,0,0);dLayout->setSpacing(0);dLayout->setAlignment(Qt::AlignTop);
-  addMetrics(dLayout,m_gpuTempLabel,m_gpuFanSpeedLabel,m_gpuFrequencyLabel,m_gpuPowerLabel);
+  addMetrics(dLayout,m_gpuTempLabel,m_gpuFanSpeedLabel,m_gpuFrequencyLabel,m_gpuPowerLabel,&m_gpuFanRpmLabel,"gpuFanRpmLabel");
   m_dGpuExtraHSep=new QFrame;m_dGpuExtraHSep->hide();dLayout->addWidget(m_dGpuExtraHSep);
   m_dGpuExtraRow=new QWidget;m_dGpuExtraRow->setObjectName("gpuDetails");m_dGpuExtraRow->setAttribute(Qt::WA_StyledBackground);
   auto *extra=new QGridLayout(m_dGpuExtraRow);extra->setContentsMargins(12,8,12,8);extra->setHorizontalSpacing(8);extra->setVerticalSpacing(4);
@@ -312,6 +324,12 @@ void DashboardTab::connectSignals()
            this, &DashboardTab::onFanSpeedChanged );
   connect( m_systemMonitor, &SystemMonitor::gpuFanSpeedChanged,
            this, &DashboardTab::onGpuFanSpeedChanged );
+  connect( m_systemMonitor, &SystemMonitor::cpuFanRpmChanged,
+           this, &DashboardTab::onCpuFanRpmChanged );
+  connect( m_systemMonitor, &SystemMonitor::gpuFanRpmChanged,
+           this, &DashboardTab::onGpuFanRpmChanged );
+  onCpuFanRpmChanged();
+  onGpuFanRpmChanged();
   connect( m_systemMonitor, &SystemMonitor::dGpuComputeUtilChanged,
            this, &DashboardTab::onDGpuComputeUtilChanged );
   connect( m_systemMonitor, &SystemMonitor::dGpuMemoryUtilChanged,
@@ -643,6 +661,38 @@ void DashboardTab::onFanSpeedChanged()
 void DashboardTab::onGpuFanSpeedChanged()
 {
   m_gpuFanSpeedLabel->setText( formatFanSpeed( m_systemMonitor->gpuFanSpeed() ) );
+}
+
+void DashboardTab::onCpuFanRpmChanged()
+{
+  if ( !m_fanRpmLabel )
+    return;
+  const int rpm = m_systemMonitor->cpuFanRpm();
+  if ( rpm >= 0 )
+  {
+    m_fanRpmLabel->setText( QString::number( rpm ) + QStringLiteral( " RPM" ) );
+    m_fanRpmLabel->show();
+  }
+  else
+  {
+    m_fanRpmLabel->hide();
+  }
+}
+
+void DashboardTab::onGpuFanRpmChanged()
+{
+  if ( !m_gpuFanRpmLabel )
+    return;
+  const int rpm = m_systemMonitor->gpuFanRpm();
+  if ( rpm >= 0 )
+  {
+    m_gpuFanRpmLabel->setText( QString::number( rpm ) + QStringLiteral( " RPM" ) );
+    m_gpuFanRpmLabel->show();
+  }
+  else
+  {
+    m_gpuFanRpmLabel->hide();
+  }
 }
 
 void DashboardTab::onDGpuComputeUtilChanged()

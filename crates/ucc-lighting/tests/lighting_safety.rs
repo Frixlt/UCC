@@ -79,7 +79,7 @@ fn t_hw_14c_lightbar_reconfigure_resets_animation_state() {
         max_brightness: 255,
     }));
 
-    let mut lb = LightbarController::new(mock.clone());
+    let mut lb = LightbarController::new(Arc::clone(&mock));
     lb.configure(&json!({
         "managed": true,
         "welcome_anim": false,
