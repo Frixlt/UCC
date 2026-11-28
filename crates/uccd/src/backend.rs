@@ -1147,6 +1147,11 @@ impl LiveUccdBackend {
         self.cooler_suspending.store(true, Ordering::SeqCst);
         self.lock_mutex(&self.cooler_controller)
             .on_prepare_for_sleep(true);
+        if self.water_cooler_connected.swap(false, Ordering::SeqCst) {
+            self.emit_signal(DbusSignalEvent::WaterCoolerStatusChanged {
+                status: "disconnected".to_string(),
+            });
+        }
         self.sync_water_cooler_pwup(false);
     }
 

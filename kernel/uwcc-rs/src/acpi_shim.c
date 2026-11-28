@@ -319,7 +319,6 @@ static long uwcc_dev_ioctl(struct file *filp, unsigned int cmd, unsigned long ar
 {
 	void __user *argp = (void __user *)arg;
 	bool writable = (filp->f_mode & FMODE_WRITE) != 0;
-	bool sys_admin = capable(CAP_SYS_ADMIN);
 	int ret;
 
 	switch (cmd) {
@@ -353,7 +352,7 @@ static long uwcc_dev_ioctl(struct file *filp, unsigned int cmd, unsigned long ar
 
 		if (copy_from_user(&reg, argp, sizeof(reg)))
 			return -EFAULT;
-		return uwcc_rs_ioctl_ec_write(&reg, writable, sys_admin);
+		return uwcc_rs_ioctl_ec_write(&reg, writable, capable(CAP_SYS_ADMIN));
 	}
 
 	case UWCC_IOC_SMRW: {
@@ -374,7 +373,7 @@ static long uwcc_dev_ioctl(struct file *filp, unsigned int cmd, unsigned long ar
 
 		if (copy_from_user(&pwup, argp, sizeof(pwup)))
 			return -EFAULT;
-		return uwcc_rs_ioctl_pwup(&pwup, writable, sys_admin);
+		return uwcc_rs_ioctl_pwup(&pwup, writable, capable(CAP_SYS_ADMIN));
 	}
 
 	default:

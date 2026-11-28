@@ -145,13 +145,14 @@ static DRIVER_STATE: StateCell = StateCell(UnsafeCell::new(DriverState::new()));
 
 #[inline]
 fn with_state<R>(f: impl FnOnce(&mut DriverState) -> R) -> R {
-    // SAFETY: Acquires `uwcc_state_lock` with IRQs saved before creating the
-    // exclusive `&mut DriverState` reference and restores IRQs before returning.
+    // SAFETY: Acquires `uwcc_state_lock` with IRQs saved to serialize access to `DRIVER_STATE`.
     let flags = unsafe { uwcc_state_lock_irqsave() };
     let res = {
+        // SAFETY: `uwcc_state_lock` is held, granting exclusive access to `DRIVER_STATE`.
         let state = unsafe { &mut *DRIVER_STATE.0.get() };
         f(state)
     };
+    // SAFETY: Releases `uwcc_state_lock` and restores IRQ state matching `uwcc_state_lock_irqsave`.
     unsafe { uwcc_state_unlock_irqrestore(flags) };
     res
 }
@@ -409,8 +410,8 @@ impl kernel::Module for UwccModule {
         }
 
         // Register native /sys/class/hwmon/hwmonX (D3cold-safe EC telemetry).
-        // SAFETY: `uwcc_hwmon_register(NULL)` binds to `uwcc_miscdev.this_device`.
         let mut flags = caps.flags;
+        // SAFETY: `uwcc_hwmon_register(NULL)` binds to `uwcc_miscdev.this_device`.
         if unsafe { uwcc_hwmon_register(core::ptr::null_mut()) } == 0 {
             flags |= UWCC_FLAG_HAS_HWMON;
             with_state(|s| {

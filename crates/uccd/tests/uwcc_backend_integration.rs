@@ -363,6 +363,10 @@ fn uwcc_water_cooler_connect_disconnect_suspend_and_shutdown_toggle_pwup() {
 
     backend2.on_system_suspend();
     assert!(
+        !backend2.get_water_cooler_connected(),
+        "on_system_suspend must reset water_cooler_connected so resume reconnect re-enables PWUP"
+    );
+    assert!(
         mock_platform
             .journal()
             .contains(&PlatformWrite::SetPwup {
@@ -370,6 +374,19 @@ fn uwcc_water_cooler_connect_disconnect_suspend_and_shutdown_toggle_pwup() {
                 level: 0
             }),
         "on_system_suspend must disable PWUP"
+    );
+
+    mock_platform.clear_journal();
+    backend2.on_system_resume();
+    backend2.set_cooler_connected_state(true);
+    assert!(
+        mock_platform
+            .journal()
+            .contains(&PlatformWrite::SetPwup {
+                enable: true,
+                level: 1
+            }),
+        "reconnect after suspend/resume must re-enable PWUP"
     );
 
     mock_platform.clear_journal();
