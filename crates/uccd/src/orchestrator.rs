@@ -790,11 +790,11 @@ impl DaemonRuntime {
                             let Some(_op_guard) = lb_backend.enter_worker_hw_op() else {
                                 break;
                             };
-                            if let Err(payload) = std::panic::catch_unwind(
-                                std::panic::AssertUnwindSafe(|| {
+                            if let Err(payload) =
+                                std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
                                     lb_backend.tick_lightbar_animation(&mut anim_started);
-                                }),
-                            ) {
+                                }))
+                            {
                                 error!(
                                     "Lightbar worker panicked: {}",
                                     format_panic_payload(payload)

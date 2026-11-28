@@ -1314,13 +1314,9 @@ macro_rules! impl_uccd_methods {
                     return false;
                 }
                 let mode = mode.to_owned();
-                self.offload_or_checked(
-                    OffloadLane::PowerGpu,
-                    conn,
-                    sender,
-                    false,
-                    move |b| b.set_mux_boot_mode(&mode),
-                )
+                self.offload_or_checked(OffloadLane::PowerGpu, conn, sender, false, move |b| {
+                    b.set_mux_boot_mode(&mode)
+                })
                 .await
             }
 
