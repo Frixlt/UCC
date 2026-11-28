@@ -1,14 +1,15 @@
 # Agent 2 — ucc-core, ucc-config, ucc-dbus, uccd
 - **Branch:** `release/a2-core-config-ipc-daemon`
-- **Status:** `PENDING`
+- **Status:** `STARTED`
+- **Updated:** 2026-11-28 19:20 UTC
 - **Base SHA:** `e1fe413`
-- **HEAD SHA:** `-`
+- **HEAD SHA:** `e1fe413`
 
 ## Completed
-- (ожидает старта Агента 2)
+- [x] Step 0: cloned `rust/migration`, created `release/a2-core-config-ipc-daemon`, read CONTRACT.md / SYNC_PROTOCOL.md / AGENT_2.md / TOTAL_AUDIT_2026_11_28.md.
 
 ## Tests & Verification
-- (ещё не запускалось)
+- Pending Phase 1
 
 ## Cross-Agent Notes
 - None
