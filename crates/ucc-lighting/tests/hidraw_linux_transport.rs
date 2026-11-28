@@ -153,8 +153,11 @@ fn hidraw_linux_enumerates_mock_sysfs_and_filters_interfaces() {
         fs::create_dir_all(&dev).expect("create hidraw2");
         fs::write(dev.join("uevent"), "HID_ID=0003:0000048D:0000600B\n").expect("write uevent");
         fs::write(dev.join("bInterfaceNumber"), "01\n").expect("write iface");
-        fs::write(dev.join("report_descriptor"), [0x06u8, 0x89, 0xFF, 0x09, 0x01])
-            .expect("write desc");
+        fs::write(
+            dev.join("report_descriptor"),
+            [0x06u8, 0x89, 0xFF, 0x09, 0x01],
+        )
+        .expect("write desc");
     }
 
     // ITE 048D:7001 fallback device/bInterfaceNumber = 01 (4-zone front Lightbar)
@@ -184,8 +187,11 @@ fn hidraw_linux_enumerates_mock_sysfs_and_filters_interfaces() {
         fs::create_dir_all(&dev).expect("create hidraw10");
         fs::write(dev.join("uevent"), "HID_ID=0003:0000048D:00007000\n").expect("write uevent");
         fs::write(dev.join("bInterfaceNumber"), "01\n").expect("write iface");
-        fs::write(dev.join("report_descriptor"), [0x06u8, 0x00, 0xFF, 0x09, 0x01])
-            .expect("write desc");
+        fs::write(
+            dev.join("report_descriptor"),
+            [0x06u8, 0x00, 0xFF, 0x09, 0x01],
+        )
+        .expect("write desc");
     }
 
     let hidraw = Arc::new(HidrawDeviceTransport::with_sysfs_root(root));
@@ -381,7 +387,10 @@ fn ite_600b_preserves_physical_calibration_and_caps_brightness_to_50() {
     // Enter = LED 56 -> chunk 3 (48..64), key offset 8 => byte offset 3 + 8*3 = 27..30
     assert_eq!(&zone_frames[3][27..30], &[77, 88, 99]);
 
-    assert_eq!(transport.read_keyboard_brightness().expect("read b"), Some(255));
+    assert_eq!(
+        transport.read_keyboard_brightness().expect("read b"),
+        Some(255)
+    );
 }
 
 #[test]
@@ -514,15 +523,15 @@ fn lightbar_controller_over_hid_preserves_all_5_animations_and_flash_stays_off()
     let ec_events: Arc<Mutex<Vec<bool>>> = Arc::new(Mutex::new(Vec::new()));
     let ec_cb = Arc::clone(&ec_events);
     let transport = Arc::new(
-        UniwillHidTransport::new(Arc::clone(&mock_hid) as _).with_ec_lightbar_power_hook(
-            Arc::new(move |enabled| {
+        UniwillHidTransport::new(Arc::clone(&mock_hid) as _).with_ec_lightbar_power_hook(Arc::new(
+            move |enabled| {
                 ec_cb
                     .lock()
                     .unwrap_or_else(|e| e.into_inner())
                     .push(enabled);
                 Ok(())
-            }),
-        ),
+            },
+        )),
     );
 
     let mut lb = LightbarController::new(Arc::clone(&transport) as _);

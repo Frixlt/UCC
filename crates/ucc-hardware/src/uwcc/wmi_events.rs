@@ -240,10 +240,12 @@ impl LinuxUinputEmitter {
             // SAFETY: Standard Linux uinput `_IOW('U', nr, int)` ioctl taking an integer argument.
             let ret = unsafe { libc::ioctl(fd, req as _, val) };
             if ret < 0 {
-                return Err(PlatformError::Ioctl(crate::ioctl::IoctlError::IoctlFailed {
-                    request: req,
-                    source: nix::Error::last(),
-                }));
+                return Err(PlatformError::Ioctl(
+                    crate::ioctl::IoctlError::IoctlFailed {
+                        request: req,
+                        source: nix::Error::last(),
+                    },
+                ));
             }
             Ok(())
         };
@@ -296,19 +298,23 @@ impl LinuxUinputEmitter {
             )
         };
         if setup_ret < 0 {
-            return Err(PlatformError::Ioctl(crate::ioctl::IoctlError::IoctlFailed {
-                request: linux_uinput_abi::UI_DEV_SETUP,
-                source: nix::Error::last(),
-            }));
+            return Err(PlatformError::Ioctl(
+                crate::ioctl::IoctlError::IoctlFailed {
+                    request: linux_uinput_abi::UI_DEV_SETUP,
+                    source: nix::Error::last(),
+                },
+            ));
         }
 
         // SAFETY: `UI_DEV_CREATE` takes no arguments.
         let create_ret = unsafe { libc::ioctl(fd, linux_uinput_abi::UI_DEV_CREATE as _) };
         if create_ret < 0 {
-            return Err(PlatformError::Ioctl(crate::ioctl::IoctlError::IoctlFailed {
-                request: linux_uinput_abi::UI_DEV_CREATE,
-                source: nix::Error::last(),
-            }));
+            return Err(PlatformError::Ioctl(
+                crate::ioctl::IoctlError::IoctlFailed {
+                    request: linux_uinput_abi::UI_DEV_CREATE,
+                    source: nix::Error::last(),
+                },
+            ));
         }
 
         Ok(Self {

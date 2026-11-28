@@ -30,16 +30,15 @@ use ucc_config::{
 };
 use ucc_core::{FanProfile, PowerPolicy, ProfileState, TemporaryFanCurves, UccProfile};
 use ucc_hardware::{
-    build_laptop_model, classify_manufacturer, CoolerController, CpuTopology, DeviceVendor,
-    DmiInfo, FanController, FanTickSnapshot, LaptopManufacturer, MetricsHistoryStore,
-    MockHardwareIo, MockPlatformBackend, NvidiaPowerGuard, NvmlWrapper, PlatformBackend,
-    PlatformBackendKind, PlatformBackendSelection, PlatformCapabilities, PowerDeviceController,
-    RealSysfs, Sysfs, TelemetryCollector, TelemetryConfig, TelemetrySnapshot, TuxedoIoBackend,
-    parse_backend_selection, TuxedoIoDevice, UwccBackend, UwccDevice, UWCC_DEVICE_PATH,
+    build_laptop_model, classify_manufacturer, parse_backend_selection, CoolerController,
+    CpuTopology, DeviceVendor, DmiInfo, FanController, FanTickSnapshot, LaptopManufacturer,
+    MetricsHistoryStore, MockHardwareIo, MockPlatformBackend, NvidiaPowerGuard, NvmlWrapper,
+    PlatformBackend, PlatformBackendKind, PlatformBackendSelection, PlatformCapabilities,
+    PowerDeviceController, RealSysfs, Sysfs, TelemetryCollector, TelemetryConfig,
+    TelemetrySnapshot, TuxedoIoBackend, TuxedoIoDevice, UwccBackend, UwccDevice, UWCC_DEVICE_PATH,
 };
 use ucc_lighting::{KeyboardBacklightController, LightbarController, LightingTransport};
 use zbus::zvariant::{OwnedValue, Value as ZValue};
-
 
 /// Environment variable overriding `settings.platformBackend` (`"auto"`, `"uwcc"`, `"tuxedo_io"`).
 pub const ENV_PLATFORM_BACKEND: &str = "UCC_PLATFORM_BACKEND";
@@ -132,8 +131,11 @@ pub fn select_platform_backend(
         sysfs,
         || {
             UwccDevice::open(UWCC_DEVICE_PATH).ok().map(|dev| {
-                let backend: Arc<dyn PlatformBackend> =
-                    Arc::new(UwccBackend::new(Arc::new(dev), Some(dmi), Some(Arc::clone(sysfs))));
+                let backend: Arc<dyn PlatformBackend> = Arc::new(UwccBackend::new(
+                    Arc::new(dev),
+                    Some(dmi),
+                    Some(Arc::clone(sysfs)),
+                ));
                 backend
             })
         },

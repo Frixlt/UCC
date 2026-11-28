@@ -30,14 +30,11 @@ pub fn has_ite_sysfs_leds(sysfs: &dyn Sysfs, sys_root: &Path) -> bool {
     let leds_dir = sys_root.join("sys/class/leds");
     let has_kbd = sysfs.read_dir(&leds_dir).is_ok_and(|entries| {
         entries.iter().any(|entry| {
-            entry
-                .file_name()
-                .and_then(|n| n.to_str())
-                .is_some_and(|n| {
-                    n.starts_with("rgb:kbd_backlight")
-                        || n.starts_with("tuxedo::kbd_backlight")
-                        || n.starts_with("ite_8291")
-                })
+            entry.file_name().and_then(|n| n.to_str()).is_some_and(|n| {
+                n.starts_with("rgb:kbd_backlight")
+                    || n.starts_with("tuxedo::kbd_backlight")
+                    || n.starts_with("ite_8291")
+            })
         })
     });
     let has_lb = sysfs.exists(&leds_dir.join("rgb:lightbar/multi_intensity"))
@@ -75,12 +72,13 @@ pub fn select_lighting_transport_with_platform(
         let transport = UniwillHidTransport::new(Arc::new(HidrawDeviceTransport::new()));
         if platform.kind() == PlatformBackendKind::Uwcc {
             let platform_ref = Arc::clone(platform);
-            let ec_power_hook: EcLightbarPowerHook = Arc::new(move |enabled: bool| {
-                match platform_ref.set_lightbar_power(enabled) {
-                    Ok(()) | Err(PlatformError::Unsupported(_)) => Ok(()),
-                    Err(err) => Err(LightingError::WriteFailed(err.to_string())),
-                }
-            });
+            let ec_power_hook: EcLightbarPowerHook =
+                Arc::new(
+                    move |enabled: bool| match platform_ref.set_lightbar_power(enabled) {
+                        Ok(()) | Err(PlatformError::Unsupported(_)) => Ok(()),
+                        Err(err) => Err(LightingError::WriteFailed(err.to_string())),
+                    },
+                );
             Arc::new(transport.with_ec_lightbar_power_hook(ec_power_hook))
         } else {
             Arc::new(transport)

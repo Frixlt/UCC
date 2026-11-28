@@ -428,7 +428,8 @@ impl CliClient {
         let gpu1_map = with_rpc_timeout(self.proxy.get_fan_data_gpu1()).await.ok();
         let gpu2_map = with_rpc_timeout(self.proxy.get_fan_data_gpu2()).await.ok();
 
-        let extract_fresh = |map: &Option<HashMap<String, zbus::zvariant::OwnedValue>>, key: &str| {
+        let extract_fresh = |map: &Option<HashMap<String, zbus::zvariant::OwnedValue>>,
+                             key: &str| {
             map.as_ref().and_then(|m| {
                 if fan_map_entry_is_stale(m, key) {
                     None

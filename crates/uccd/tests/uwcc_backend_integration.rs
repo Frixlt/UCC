@@ -21,8 +21,8 @@ use ucc_hardware::{
 use ucc_lighting::MockLightingTransport;
 use uccd::{
     has_ite_sysfs_leds, resolve_platform_backend_choice, select_lighting_transport,
-    select_lighting_transport_with_platform, select_platform_backend_with_openers,
-    LidPolicyConfig, LiveUccdBackend, UccdDependencies,
+    select_lighting_transport_with_platform, select_platform_backend_with_openers, LidPolicyConfig,
+    LiveUccdBackend, UccdDependencies,
 };
 use zbus::zvariant::OwnedValue;
 
@@ -247,8 +247,7 @@ fn lighting_transport_selection_prefers_hidraw_on_uwcc_and_preserves_sysfs_on_tu
     let _sysfs_tuxedo = select_lighting_transport(PlatformBackendKind::TuxedoIo, &sysfs, root);
 
     let uwcc_platform: Arc<dyn PlatformBackend> = make_mock_platform(PlatformBackendKind::Uwcc);
-    let _hid_uwcc_wired =
-        select_lighting_transport_with_platform(&uwcc_platform, &sysfs, root);
+    let _hid_uwcc_wired = select_lighting_transport_with_platform(&uwcc_platform, &sysfs, root);
 }
 
 #[test]
@@ -356,8 +355,7 @@ fn uwcc_water_cooler_connect_disconnect_suspend_and_shutdown_toggle_pwup() {
 
     // 2. Verify suspend and shutdown always disable PWUP and restore fans auto.
     let mock_platform = make_mock_platform(PlatformBackendKind::Uwcc);
-    let backend2 =
-        build_backend_with_platform(tmp.path(), Arc::clone(&mock_platform) as _, sysfs);
+    let backend2 = build_backend_with_platform(tmp.path(), Arc::clone(&mock_platform) as _, sysfs);
     backend2.set_cooler_connected_state(true);
     mock_platform.clear_journal();
 
@@ -367,12 +365,10 @@ fn uwcc_water_cooler_connect_disconnect_suspend_and_shutdown_toggle_pwup() {
         "on_system_suspend must reset water_cooler_connected so resume reconnect re-enables PWUP"
     );
     assert!(
-        mock_platform
-            .journal()
-            .contains(&PlatformWrite::SetPwup {
-                enable: false,
-                level: 0
-            }),
+        mock_platform.journal().contains(&PlatformWrite::SetPwup {
+            enable: false,
+            level: 0
+        }),
         "on_system_suspend must disable PWUP"
     );
 
@@ -380,12 +376,10 @@ fn uwcc_water_cooler_connect_disconnect_suspend_and_shutdown_toggle_pwup() {
     backend2.on_system_resume();
     backend2.set_cooler_connected_state(true);
     assert!(
-        mock_platform
-            .journal()
-            .contains(&PlatformWrite::SetPwup {
-                enable: true,
-                level: 1
-            }),
+        mock_platform.journal().contains(&PlatformWrite::SetPwup {
+            enable: true,
+            level: 1
+        }),
         "reconnect after suspend/resume must re-enable PWUP"
     );
 

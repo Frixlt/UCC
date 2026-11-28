@@ -332,7 +332,12 @@ impl LightingTransport for SysfsLedTransport {
     }
 
     fn read_keyboard_brightness(&self) -> Result<Option<u32>, LightingError> {
-        let paths = self.cache.lock().unwrap_or_else(|e| e.into_inner()).kbd_led_paths.clone();
+        let paths = self
+            .cache
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .kbd_led_paths
+            .clone();
         let Some(first) = paths.first() else {
             return Ok(None);
         };
@@ -341,7 +346,12 @@ impl LightingTransport for SysfsLedTransport {
     }
 
     fn write_keyboard_brightness(&self, brightness: u32) -> Result<(), LightingError> {
-        let paths = self.cache.lock().unwrap_or_else(|e| e.into_inner()).kbd_led_paths.clone();
+        let paths = self
+            .cache
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .kbd_led_paths
+            .clone();
         if paths.is_empty() {
             return Err(LightingError::Unavailable);
         }
@@ -349,7 +359,10 @@ impl LightingTransport for SysfsLedTransport {
         for p in paths {
             self.sysfs.write(&p.join("brightness"), &val)?;
         }
-        self.cache.lock().unwrap_or_else(|e| e.into_inner()).last_kbd_brightness = Some(brightness);
+        self.cache
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .last_kbd_brightness = Some(brightness);
         Ok(())
     }
 
@@ -392,7 +405,12 @@ impl LightingTransport for SysfsLedTransport {
     }
 
     fn read_keyboard_colors(&self) -> Result<Vec<RgbColor>, LightingError> {
-        let cached = self.cache.lock().unwrap_or_else(|e| e.into_inner()).kbd_led_paths.clone();
+        let cached = self
+            .cache
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .kbd_led_paths
+            .clone();
         if !cached.is_empty() {
             let mut colors = Vec::new();
             for p in cached {
@@ -496,7 +514,8 @@ impl LightingTransport for SysfsLedTransport {
     fn write_lightbar_brightness(&self, brightness: u32) -> Result<(), LightingError> {
         let path = self
             .cache
-            .lock().unwrap_or_else(|e| e.into_inner())
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
             .lightbar_path
             .clone()
             .ok_or(LightingError::Unavailable)?;
@@ -559,7 +578,10 @@ impl MockLightingTransport {
     }
 
     pub fn set_keyboard_colors(&self, colors: Vec<RgbColor>) {
-        *self.keyboard_colors.lock().unwrap_or_else(|e| e.into_inner()) = colors;
+        *self
+            .keyboard_colors
+            .lock()
+            .unwrap_or_else(|e| e.into_inner()) = colors;
     }
 
     pub fn set_lightbar_caps(&self, caps: Option<LightbarCapabilities>) {
@@ -567,20 +589,35 @@ impl MockLightingTransport {
     }
 
     pub fn read_keyboard_brightness_state(&self) -> Option<u32> {
-        *self.keyboard_brightness.lock().unwrap_or_else(|e| e.into_inner())
+        *self
+            .keyboard_brightness
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
     }
 
     pub fn set_fail_on_buffer_input(&self, fail_enable: bool, fail_disable: bool) {
-        *self.fail_on_buffer_enable.lock().unwrap_or_else(|e| e.into_inner()) = fail_enable;
-        *self.fail_on_buffer_disable.lock().unwrap_or_else(|e| e.into_inner()) = fail_disable;
+        *self
+            .fail_on_buffer_enable
+            .lock()
+            .unwrap_or_else(|e| e.into_inner()) = fail_enable;
+        *self
+            .fail_on_buffer_disable
+            .lock()
+            .unwrap_or_else(|e| e.into_inner()) = fail_disable;
     }
 
     pub fn set_fail_on_keyboard_zones(&self, fail: bool) {
-        *self.fail_on_keyboard_zones.lock().unwrap_or_else(|e| e.into_inner()) = fail;
+        *self
+            .fail_on_keyboard_zones
+            .lock()
+            .unwrap_or_else(|e| e.into_inner()) = fail;
     }
 
     pub fn set_fail_on_lightbar_write(&self, fail: bool) {
-        *self.fail_on_lightbar_write.lock().unwrap_or_else(|e| e.into_inner()) = fail;
+        *self
+            .fail_on_lightbar_write
+            .lock()
+            .unwrap_or_else(|e| e.into_inner()) = fail;
     }
 
     pub fn ops(&self) -> Vec<LightingOp> {
@@ -594,79 +631,127 @@ impl MockLightingTransport {
 
 impl LightingTransport for MockLightingTransport {
     fn detect_keyboard(&self) -> Result<Option<KeyboardCapabilities>, LightingError> {
-        Ok(self.keyboard_caps.lock().unwrap_or_else(|e| e.into_inner()).clone())
+        Ok(self
+            .keyboard_caps
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .clone())
     }
 
     fn set_keyboard_buffer_input(&self, enabled: bool) -> Result<(), LightingError> {
-        if enabled && *self.fail_on_buffer_enable.lock().unwrap_or_else(|e| e.into_inner()) {
+        if enabled
+            && *self
+                .fail_on_buffer_enable
+                .lock()
+                .unwrap_or_else(|e| e.into_inner())
+        {
             return Err(LightingError::WriteFailed(
                 "Simulated buffer_input enable failure".into(),
             ));
         }
-        if !enabled && *self.fail_on_buffer_disable.lock().unwrap_or_else(|e| e.into_inner()) {
+        if !enabled
+            && *self
+                .fail_on_buffer_disable
+                .lock()
+                .unwrap_or_else(|e| e.into_inner())
+        {
             return Err(LightingError::WriteFailed(
                 "Simulated buffer_input flush/disable failure".into(),
             ));
         }
         self.ops
-            .lock().unwrap_or_else(|e| e.into_inner())
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
             .push(LightingOp::SetBufferInput(enabled));
         Ok(())
     }
 
     fn read_keyboard_brightness(&self) -> Result<Option<u32>, LightingError> {
-        Ok(*self.keyboard_brightness.lock().unwrap_or_else(|e| e.into_inner()))
+        Ok(*self
+            .keyboard_brightness
+            .lock()
+            .unwrap_or_else(|e| e.into_inner()))
     }
 
     fn write_keyboard_brightness(&self, brightness: u32) -> Result<(), LightingError> {
-        *self.keyboard_brightness.lock().unwrap_or_else(|e| e.into_inner()) = Some(brightness);
+        *self
+            .keyboard_brightness
+            .lock()
+            .unwrap_or_else(|e| e.into_inner()) = Some(brightness);
         self.ops
-            .lock().unwrap_or_else(|e| e.into_inner())
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
             .push(LightingOp::WriteKeyboardBrightness(brightness));
         Ok(())
     }
 
     fn write_keyboard_zones(&self, colors: &[RgbColor]) -> Result<(), LightingError> {
-        if *self.fail_on_keyboard_zones.lock().unwrap_or_else(|e| e.into_inner()) {
+        if *self
+            .fail_on_keyboard_zones
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+        {
             return Err(LightingError::WriteFailed(
                 "Simulated keyboard zone write failure".into(),
             ));
         }
         self.ops
-            .lock().unwrap_or_else(|e| e.into_inner())
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
             .push(LightingOp::WriteKeyboardZones(colors.to_vec()));
-        *self.keyboard_colors.lock().unwrap_or_else(|e| e.into_inner()) = colors.to_vec();
+        *self
+            .keyboard_colors
+            .lock()
+            .unwrap_or_else(|e| e.into_inner()) = colors.to_vec();
         Ok(())
     }
 
     fn read_keyboard_colors(&self) -> Result<Vec<RgbColor>, LightingError> {
-        Ok(self.keyboard_colors.lock().unwrap_or_else(|e| e.into_inner()).clone())
+        Ok(self
+            .keyboard_colors
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .clone())
     }
 
     fn detect_lightbar(&self) -> Result<Option<LightbarCapabilities>, LightingError> {
-        Ok(self.lightbar_caps.lock().unwrap_or_else(|e| e.into_inner()).clone())
+        Ok(self
+            .lightbar_caps
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .clone())
     }
 
     fn write_lightbar_brightness(&self, brightness: u32) -> Result<(), LightingError> {
-        if *self.fail_on_lightbar_write.lock().unwrap_or_else(|e| e.into_inner()) {
+        if *self
+            .fail_on_lightbar_write
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+        {
             return Err(LightingError::WriteFailed(
                 "Simulated lightbar brightness failure".into(),
             ));
         }
         self.ops
-            .lock().unwrap_or_else(|e| e.into_inner())
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
             .push(LightingOp::WriteLightbarBrightness(brightness));
         Ok(())
     }
 
     fn write_lightbar_color(&self, rgb: RgbColor) -> Result<(), LightingError> {
-        if *self.fail_on_lightbar_write.lock().unwrap_or_else(|e| e.into_inner()) {
+        if *self
+            .fail_on_lightbar_write
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+        {
             return Err(LightingError::WriteFailed(
                 "Simulated lightbar color failure".into(),
             ));
         }
         self.ops
-            .lock().unwrap_or_else(|e| e.into_inner())
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
             .push(LightingOp::WriteLightbarColor(rgb));
         Ok(())
     }

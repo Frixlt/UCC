@@ -115,7 +115,10 @@ fn uwcc_backend_chassis_0x1a_smrw_limits_and_tdp_bounds() {
     ));
 
     backend.set_dynamic_boost(15).unwrap();
-    assert_eq!(transport.get_reg(uwcc_ec_reg::DYNAMIC_BOOST_WATTS), Some(15));
+    assert_eq!(
+        transport.get_reg(uwcc_ec_reg::DYNAMIC_BOOST_WATTS),
+        Some(15)
+    );
     assert!(matches!(
         backend.set_dynamic_boost(30),
         Err(PlatformError::InvalidArgument(_))
@@ -297,13 +300,19 @@ fn uwcc_backend_charge_thresholds_ec_switches_and_lightbar_power() {
 
     // Lightbar EC power rails 0x767 / 0x768
     backend.set_lightbar_power(false).unwrap();
-    assert_eq!(transport.get_reg(uwcc_ec_reg::LIGHTBAR_POWER_PRIMARY), Some(0));
+    assert_eq!(
+        transport.get_reg(uwcc_ec_reg::LIGHTBAR_POWER_PRIMARY),
+        Some(0)
+    );
     assert_eq!(
         transport.get_reg(uwcc_ec_reg::LIGHTBAR_POWER_SECONDARY),
         Some(0)
     );
     backend.set_lightbar_power(true).unwrap();
-    assert_eq!(transport.get_reg(uwcc_ec_reg::LIGHTBAR_POWER_PRIMARY), Some(1));
+    assert_eq!(
+        transport.get_reg(uwcc_ec_reg::LIGHTBAR_POWER_PRIMARY),
+        Some(1)
+    );
     assert_eq!(
         transport.get_reg(uwcc_ec_reg::LIGHTBAR_POWER_SECONDARY),
         Some(1)
@@ -318,7 +327,10 @@ fn uwcc_backend_toggles_only_usb_uvc_rgb_ir_webcam_over_mock_sysfs() {
     sysfs.set_file("/sys/bus/usb/devices/1-6/authorized", "1");
     sysfs.set_file("/sys/bus/usb/devices/1-6/idVendor", "04f2");
     sysfs.set_file("/sys/bus/usb/devices/1-6/idProduct", "b751");
-    sysfs.set_file("/sys/bus/usb/devices/1-6/product", "Integrated RGB+IR Camera");
+    sysfs.set_file(
+        "/sys/bus/usb/devices/1-6/product",
+        "Integrated RGB+IR Camera",
+    );
     sysfs.set_file("/sys/bus/usb/devices/1-6:1.0/bInterfaceClass", "0e");
     sysfs.set_file("/sys/bus/usb/devices/1-6:1.1/bInterfaceClass", "0e");
     sysfs.set_file("/sys/bus/usb/devices/1-6:1.2/bInterfaceClass", "0e");
@@ -349,16 +361,22 @@ fn uwcc_backend_toggles_only_usb_uvc_rgb_ir_webcam_over_mock_sysfs() {
 
     assert!(!backend.read_webcam().unwrap());
     assert_eq!(
-        sysfs.get_file("/sys/bus/usb/devices/1-6/authorized").as_deref(),
+        sysfs
+            .get_file("/sys/bus/usb/devices/1-6/authorized")
+            .as_deref(),
         Some("0")
     );
     // Verify non-camera devices remain untouched
     assert_eq!(
-        sysfs.get_file("/sys/bus/usb/devices/1-4/authorized").as_deref(),
+        sysfs
+            .get_file("/sys/bus/usb/devices/1-4/authorized")
+            .as_deref(),
         Some("1")
     );
     assert_eq!(
-        sysfs.get_file("/sys/bus/usb/devices/usb1/authorized").as_deref(),
+        sysfs
+            .get_file("/sys/bus/usb/devices/usb1/authorized")
+            .as_deref(),
         Some("1")
     );
     assert!(sysfs
@@ -536,10 +554,7 @@ fn platform_backend_selection_parser_and_extended_mock_backend() {
     assert!(journal.contains(&PlatformWrite::SetFnLock(true)));
     assert!(journal.contains(&PlatformWrite::SetWinLock(true)));
     assert!(journal.contains(&PlatformWrite::SetUsbSleepCharging(true)));
-    assert!(journal.contains(&PlatformWrite::SetChargeThresholds {
-        start: 45,
-        end: 85,
-    }));
+    assert!(journal.contains(&PlatformWrite::SetChargeThresholds { start: 45, end: 85 }));
     assert!(journal.contains(&PlatformWrite::SetFanBoost(true)));
     assert!(journal.contains(&PlatformWrite::ApplyRamFanCurve(Box::new(curve))));
 

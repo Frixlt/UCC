@@ -369,7 +369,8 @@ impl UwccBackend {
         }
         let raw = u8::try_from(watts)
             .map_err(|_| PlatformError::InvalidArgument("Power limit out of byte range"))?;
-        self.transport.ec_write(uwcc_ec_reg::DYNAMIC_BOOST_WATTS, raw)
+        self.transport
+            .ec_write(uwcc_ec_reg::DYNAMIC_BOOST_WATTS, raw)
     }
 
     fn require_available(&self) -> Result<(), PlatformError> {
@@ -515,9 +516,11 @@ impl PlatformBackend for UwccBackend {
 
     fn read_tdp_limits(&self, index: usize) -> Result<(i32, i32), PlatformError> {
         self.require_available()?;
-        self.smrw_limits.tdp_bounds(index).ok_or(
-            PlatformError::InvalidArgument("Uniwill TDP channel index must be 0..=2"),
-        )
+        self.smrw_limits
+            .tdp_bounds(index)
+            .ok_or(PlatformError::InvalidArgument(
+                "Uniwill TDP channel index must be 0..=2",
+            ))
     }
 
     fn set_tdp(&self, index: usize, watts: i32) -> Result<(), PlatformError> {
@@ -572,19 +575,17 @@ impl PlatformBackend for UwccBackend {
 
     fn read_webcam(&self) -> Result<bool, PlatformError> {
         self.require_available()?;
-        let controller = self
-            .webcam
-            .as_ref()
-            .ok_or(PlatformError::Unsupported("Webcam sysfs controller not configured"))?;
+        let controller = self.webcam.as_ref().ok_or(PlatformError::Unsupported(
+            "Webcam sysfs controller not configured",
+        ))?;
         controller.is_enabled()
     }
 
     fn set_webcam(&self, enabled: bool) -> Result<(), PlatformError> {
         self.require_available()?;
-        let controller = self
-            .webcam
-            .as_ref()
-            .ok_or(PlatformError::Unsupported("Webcam sysfs controller not configured"))?;
+        let controller = self.webcam.as_ref().ok_or(PlatformError::Unsupported(
+            "Webcam sysfs controller not configured",
+        ))?;
         controller.set_enabled(enabled)
     }
 
@@ -601,8 +602,7 @@ impl PlatformBackend for UwccBackend {
                 "CPU TCC offset must be 0..=63 C",
             ));
         }
-        self.transport
-            .ec_write(uwcc_ec_reg::TCC_OFFSET_C, offset_c)
+        self.transport.ec_write(uwcc_ec_reg::TCC_OFFSET_C, offset_c)
     }
 
     fn set_pwup(&self, enable: bool, level: u32) -> Result<(), PlatformError> {

@@ -74,12 +74,7 @@ fn restore_platform_safe_sleep_state(settings_choice: Option<&str>) {
     let sysfs: Arc<dyn Sysfs> = Arc::new(RealSysfs);
     let dmi = DmiInfo::read_from_sysfs(sysfs.as_ref());
     let env_override = std::env::var(ENV_PLATFORM_BACKEND).ok();
-    let backend = select_platform_backend(
-        env_override.as_deref(),
-        settings_choice,
-        &dmi,
-        &sysfs,
-    );
+    let backend = select_platform_backend(env_override.as_deref(), settings_choice, &dmi, &sysfs);
     if !backend.is_available() {
         return;
     }
@@ -193,11 +188,7 @@ fn run() -> Result<(), String> {
         restore_platform_safe_sleep_state(platform_choice.as_deref());
         res
     } else {
-        let was_active = store
-            .load()
-            .ok()
-            .flatten()
-            .is_some_and(|s| s.was_active);
+        let was_active = store.load().ok().flatten().is_some_and(|s| s.was_active);
         let res = resume_sleep(&store, &ops);
         if !was_active {
             restore_platform_safe_sleep_state(platform_choice.as_deref());

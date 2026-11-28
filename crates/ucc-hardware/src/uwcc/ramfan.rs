@@ -237,8 +237,7 @@ impl RamFanController {
             ctrl |= flags::FAN_BOOST;
         }
         self.transport.ec_write(reg::CTRL, ctrl)?;
-        self.transport
-            .ec_write(reg::COMMIT, u8::from(ctrl != 0))?;
+        self.transport.ec_write(reg::COMMIT, u8::from(ctrl != 0))?;
         state.fan_boost = enabled;
         Ok(())
     }

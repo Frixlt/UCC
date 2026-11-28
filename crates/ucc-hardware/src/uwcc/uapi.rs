@@ -104,8 +104,11 @@ pub struct UwccWmiEvent {
 }
 
 #[cfg(unix)]
-pub const UWCC_IOC_GET_INFO: u64 =
-    nix::request_code_read!(UWCC_MAGIC, UWCC_NR_GET_INFO, std::mem::size_of::<UwccInfo>()) as u64;
+pub const UWCC_IOC_GET_INFO: u64 = nix::request_code_read!(
+    UWCC_MAGIC,
+    UWCC_NR_GET_INFO,
+    std::mem::size_of::<UwccInfo>()
+) as u64;
 
 #[cfg(unix)]
 pub const UWCC_IOC_EC_READ: u64 = nix::request_code_readwrite!(
@@ -135,16 +138,28 @@ const fn linux_ioc(dir: u32, ty: u8, nr: u8, size: usize) -> u64 {
 }
 
 #[cfg(not(unix))]
-pub const UWCC_IOC_GET_INFO: u64 =
-    linux_ioc(2, UWCC_MAGIC, UWCC_NR_GET_INFO, std::mem::size_of::<UwccInfo>());
+pub const UWCC_IOC_GET_INFO: u64 = linux_ioc(
+    2,
+    UWCC_MAGIC,
+    UWCC_NR_GET_INFO,
+    std::mem::size_of::<UwccInfo>(),
+);
 
 #[cfg(not(unix))]
-pub const UWCC_IOC_EC_READ: u64 =
-    linux_ioc(3, UWCC_MAGIC, UWCC_NR_EC_READ, std::mem::size_of::<UwccEcReg>());
+pub const UWCC_IOC_EC_READ: u64 = linux_ioc(
+    3,
+    UWCC_MAGIC,
+    UWCC_NR_EC_READ,
+    std::mem::size_of::<UwccEcReg>(),
+);
 
 #[cfg(not(unix))]
-pub const UWCC_IOC_EC_WRITE: u64 =
-    linux_ioc(1, UWCC_MAGIC, UWCC_NR_EC_WRITE, std::mem::size_of::<UwccEcReg>());
+pub const UWCC_IOC_EC_WRITE: u64 = linux_ioc(
+    1,
+    UWCC_MAGIC,
+    UWCC_NR_EC_WRITE,
+    std::mem::size_of::<UwccEcReg>(),
+);
 
 #[cfg(not(unix))]
 pub const UWCC_IOC_SMRW: u64 =
@@ -245,10 +260,12 @@ impl UwccTransport for UwccDevice {
             )
         };
         if ret < 0 {
-            return Err(PlatformError::Ioctl(crate::ioctl::IoctlError::IoctlFailed {
-                request: UWCC_IOC_GET_INFO,
-                source: nix::Error::last(),
-            }));
+            return Err(PlatformError::Ioctl(
+                crate::ioctl::IoctlError::IoctlFailed {
+                    request: UWCC_IOC_GET_INFO,
+                    source: nix::Error::last(),
+                },
+            ));
         }
         Ok(info)
     }
@@ -268,10 +285,12 @@ impl UwccTransport for UwccDevice {
             )
         };
         if ret < 0 {
-            return Err(PlatformError::Ioctl(crate::ioctl::IoctlError::IoctlFailed {
-                request: UWCC_IOC_EC_READ,
-                source: nix::Error::last(),
-            }));
+            return Err(PlatformError::Ioctl(
+                crate::ioctl::IoctlError::IoctlFailed {
+                    request: UWCC_IOC_EC_READ,
+                    source: nix::Error::last(),
+                },
+            ));
         }
         Ok(reg.val)
     }
@@ -287,10 +306,12 @@ impl UwccTransport for UwccDevice {
             )
         };
         if ret < 0 {
-            return Err(PlatformError::Ioctl(crate::ioctl::IoctlError::IoctlFailed {
-                request: UWCC_IOC_EC_WRITE,
-                source: nix::Error::last(),
-            }));
+            return Err(PlatformError::Ioctl(
+                crate::ioctl::IoctlError::IoctlFailed {
+                    request: UWCC_IOC_EC_WRITE,
+                    source: nix::Error::last(),
+                },
+            ));
         }
         Ok(())
     }
@@ -310,10 +331,12 @@ impl UwccTransport for UwccDevice {
             )
         };
         if ret < 0 {
-            return Err(PlatformError::Ioctl(crate::ioctl::IoctlError::IoctlFailed {
-                request: UWCC_IOC_SMRW,
-                source: nix::Error::last(),
-            }));
+            return Err(PlatformError::Ioctl(
+                crate::ioctl::IoctlError::IoctlFailed {
+                    request: UWCC_IOC_SMRW,
+                    source: nix::Error::last(),
+                },
+            ));
         }
         Ok(req)
     }
@@ -337,10 +360,12 @@ impl UwccTransport for UwccDevice {
             )
         };
         if ret < 0 {
-            return Err(PlatformError::Ioctl(crate::ioctl::IoctlError::IoctlFailed {
-                request: UWCC_IOC_PWUP,
-                source: nix::Error::last(),
-            }));
+            return Err(PlatformError::Ioctl(
+                crate::ioctl::IoctlError::IoctlFailed {
+                    request: UWCC_IOC_PWUP,
+                    source: nix::Error::last(),
+                },
+            ));
         }
         Ok(())
     }
@@ -361,10 +386,12 @@ impl UwccTransport for UwccDevice {
             if err == nix::errno::Errno::EAGAIN {
                 return Ok(None);
             }
-            return Err(PlatformError::Ioctl(crate::ioctl::IoctlError::IoctlFailed {
-                request: 0,
-                source: err,
-            }));
+            return Err(PlatformError::Ioctl(
+                crate::ioctl::IoctlError::IoctlFailed {
+                    request: 0,
+                    source: err,
+                },
+            ));
         }
         if (n as usize) < size {
             return Ok(None);

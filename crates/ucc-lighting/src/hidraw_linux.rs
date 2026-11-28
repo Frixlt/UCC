@@ -7,9 +7,7 @@
 //! sends/receives HID feature reports via Linux `HIDIOCSFEATURE` / `HIDIOCGFEATURE` ioctls with
 //! `O_RDWR | O_NOFOLLOW | O_CLOEXEC`.
 
-use crate::hid_transport::{
-    read_sysfs_hidraw_interface_number, HidDeviceInfo, HidDeviceTransport,
-};
+use crate::hid_transport::{read_sysfs_hidraw_interface_number, HidDeviceInfo, HidDeviceTransport};
 use crate::transport::LightingError;
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -181,10 +179,7 @@ impl HidrawDeviceTransport {
     }
 
     /// Creates a transport with custom sysfs `hidraw` and `/dev` roots.
-    pub fn with_roots(
-        sysfs_hidraw_root: impl Into<PathBuf>,
-        dev_root: impl Into<PathBuf>,
-    ) -> Self {
+    pub fn with_roots(sysfs_hidraw_root: impl Into<PathBuf>, dev_root: impl Into<PathBuf>) -> Self {
         Self {
             sysfs_hidraw_root: sysfs_hidraw_root.into(),
             dev_root: dev_root.into(),
