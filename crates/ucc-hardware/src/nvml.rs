@@ -591,6 +591,54 @@ pub struct NvmlWrapper {
         Option<unsafe extern "C" fn(*mut c_void, *mut NvmlClockOffset) -> c_uint>,
 }
 
+/// Returns ordered candidate DLL paths for locating `nvml.dll` on Windows.
+///
+/// Prefers absolute trusted paths (`<SystemRoot>\System32\nvml.dll` and
+/// `<ProgramFiles>\NVIDIA Corporation\NVSMI\nvml.dll`) before falling back to bare
+/// `"nvml.dll"` to prevent DLL search-order hijacking when `uccd` runs as `LocalSystem`,
+/// deduplicating entries case-insensitively while preserving order.
+pub fn windows_nvml_candidate_paths(
+    system_root: Option<&str>,
+    program_files: Option<&str>,
+) -> Vec<String> {
+    let sys_root = system_root
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+        .unwrap_or(r"C:\Windows")
+        .trim_end_matches(['\\', '/']);
+    let prog_files = program_files
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+        .unwrap_or(r"C:\Program Files")
+        .trim_end_matches(['\\', '/']);
+
+    let raw = [
+        format!(r"{sys_root}\System32\nvml.dll"),
+        format!(r"{prog_files}\NVIDIA Corporation\NVSMI\nvml.dll"),
+        String::from("nvml.dll"),
+    ];
+
+    let mut seen = HashSet::new();
+    let mut out = Vec::with_capacity(raw.len());
+    for path in raw {
+        if seen.insert(path.to_ascii_lowercase()) {
+            out.push(path);
+        }
+    }
+    out
+}
+
+/// Builds the trusted absolute Windows path to `nvapi64.dll` under `<SystemRoot>\System32`
+/// to avoid bare relative DLL search-order hijacking when running as `LocalSystem`.
+pub fn windows_nvapi_candidate_path(system_root: Option<&str>) -> String {
+    let sys_root = system_root
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+        .unwrap_or(r"C:\Windows")
+        .trim_end_matches(['\\', '/']);
+    format!(r"{sys_root}\System32\nvapi64.dll")
+}
+
 impl NvmlWrapper {
     /// Attempts to load `libnvidia-ml.so.1`/`libnvidia-ml.so` (Unix) or `nvml.dll` (Windows)
     pub fn new(power_guard: NvidiaPowerGuard) -> Result<Self, NvmlError> {
@@ -603,8 +651,32 @@ impl NvmlWrapper {
         }
         #[cfg(windows)]
         {
-            let lib = unsafe { Library::new("nvml.dll")? };
-            Self::from_library(power_guard, lib, Some(PathBuf::from("nvapi64.dll")))
+            let sys_root = std::env::var("SystemRoot").ok();
+            let prog_files = std::env::var("ProgramFiles").ok();
+            let candidates =
+                windows_nvml_candidate_paths(sys_root.as_deref(), prog_files.as_deref());
+            let mut last_err: Option<libloading::Error> = None;
+            let mut loaded: Option<Library> = None;
+            for candidate in &candidates {
+                match unsafe { Library::new(candidate) } {
+                    Ok(lib) => {
+                        loaded = Some(lib);
+                        break;
+                    }
+                    Err(err) => {
+                        last_err = Some(err);
+                    }
+                }
+            }
+            let lib = match loaded {
+                Some(lib) => lib,
+                None => match last_err {
+                    Some(err) => return Err(NvmlError::LibraryLoad(err)),
+                    None => unsafe { Library::new("nvml.dll")? },
+                },
+            };
+            let nvapi_path = PathBuf::from(windows_nvapi_candidate_path(sys_root.as_deref()));
+            Self::from_library(power_guard, lib, Some(nvapi_path))
         }
     }
 

@@ -1,0 +1,65 @@
+name: Windows Port & Cross-Platform Check
+
+permissions:
+  contents: read
+
+on:
+  push:
+    branches: [feat/windows-port-m15, rust/migration]
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  linux-contract-tests:
+    name: Linux Windows-seam contract tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+      - name: IPC & Named Pipe framing contract tests
+        run: cargo test -p ucc-dbus --test named_pipe_ipc --test ipc_framing
+      - name: Windows WMI, power/display/lid, and WinRT BLE contract tests
+        run: cargo test -p ucc-hardware --test windows_wmi_backend --test windows_power_display_lid --test winrt_ble_cooler
+      - name: Windows & shared HID lighting contract tests
+        run: cargo test -p ucc-lighting --test windows_hid_transport --test hid_transport
+      - name: Cross-platform config path contract tests
+        run: cargo test -p ucc-config --test windows_platform_paths
+      - name: Windows service lifecycle contract tests
+        run: cargo test -p uccd --test windows_service_lifecycle
+
+  windows-gnu-cross-check:
+    name: Cross-check (x86_64-pc-windows-gnu)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install MinGW-w64 cross-toolchain
+        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends mingw-w64
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: x86_64-pc-windows-gnu
+      # Restricted to currently Windows-clean crates; ucc-hardware (and ucc-lighting
+      # via ucc-hardware) still carries an unconditional `nix` dependency in
+      # crates/ucc-hardware/Cargo.toml (owned by the parallel Linux M14 track).
+      - name: Cross-check portable crates for Windows GNU
+        run: cargo check -p ucc-core -p ucc-config -p ucc-dbus --target x86_64-pc-windows-gnu
+
+  windows-msvc-check:
+    name: Native Windows MSVC check (x86_64-pc-windows-msvc)
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: x86_64-pc-windows-msvc
+      # Restricted to currently Windows-clean crates; ucc-hardware (and ucc-lighting
+      # via ucc-hardware) awaits Unix-gating of `nix` in crates/ucc-hardware/Cargo.toml
+      # (parallel Linux M14 track).
+      - name: Check workspace crates on Windows MSVC
+        run: cargo check -p ucc-core -p ucc-config -p ucc-dbus --target x86_64-pc-windows-msvc

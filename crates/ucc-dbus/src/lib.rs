@@ -7,6 +7,7 @@ pub mod auth;
 pub mod backend;
 pub mod interface;
 pub mod ipc;
+pub mod named_pipe;
 pub mod proxy;
 
 pub use auth::{
@@ -17,8 +18,17 @@ pub use auth::{
 pub use backend::{DefaultUccdBackend, UccdBackend};
 pub use interface::{UccdInterface, UccdLegacyInterface};
 pub use ipc::{
-    decode_frame, dispatch_json_rpc, encode_frame, IpcRequest, IpcResponse, IpcTransportKind,
-    WINDOWS_NAMED_PIPE_PATH,
+    decode_frame, decode_frame_bounded, dispatch_json_rpc, dispatch_json_rpc_authorized,
+    dispatch_json_rpc_with_identity, encode_frame, is_valid_pump_voltage_code,
+    required_access_level, CallerIdentity, IpcAccessLevel, IpcFrameError, IpcRequest, IpcResponse,
+    IpcTransportKind, FORBIDDEN_PUMP_VOLTAGE_CODE, MAX_IPC_FRAME_BYTES, WINDOWS_NAMED_PIPE_PATH,
+};
+#[cfg(windows)]
+pub use named_pipe::{Win32NamedPipeClient, Win32NamedPipeConnection, Win32NamedPipeTransport};
+pub use named_pipe::{
+    MockNamedPipeConnection, MockNamedPipeTransport, NamedPipeConnection, NamedPipeError,
+    NamedPipeServer, NamedPipeTransport, PipeAce, PipeAclError, PipeAclPolicy, ServerStats,
+    WINDOWS_PIPE_SDDL,
 };
 pub use proxy::{UccdLegacyProxy, UccdProxy};
 

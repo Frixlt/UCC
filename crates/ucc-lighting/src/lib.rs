@@ -1,13 +1,15 @@
 //! Keyboard backlight and front lightbar lighting controllers with pluggable [`LightingTransport`].
 //!
 //! Currently supports Linux sysfs LED class nodes (`tuxedo-keyboard`, `ite_8291`, `ite_8291_lb`,
-//! `tuxedo_nb04`, `tuxedo_nb05`) via [`SysfsLedTransport`] and deterministic unit testing via
-//! [`MockLightingTransport`], with a clean seam for direct USB `hidraw` transport in `M14`.
+//! `tuxedo_nb04`, `tuxedo_nb05`) via [`SysfsLedTransport`], direct USB HID feature reports via
+//! [`UniwillHidTransport`] / [`WindowsHidTransport`], and deterministic unit testing via
+//! [`MockLightingTransport`].
 
 pub mod hid_transport;
 pub mod keyboard;
 pub mod lightbar;
 pub mod transport;
+pub mod windows_hid;
 
 pub use hid_transport::{
     HidDeviceInfo, HidDeviceTransport, MockHidTransport, UniwillHidTransport,
@@ -26,4 +28,10 @@ pub use lightbar::{
 pub use transport::{
     KeyboardCapabilities, LightbarCapabilities, LightingError, LightingOp, LightingTransport,
     MockLightingTransport, RgbColor, SysfsLedTransport,
+};
+#[cfg(windows)]
+pub use windows_hid::LiveWinHidSysApi;
+pub use windows_hid::{
+    frame_windows_feature_report, unframe_windows_feature_report, MockWinHidSysApi,
+    WinHidDeviceRecord, WinHidSysApi, WindowsHidTransport, VENDOR_USAGE_PAGE_MIN,
 };
