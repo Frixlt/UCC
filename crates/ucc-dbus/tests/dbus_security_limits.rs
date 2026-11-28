@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
+#![cfg(unix)]
 
 use std::collections::HashMap;
 use std::io::{BufRead, BufReader};

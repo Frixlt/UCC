@@ -1,3 +1,4 @@
+#![cfg(unix)]
 use std::{collections::HashMap, sync::Arc};
 use ucc_dbus::{
     register_uccd_service, AllowAllAuthorizer, AuthAction, Authorizer, DefaultUccdBackend,

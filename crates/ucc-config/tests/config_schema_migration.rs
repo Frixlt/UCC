@@ -1,9 +1,9 @@
-use std::{
-    fs,
-    os::unix::fs::{symlink, PermissionsExt},
-};
+use std::fs;
+#[cfg(unix)]
+use std::os::unix::fs::{symlink, PermissionsExt};
 use ucc_config::{ConfigManager, UccSettings};
 
+#[cfg(unix)]
 #[test]
 fn save_never_follows_a_backup_symlink() {
     let dir = tempfile::tempdir().unwrap();
@@ -21,6 +21,7 @@ fn save_never_follows_a_backup_symlink() {
     );
 }
 
+#[cfg(unix)]
 #[test]
 fn save_does_not_broaden_an_existing_private_files_permissions() {
     let dir = tempfile::tempdir().unwrap();

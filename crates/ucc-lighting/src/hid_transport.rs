@@ -530,7 +530,18 @@ pub fn select_best_lighting_transport(
 /// Pass `prefer_hidraw = true` when running on `UwccBackend` (where `ite_8291`/`ite_8291_lb` are
 /// blacklisted), or `false` when running on legacy `tuxedo-drivers` sysfs LED drivers.
 pub fn open_best_lighting_transport(prefer_hidraw: bool) -> Arc<dyn LightingTransport> {
-    let hidraw: Arc<dyn LightingTransport> = Arc::new(create_hidraw_lighting_transport());
-    let sysfs: Arc<dyn LightingTransport> = Arc::new(SysfsLedTransport::default());
-    select_best_lighting_transport(prefer_hidraw, hidraw, sysfs)
+    #[cfg(windows)]
+    {
+        let _ = prefer_hidraw;
+        let win_hid = Arc::new(crate::windows_hid::WindowsHidTransport::new(Arc::new(
+            crate::windows_hid::LiveWinHidSysApi::new(),
+        )));
+        Arc::new(UniwillHidTransport::new(win_hid))
+    }
+    #[cfg(not(windows))]
+    {
+        let hidraw: Arc<dyn LightingTransport> = Arc::new(create_hidraw_lighting_transport());
+        let sysfs: Arc<dyn LightingTransport> = Arc::new(SysfsLedTransport::default());
+        select_best_lighting_transport(prefer_hidraw, hidraw, sysfs)
+    }
 }

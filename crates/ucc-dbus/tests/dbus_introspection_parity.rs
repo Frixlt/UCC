@@ -1,3 +1,4 @@
+#![cfg(unix)]
 use std::sync::Arc;
 use ucc_dbus::{register_uccd_service, AllowAllAuthorizer, DefaultUccdBackend};
 use zbus::{connection::Builder, fdo::IntrospectableProxy};

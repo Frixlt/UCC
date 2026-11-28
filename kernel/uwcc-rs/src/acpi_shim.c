@@ -176,7 +176,7 @@ int uwcc_acpi_smrw(u16 offset, u16 len, u8 *out_buf)
 
 	if (!out_buf || len == 0 || len > UWCC_SMRW_MAX_LEN)
 		return -EINVAL;
-	if ((u32)offset + (u32)len > 0x0400U)
+	if ((u32)offset + (u32)len > 0x0100U)
 		return -ERANGE;
 
 	mutex_lock(&uwcc_ec_lock);
@@ -229,7 +229,7 @@ int uwcc_acpi_smrw(u16 offset, u16 len, u8 *out_buf)
 
 		obj = (union acpi_object *)output.pointer;
 		if (obj->type == ACPI_TYPE_INTEGER) {
-			u32 dword = (u32)(obj->integer.value & 0xFFFFFFFFULL);
+			__le32 dword = cpu_to_le32((u32)(obj->integer.value & 0xFFFFFFFFULL));
 			size_t chunk = min_t(size_t, 4U, (size_t)(len - pos));
 
 			memcpy(out_buf + pos, &dword, chunk);

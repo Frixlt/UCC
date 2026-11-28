@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
+#![cfg(unix)]
 
 //! Reproduction tests for confirmed `ucc-dbus` findings on commit `1d07126`:
 //! - R02: `ApplyProfile` with charging fields must require `AuthAction::ManageHardware`

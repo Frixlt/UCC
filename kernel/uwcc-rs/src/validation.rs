@@ -6,8 +6,8 @@
 /// Maximum payload length for `UWCC_IOC_SMRW` (matches `UWCC_SMRW_MAX_LEN`).
 pub(crate) const UWCC_SMRW_MAX_LEN: u16 = 64;
 
-/// Maximum addressable byte size of the Uniwill SMRW factory limits table.
-pub(crate) const UWCC_SMRW_TABLE_LIMIT: u16 = 0x0400;
+/// Maximum addressable byte size of the Uniwill SMRW factory limits table (8-bit REOF offset).
+pub(crate) const UWCC_SMRW_TABLE_LIMIT: u16 = 0x0100;
 
 /// Maximum allowed `PWUP` boost level.
 pub(crate) const UWCC_PWUP_MAX_LEVEL: u32 = 3;
@@ -266,11 +266,16 @@ mod tests {
     fn smrw_bounds() {
         assert_eq!(validate_smrw(0, 1), Ok(()));
         assert_eq!(validate_smrw(0, 64), Ok(()));
-        assert_eq!(validate_smrw(0x03C0, 64), Ok(()));
+        assert_eq!(validate_smrw(0x00C0, 64), Ok(()));
+        assert_eq!(validate_smrw(0x00FC, 4), Ok(()));
         assert_eq!(validate_smrw(0, 0), Err(ValidationError::InvalidLength));
         assert_eq!(validate_smrw(0, 65), Err(ValidationError::InvalidLength));
         assert_eq!(
-            validate_smrw(0x03C1, 64),
+            validate_smrw(0x00C1, 64),
+            Err(ValidationError::OutOfBounds)
+        );
+        assert_eq!(
+            validate_smrw(0x00FC, 8),
             Err(ValidationError::OutOfBounds)
         );
         assert_eq!(
