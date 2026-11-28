@@ -28,11 +28,27 @@ private:
   QCheckBox *m_managed,*m_silent,*m_welcome;
   QPushButton *m_save,*m_test;
   QLabel *m_status;
-  QWidget *m_logoCard = nullptr;
-  QCheckBox *m_logoEnabled = nullptr;
-  QSpinBox *m_logoBrightness = nullptr;
-  QPushButton *m_logoColorButton = nullptr;
-  QColor m_logoRgb = Qt::white;
   std::array<Mode,3> m_modes;
+};
+
+class LogoTab:public QWidget {
+  Q_OBJECT
+public:
+  explicit LogoTab(UccdClient *client,QWidget *parent=nullptr);
+signals:
+  void message(const QString &text);
+private:
+  void reload();
+  void save();
+  void showStatus();
+  UccdClient *m_client;
+  QJsonObject m_settings;
+  QCheckBox *m_enabled = nullptr;
+  QSpinBox *m_brightness = nullptr;
+  QPushButton *m_colorButton = nullptr;
+  QPushButton *m_save = nullptr;
+  QLabel *m_status = nullptr;
+  QColor m_rgb = Qt::white;
+  bool m_hasLidLogo = false;
 };
 }

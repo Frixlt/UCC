@@ -454,30 +454,42 @@ void ucc::KeyboardVisualizerWidget::loadCurrentStates( const std::string &states
 
 void ucc::KeyboardVisualizerWidget::updateFromJSON( const QJsonArray &states )
 {
-  for ( int i = 0; i < states.size() && i < static_cast< int >( m_keys.size() ); ++i )
+  const int limit = qMin( static_cast< int >( states.size() ), static_cast< int >( m_keys.size() ) );
+  QVector< bool > changed( static_cast< int >( m_keys.size() ), false );
+  bool anyChanged = false;
+  for ( int i = 0; i < limit; ++i )
   {
-    QJsonObject state = states[i].toObject();
-    QColor color( state["red"].toInt(), state["green"].toInt(), state["blue"].toInt() );
-    int brightness = state["brightness"].toInt();
-
-    m_keys[i].color = color;
-    m_keys[i].brightness = brightness;
-
-    // Find the button for this zone
-    for ( int j = 0; j < m_layout->count(); ++j )
+    const QJsonObject state = states[i].toObject();
+    const QColor color( state["red"].toInt(), state["green"].toInt(), state["blue"].toInt() );
+    const int brightness = state["brightness"].toInt();
+    if ( m_keys[i].color != color || m_keys[i].brightness != brightness )
     {
-      QLayoutItem *item = m_layout->itemAt( j );
-      if ( item && item->widget() )
+      m_keys[i].color = color;
+      m_keys[i].brightness = brightness;
+      changed[i] = true;
+      anyChanged = true;
+    }
+  }
+  if ( !anyChanged )
+    return;
+
+  setUpdatesEnabled( false );
+  for ( int j = 0; j < m_layout->count(); ++j )
+  {
+    QLayoutItem *item = m_layout->itemAt( j );
+    if ( item && item->widget() )
+    {
+      if ( QPushButton *button = qobject_cast< QPushButton * >( item->widget() ) )
       {
-        QPushButton *button = qobject_cast< QPushButton * >( item->widget() );
-        if ( button && button->property( "zoneId" ).toInt() == i )
+        const int zoneId = button->property( "zoneId" ).toInt();
+        if ( zoneId >= 0 && zoneId < changed.size() && changed[zoneId] )
         {
-          updateKeyAppearance( button, color, brightness );
-          break;
+          updateKeyAppearance( button, m_keys[zoneId].color, m_keys[zoneId].brightness );
         }
       }
     }
   }
+  setUpdatesEnabled( true );
 }
 
 QJsonArray ucc::KeyboardVisualizerWidget::getJSONState() const
@@ -498,27 +510,34 @@ QJsonArray ucc::KeyboardVisualizerWidget::getJSONState() const
 
 void ucc::KeyboardVisualizerWidget::setGlobalBrightness( int brightness )
 {
+  bool anyChanged = false;
   for ( auto &key : m_keys )
   {
-    key.brightness = brightness;
-  }
-
-  // Update all button appearances
-  for ( int i = 0; i < m_layout->count(); ++i )
-  {
-    QLayoutItem *item = m_layout->itemAt( i );
-    if ( item && item->widget() )
+    if ( key.brightness != brightness )
     {
-      QPushButton *button = qobject_cast< QPushButton * >( item->widget() );
-      if ( button )
+      key.brightness = brightness;
+      anyChanged = true;
+    }
+  }
+  if ( anyChanged )
+  {
+    setUpdatesEnabled( false );
+    for ( int i = 0; i < m_layout->count(); ++i )
+    {
+      QLayoutItem *item = m_layout->itemAt( i );
+      if ( item && item->widget() )
       {
-        int zoneId = button->property( "zoneId" ).toInt();
-        if ( zoneId >= 0 && zoneId < static_cast< int >( m_keys.size() ) )
+        if ( QPushButton *button = qobject_cast< QPushButton * >( item->widget() ) )
         {
-          updateKeyAppearance( button, m_keys[zoneId].color, brightness );
+          const int zoneId = button->property( "zoneId" ).toInt();
+          if ( zoneId >= 0 && zoneId < static_cast< int >( m_keys.size() ) )
+          {
+            updateKeyAppearance( button, m_keys[zoneId].color, brightness );
+          }
         }
       }
     }
+    setUpdatesEnabled( true );
   }
 
   emit colorsChanged();

@@ -28,6 +28,8 @@
 #include "PreviewMode.hpp"
 #include "BatterySettingsWidget.hpp"
 #include <QTabBar>
+#include <QDialog>
+#include <QFormLayout>
 #include <QSignalBlocker>
 #include <QTimer>
 #include <QPainter>
@@ -488,19 +490,83 @@ void MainWindow::setupUI()
   connect(processes,&SessionProcessesWidget::message,statusBar(),[this](const QString &text){statusBar()->showMessage(text);});
   desktopScroll->setWidget(desktopPage);
   m_tabs->addTab(desktopScroll,"Battery & Processes");
-  auto *experimentalPage=new QWidget;experimentalPage->setObjectName("experimentalPage");
-  auto *experimentalLayout=new QVBoxLayout(experimentalPage);experimentalLayout->setContentsMargins(0,0,0,0);experimentalLayout->setSpacing(12);
-  auto *experimentalWarningCard=FluentTheme::createCard();experimentalWarningCard->setObjectName("experimentalWarningCard");
-  auto *experimentalWarningLayout=new QVBoxLayout(experimentalWarningCard);
-  auto *experimentalTitle=new QLabel("Experimental features");experimentalTitle->setObjectName("cardTitle");experimentalWarningLayout->addWidget(experimentalTitle);
-  auto *experimentalBanner=new QLabel("Options added here are experimental, may change between releases, and are disabled by default until promoted to stable tabs.");experimentalBanner->setObjectName("experimentalBanner");experimentalBanner->setWordWrap(true);experimentalLayout->addWidget(experimentalWarningCard);experimentalWarningLayout->addWidget(experimentalBanner);
-  auto *experimentalOptionsCard=FluentTheme::createCard();experimentalOptionsCard->setObjectName("experimentalOptionsCard");
-  auto *experimentalOptionsLayout=new QVBoxLayout(experimentalOptionsCard);
-  auto *experimentalOptionsTitle=new QLabel("Staged toggles");experimentalOptionsTitle->setObjectName("cardTitle");experimentalOptionsLayout->addWidget(experimentalOptionsTitle);
-  auto *experimentalEmpty=new QLabel("No active experimental toggles are configured for this build.");experimentalEmpty->setObjectName("muted");experimentalEmpty->setWordWrap(true);experimentalOptionsLayout->addWidget(experimentalEmpty);
-  experimentalLayout->addWidget(experimentalOptionsCard);
+  m_experimentalRisksAccepted = QSettings("UniwillControlCenter", "desktop")
+      .value("experimentalRisksAcceptedPermanently", false).toBool();
+  m_experimentalPage = new QWidget;
+  m_experimentalPage->setObjectName("experimentalPage");
+  auto *experimentalLayout = new QVBoxLayout(m_experimentalPage);
+  experimentalLayout->setContentsMargins(0, 0, 0, 0);
+  experimentalLayout->setSpacing(12);
+
+  auto *experimentalWarningCard = FluentTheme::createCard();
+  experimentalWarningCard->setProperty("role", "experimentalWarningCard");
+  auto *experimentalWarningLayout = new QVBoxLayout(experimentalWarningCard);
+  experimentalWarningLayout->setContentsMargins(20, 16, 20, 16);
+  experimentalWarningLayout->setSpacing(8);
+  auto *experimentalTitle = new QLabel("Experimental features");
+  experimentalTitle->setObjectName("cardTitle");
+  experimentalWarningLayout->addWidget(experimentalTitle);
+  auto *experimentalBanner = new QLabel(
+      "Options in this tab are experimental, unstable, and may modify firmware/BIOS state (such as Display MUX). "
+      "All controls stay locked until you accept the risks.");
+  experimentalBanner->setObjectName("experimentalBanner");
+  experimentalBanner->setWordWrap(true);
+  experimentalWarningLayout->addWidget(experimentalBanner);
+  m_experimentalUnlockButton = new QPushButton("I accept the risks — unlock Experimental");
+  m_experimentalUnlockButton->setObjectName("experimentalUnlockButton");
+  m_experimentalUnlockButton->setProperty("primary", true);
+  connect(m_experimentalUnlockButton, &QPushButton::clicked, this, &MainWindow::promptExperimentalRisks);
+  experimentalWarningLayout->addWidget(m_experimentalUnlockButton, 0, Qt::AlignLeft);
+  experimentalLayout->addWidget(experimentalWarningCard);
+
+  m_experimentalOptionsCard = FluentTheme::createCard();
+  m_experimentalOptionsCard->setProperty("role", "experimentalOptionsCard");
+  auto *experimentalOptionsLayout = new QVBoxLayout(m_experimentalOptionsCard);
+  experimentalOptionsLayout->setContentsMargins(20, 18, 20, 18);
+  experimentalOptionsLayout->setSpacing(12);
+  auto *muxTitle = new QLabel("Display MUX Switch");
+  muxTitle->setObjectName("cardTitle");
+  experimentalOptionsLayout->addWidget(muxTitle);
+  auto *muxDesc = new QLabel(
+      "Switch the hardware display multiplexer BIOS boot mode (ACPI MXDM). "
+      "Changes take effect after a full reboot.");
+  muxDesc->setObjectName("muted");
+  muxDesc->setWordWrap(true);
+  experimentalOptionsLayout->addWidget(muxDesc);
+  auto *muxForm = new QFormLayout();
+  muxForm->setContentsMargins(0, 4, 0, 4);
+  muxForm->setSpacing(10);
+  m_muxActiveGpuLabel = new QLabel("—");
+  m_muxActiveGpuLabel->setObjectName("muxActiveGpuLabel");
+  muxForm->addRow("Active display GPU", m_muxActiveGpuLabel);
+  m_muxBootModeCombo = new QComboBox();
+  m_muxBootModeCombo->setObjectName("muxBootModeCombo");
+  m_muxBootModeCombo->addItem("Dynamic (Advanced Optimus)", "dynamic");
+  m_muxBootModeCombo->addItem("dGPU Only (Discrete)", "dgpu_only");
+  m_muxBootModeCombo->addItem("iGPU Only (Integrated)", "igpu_only");
+  m_muxBootModeCombo->addItem("MSHybrid (Optimus)", "mshybrid");
+  muxForm->addRow("BIOS boot mode", m_muxBootModeCombo);
+  experimentalOptionsLayout->addLayout(muxForm);
+  auto *muxButtons = new QHBoxLayout();
+  m_muxReloadButton = new QPushButton("Reload");
+  m_muxReloadButton->setObjectName("muxReloadButton");
+  muxButtons->addWidget(m_muxReloadButton);
+  muxButtons->addStretch(1);
+  m_muxApplyButton = new QPushButton("Apply MUX mode (requires reboot)");
+  m_muxApplyButton->setObjectName("muxApplyButton");
+  m_muxApplyButton->setProperty("primary", true);
+  muxButtons->addWidget(m_muxApplyButton);
+  experimentalOptionsLayout->addLayout(muxButtons);
+  m_muxStatusLabel = new QLabel("Waiting for daemon…");
+  m_muxStatusLabel->setObjectName("muxStatusLabel");
+  m_muxStatusLabel->setWordWrap(true);
+  experimentalOptionsLayout->addWidget(m_muxStatusLabel);
+  connect(m_muxReloadButton, &QPushButton::clicked, this, &MainWindow::refreshMuxState);
+  connect(m_muxApplyButton, &QPushButton::clicked, this, &MainWindow::applyMuxBootMode);
+  experimentalLayout->addWidget(m_experimentalOptionsCard);
   experimentalLayout->addStretch(1);
-  m_tabs->addTab(experimentalPage,"Experimental");
+  updateExperimentalLockState();
+  m_tabs->addTab(m_experimentalPage, "Experimental");
   m_tabs->addTab(createAboutPage(this),"About");
   if(!m_waterCoolerSupported) {navigation->item(3)->setFlags(navigation->item(3)->flags() & ~Qt::ItemIsEnabled);navigation->item(3)->setToolTip("Water cooling is not supported by this device.");}
   navigation->setCurrentRow(0);
@@ -537,29 +603,10 @@ void MainWindow::setupLightingPage()
            [this]( const QString &text ) { statusBar()->showMessage( text ); } );
   m_lightingTabs->addTab( lightbar, "Lightbar" );
 
-  auto *logoPage = new QWidget( m_lightingTabs );
-  logoPage->setObjectName( "logoLightingPage" );
-  auto *logoLayout = new QVBoxLayout( logoPage );
-  logoLayout->setContentsMargins( 0, 0, 0, 0 );
-  logoLayout->setSpacing( 12 );
-  auto *logoCard = FluentTheme::createCard();
-  auto *logoCardLayout = new QVBoxLayout( logoCard );
-  logoCardLayout->setContentsMargins( 24, 20, 24, 20 );
-  logoCardLayout->setSpacing( 8 );
-  auto *logoTitle = new QLabel( "Lid Logo Lighting" );
-  logoTitle->setObjectName( "cardTitle" );
-  auto *logoBadge = new QLabel( "Planned · M14" );
-  logoBadge->setObjectName( "subheading" );
-  auto *logoDesc = new QLabel(
-    "Chassis lid logo LED control (ITE 048D:7001 / 7000) will appear here once hardware support is implemented." );
-  logoDesc->setObjectName( "muted" );
-  logoDesc->setWordWrap( true );
-  logoCardLayout->addWidget( logoTitle );
-  logoCardLayout->addWidget( logoBadge );
-  logoCardLayout->addWidget( logoDesc );
-  logoLayout->addWidget( logoCard );
-  logoLayout->addStretch( 1 );
-  m_lightingTabs->addTab( logoPage, "Logo" );
+  auto *logoTab = new LogoTab( m_UccdClient.get(), m_lightingTabs );
+  connect( logoTab, &LogoTab::message, statusBar(),
+           [this]( const QString &text ) { statusBar()->showMessage( text ); } );
+  m_lightingTabs->addTab( logoTab, "Logo" );
 
   struct SegmentDef { QString label; QString iconKey; };
   const QVector<SegmentDef> segmentDefs = {
@@ -1591,76 +1638,191 @@ void MainWindow::onTabChanged( int index )
   {
     refreshKeyboardLightingState();
   }
+
+  // Experimental tab: refresh read-only MUX state and enforce risk-acceptance gate
+  if ( m_experimentalPage && m_tabs && m_tabs->widget( index ) == m_experimentalPage )
+  {
+    refreshMuxState();
+    updateExperimentalLockState();
+    if ( !m_experimentalRisksAccepted && !m_experimentalPromptOpen )
+    {
+      QTimer::singleShot( 0, this, &MainWindow::promptExperimentalRisks );
+    }
+  }
+}
+
+void MainWindow::updateExperimentalLockState()
+{
+  if ( m_experimentalUnlockButton )
+    m_experimentalUnlockButton->setVisible( !m_experimentalRisksAccepted );
+  if ( m_experimentalOptionsCard )
+    m_experimentalOptionsCard->setEnabled( m_experimentalRisksAccepted );
+  if ( m_muxBootModeCombo )
+    m_muxBootModeCombo->setEnabled( m_experimentalRisksAccepted && m_muxAvailable && !readOnlyPreview );
+  if ( m_muxApplyButton )
+    m_muxApplyButton->setEnabled( m_experimentalRisksAccepted && m_muxAvailable && !readOnlyPreview );
+  if ( m_muxReloadButton )
+    m_muxReloadButton->setEnabled( m_experimentalRisksAccepted );
+}
+
+void MainWindow::promptExperimentalRisks()
+{
+  if ( m_experimentalRisksAccepted || m_experimentalPromptOpen )
+    return;
+  m_experimentalPromptOpen = true;
+
+  QDialog dlg( this );
+  dlg.setWindowTitle( "Experimental Features Warning" );
+  dlg.setModal( true );
+  dlg.setMinimumWidth( 440 );
+
+  auto *layout = new QVBoxLayout( &dlg );
+  layout->setContentsMargins( 20, 18, 20, 18 );
+  layout->setSpacing( 14 );
+
+  auto *heading = new QLabel( "Experimental & Unstable Features" );
+  heading->setObjectName( "cardTitle" );
+  layout->addWidget( heading );
+
+  auto *body = new QLabel(
+      "The settings in the Experimental tab are experimental and unstable. "
+      "Changing firmware-level options such as the Display MUX Switch may cause display issues, "
+      "unexpected behavior, or require resetting BIOS settings.
+
+"
+      "No Experimental setting will work until you explicitly accept these risks." );
+  body->setWordWrap( true );
+  layout->addWidget( body );
+
+  auto *dontShowAgain = new QCheckBox( "Don't show again" );
+  dontShowAgain->setObjectName( "experimentalDontShowAgain" );
+  layout->addWidget( dontShowAgain );
+
+  auto *buttons = new QHBoxLayout();
+  buttons->addStretch( 1 );
+  auto *cancelBtn = new QPushButton( "Cancel" );
+  auto *acceptBtn = new QPushButton( "I accept the risks" );
+  acceptBtn->setObjectName( "experimentalAcceptRisks" );
+  acceptBtn->setProperty( "primary", true );
+  buttons->addWidget( cancelBtn );
+  buttons->addWidget( acceptBtn );
+  layout->addLayout( buttons );
+
+  connect( cancelBtn, &QPushButton::clicked, &dlg, &QDialog::reject );
+  connect( acceptBtn, &QPushButton::clicked, &dlg, &QDialog::accept );
+
+  const int result = dlg.exec();
+  m_experimentalPromptOpen = false;
+  if ( result == QDialog::Accepted )
+  {
+    m_experimentalRisksAccepted = true;
+    if ( dontShowAgain->isChecked() && !readOnlyPreview )
+    {
+      QSettings( "UniwillControlCenter", "desktop" )
+          .setValue( "experimentalRisksAcceptedPermanently", true );
+    }
+  }
+  updateExperimentalLockState();
+}
+
+void MainWindow::refreshMuxState()
+{
+  if ( !m_UccdClient || !m_muxActiveGpuLabel || !m_muxBootModeCombo || !m_muxStatusLabel )
+    return;
+  const auto json = m_UccdClient->getMuxStateJSON();
+  const auto doc = json ? QJsonDocument::fromJson( QByteArray::fromStdString( *json ) ) : QJsonDocument();
+  const QJsonObject obj = doc.isObject() ? doc.object() : QJsonObject();
+  m_muxAvailable = obj["available"].toBool( false );
+  if ( !m_muxAvailable )
+  {
+    m_muxActiveGpuLabel->setText( "Unavailable" );
+    m_muxStatusLabel->setText( "Hardware Display MUX (uwcc ACPI MXDM/MXDS) is not supported or daemon is disconnected." );
+    updateExperimentalLockState();
+    return;
+  }
+  const QString activeGpu = obj["activeGpu"].toString( "unknown" );
+  const QString bootMode = obj["bootMode"].toString( "unknown" );
+  m_muxActiveGpuLabel->setText( activeGpu == "dgpu" ? "Discrete GPU (dGPU)"
+                               : activeGpu == "igpu" ? "Integrated GPU (iGPU)"
+                                                     : "Unknown" );
+  const QSignalBlocker blocked( m_muxBootModeCombo );
+  const int idx = m_muxBootModeCombo->findData( bootMode );
+  if ( idx >= 0 )
+    m_muxBootModeCombo->setCurrentIndex( idx );
+  m_muxStatusLabel->setText( QString( "Current BIOS boot mode: %1" ).arg(
+      idx >= 0 ? m_muxBootModeCombo->itemText( idx ) : bootMode ) );
+  updateExperimentalLockState();
+}
+
+void MainWindow::applyMuxBootMode()
+{
+  if ( !m_experimentalRisksAccepted || readOnlyPreview || !m_muxAvailable || !m_UccdClient || !m_muxBootModeCombo )
+    return;
+  const QString mode = m_muxBootModeCombo->currentData().toString();
+  if ( mode.isEmpty() )
+    return;
+  if ( m_UccdClient->setMuxBootMode( mode.toStdString() ) )
+  {
+    statusBar()->showMessage( "Display MUX boot mode updated — reboot to apply", 5000 );
+    if ( m_muxStatusLabel )
+      m_muxStatusLabel->setText( QString( "Saved BIOS boot mode: %1 (reboot required)" ).arg( m_muxBootModeCombo->currentText() ) );
+  }
+  else
+  {
+    statusBar()->showMessage( "Failed to update Display MUX boot mode", 5000 );
+    if ( m_muxStatusLabel )
+      m_muxStatusLabel->setText( "Failed to write Display MUX boot mode via uwcc." );
+  }
 }
 
 void MainWindow::refreshKeyboardLightingState()
 {
+  if ( m_keyboardVisualizer )
   {
-    if ( m_keyboardVisualizer )
+    if ( auto states = m_UccdClient->getKeyboardBacklightStates() )
     {
-      if ( auto states = m_UccdClient->getKeyboardBacklightStates() )
-      {
-        // Block visualizer signals to prevent hardware write during state refresh
-        m_keyboardVisualizer->blockSignals( true );
-        m_keyboardVisualizer->loadCurrentStates( *states );
+      // Block visualizer signals to prevent hardware write during state refresh
+      m_keyboardVisualizer->blockSignals( true );
+      m_keyboardVisualizer->loadCurrentStates( *states );
 
-        // Read brightness from hardware states and sync slider
-        if ( QJsonDocument statesDoc = QJsonDocument::fromJson( QString::fromStdString( *states ).toUtf8() );
-             statesDoc.isArray() && !statesDoc.array().isEmpty() )
+      // Read brightness from live hardware states and sync slider without overwriting hardware
+      if ( QJsonDocument statesDoc = QJsonDocument::fromJson( QString::fromStdString( *states ).toUtf8() );
+           statesDoc.isArray() && !statesDoc.array().isEmpty() )
+      {
+        const int hwBrightness = statesDoc.array()[0].toObject()["brightness"].toInt( -1 );
+        if ( hwBrightness >= 0 && m_keyboardBrightnessSlider )
         {
-          int hwBrightness = statesDoc.array()[0].toObject()["brightness"].toInt( -1 );
-          qDebug() << "[KBD TAB] hw brightness:" << hwBrightness
-                   << "slider current:" << m_keyboardBrightnessSlider->value()
-                   << "slider max:" << m_keyboardBrightnessSlider->maximum();
-          if ( hwBrightness >= 0 && m_keyboardBrightnessSlider )
-          {
-            m_keyboardBrightnessSlider->blockSignals( true );
-            m_keyboardBrightnessSlider->setValue( hwBrightness );
-            m_keyboardBrightnessSlider->blockSignals( false );
-            updateKeyboardAppearanceLabels();
-          }
+          m_keyboardBrightnessSlider->blockSignals( true );
+          m_keyboardBrightnessSlider->setValue( hwBrightness );
+          m_keyboardBrightnessSlider->blockSignals( false );
+          updateKeyboardAppearanceLabels();
         }
-
-        // ALWAYS override per-zone brightness with slider value to guarantee sync
-        m_keyboardVisualizer->setGlobalBrightness( m_keyboardBrightnessSlider->value() );
-        m_keyboardVisualizer->blockSignals( false );
       }
+      m_keyboardVisualizer->blockSignals( false );
     }
+  }
 
-    // Reload keyboard profiles
-    reloadKeyboardProfiles();
-
-    // Auto-load the keyboard profile from the active profile's settings
-    if ( QString activeProfileId = m_profileManager->activeProfileId(); !activeProfileId.isEmpty() )
+  // Reload keyboard profiles and reflect the active profile selection without pushing stale
+  // profile brightness/colors over live hardware state.
+  reloadKeyboardProfiles();
+  if ( QString activeProfileId = m_profileManager->activeProfileId(); !activeProfileId.isEmpty() )
+  {
+    if ( QString profileJson = m_profileManager->getProfileDetails( activeProfileId );
+         !profileJson.isEmpty() )
     {
-      if ( QString profileJson = m_profileManager->getProfileDetails( activeProfileId );
-           !profileJson.isEmpty() )
+      if ( QJsonDocument doc = QJsonDocument::fromJson( profileJson.toUtf8() ); doc.isObject() )
       {
-        if ( QJsonDocument doc = QJsonDocument::fromJson( profileJson.toUtf8() ); doc.isObject() )
+        const QString keyboardProfileId = doc.object()["selectedKeyboardProfile"].toString();
+        if ( !keyboardProfileId.isEmpty() && m_keyboardProfileCombo )
         {
-          QJsonObject obj = doc.object();
-          QString keyboardProfileId;
-
-          if ( obj.contains( "selectedKeyboardProfile" ) )
-            keyboardProfileId = obj["selectedKeyboardProfile"].toString();
-
-          if ( !keyboardProfileId.isEmpty() )
+          for ( int i = 0; i < m_keyboardProfileCombo->count(); ++i )
           {
-            // Find by ID in combo userData
-            int kbIdx = -1;
-            for ( int i = 0; i < m_keyboardProfileCombo->count(); ++i )
-            {
-              if ( m_keyboardProfileCombo->itemData( i ).toString() == keyboardProfileId )
-              { kbIdx = i; break; }
-            }
-            if ( kbIdx >= 0 )
+            if ( m_keyboardProfileCombo->itemData( i ).toString() == keyboardProfileId )
             {
               m_keyboardProfileCombo->blockSignals( true );
-              m_keyboardProfileCombo->setCurrentIndex( kbIdx );
+              m_keyboardProfileCombo->setCurrentIndex( i );
               m_keyboardProfileCombo->blockSignals( false );
-              // Explicitly load the profile data (setCurrentIndex won't emit
-              // if the index was already restored by reloadKeyboardProfiles)
-              onKeyboardProfileChanged( m_keyboardProfileCombo->itemData( kbIdx ).toString() );
+              break;
             }
           }
         }

@@ -160,6 +160,10 @@ namespace ucc
     bool hasValidCtgpRange( int &defaultPower, int &maxPower ) const;
     void updateCtgpVisibility();
     void updateFanCrosshairs();
+    void updateExperimentalLockState();
+    void promptExperimentalRisks();
+    void refreshMuxState();
+    void applyMuxBootMode();
     Q_INVOKABLE void updateSidebarConnectionStatus( bool connected );
 
     /** Parse a numeric value from a SystemMonitor formatted string (e.g. "65 degC" -> 65). */
@@ -172,6 +176,17 @@ namespace ucc
     // Tab widget
     QTabWidget *m_tabs = nullptr;
     QTabWidget *m_lightingTabs = nullptr;
+    QWidget *m_experimentalPage = nullptr;
+    QWidget *m_experimentalOptionsCard = nullptr;
+    QPushButton *m_experimentalUnlockButton = nullptr;
+    QLabel *m_muxActiveGpuLabel = nullptr;
+    QComboBox *m_muxBootModeCombo = nullptr;
+    QPushButton *m_muxReloadButton = nullptr;
+    QPushButton *m_muxApplyButton = nullptr;
+    QLabel *m_muxStatusLabel = nullptr;
+    bool m_experimentalRisksAccepted = false;
+    bool m_experimentalPromptOpen = false;
+    bool m_muxAvailable = false;
     QPushButton *m_aboutNavButton = nullptr;
     FluentEntrance *m_entrance = nullptr;
 
