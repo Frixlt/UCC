@@ -4,23 +4,23 @@
 //! Shared between the `uwcc-rs` kernel module and host-side unit tests.
 
 /// Maximum payload length for `UWCC_IOC_SMRW` (matches `UWCC_SMRW_MAX_LEN`).
-pub const UWCC_SMRW_MAX_LEN: u16 = 64;
+pub(crate) const UWCC_SMRW_MAX_LEN: u16 = 64;
 
 /// Maximum addressable byte size of the Uniwill SMRW factory limits table.
-pub const UWCC_SMRW_TABLE_LIMIT: u16 = 0x0400;
+pub(crate) const UWCC_SMRW_TABLE_LIMIT: u16 = 0x0400;
 
 /// Maximum allowed `PWUP` boost level.
-pub const UWCC_PWUP_MAX_LEVEL: u32 = 3;
+pub(crate) const UWCC_PWUP_MAX_LEVEL: u32 = 3;
 
 /// Minimum readable Uniwill EC register address.
-pub const EC_READ_ADDR_MIN: u16 = 0x0400;
+pub(crate) const EC_READ_ADDR_MIN: u16 = 0x0400;
 
 /// Maximum readable Uniwill EC register address.
-pub const EC_READ_ADDR_MAX: u16 = 0x18FF;
+pub(crate) const EC_READ_ADDR_MAX: u16 = 0x18FF;
 
 /// Validation error returned before any ACPI/EC call is dispatched.
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
-pub enum ValidationError {
+pub(crate) enum ValidationError {
     /// Register address or table offset is outside permitted bounds.
     OutOfBounds,
     /// Target EC register is read-only or not on the explicit write allowlist.
@@ -36,7 +36,7 @@ pub enum ValidationError {
 impl ValidationError {
     /// Converts a validation error into the corresponding negative Linux errno.
     #[inline]
-    pub const fn to_errno(self) -> i32 {
+    pub(crate) const fn to_errno(self) -> i32 {
         match self {
             Self::OutOfBounds => -34,          // -ERANGE
             Self::ReadOnlyOrForbidden => -13,  // -EACCES
@@ -49,7 +49,7 @@ impl ValidationError {
 
 /// Returns `true` if `addr` is within the readable Uniwill EC register space.
 #[inline]
-pub const fn is_valid_ec_read_addr(addr: u16) -> bool {
+pub(crate) const fn is_valid_ec_read_addr(addr: u16) -> bool {
     addr >= EC_READ_ADDR_MIN && addr <= EC_READ_ADDR_MAX
 }
 
@@ -60,7 +60,7 @@ pub const fn is_valid_ec_read_addr(addr: u16) -> bool {
 /// identity (`0x0748` `UWCC_EC_REG_PROJECT_ID`), low firmware/BIOS registers
 /// (`< 0x0400`), and unmapped regions are strictly rejected.
 #[inline]
-pub const fn is_valid_ec_write_addr(addr: u16) -> bool {
+pub(crate) const fn is_valid_ec_write_addr(addr: u16) -> bool {
     match addr {
         // TDP limits (PL1=0x0740, PL2=0x0741, PL4=0x0742) and thermal/power controls
         // (explicitly excludes 0x0748 UWCC_EC_REG_PROJECT_ID)
@@ -82,7 +82,7 @@ pub const fn is_valid_ec_write_addr(addr: u16) -> bool {
 }
 
 /// Validates an `UWCC_IOC_EC_READ` request.
-pub const fn validate_ec_read(addr: u16, pad: u8) -> Result<(), ValidationError> {
+pub(crate) const fn validate_ec_read(addr: u16, pad: u8) -> Result<(), ValidationError> {
     if pad != 0 {
         return Err(ValidationError::InvalidArgument);
     }
@@ -96,7 +96,7 @@ pub const fn validate_ec_read(addr: u16, pad: u8) -> Result<(), ValidationError>
 ///
 /// Enforces both file descriptor write permission (`FMODE_WRITE`) and
 /// `CAP_SYS_ADMIN` before checking the explicit EC write allowlist.
-pub const fn validate_ec_write(
+pub(crate) const fn validate_ec_write(
     addr: u16,
     pad: u8,
     file_writable: bool,
@@ -118,7 +118,7 @@ pub const fn validate_ec_write(
 }
 
 /// Validates an `UWCC_IOC_SMRW` table read request.
-pub const fn validate_smrw(offset: u16, len: u16) -> Result<(), ValidationError> {
+pub(crate) const fn validate_smrw(offset: u16, len: u16) -> Result<(), ValidationError> {
     if len == 0 || len > UWCC_SMRW_MAX_LEN {
         return Err(ValidationError::InvalidLength);
     }
@@ -129,7 +129,7 @@ pub const fn validate_smrw(offset: u16, len: u16) -> Result<(), ValidationError>
 }
 
 /// Validates an `UWCC_IOC_PWUP` liquid-cooler power boost request.
-pub const fn validate_pwup(
+pub(crate) const fn validate_pwup(
     enable: u32,
     level: u32,
     file_writable: bool,

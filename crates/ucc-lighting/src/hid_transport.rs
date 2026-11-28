@@ -191,6 +191,9 @@ pub fn read_sysfs_hidraw_interface_number(
     sysfs_hidraw_root: &std::path::Path,
     hidraw_name: &str,
 ) -> Option<i32> {
+    if !crate::hidraw_linux::is_valid_hidraw_name(hidraw_name) {
+        return None;
+    }
     let device_dir = sysfs_hidraw_root.join(hidraw_name).join("device");
     let candidates = [
         device_dir.join("..").join("bInterfaceNumber"),

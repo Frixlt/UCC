@@ -34,6 +34,7 @@ const UWCC_FLAG_HAS_HWMON: u32 = 1 << 4;
 const ERRNO_EINVAL: i32 = -22;
 const ERRNO_ENODEV: i32 = -19;
 
+/// UAPI payload for `UWCC_IOC_EC_READ` and `UWCC_IOC_EC_WRITE` (`struct uwcc_ec_reg`).
 #[repr(C)]
 #[derive(Copy, Clone)]
 pub struct UwccEcReg {
@@ -42,6 +43,7 @@ pub struct UwccEcReg {
     _pad: u8,
 }
 
+/// UAPI payload for `UWCC_IOC_SMRW` (`struct uwcc_smrw`).
 #[repr(C)]
 #[derive(Copy, Clone)]
 pub struct UwccSmrw {
@@ -50,6 +52,7 @@ pub struct UwccSmrw {
     data: [u8; 64],
 }
 
+/// UAPI payload for `UWCC_IOC_PWUP` (`struct uwcc_pwup`).
 #[repr(C)]
 #[derive(Copy, Clone)]
 pub struct UwccPwup {
@@ -57,12 +60,17 @@ pub struct UwccPwup {
     level: u32,
 }
 
+/// UAPI payload for `UWCC_IOC_GET_INFO` (`struct uwcc_info`).
 #[repr(C)]
 #[derive(Copy, Clone)]
 pub struct UwccInfo {
+    /// UAPI ABI version (`UWCC_API_VERSION`).
     pub api_version: u32,
+    /// Uniwill chassis project ID read from EC (`0x0748`).
     pub project_id: u32,
+    /// Encoded EC firmware version.
     pub ec_version: u32,
+    /// Capability bitmask (`UWCC_FLAG_*`).
     pub flags: u32,
 }
 
@@ -94,6 +102,7 @@ extern "C" {
     fn uwcc_acpi_smrw(offset: u16, len: u16, out_buf: *mut u8) -> i32;
     fn uwcc_acpi_pwup(enable: u32, level: u32) -> i32;
     fn uwcc_hwmon_register(parent: *mut kernel::bindings::device) -> i32;
+    fn uwcc_hwmon_unregister();
     fn uwcc_state_lock_irqsave() -> c_ulong;
     fn uwcc_state_unlock_irqrestore(flags: c_ulong);
     fn uwcc_ktime_get_ns() -> u64;
@@ -191,8 +200,12 @@ pub extern "C" fn uwcc_rs_on_wmi_event(code: u32, payload: u32) {
 }
 
 /// Pops the oldest queued WMI event into `out_event`.
+///
+/// # Safety
+///
+/// `out_event` must be either null or a valid, writable, properly aligned pointer to `WmiEvent`.
 #[no_mangle]
-pub extern "C" fn uwcc_rs_wmi_pop(out_event: *mut WmiEvent) -> bool {
+pub unsafe extern "C" fn uwcc_rs_wmi_pop(out_event: *mut WmiEvent) -> bool {
     if out_event.is_null() {
         return false;
     }
@@ -220,8 +233,12 @@ pub extern "C" fn uwcc_rs_wmi_has_data_or_shutdown() -> bool {
 }
 
 /// Handles `UWCC_IOC_GET_INFO`.
+///
+/// # Safety
+///
+/// `out_info` must be either null or a valid, writable, properly aligned pointer to `UwccInfo`.
 #[no_mangle]
-pub extern "C" fn uwcc_rs_ioctl_get_info(out_info: *mut UwccInfo) -> i32 {
+pub unsafe extern "C" fn uwcc_rs_ioctl_get_info(out_info: *mut UwccInfo) -> i32 {
     if out_info.is_null() {
         return ERRNO_EINVAL;
     }
@@ -244,8 +261,12 @@ pub extern "C" fn uwcc_rs_ioctl_get_info(out_info: *mut UwccInfo) -> i32 {
 }
 
 /// Validates and dispatches `UWCC_IOC_EC_READ`.
+///
+/// # Safety
+///
+/// `reg` must be either null or a valid, readable and writable pointer to `UwccEcReg`.
 #[no_mangle]
-pub extern "C" fn uwcc_rs_ioctl_ec_read(reg: *mut UwccEcReg) -> i32 {
+pub unsafe extern "C" fn uwcc_rs_ioctl_ec_read(reg: *mut UwccEcReg) -> i32 {
     if reg.is_null() {
         return ERRNO_EINVAL;
     }
@@ -271,8 +292,12 @@ pub extern "C" fn uwcc_rs_ioctl_ec_read(reg: *mut UwccEcReg) -> i32 {
 }
 
 /// Validates permissions and EC allowlist, then dispatches `UWCC_IOC_EC_WRITE`.
+///
+/// # Safety
+///
+/// `reg` must be either null or a valid, readable pointer to `UwccEcReg`.
 #[no_mangle]
-pub extern "C" fn uwcc_rs_ioctl_ec_write(
+pub unsafe extern "C" fn uwcc_rs_ioctl_ec_write(
     reg: *const UwccEcReg,
     writable: bool,
     sys_admin: bool,
@@ -295,8 +320,12 @@ pub extern "C" fn uwcc_rs_ioctl_ec_write(
 }
 
 /// Validates bounds and dispatches `UWCC_IOC_SMRW`.
+///
+/// # Safety
+///
+/// `smrw` must be either null or a valid, readable and writable pointer to `UwccSmrw`.
 #[no_mangle]
-pub extern "C" fn uwcc_rs_ioctl_smrw(smrw: *mut UwccSmrw) -> i32 {
+pub unsafe extern "C" fn uwcc_rs_ioctl_smrw(smrw: *mut UwccSmrw) -> i32 {
     if smrw.is_null() {
         return ERRNO_EINVAL;
     }
@@ -315,8 +344,12 @@ pub extern "C" fn uwcc_rs_ioctl_smrw(smrw: *mut UwccSmrw) -> i32 {
 }
 
 /// Validates permissions and parameters, then dispatches `UWCC_IOC_PWUP`.
+///
+/// # Safety
+///
+/// `pwup` must be either null or a valid, readable pointer to `UwccPwup`.
 #[no_mangle]
-pub extern "C" fn uwcc_rs_ioctl_pwup(
+pub unsafe extern "C" fn uwcc_rs_ioctl_pwup(
     pwup: *const UwccPwup,
     writable: bool,
     sys_admin: bool,
@@ -351,37 +384,40 @@ impl kernel::Module for UwccModule {
         let ret = unsafe { uwcc_acpi_init(&mut caps) };
         c_ret_to_result(ret)?;
 
-        let mut flags = caps.flags;
-
-        // Register native /sys/class/hwmon/hwmonX (D3cold-safe EC telemetry).
-        // SAFETY: `uwcc_hwmon_register` accepts NULL parent when no platform_device is bound.
-        if unsafe { uwcc_hwmon_register(core::ptr::null_mut()) } == 0 {
-            flags |= UWCC_FLAG_HAS_HWMON;
-        } else {
-            pr_warn!("uwcc_rs: hwmon registration failed; continuing with /dev/uwcc only\n");
-        }
-
         with_state(|s| {
             s.info = UwccInfo {
                 api_version: UWCC_API_VERSION,
                 project_id: caps.project_id,
                 ec_version: caps.ec_version,
-                flags,
+                flags: caps.flags,
             };
             s.ring.clear();
             s.ready = true;
         });
 
-        // Register /dev/uwcc miscdevice with full file_operations in acpi_shim.c.
+        // Register /dev/uwcc miscdevice first so `uwcc_miscdev.this_device` provides a valid
+        // non-NULL parent `struct device *` for `hwmon_device_register_with_info`.
         // SAFETY: State is initialized and ready before exposing /dev/uwcc.
         let misc_ret = unsafe { uwcc_misc_register() };
         if let Err(err) = c_ret_to_result(misc_ret) {
             with_state(|s| {
                 s.ready = false;
             });
-            // SAFETY: Roll back hwmon, WMI driver, and ACPI state on failure.
+            // SAFETY: Roll back WMI driver and ACPI state on failure.
             unsafe { uwcc_acpi_exit() };
             return Err(err);
+        }
+
+        // Register native /sys/class/hwmon/hwmonX (D3cold-safe EC telemetry).
+        // SAFETY: `uwcc_hwmon_register(NULL)` binds to `uwcc_miscdev.this_device`.
+        let mut flags = caps.flags;
+        if unsafe { uwcc_hwmon_register(core::ptr::null_mut()) } == 0 {
+            flags |= UWCC_FLAG_HAS_HWMON;
+            with_state(|s| {
+                s.info.flags = flags;
+            });
+        } else {
+            pr_warn!("uwcc_rs: hwmon registration failed; continuing with /dev/uwcc only\n");
         }
 
         pr_info!(
@@ -404,6 +440,7 @@ impl Drop for UwccModule {
         // and tears down hwmon, WMI driver, and ACPI handle (via uwcc_acpi_exit).
         unsafe {
             uwcc_wmi_wake_all();
+            uwcc_hwmon_unregister();
             uwcc_misc_deregister();
             uwcc_acpi_exit();
         }

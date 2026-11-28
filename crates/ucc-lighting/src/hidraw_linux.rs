@@ -126,6 +126,9 @@ pub fn parse_hid_report_descriptor_usage_page(descriptor: &[u8]) -> Option<u16> 
 /// Reads and parses the HID report descriptor usage page from sysfs
 /// (`{sysfs_hidraw_root}/{hidraw_name}/device/report_descriptor`).
 pub fn read_sysfs_hidraw_usage_page(sysfs_hidraw_root: &Path, hidraw_name: &str) -> Option<u16> {
+    if !is_valid_hidraw_name(hidraw_name) {
+        return None;
+    }
     let desc_path = sysfs_hidraw_root
         .join(hidraw_name)
         .join("device")
@@ -134,7 +137,7 @@ pub fn read_sysfs_hidraw_usage_page(sysfs_hidraw_root: &Path, hidraw_name: &str)
     parse_hid_report_descriptor_usage_page(&bytes)
 }
 
-fn is_valid_hidraw_name(name: &str) -> bool {
+pub(crate) fn is_valid_hidraw_name(name: &str) -> bool {
     let Some(suffix) = name.strip_prefix("hidraw") else {
         return false;
     };
@@ -205,24 +208,39 @@ impl HidrawDeviceTransport {
                 }
             }
         }
-        if let Some(name) = path.strip_prefix("/dev/") {
-            if is_valid_hidraw_name(name) {
-                return Some(name);
+        if self.dev_root == Path::new(DEFAULT_DEV_ROOT) {
+            if let Some(name) = path.strip_prefix("/dev/") {
+                if is_valid_hidraw_name(name) {
+                    return Some(name);
+                }
             }
         }
         None
     }
 
-    #[cfg(unix)]
-    fn open_hidraw_file(path: &str) -> Result<fs::File, LightingError> {
+    #[cfg(target_os = "linux")]
+    fn open_hidraw_file(&self, path: &str) -> Result<fs::File, LightingError> {
         use std::fs::OpenOptions;
-        use std::os::unix::fs::OpenOptionsExt;
+        use std::os::unix::fs::{FileTypeExt, OpenOptionsExt};
+
+        let name = self.hidraw_name_from_path(path).ok_or_else(|| {
+            LightingError::InvalidConfig(format!("Invalid hidraw device path: {path}"))
+        })?;
+        let target = self.dev_root.join(name);
 
         let mut opts = OpenOptions::new();
         opts.read(true)
             .write(true)
             .custom_flags(libc::O_RDWR | libc::O_NOFOLLOW | libc::O_CLOEXEC);
-        opts.open(path).map_err(LightingError::Io)
+        let file = opts.open(&target).map_err(LightingError::Io)?;
+        let meta = file.metadata().map_err(LightingError::Io)?;
+        if !meta.file_type().is_char_device() {
+            return Err(LightingError::InvalidConfig(format!(
+                "Refusing ioctl on non-character device: {}",
+                target.display()
+            )));
+        }
+        Ok(file)
     }
 }
 
@@ -267,20 +285,31 @@ impl HidDeviceTransport for HidrawDeviceTransport {
         Ok(devices)
     }
 
-    #[cfg(unix)]
+    #[cfg(target_os = "linux")]
     fn send_feature_report(&self, path: &str, report: &[u8]) -> Result<(), LightingError> {
         use std::os::unix::io::AsRawFd;
 
-        let req = hidiocsfeature_request(report.len()).ok_or_else(|| {
+        if report.is_empty() {
+            return Err(LightingError::InvalidConfig(
+                "Invalid HID feature report length: 0".to_string(),
+            ));
+        }
+        // Linux `hidraw` `HIDIOCSFEATURE` always treats `buf[0]` as the HID Report ID.
+        // Uniwill/ITE controllers (`048D:600B`, `048D:7001`, `048D:7000`) use unnumbered
+        // feature reports (Report ID `0x00`, `wValue = 0x0300`), so prepend `0x00`.
+        let total_len = report.len().saturating_add(1);
+        let req = hidiocsfeature_request(total_len).ok_or_else(|| {
             LightingError::InvalidConfig(format!(
                 "Invalid HID feature report length: {}",
                 report.len()
             ))
         })?;
-        let file = Self::open_hidraw_file(path)?;
-        let mut buf = report.to_vec();
-        // SAFETY: `file` is an open `/dev/hidraw*` descriptor, `req` is `HIDIOCSFEATURE(buf.len())`,
-        // and `buf` is a valid mutable byte buffer of length `buf.len()`.
+        let file = self.open_hidraw_file(path)?;
+        let mut buf = Vec::with_capacity(total_len);
+        buf.push(0x00);
+        buf.extend_from_slice(report);
+        // SAFETY: `file` is a validated `/dev/hidraw*` character device descriptor,
+        // `req` is `HIDIOCSFEATURE(buf.len())`, and `buf` is a valid mutable byte buffer.
         let ret = unsafe { libc::ioctl(file.as_raw_fd(), req as libc::Ioctl, buf.as_mut_ptr()) };
         if ret < 0 {
             return Err(LightingError::Io(std::io::Error::last_os_error()));
@@ -288,22 +317,22 @@ impl HidDeviceTransport for HidrawDeviceTransport {
         Ok(())
     }
 
-    #[cfg(not(unix))]
+    #[cfg(not(target_os = "linux"))]
     fn send_feature_report(&self, _path: &str, _report: &[u8]) -> Result<(), LightingError> {
         Err(LightingError::Unavailable)
     }
 
-    #[cfg(unix)]
+    #[cfg(target_os = "linux")]
     fn get_feature_report(&self, path: &str, len: usize) -> Result<Vec<u8>, LightingError> {
         use std::os::unix::io::AsRawFd;
 
         let req = hidiocgfeature_request(len).ok_or_else(|| {
             LightingError::InvalidConfig(format!("Invalid HID feature report length: {len}"))
         })?;
-        let file = Self::open_hidraw_file(path)?;
+        let file = self.open_hidraw_file(path)?;
         let mut buf = vec![0u8; len];
-        // SAFETY: `file` is an open `/dev/hidraw*` descriptor, `req` is `HIDIOCGFEATURE(len)`,
-        // and `buf` is a valid mutable byte buffer of length `len`.
+        // SAFETY: `file` is a validated `/dev/hidraw*` character device descriptor,
+        // `req` is `HIDIOCGFEATURE(len)`, and `buf` is a valid mutable byte buffer.
         let ret = unsafe { libc::ioctl(file.as_raw_fd(), req as libc::Ioctl, buf.as_mut_ptr()) };
         if ret < 0 {
             return Err(LightingError::Io(std::io::Error::last_os_error()));
@@ -312,7 +341,7 @@ impl HidDeviceTransport for HidrawDeviceTransport {
         Ok(buf)
     }
 
-    #[cfg(not(unix))]
+    #[cfg(not(target_os = "linux"))]
     fn get_feature_report(&self, _path: &str, _len: usize) -> Result<Vec<u8>, LightingError> {
         Err(LightingError::Unavailable)
     }

@@ -1573,8 +1573,12 @@ impl LiveUccdBackend {
 
     pub(super) fn get_driver_health_json_impl(&self) -> String {
         let mut issues = Vec::<String>::new();
-        let uwcc_module_exists = self.sysfs.exists(&self.sys_root.join("sys/module/uwcc_rs"))
-            || self.sysfs.exists(&self.sys_root.join("sys/module/uwcc"));
+        let uwcc_rs_dir = self.sys_root.join("sys/module/uwcc_rs");
+        let uwcc_dir = self.sys_root.join("sys/module/uwcc");
+        let uwcc_module_exists = self.sysfs.exists(&uwcc_rs_dir)
+            || self.sysfs.read_dir(&uwcc_rs_dir).is_ok()
+            || self.sysfs.exists(&uwcc_dir)
+            || self.sysfs.read_dir(&uwcc_dir).is_ok();
         let uwcc_dev_exists = self.sys_root.join("dev/uwcc").exists()
             || self.sysfs.exists(&self.sys_root.join("dev/uwcc"));
         let configured_uwcc = {

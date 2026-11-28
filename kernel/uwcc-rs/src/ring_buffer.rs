@@ -5,7 +5,7 @@
 //! and host unit tests (`cargo test` / `rustc --test`).
 
 /// Fixed capacity of the WMI event ring buffer (matches `UWCC_WMI_RING_CAPACITY`).
-pub const WMI_RING_CAPACITY: usize = 64;
+pub(crate) const WMI_RING_CAPACITY: usize = 64;
 
 /// Binary-compatible representation of `struct uwcc_wmi_event` from `uapi/uwcc.h`.
 #[repr(C)]
@@ -22,7 +22,7 @@ pub struct WmiEvent {
 const _: () = assert!(core::mem::size_of::<WmiEvent>() == 16);
 
 /// Fixed-size FIFO ring buffer with oldest-drop overwrite semantics.
-pub struct WmiRingBuffer {
+pub(crate) struct WmiRingBuffer {
     entries: [WmiEvent; WMI_RING_CAPACITY],
     head: usize,
     tail: usize,
@@ -32,7 +32,7 @@ pub struct WmiRingBuffer {
 
 impl WmiRingBuffer {
     /// Creates an empty ring buffer.
-    pub const fn new() -> Self {
+    pub(crate) const fn new() -> Self {
         Self {
             entries: [WmiEvent {
                 timestamp_ns: 0,
@@ -50,7 +50,7 @@ impl WmiRingBuffer {
     ///
     /// Returns `true` if inserted without overwriting an unread event, or
     /// `false` if the buffer was full and the oldest entry was dropped.
-    pub fn push(&mut self, event: WmiEvent) -> bool {
+    pub(crate) fn push(&mut self, event: WmiEvent) -> bool {
         let mut no_drop = true;
         if self.len == WMI_RING_CAPACITY {
             self.tail = (self.tail + 1) % WMI_RING_CAPACITY;
@@ -66,7 +66,7 @@ impl WmiRingBuffer {
     }
 
     /// Removes and returns the oldest event, or `None` if empty.
-    pub fn pop(&mut self) -> Option<WmiEvent> {
+    pub(crate) fn pop(&mut self) -> Option<WmiEvent> {
         if self.len == 0 {
             return None;
         }
@@ -79,33 +79,33 @@ impl WmiRingBuffer {
 
     /// Returns `true` when no events are queued.
     #[inline]
-    pub const fn is_empty(&self) -> bool {
+    pub(crate) const fn is_empty(&self) -> bool {
         self.len == 0
     }
 
     /// Returns `true` when the buffer is at capacity.
     #[cfg(test)]
     #[inline]
-    pub const fn is_full(&self) -> bool {
+    pub(crate) const fn is_full(&self) -> bool {
         self.len == WMI_RING_CAPACITY
     }
 
     /// Returns the number of queued unread events.
     #[cfg(test)]
     #[inline]
-    pub const fn len(&self) -> usize {
+    pub(crate) const fn len(&self) -> usize {
         self.len
     }
 
     /// Returns the total number of overwritten events since initialization.
     #[cfg(test)]
     #[inline]
-    pub const fn dropped_count(&self) -> u64 {
+    pub(crate) const fn dropped_count(&self) -> u64 {
         self.dropped
     }
 
     /// Empties all queued events while preserving the dropped counter.
-    pub fn clear(&mut self) {
+    pub(crate) fn clear(&mut self) {
         self.head = 0;
         self.tail = 0;
         self.len = 0;

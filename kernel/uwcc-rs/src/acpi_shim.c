@@ -634,12 +634,16 @@ static const struct hwmon_chip_info uwcc_hwmon_chip_info = {
 
 int uwcc_hwmon_register(struct device *parent)
 {
+	struct device *dev = parent ? parent : uwcc_miscdev.this_device;
 	struct device *hdev;
 
 	if (uwcc_hwmon_dev)
 		return 0;
 
-	hdev = hwmon_device_register_with_info(parent, "uwcc", NULL,
+	if (!dev)
+		return -ENODEV;
+
+	hdev = hwmon_device_register_with_info(dev, "uwcc", NULL,
 					       &uwcc_hwmon_chip_info, NULL);
 	if (IS_ERR(hdev))
 		return PTR_ERR(hdev);

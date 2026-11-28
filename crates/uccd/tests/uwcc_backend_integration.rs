@@ -298,6 +298,7 @@ fn uwcc_driver_health_reports_missing_dev_node_when_uwcc_rs_module_is_loaded() {
 
     // Simulate /dev/uwcc missing at startup so backend degrades to Unsupported.
     let platform = make_mock_platform(PlatformBackendKind::Unsupported);
+    platform.set_available(false);
     let backend = build_backend_with_platform(tmp.path(), platform, sysfs);
 
     let health: Value =

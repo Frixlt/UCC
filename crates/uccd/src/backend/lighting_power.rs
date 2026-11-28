@@ -72,17 +72,19 @@ pub fn select_lighting_transport_with_platform(
     sys_root: &Path,
 ) -> Arc<dyn LightingTransport> {
     if platform.kind() == PlatformBackendKind::Uwcc || !has_ite_sysfs_leds(sysfs, sys_root) {
-        let platform_ref = Arc::clone(platform);
-        let ec_power_hook: EcLightbarPowerHook = Arc::new(move |enabled: bool| {
-            match platform_ref.set_lightbar_power(enabled) {
-                Ok(()) | Err(PlatformError::Unsupported(_)) => Ok(()),
-                Err(err) => Err(LightingError::WriteFailed(err.to_string())),
-            }
-        });
-        Arc::new(
-            UniwillHidTransport::new(Arc::new(HidrawDeviceTransport::new()))
-                .with_ec_lightbar_power_hook(ec_power_hook),
-        )
+        let transport = UniwillHidTransport::new(Arc::new(HidrawDeviceTransport::new()));
+        if platform.kind() == PlatformBackendKind::Uwcc {
+            let platform_ref = Arc::clone(platform);
+            let ec_power_hook: EcLightbarPowerHook = Arc::new(move |enabled: bool| {
+                match platform_ref.set_lightbar_power(enabled) {
+                    Ok(()) | Err(PlatformError::Unsupported(_)) => Ok(()),
+                    Err(err) => Err(LightingError::WriteFailed(err.to_string())),
+                }
+            });
+            Arc::new(transport.with_ec_lightbar_power_hook(ec_power_hook))
+        } else {
+            Arc::new(transport)
+        }
     } else {
         Arc::new(SysfsLedTransport::default())
     }

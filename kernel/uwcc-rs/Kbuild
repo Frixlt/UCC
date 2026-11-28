@@ -4,4 +4,4 @@
 obj-m := uwcc_rs.o
 uwcc_rs-y := src/uwcc_rs.o src/acpi_shim.o
 
-ccflags-y += -I$(src)/include -I$(src)/src -Wall -Wextra -Werror=implicit-function-declaration
+ccflags-y += -I$(src)/include -I$(src)/src -Wall -Werror=implicit-function-declaration
