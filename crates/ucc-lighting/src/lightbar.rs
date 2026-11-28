@@ -330,9 +330,9 @@ impl LightbarSettings {
         }
 
         if let Some(logo_val) = obj.get("lid_logo") {
-            let logo_obj = logo_val.as_object().ok_or_else(|| {
-                LightingError::InvalidConfig("lid_logo must be an object".into())
-            })?;
+            let logo_obj = logo_val
+                .as_object()
+                .ok_or_else(|| LightingError::InvalidConfig("lid_logo must be an object".into()))?;
             let mut logo = result.lid_logo.unwrap_or_default();
             if let Some(en) = logo_obj.get("enabled") {
                 logo.enabled = en.as_bool().ok_or_else(|| {
@@ -351,9 +351,9 @@ impl LightbarSettings {
                 logo.brightness = b as u8;
             }
             if let Some(col) = logo_obj.get("color") {
-                let arr = col.as_array().ok_or_else(|| {
-                    LightingError::InvalidConfig("Invalid lid_logo color".into())
-                })?;
+                let arr = col
+                    .as_array()
+                    .ok_or_else(|| LightingError::InvalidConfig("Invalid lid_logo color".into()))?;
                 if arr.len() != 3 {
                     return Err(LightingError::InvalidConfig(
                         "Invalid lid_logo color".into(),

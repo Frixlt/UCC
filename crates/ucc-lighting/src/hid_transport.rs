@@ -390,11 +390,13 @@ impl UniwillHidTransport {
 
     /// Returns `true` when a lid logo LED is supported (`048D:7000` zone 5 or `048D:7001` + EC).
     pub fn has_lid_logo(&self) -> Result<bool, LightingError> {
-        Ok(self.find_device(&ITE_LIGHTBAR_PRODUCT_IDS)?.is_some_and(|d| {
-            d.product_id == ITE_LIGHTBAR_PRODUCT_ID_5ZONE
-                || (d.product_id == ITE_LIGHTBAR_PRODUCT_ID_4ZONE
-                    && self.ec_lid_logo_hook.is_some())
-        }))
+        Ok(self
+            .find_device(&ITE_LIGHTBAR_PRODUCT_IDS)?
+            .is_some_and(|d| {
+                d.product_id == ITE_LIGHTBAR_PRODUCT_ID_5ZONE
+                    || (d.product_id == ITE_LIGHTBAR_PRODUCT_ID_4ZONE
+                        && self.ec_lid_logo_hook.is_some())
+            }))
     }
 
     /// Writes the lid logo LED (`048D:7001` HID Zone 3 + EC persistence, or `048D:7000` zone 5).
