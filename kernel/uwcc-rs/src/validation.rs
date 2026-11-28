@@ -352,5 +352,10 @@ mod tests {
             validate_mux_set(0, 2, false, true),
             Err(ValidationError::PermissionDenied)
         );
+        assert_eq!(ValidationError::OutOfBounds.to_errno(), -34);
+        assert_eq!(ValidationError::ReadOnlyOrForbidden.to_errno(), -13);
+        assert_eq!(ValidationError::InvalidLength.to_errno(), -22);
+        assert_eq!(ValidationError::InvalidArgument.to_errno(), -22);
+        assert_eq!(ValidationError::PermissionDenied.to_errno(), -1);
     }
 }

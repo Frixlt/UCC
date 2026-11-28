@@ -573,7 +573,7 @@ fn platform_backend_selection_parser_and_extended_mock_backend() {
 #[test]
 fn uwcc_backend_dispatches_npcf_pwbt_pwdb_for_175w_nvidia_unlock_and_mux_switch() {
     use ucc_hardware::{
-        MuxActiveGpu, MuxBootMode, UwccGpuPower, UwccMuxState, UWCC_FLAG_HAS_EC,
+        MuxActiveGpu, MuxBootMode, UwccGpuPower, UwccMuxState, UwccTransport, UWCC_FLAG_HAS_EC,
         UWCC_GPU_POWER_OP_BASE_TGP, UWCC_GPU_POWER_OP_DYNAMIC_BOOST, UWCC_MUX_ACTIVE_DGPU,
         UWCC_MUX_MODE_DGPU_ONLY,
     };

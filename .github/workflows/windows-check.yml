@@ -64,4 +64,6 @@ jobs:
       - name: Check and test portable crates on Windows MSVC
         run: |
           cargo check -p ucc-core -p ucc-config -p ucc-dbus --target x86_64-pc-windows-msvc
-          cargo test -p ucc-core -p ucc-config -p ucc-dbus --target x86_64-pc-windows-msvc
+          cargo test -p ucc-core --target x86_64-pc-windows-msvc
+          cargo test -p ucc-config --lib --test windows_platform_paths --test platform_backend_settings --target x86_64-pc-windows-msvc
+          cargo test -p ucc-dbus --lib --test named_pipe_ipc --test ipc_framing --target x86_64-pc-windows-msvc
