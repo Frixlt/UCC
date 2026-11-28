@@ -1218,6 +1218,7 @@ fn wmi_uinput_mock_emitter_error_propagation_and_unknown_codes() {
 
 #[test]
 fn uwcc_backend_ignores_0xff_unpopulated_ec_tdp_ceiling_sentinel() {
+    use ucc_hardware::UWCC_SMRW_MAX_LEN;
     let transport = Arc::new(MockUwccTransport::new());
     // Native 12-byte INOU0000 BX90 table: PL1=205W, PL2=205W, PL4=250W.
     let mut bx90 = [0u8; UWCC_SMRW_MAX_LEN];
