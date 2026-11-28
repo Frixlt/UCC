@@ -222,7 +222,10 @@ int uwcc_acpi_smrw(u16 offset, u16 len, u8 *out_buf)
 		status = acpi_evaluate_object(uwcc_acpi_handle, "SMRW", &params, &output);
 		if (ACPI_FAILURE(status) || !output.pointer) {
 			kfree(output.pointer);
-			ret = -EIO;
+			if (status == AE_AML_BUFFER_LIMIT && pos > 0)
+				ret = 0;
+			else
+				ret = -EIO;
 			break;
 		}
 

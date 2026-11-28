@@ -127,7 +127,10 @@ pub const CHASSIS_PROJECT_0X1A: u32 = 0x1A;
 /// Byte offset into the ACPI `SMRW` table where factory power limits reside.
 pub const SMRW_POWER_LIMITS_OFFSET: u16 = 0;
 
-/// Byte length of the factory power limits block read from `SMRW` (5 pairs of `u16` = 20 bytes).
+/// Byte length of the native `INOU0000` `SMRW` power table (`AX20`/`AX90`/`BX90` = 12 bytes).
+pub const SMRW_INOU0000_LEN: u16 = 12;
+
+/// Byte length of the legacy extended `SMRW` power limits block (5 pairs of `u16` = 20 bytes).
 pub const SMRW_POWER_LIMITS_LEN: u16 = 20;
 
 /// Maximum physically plausible fan tachometer reading (RPM).
@@ -176,6 +179,10 @@ pub mod uwcc_ec_reg {
     pub const PL1_WATTS: u16 = 0x0783;
     pub const PL2_WATTS: u16 = 0x0784;
     pub const PL4_WATTS: u16 = 0x0785;
+    /// Read-only EC factory TDP ceiling registers (`0xD2 = 210W` on `YAOSHI Series-X6AR55xY`).
+    pub const TDP_FACTORY_PL1_MAX: u16 = 0x07A7;
+    pub const TDP_FACTORY_PL2_MAX: u16 = 0x07A8;
+    pub const TDP_FACTORY_PL4_MAX: u16 = 0x07A9;
     pub const TCC_OFFSET_C: u16 = 0x0743;
     pub const CTGP_WATTS: u16 = 0x0744;
     pub const DYNAMIC_BOOST_WATTS: u16 = 0x0745;
@@ -291,6 +298,52 @@ impl SmrwPowerLimits {
             buf[base + 2..base + 4].copy_from_slice(&hi.to_le_bytes());
         }
         buf
+    }
+
+    /// Parses a native 12-byte `INOU0000` `SMRW` buffer (`AX20`/`AX40`/`AX60`/`AX90`/`BX90`).
+    ///
+    /// Layout verified against `DSDT.dsl`:
+    /// - `data[0]`: PL1 max (W)
+    /// - `data[1]`: PL2 max (W)
+    /// - `data[2]`: PL4 max (W)
+    /// - `data[4]`: Dynamic Boost min (W)
+    /// - `data[5]`: Dynamic Boost max (W)
+    /// - `data[7]`: Base TGP max (W); total cTGP max = `base_tgp + db_max`
+    /// - `data[8..12]`: `0xFF` sentinel tail
+    pub fn decode_inou0000_12byte(data: &[u8]) -> Option<Self> {
+        if data.len() < usize::from(SMRW_INOU0000_LEN) || data[8..12] != [0xFF, 0xFF, 0xFF, 0xFF] {
+            return None;
+        }
+        let pl1_max_w = i32::from(data[0]);
+        let pl2_max_w = i32::from(data[1]);
+        let pl4_max_w = i32::from(data[2]);
+        let dynamic_boost_min_w = i32::from(data[4]);
+        let dynamic_boost_max_w = i32::from(data[5]);
+        let base_tgp_max_w = i32::from(data[7]);
+        let ctgp_max_w = base_tgp_max_w + dynamic_boost_max_w;
+
+        if pl1_max_w < 15
+            || pl2_max_w < 15
+            || pl4_max_w < 15
+            || dynamic_boost_min_w > dynamic_boost_max_w
+            || dynamic_boost_max_w > 100
+            || base_tgp_max_w < 35
+        {
+            return None;
+        }
+
+        Some(Self {
+            pl1_min_w: 15,
+            pl1_max_w,
+            pl2_min_w: 20.min(pl2_max_w),
+            pl2_max_w,
+            pl4_min_w: 25.min(pl4_max_w),
+            pl4_max_w,
+            ctgp_min_w: 55.min(ctgp_max_w),
+            ctgp_max_w,
+            dynamic_boost_min_w,
+            dynamic_boost_max_w,
+        })
     }
 
     /// Parses and validates a 64-byte `UwccSmrw::data` buffer into [`SmrwPowerLimits`].
@@ -497,13 +550,42 @@ fn probe_smrw_limits(transport: &dyn UwccTransport) -> SmrwPowerLimits {
     if !transport.is_available() {
         return SmrwPowerLimits::chassis_0x1a_default();
     }
-    let req = UwccSmrw {
+    // 1. Prefer native 12-byte INOU0000 SMRW read (zero AE_AML_BUFFER_LIMIT in kernel dmesg).
+    let req12 = UwccSmrw {
+        offset: SMRW_POWER_LIMITS_OFFSET,
+        len: SMRW_INOU0000_LEN,
+        data: [0u8; UWCC_SMRW_MAX_LEN],
+    };
+    if let Ok(resp) = transport.smrw(req12) {
+        if let Some(mut limits) = SmrwPowerLimits::decode_inou0000_12byte(&resp.data[..12]) {
+            // Merge optional EC factory ceiling registers (0x07A7..=0x07A9, e.g. 0xD2 = 210W).
+            if let Ok(ec_pl1) = transport.ec_read(uwcc_ec_reg::TDP_FACTORY_PL1_MAX) {
+                if ec_pl1 >= 15 {
+                    limits.pl1_max_w = limits.pl1_max_w.max(i32::from(ec_pl1));
+                }
+            }
+            if let Ok(ec_pl2) = transport.ec_read(uwcc_ec_reg::TDP_FACTORY_PL2_MAX) {
+                if ec_pl2 >= 15 {
+                    limits.pl2_max_w = limits.pl2_max_w.max(i32::from(ec_pl2));
+                }
+            }
+            if let Ok(ec_pl4) = transport.ec_read(uwcc_ec_reg::TDP_FACTORY_PL4_MAX) {
+                if ec_pl4 >= 15 {
+                    limits.pl4_max_w = limits.pl4_max_w.max(i32::from(ec_pl4));
+                }
+            }
+            return limits;
+        }
+    }
+
+    // 2. Fall back to legacy 20-byte u16-pair SMRW layout, then chassis 0x1A defaults.
+    let req20 = UwccSmrw {
         offset: SMRW_POWER_LIMITS_OFFSET,
         len: SMRW_POWER_LIMITS_LEN,
         data: [0u8; UWCC_SMRW_MAX_LEN],
     };
     transport
-        .smrw(req)
+        .smrw(req20)
         .ok()
         .and_then(|resp| SmrwPowerLimits::decode(&resp.data))
         .unwrap_or_else(SmrwPowerLimits::chassis_0x1a_default)

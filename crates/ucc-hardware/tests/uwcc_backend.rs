@@ -684,3 +684,31 @@ fn uwcc_backend_upstream_0x1a_register_map_rmw_and_250w_fallback() {
     backend.set_fans_auto().unwrap();
     assert_eq!(transport.get_reg(uwcc_ec_reg::FAN_MANUAL_MODE), Some(0x05));
 }
+
+#[test]
+fn uwcc_backend_decodes_12byte_dsdt_bx90_smrw_and_merges_0x07a7_ceiling() {
+    let transport = Arc::new(MockUwccTransport::chassis_0x1a_default());
+    // Exact 12-byte BX90 table from MECHREVO YAOSHI X6AR55xY DSDT.dsl:
+    // PL1=205W, PL2=205W, PL4=250W, step=5, DB=0..25W, max_gpu_temp=87C, base_tgp=150W, tail=FF*4
+    let mut bx90 = [0u8; 64];
+    bx90[..12].copy_from_slice(&[
+        0xCD, 0xCD, 0xFA, 0x05, 0x00, 0x19, 0x57, 0x96, 0xFF, 0xFF, 0xFF, 0xFF,
+    ]);
+    transport.set_smrw_table(SMRW_POWER_LIMITS_OFFSET, bx90);
+    // Live EC 0x07A7..=0x07A9 factory ceiling (0xD2 = 210W)
+    transport.set_reg(uwcc_ec_reg::TDP_FACTORY_PL1_MAX, 0xD2);
+    transport.set_reg(uwcc_ec_reg::TDP_FACTORY_PL2_MAX, 0xD2);
+    transport.set_reg(uwcc_ec_reg::TDP_FACTORY_PL4_MAX, 0xD2);
+
+    let backend = UwccBackend::new(Arc::clone(&transport) as _, None, None);
+    assert_eq!(backend.read_tdp_limits(0).unwrap(), (15, 210));
+    assert_eq!(backend.read_tdp_limits(1).unwrap(), (20, 210));
+    assert_eq!(backend.read_tdp_limits(2).unwrap(), (25, 250));
+    assert_eq!(backend.read_ctgp_limits(), (55, 175));
+    assert_eq!(backend.read_dynamic_boost_limits(), (0, 25));
+
+    // Profile frixit-ac [210, 210, 250] W applies cleanly without failing
+    backend.set_tdp(0, 210).unwrap();
+    backend.set_tdp(1, 210).unwrap();
+    backend.set_tdp(2, 250).unwrap();
+}
