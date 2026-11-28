@@ -234,7 +234,7 @@ fn lightbar_welcome_skip_shutdown_and_keyboard_changed_guards() {
     mock.set_keyboard_colors(vec![RgbColor::new(10, 20, 30)]);
 
     // 1. One-shot welcome_anim triggers on first managed configure, not on subsequent configures.
-    let mut lb = LightbarController::new(Arc::clone(&mock));
+    let mut lb = LightbarController::new(Arc::clone(&mock) as Arc<dyn LightingTransport>);
     lb.configure(&json!({
         "managed": true,
         "welcome_anim": true,
@@ -269,7 +269,7 @@ fn lightbar_welcome_skip_shutdown_and_keyboard_changed_guards() {
     assert!(!lb.is_animating());
 
     // 2. skip_welcome() suppresses welcome_anim even on the first managed configure.
-    let mut lb_skipped = LightbarController::new(Arc::clone(&mock));
+    let mut lb_skipped = LightbarController::new(Arc::clone(&mock) as Arc<dyn LightingTransport>);
     lb_skipped.skip_welcome();
     lb_skipped
         .configure(&json!({

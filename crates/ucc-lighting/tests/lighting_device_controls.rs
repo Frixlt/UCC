@@ -306,7 +306,9 @@ fn keyboard_apply_states_rolls_back_brightness_on_zone_failure() {
         led_ids: vec![0, 1],
     }));
 
-    let mut kbd = KeyboardBacklightController::new(Arc::clone(&mock));
+    let mut kbd = KeyboardBacklightController::new(
+        Arc::clone(&mock) as Arc<dyn ucc_lighting::LightingTransport>
+    );
     kbd.init().expect("init keyboard");
 
     let initial = [
@@ -355,7 +357,9 @@ fn keyboard_apply_states_rolls_back_brightness_on_zone_failure() {
 #[test]
 fn keyboard_apply_states_json_and_profile_json_validation() {
     let mock = Arc::new(MockLightingTransport::new());
-    let mut kbd = KeyboardBacklightController::new(Arc::clone(&mock));
+    let mut kbd = KeyboardBacklightController::new(
+        Arc::clone(&mock) as Arc<dyn ucc_lighting::LightingTransport>
+    );
 
     // Before init (no capabilities): default states JSON is "[]" and apply fails with Unavailable.
     assert_eq!(kbd.build_default_states_json(), "[]");
