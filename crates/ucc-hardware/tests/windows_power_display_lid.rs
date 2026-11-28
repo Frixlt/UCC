@@ -230,10 +230,7 @@ fn windows_power_frequency_boost_and_unavailability() {
         Ok(BoostMode::Aggressive)
     );
 
-    assert_eq!(
-        GUID_PROCESSOR_PERF_ENERGY_PREFERENCE.data1,
-        0x3668_7F9E
-    );
+    assert_eq!(GUID_PROCESSOR_PERF_ENERGY_PREFERENCE.data1, 0x3668_7F9E);
 
     transport.set_available(false);
     assert!(!controller.is_available());
@@ -405,7 +402,9 @@ fn windows_lid_parser_lifecycle_and_deduplicated_callbacks() {
                 .push(state);
         });
 
-        let handle = monitor.register(0x1234, DEVICE_NOTIFY_WINDOW_HANDLE).unwrap();
+        let handle = monitor
+            .register(0x1234, DEVICE_NOTIFY_WINDOW_HANDLE)
+            .unwrap();
         assert!(monitor.is_registered());
         assert_eq!(monitor.handle(), Some(handle));
         assert_eq!(

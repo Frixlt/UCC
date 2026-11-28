@@ -279,7 +279,10 @@ impl WindowsLidTransport for MockWindowsLidTransport {
         &self,
         handle: LidRegistrationHandle,
     ) -> Result<(), WindowsLidError> {
-        let mut active = self.active_handles.lock().unwrap_or_else(|e| e.into_inner());
+        let mut active = self
+            .active_handles
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
         let Some(pos) = active.iter().position(|h| *h == handle) else {
             return Err(WindowsLidError::NotRegistered);
         };

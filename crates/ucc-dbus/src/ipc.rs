@@ -315,8 +315,10 @@ fn profile_requires_manage_hardware(profile_json: &str) -> bool {
     ]
     .iter()
     .any(|k| val.get(*k).is_some_and(has_active_charging_value));
-    let has_nested_charging = val.get("charging").and_then(|c| c.as_object()).is_some_and(
-        |obj| {
+    let has_nested_charging = val
+        .get("charging")
+        .and_then(|c| c.as_object())
+        .is_some_and(|obj| {
             [
                 "chargingProfile",
                 "chargingPriority",
@@ -326,8 +328,7 @@ fn profile_requires_manage_hardware(profile_json: &str) -> bool {
             ]
             .iter()
             .any(|k| obj.get(*k).is_some_and(has_active_charging_value))
-        },
-    );
+        });
     let has_custom_ctgp = val
         .get("nvidiaPowerCTRLProfile")
         .and_then(|n| n.get("cTGPOffset"))
@@ -382,9 +383,7 @@ fn validate_profile_pump_voltage(req_id: u64, profile_json: &str) -> Result<(), 
     let Ok(code) = i32::try_from(code_i64) else {
         return Err(IpcResponse::failure(
             req_id,
-            format!(
-                "invalid pump voltage code {code_i64}; valid manual codes are 0, 2, 3, 4"
-            ),
+            format!("invalid pump voltage code {code_i64}; valid manual codes are 0, 2, 3, 4"),
         ));
     };
     if code == FORBIDDEN_PUMP_VOLTAGE_CODE {
@@ -659,9 +658,10 @@ fn dispatch_inner(
             req.id,
             json!(backend.get_nvidia_power_ctrl_default_power_limit()),
         ),
-        "GetNVIDIAPowerCTRLMaxPowerLimit" => {
-            IpcResponse::success(req.id, json!(backend.get_nvidia_power_ctrl_max_power_limit()))
-        }
+        "GetNVIDIAPowerCTRLMaxPowerLimit" => IpcResponse::success(
+            req.id,
+            json!(backend.get_nvidia_power_ctrl_max_power_limit()),
+        ),
         "GetCTGPAdjustmentSupported" => {
             IpcResponse::success(req.id, json!(backend.get_ctgp_adjustment_supported()))
         }
@@ -725,8 +725,8 @@ fn dispatch_inner(
             IpcResponse::success(req.id, json!(backend.get_custom_keyboard_profiles_json()))
         }
         "GetMonitorDataSince" => {
-            let Some(since_timestamp_ms) = i64_param(p, "sinceTimestampMs")
-                .or_else(|| i64_param(p, "since_timestamp_ms"))
+            let Some(since_timestamp_ms) =
+                i64_param(p, "sinceTimestampMs").or_else(|| i64_param(p, "since_timestamp_ms"))
             else {
                 return IpcResponse::failure(req.id, "missing int param 'sinceTimestampMs'");
             };
@@ -735,12 +735,8 @@ fn dispatch_inner(
                 json!(backend.get_monitor_data_since(since_timestamp_ms)),
             )
         }
-        "GetWebcamSWStatus" => {
-            IpcResponse::success(req.id, json!(backend.get_webcam_sw_status()))
-        }
-        "WebcamSWAvailable" => {
-            IpcResponse::success(req.id, json!(backend.webcam_sw_available()))
-        }
+        "GetWebcamSWStatus" => IpcResponse::success(req.id, json!(backend.get_webcam_sw_status())),
+        "WebcamSWAvailable" => IpcResponse::success(req.id, json!(backend.webcam_sw_available())),
         "GetKeyboardBacklightControlSupported" => IpcResponse::success(
             req.id,
             json!(backend.get_keyboard_backlight_control_supported()),
@@ -750,12 +746,8 @@ fn dispatch_inner(
             json!(backend.get_force_yuv420_output_switch_available()),
         ),
         "GetIsX11" => IpcResponse::success(req.id, json!(backend.get_is_x11())),
-        "TuxedoWmiAvailable" => {
-            IpcResponse::success(req.id, json!(backend.tuxedo_wmi_available()))
-        }
-        "FanHwmonAvailable" => {
-            IpcResponse::success(req.id, json!(backend.fan_hwmon_available()))
-        }
+        "TuxedoWmiAvailable" => IpcResponse::success(req.id, json!(backend.tuxedo_wmi_available())),
+        "FanHwmonAvailable" => IpcResponse::success(req.id, json!(backend.fan_hwmon_available())),
 
         // --- Control ---
         "SetManualPowerMode" => {
@@ -835,8 +827,7 @@ fn dispatch_inner(
             IpcResponse::success(req.id, json!(backend.update_custom_profile(&profile_json)))
         }
         "DeleteCustomProfile" => {
-            let Some(profile_id) =
-                str_param(p, "profileId").or_else(|| str_param(p, "profile_id"))
+            let Some(profile_id) = str_param(p, "profileId").or_else(|| str_param(p, "profile_id"))
             else {
                 return IpcResponse::failure(req.id, "missing string param 'profileId'");
             };
@@ -932,8 +923,7 @@ fn dispatch_inner(
             let Some(state) = str_param(p, "state") else {
                 return IpcResponse::failure(req.id, "missing string param 'state'");
             };
-            let Some(profile_id) =
-                str_param(p, "profileId").or_else(|| str_param(p, "profile_id"))
+            let Some(profile_id) = str_param(p, "profileId").or_else(|| str_param(p, "profile_id"))
             else {
                 return IpcResponse::failure(req.id, "missing string param 'profileId'");
             };
@@ -1000,8 +990,8 @@ fn dispatch_inner(
             IpcResponse::success(req.id, json!(backend.set_fan_profile(&name, &json_str)))
         }
         "SetKeyboardBacklightStatesJSON" => {
-            let Some(json_str) = str_param(p, "json")
-                .or_else(|| str_param(p, "keyboard_backlight_states_json"))
+            let Some(json_str) =
+                str_param(p, "json").or_else(|| str_param(p, "keyboard_backlight_states_json"))
             else {
                 return IpcResponse::failure(req.id, "missing string param 'json'");
             };
@@ -1077,8 +1067,7 @@ fn dispatch_inner(
             IpcResponse::success(req.id, json!(backend.enable_water_cooler(enable)))
         }
         "SetWaterCoolerFanSpeed" => {
-            let Some(speed) =
-                i32_param(p, "speed").or_else(|| i32_param(p, "duty_cycle_percent"))
+            let Some(speed) = i32_param(p, "speed").or_else(|| i32_param(p, "duty_cycle_percent"))
             else {
                 return IpcResponse::failure(req.id, "missing int param 'speed'");
             };
@@ -1115,7 +1104,10 @@ fn dispatch_inner(
             let Some(enabled) = bool_param(p, "enabled") else {
                 return IpcResponse::failure(req.id, "missing bool param 'enabled'");
             };
-            IpcResponse::success(req.id, json!(backend.set_water_cooler_auto_control(enabled)))
+            IpcResponse::success(
+                req.id,
+                json!(backend.set_water_cooler_auto_control(enabled)),
+            )
         }
         "SetSensorDataCollectionStatus" => {
             let Some(status) = bool_param(p, "status") else {
@@ -1169,8 +1161,7 @@ fn dispatch_inner(
             IpcResponse::success(req.id, json!(backend.set_charge_end_threshold(value)))
         }
         "SetChargeType" => {
-            let Some(charge_type) =
-                str_param(p, "chargeType").or_else(|| str_param(p, "type_val"))
+            let Some(charge_type) = str_param(p, "chargeType").or_else(|| str_param(p, "type_val"))
             else {
                 return IpcResponse::failure(req.id, "missing string param 'chargeType'");
             };
@@ -1183,8 +1174,7 @@ fn dispatch_inner(
             IpcResponse::success(req.id, json!(backend.set_nvidia_power_offset(offset)))
         }
         "SetWaterCoolerPumpVoltage" => {
-            let Some(voltage) =
-                i32_param(p, "voltage").or_else(|| i32_param(p, "voltage_code"))
+            let Some(voltage) = i32_param(p, "voltage").or_else(|| i32_param(p, "voltage_code"))
             else {
                 return IpcResponse::failure(req.id, "missing int param 'voltage'");
             };

@@ -395,8 +395,10 @@ mod win_hid_ffi {
     #[link(name = "hid")]
     extern "system" {
         fn HidD_GetHidGuid(hid_guid: *mut HidGuid);
-        fn HidD_GetAttributes(hid_device_object: Handle, attributes: *mut HiddAttributes)
-            -> Boolean;
+        fn HidD_GetAttributes(
+            hid_device_object: Handle,
+            attributes: *mut HiddAttributes,
+        ) -> Boolean;
         fn HidD_GetPreparsedData(
             hid_device_object: Handle,
             preparsed_data: *mut PreparsedData,
@@ -708,9 +710,8 @@ mod win_hid_ffi {
                 LightingError::InvalidConfig("HID feature report length exceeds u32::MAX".into())
             })?;
             let handle = WinHandleGuard::open(path, GENERIC_READ | GENERIC_WRITE)?;
-            let ok = unsafe {
-                HidD_SetFeature(handle.as_raw(), report.as_ptr() as *const c_void, len)
-            };
+            let ok =
+                unsafe { HidD_SetFeature(handle.as_raw(), report.as_ptr() as *const c_void, len) };
             if ok == 0 {
                 return Err(LightingError::WriteFailed(format!(
                     "HidD_SetFeature failed on {path}: {}",
@@ -725,9 +726,8 @@ mod win_hid_ffi {
                 LightingError::InvalidConfig("HID feature report length exceeds u32::MAX".into())
             })?;
             let handle = WinHandleGuard::open(path, GENERIC_READ | GENERIC_WRITE)?;
-            let ok = unsafe {
-                HidD_GetFeature(handle.as_raw(), buf.as_mut_ptr() as *mut c_void, len)
-            };
+            let ok =
+                unsafe { HidD_GetFeature(handle.as_raw(), buf.as_mut_ptr() as *mut c_void, len) };
             if ok == 0 {
                 return Err(LightingError::WriteFailed(format!(
                     "HidD_GetFeature failed on {path}: {}",

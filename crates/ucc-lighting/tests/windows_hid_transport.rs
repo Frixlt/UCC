@@ -146,7 +146,10 @@ fn windows_hid_transport_supports_get_feature_report_and_propagates_errors() {
     let win_hid = WindowsHidTransport::new(Arc::clone(&sys) as _);
 
     let read_back = win_hid.get_feature_report(WIN_LIGHTBAR_PATH, 8).unwrap();
-    assert_eq!(read_back, vec![0x08, 0x01, 0xAA, 0x00, 0x00, 0x00, 0x00, 0x00]);
+    assert_eq!(
+        read_back,
+        vec![0x08, 0x01, 0xAA, 0x00, 0x00, 0x00, 0x00, 0x00]
+    );
 
     // Missing device returns Unavailable.
     assert!(matches!(

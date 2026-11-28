@@ -56,9 +56,8 @@ pub use ioctl::{
     TuxedoIoDevice,
 };
 pub use nvml::{
-    windows_nvapi_candidate_path, windows_nvml_candidate_paths, GpuRuntimeStatus,
-    NvidiaPowerGuard, NvmlError, NvmlMemory, NvmlTelemetry, NvmlTelemetrySnapshot,
-    NvmlUtilization, NvmlWrapper,
+    windows_nvapi_candidate_path, windows_nvml_candidate_paths, GpuRuntimeStatus, NvidiaPowerGuard,
+    NvmlError, NvmlMemory, NvmlTelemetry, NvmlTelemetrySnapshot, NvmlUtilization, NvmlWrapper,
 };
 pub use platform::{
     MockPlatformBackend, PlatformBackend, PlatformBackendKind, PlatformCapabilities, PlatformError,
@@ -88,6 +87,8 @@ pub use windows_lid::{
 };
 #[cfg(windows)]
 pub use windows_lid::{Win32LidNotificationGuard, Win32LidTransport};
+#[cfg(windows)]
+pub use windows_power::Win32PowerTransport;
 pub use windows_power::{
     epp_percent_to_str, epp_str_to_percent, BoostMode, MockWindowsPowerTransport, PowerGuid,
     WindowsPowerController, WindowsPowerError, WindowsPowerSource, WindowsPowerTransport,
@@ -96,7 +97,7 @@ pub use windows_power::{
     GUID_PROCESSOR_THROTTLE_MAXIMUM, GUID_PROCESSOR_THROTTLE_MINIMUM,
 };
 #[cfg(windows)]
-pub use windows_power::Win32PowerTransport;
+pub use windows_wmi::Win32WmiEcTransport;
 pub use windows_wmi::{
     decode_ec_read_byte, ec_reg, encode_ec_read_arg, encode_ec_write_arg, feature_requirement,
     feature_support, AcpiWmiCommand, DriverRequirement, MockWmiEcTransport, WindowsWmiEcBackend,
@@ -105,12 +106,10 @@ pub use windows_wmi::{
     WMI_METHOD_ID_EC_RW, WMI_NAMESPACE,
 };
 #[cfg(windows)]
-pub use windows_wmi::Win32WmiEcTransport;
+pub use winrt_cooler::LiveWinRtGattBridge;
 pub use winrt_cooler::{
     format_ble_address_u64, nordic_uart_guids, parse_ble_address_u64, parse_winrt_guid,
     validate_cooler_tx_packet, MockWinRtGattBridge, WinRtBleDeviceInfo, WinRtBleError,
     WinRtCoolerTransport, WinRtGattBridge, WinRtGattHandles, WinRtGuid, NORDIC_UART_RX_CHAR_GUID,
     NORDIC_UART_SERVICE_GUID, NORDIC_UART_TX_CHAR_GUID,
 };
-#[cfg(windows)]
-pub use winrt_cooler::LiveWinRtGattBridge;

@@ -12,9 +12,7 @@ use std::path::Path;
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::{Arc, Condvar, Mutex};
 use std::time::{Duration, Instant};
-use ucc_config::{
-    ConfigManager, PROFILE_ID_HIGH_PERFORMANCE, PROFILE_ID_OFFICE, PROFILE_ID_QUIET,
-};
+use ucc_config::{ConfigManager, PROFILE_ID_HIGH_PERFORMANCE, PROFILE_ID_OFFICE, PROFILE_ID_QUIET};
 use ucc_core::UccProfile;
 use ucc_dbus::{AllowAllAuthorizer, UccdBackend, UccdProxy, DBUS_PATH};
 use ucc_hardware::{
@@ -150,7 +148,11 @@ fn build_backend_with_platform(
 fn build_default_backend(
     root: &Path,
     ac_online: bool,
-) -> (Arc<LiveUccdBackend>, Arc<MockPlatformBackend>, Arc<MockSysfs>) {
+) -> (
+    Arc<LiveUccdBackend>,
+    Arc<MockPlatformBackend>,
+    Arc<MockSysfs>,
+) {
     let sysfs = seed_mock_sysfs(root, ac_online);
     let platform = build_mock_platform();
     let backend = build_backend_with_platform(root, platform.clone(), sysfs.clone());
@@ -216,10 +218,7 @@ impl PlatformBackend for SlowTdpPlatform {
     }
 
     fn set_tdp(&self, index: usize, watts: i32) -> Result<(), PlatformError> {
-        if index == 0
-            && watts == self.target_watts
-            && self.armed.swap(false, Ordering::SeqCst)
-        {
+        if index == 0 && watts == self.target_watts && self.armed.swap(false, Ordering::SeqCst) {
             {
                 let mut flag = self.entered.0.lock().unwrap();
                 *flag = true;
@@ -731,7 +730,10 @@ async fn stress_3_sensor_failure_at_high_temperature_triggers_failsafe_cooling()
         .any(|w| matches!(w, PlatformWrite::SetFanSpeed { percent: 0, .. })));
 
     // Sub-case D: Non-numeric / NaN sysfs temperature reading must not panic telemetry.
-    sysfs.set_file(root.path().join("sys/class/hwmon/hwmon0/temp1_input"), "NaN");
+    sysfs.set_file(
+        root.path().join("sys/class/hwmon/hwmon0/temp1_input"),
+        "NaN",
+    );
     let tel = backend.poll_telemetry_once();
     assert!(
         tel.cpu.temp_c.is_none(),
@@ -917,8 +919,7 @@ async fn stress_5_bounded_queues_requests_history_and_lane_backpressure() {
 
     // Evicting one full owner frees 32 slots cleanly.
     backend.on_dbus_client_disconnected(":1.2000");
-    let policy_after_evict: Value =
-        serde_json::from_str(&backend.get_power_policy_json()).unwrap();
+    let policy_after_evict: Value = serde_json::from_str(&backend.get_power_policy_json()).unwrap();
     assert_eq!(
         policy_after_evict["registered_apps"]
             .as_array()

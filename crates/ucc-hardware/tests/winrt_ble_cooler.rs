@@ -65,8 +65,12 @@ fn winrt_guid_parses_nordic_uart_service_and_characteristics() {
 #[test]
 fn winrt_cooler_discovery_filters_non_lct_nordic_uart_peripherals() {
     let bridge = Arc::new(MockWinRtGattBridge::new());
-    bridge.add_lct_device("11:22:33:44:55:66", "LCT21001").unwrap();
-    bridge.add_lct_device("AA:BB:CC:DD:EE:02", "LCT22002-Unit").unwrap();
+    bridge
+        .add_lct_device("11:22:33:44:55:66", "LCT21001")
+        .unwrap();
+    bridge
+        .add_lct_device("AA:BB:CC:DD:EE:02", "LCT22002-Unit")
+        .unwrap();
     bridge.add_device(
         WinRtBleDeviceInfo {
             bluetooth_address: parse_ble_address_u64("DE:AD:BE:EF:00:01").unwrap(),
@@ -134,7 +138,16 @@ fn winrt_cooler_forbids_pump_voltage_v12_raw_packets_invariant_4() {
     transport.connect_mac("AA:BB:CC:DD:EE:FF").unwrap();
 
     // Raw CMD_PUMP frame carrying forbidden voltage code 1 (V12) must be rejected before BLE TX.
-    let raw_v12_packet = [PACKET_HEADER, CMD_PUMP, 0x01, 60, 0x01, 0x00, 0x00, PACKET_FOOTER];
+    let raw_v12_packet = [
+        PACKET_HEADER,
+        CMD_PUMP,
+        0x01,
+        60,
+        0x01,
+        0x00,
+        0x00,
+        PACKET_FOOTER,
+    ];
     assert_eq!(
         validate_cooler_tx_packet(&raw_v12_packet),
         Err(CoolerError::V12Forbidden)
@@ -158,7 +171,16 @@ fn winrt_cooler_forbids_pump_voltage_v12_raw_packets_invariant_4() {
     assert_eq!(bridge.written_packets().len(), 4);
 
     // Out-of-range pump voltage code (e.g. 9) is also rejected.
-    let invalid_voltage_pkt = [PACKET_HEADER, CMD_PUMP, 0x01, 60, 0x09, 0x00, 0x00, PACKET_FOOTER];
+    let invalid_voltage_pkt = [
+        PACKET_HEADER,
+        CMD_PUMP,
+        0x01,
+        60,
+        0x09,
+        0x00,
+        0x00,
+        PACKET_FOOTER,
+    ];
     assert_eq!(
         transport.write_packet(invalid_voltage_pkt),
         Err(CoolerError::InvalidVoltageCode(9))

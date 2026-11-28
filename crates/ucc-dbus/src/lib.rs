@@ -23,13 +23,13 @@ pub use ipc::{
     required_access_level, CallerIdentity, IpcAccessLevel, IpcFrameError, IpcRequest, IpcResponse,
     IpcTransportKind, FORBIDDEN_PUMP_VOLTAGE_CODE, MAX_IPC_FRAME_BYTES, WINDOWS_NAMED_PIPE_PATH,
 };
-#[cfg(windows)]
-pub use named_pipe::{Win32NamedPipeClient, Win32NamedPipeConnection, Win32NamedPipeTransport};
 pub use named_pipe::{
     MockNamedPipeConnection, MockNamedPipeTransport, NamedPipeConnection, NamedPipeError,
     NamedPipeServer, NamedPipeTransport, PipeAce, PipeAclError, PipeAclPolicy, ServerStats,
     WINDOWS_PIPE_SDDL,
 };
+#[cfg(windows)]
+pub use named_pipe::{Win32NamedPipeClient, Win32NamedPipeConnection, Win32NamedPipeTransport};
 pub use proxy::{UccdLegacyProxy, UccdProxy};
 
 pub const DBUS_SERVICE: &str = "com.uniwill.uccd";

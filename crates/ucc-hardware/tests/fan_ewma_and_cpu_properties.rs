@@ -241,7 +241,10 @@ fn prop_non_monotonic_curves_rejected_by_validate_and_safe_to_evaluate() {
         };
 
         assert!(
-            matches!(curve.validate(), Err(ValidationError::NonMonotonicSpeed { .. })),
+            matches!(
+                curve.validate(),
+                Err(ValidationError::NonMonotonicSpeed { .. })
+            ),
             "case {case}: non-monotonic speed curve must fail validate()"
         );
 
@@ -259,10 +262,8 @@ fn prop_non_monotonic_curves_rejected_by_validate_and_safe_to_evaluate() {
         }
 
         // FanControlLogic over a non-monotonic profile stays within 0..=100
-        let mut logic = FanControlLogic::new(
-            make_profile(points.clone(), points),
-            FanLogicType::Cpu,
-        );
+        let mut logic =
+            FanControlLogic::new(make_profile(points.clone(), points), FanLogicType::Cpu);
         for _ in 0..8 {
             let sample = rng.gen_i32_range(0, 110);
             let out = logic.report_temperature_checked(sample);
@@ -323,8 +324,8 @@ fn prop_asymmetric_ewma_temperature_and_speed_smoothing() {
         );
 
         let expected_rise = (f64::from(low) + 0.5 * f64::from(delta)).round() as i32;
-        let expected_fall = (f64::from(high) + 0.15 * (f64::from(low) - f64::from(high)))
-            .round() as i32;
+        let expected_fall =
+            (f64::from(high) + 0.15 * (f64::from(low) - f64::from(high))).round() as i32;
         assert_eq!(rising.filtered_value(), expected_rise);
         assert_eq!(falling.filtered_value(), expected_fall);
 
@@ -374,9 +375,8 @@ fn prop_asymmetric_ewma_temperature_and_speed_smoothing() {
         let mut up_logic = FanControlLogic::new(profile.clone(), FanLogicType::Cpu);
         assert_eq!(up_logic.report_temperature(60), s_low);
         let up_speed = up_logic.report_temperature(80);
-        let expected_up = (f64::from(s_low)
-            + FanControlLogic::SPEED_ALPHA_UP * f64::from(s_delta))
-        .round() as u8;
+        let expected_up =
+            (f64::from(s_low) + FanControlLogic::SPEED_ALPHA_UP * f64::from(s_delta)).round() as u8;
         assert_eq!(
             up_speed, expected_up,
             "case {case}: rising speed EWMA mismatch for {s_low}->{s_high}"
@@ -442,7 +442,10 @@ fn prop_hysteresis_band_holds_speed_within_3c_and_tracks_outside() {
         let mut prev_speed = initial;
         for _ in 0..10 {
             let spd = cooling.report_temperature(0);
-            assert!(spd <= prev_speed, "case {case}: cooling speed must not increase");
+            assert!(
+                spd <= prev_speed,
+                "case {case}: cooling speed must not increase"
+            );
             assert!(
                 i32::from(spd) >= cooling.filtered_temperature(),
                 "case {case}: speed {spd} dropped below filtered temp {}",
@@ -589,7 +592,11 @@ fn prop_fan_controller_same_speed_and_sensor_failsafe() {
         backend.clear_journal();
         let snap_sync = controller.tick(&backend, true, 2000 + case as i64);
         assert!(!snap_sync.fallback_auto);
-        let synced: Vec<u8> = snap_sync.speeds_percent.iter().map(|s| s.unwrap()).collect();
+        let synced: Vec<u8> = snap_sync
+            .speeds_percent
+            .iter()
+            .map(|s| s.unwrap())
+            .collect();
         assert!(synced.iter().all(|&s| s == synced[0]));
 
         // Inject sensor failure on random non-empty subset (missing sensor or out-of-range temp)
@@ -621,10 +628,9 @@ fn prop_fan_controller_same_speed_and_sensor_failsafe() {
             vec![PlatformWrite::SetFansAuto],
             "case {case}: sensor failure must call SetFansAuto and never write SetFanSpeed"
         );
-        assert!(!fail_journal.iter().any(|w| matches!(
-            w,
-            PlatformWrite::SetFanSpeed { percent: 0, .. }
-        )));
+        assert!(!fail_journal
+            .iter()
+            .any(|w| matches!(w, PlatformWrite::SetFanSpeed { percent: 0, .. })));
 
         // Recovery: restore valid temps on all channels -> resumes active curve control
         for idx in 0..fan_count {
@@ -680,7 +686,11 @@ fn write_sparse_cpu_fixture(
         let cpu_dir = root.join(format!("cpu{id}"));
         fs::create_dir_all(&cpu_dir).unwrap();
         if !mandatory_ids.contains(&id) {
-            let val = if initial_online.contains(&id) { "1" } else { "0" };
+            let val = if initial_online.contains(&id) {
+                "1"
+            } else {
+                "0"
+            };
             fs::write(cpu_dir.join("online"), val).unwrap();
         }
         let topo_dir = cpu_dir.join("topology");
@@ -731,7 +741,10 @@ fn prop_sparse_cpu_range_roundtrip_and_topology_discovery() {
             let mut topo = CpuTopology::new(temp.path());
             let discovered = topo.read();
             let discovered_ids: Vec<u32> = discovered.iter().map(|c| c.id).collect();
-            assert_eq!(discovered_ids, ids, "case {case}: discovered sparse IDs mismatch");
+            assert_eq!(
+                discovered_ids, ids,
+                "case {case}: discovered sparse IDs mismatch"
+            );
 
             for info in &discovered {
                 let is_mandatory = mandatory.contains(&info.id);
@@ -739,10 +752,9 @@ fn prop_sparse_cpu_range_roundtrip_and_topology_discovery() {
                 let expected_online = is_mandatory || online.contains(&info.id);
                 assert_eq!(info.online, expected_online);
                 if !is_mandatory {
-                    let disk_val = fs::read_to_string(
-                        temp.path().join(format!("cpu{}/online", info.id)),
-                    )
-                    .unwrap();
+                    let disk_val =
+                        fs::read_to_string(temp.path().join(format!("cpu{}/online", info.id)))
+                            .unwrap();
                     assert_eq!(disk_val.trim(), if expected_online { "1" } else { "0" });
                 }
             }
@@ -818,7 +830,10 @@ fn prop_cpu_mandatory_preservation_and_enable_before_disable_ordering() {
             events.push((core.core_index, enable));
             core.write_online(enable).is_ok()
         });
-        assert!(res.is_ok(), "case {case}: set_enabled_cores failed: {res:?}");
+        assert!(
+            res.is_ok(),
+            "case {case}: set_enabled_cores failed: {res:?}"
+        );
 
         let mut seen_disable = false;
         for &(core_id, enable) in &events {

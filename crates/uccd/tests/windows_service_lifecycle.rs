@@ -79,9 +79,14 @@ fn windows_service_handles_interrogate_power_events_and_shutdown_controls() {
     lifecycle.mark_running().unwrap();
 
     // Interrogate re-reports Running without mutating state.
-    let interrogated = lifecycle.handle_control(ServiceControl::Interrogate).unwrap();
+    let interrogated = lifecycle
+        .handle_control(ServiceControl::Interrogate)
+        .unwrap();
     assert_eq!(interrogated, ServiceState::Running);
-    assert_eq!(lifecycle.reporter().last_state(), Some(ServiceState::Running));
+    assert_eq!(
+        lifecycle.reporter().last_state(),
+        Some(ServiceState::Running)
+    );
     assert_eq!(lifecycle.reporter().history().len(), 3);
 
     // Power events are recorded while remaining Running.
@@ -187,7 +192,10 @@ fn windows_service_reporter_failure_preserves_previous_state() {
 #[test]
 fn win32_control_and_power_event_decoders_map_standard_codes() {
     assert_eq!(ServiceControl::from_win32(1, 0), ServiceControl::Stop);
-    assert_eq!(ServiceControl::from_win32(4, 0), ServiceControl::Interrogate);
+    assert_eq!(
+        ServiceControl::from_win32(4, 0),
+        ServiceControl::Interrogate
+    );
     assert_eq!(ServiceControl::from_win32(5, 0), ServiceControl::Shutdown);
     assert_eq!(
         ServiceControl::from_win32(13, 0x0004),

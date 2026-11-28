@@ -185,9 +185,9 @@ pub const fn feature_requirement(feature: WmiFeature) -> DriverRequirement {
         | WmiFeature::FnLock
         | WmiFeature::WebcamSwitch
         | WmiFeature::LightbarPower => DriverRequirement::DriverlessWmiAcpi,
-        WmiFeature::OemMethodPwup
-        | WmiFeature::OemMethodSmrw
-        | WmiFeature::RawEcArbitraryIo => DriverRequirement::SignedOemKmdfEvWhql,
+        WmiFeature::OemMethodPwup | WmiFeature::OemMethodSmrw | WmiFeature::RawEcArbitraryIo => {
+            DriverRequirement::SignedOemKmdfEvWhql
+        }
     }
 }
 
@@ -1356,7 +1356,13 @@ mod win32_wmi {
         // SAFETY: `in_params` is valid, `data_name` is NUL-terminated UTF-16, and `data_val` is valid.
         let hr = unsafe {
             let vtbl = (*in_params.as_ptr()).vtbl;
-            ((*vtbl).put)(in_params.as_ptr(), data_name.as_ptr(), 0, data_val.as_ptr(), 0)
+            ((*vtbl).put)(
+                in_params.as_ptr(),
+                data_name.as_ptr(),
+                0,
+                data_val.as_ptr(),
+                0,
+            )
         };
         if hr < 0 {
             return Err(PlatformError::Unavailable);

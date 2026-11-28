@@ -998,8 +998,7 @@ mod win32 {
                     // Keep a listening instance open before dropping `handle` so the pipe
                     // instance count never drops to 0.
                     if let Ok(replacement) = self.create_pipe_instance(false) {
-                        let mut slot =
-                            self.next_handle.lock().unwrap_or_else(|e| e.into_inner());
+                        let mut slot = self.next_handle.lock().unwrap_or_else(|e| e.into_inner());
                         if slot.is_none() {
                             *slot = Some(replacement);
                         }

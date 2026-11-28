@@ -188,13 +188,12 @@ impl WindowsDisplayTransport for MockWindowsDisplayTransport {
             let mut cur = self.current.lock().unwrap_or_else(|e| e.into_inner());
             cur.refresh_hz = refresh_hz;
         }
-        self.journal
-            .lock()
-            .unwrap_or_else(|e| e.into_inner())
-            .push(WindowsDisplayWrite::SetRefreshRate {
+        self.journal.lock().unwrap_or_else(|e| e.into_inner()).push(
+            WindowsDisplayWrite::SetRefreshRate {
                 device_name: device_name.map(str::to_owned),
                 refresh_hz,
-            });
+            },
+        );
         Ok(())
     }
 
@@ -515,8 +514,7 @@ mod win32 {
                 });
             }
             let mut monitors = vec![PhysicalMonitor::zeroed(); count as usize];
-            let ok =
-                unsafe { GetPhysicalMonitorsFromHMONITOR(hmon, count, monitors.as_mut_ptr()) };
+            let ok = unsafe { GetPhysicalMonitorsFromHMONITOR(hmon, count, monitors.as_mut_ptr()) };
             if ok == 0 {
                 return Err(WindowsDisplayError::Win32Error {
                     api: "GetPhysicalMonitorsFromHMONITOR",

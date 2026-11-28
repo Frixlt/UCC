@@ -336,7 +336,10 @@ impl<R: ServiceStatusReporter> ServiceLifecycle<R> {
 
     /// Transitions `Running | StartPending -> StopPending` and sets the stop flag.
     pub fn begin_stop(&mut self) -> Result<(), ServiceError> {
-        if !matches!(self.state, ServiceState::Running | ServiceState::StartPending) {
+        if !matches!(
+            self.state,
+            ServiceState::Running | ServiceState::StartPending
+        ) {
             return Err(ServiceError::InvalidTransition {
                 from: self.state,
                 to: ServiceState::StopPending,

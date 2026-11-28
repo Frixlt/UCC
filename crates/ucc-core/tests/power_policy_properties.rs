@@ -330,7 +330,9 @@ fn prop_owner_disconnect_isolation() {
     for _trial in 0..300 {
         let mut policy = PowerPolicy::new();
         let owner_count = 2 + rng.next_usize(7);
-        let owners: Vec<String> = (0..owner_count).map(|i| format!(":1.{}", 100 + i)).collect();
+        let owners: Vec<String> = (0..owner_count)
+            .map(|i| format!(":1.{}", 100 + i))
+            .collect();
 
         for owner in &owners {
             let req_count = 1 + rng.next_usize(6);
@@ -512,7 +514,15 @@ fn prop_power_enum_parsing_and_serde_invariants() {
     }
 
     // Unknown / absent / forbidden strings must fail cleanly.
-    for bad in ["", "unknown", "absent", "none", "AC", "BAT", "power_unknown"] {
+    for bad in [
+        "",
+        "unknown",
+        "absent",
+        "none",
+        "AC",
+        "BAT",
+        "power_unknown",
+    ] {
         assert_eq!(
             bad.parse::<ProfileState>(),
             Err(ValidationError::InvalidProfileState(bad.to_string()))

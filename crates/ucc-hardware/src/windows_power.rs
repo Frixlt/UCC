@@ -390,15 +390,14 @@ impl WindowsPowerTransport for MockWindowsPowerTransport {
             .lock()
             .unwrap_or_else(|e| e.into_inner())
             .insert((source, subgroup, setting), value);
-        self.journal
-            .lock()
-            .unwrap_or_else(|e| e.into_inner())
-            .push(WindowsPowerWrite::WriteValue {
+        self.journal.lock().unwrap_or_else(|e| e.into_inner()).push(
+            WindowsPowerWrite::WriteValue {
                 source,
                 subgroup,
                 setting,
                 value,
-            });
+            },
+        );
         Ok(())
     }
 
@@ -750,30 +749,24 @@ mod win32 {
             let scheme = ActiveSchemeGuard::query()?;
             let mut value: u32 = 0;
             let (api, code) = match source {
-                WindowsPowerSource::Ac => (
-                    "PowerReadACValueIndex",
-                    unsafe {
-                        PowerReadACValueIndex(
-                            ptr::null(),
-                            scheme.as_ptr(),
-                            &subgroup,
-                            &setting,
-                            &mut value,
-                        )
-                    },
-                ),
-                WindowsPowerSource::Dc => (
-                    "PowerReadDCValueIndex",
-                    unsafe {
-                        PowerReadDCValueIndex(
-                            ptr::null(),
-                            scheme.as_ptr(),
-                            &subgroup,
-                            &setting,
-                            &mut value,
-                        )
-                    },
-                ),
+                WindowsPowerSource::Ac => ("PowerReadACValueIndex", unsafe {
+                    PowerReadACValueIndex(
+                        ptr::null(),
+                        scheme.as_ptr(),
+                        &subgroup,
+                        &setting,
+                        &mut value,
+                    )
+                }),
+                WindowsPowerSource::Dc => ("PowerReadDCValueIndex", unsafe {
+                    PowerReadDCValueIndex(
+                        ptr::null(),
+                        scheme.as_ptr(),
+                        &subgroup,
+                        &setting,
+                        &mut value,
+                    )
+                }),
             };
             if code != ERROR_SUCCESS {
                 return Err(WindowsPowerError::Win32Error { api, code });
@@ -790,30 +783,12 @@ mod win32 {
         ) -> Result<(), WindowsPowerError> {
             let scheme = ActiveSchemeGuard::query()?;
             let (api, code) = match source {
-                WindowsPowerSource::Ac => (
-                    "PowerWriteACValueIndex",
-                    unsafe {
-                        PowerWriteACValueIndex(
-                            ptr::null(),
-                            scheme.as_ptr(),
-                            &subgroup,
-                            &setting,
-                            value,
-                        )
-                    },
-                ),
-                WindowsPowerSource::Dc => (
-                    "PowerWriteDCValueIndex",
-                    unsafe {
-                        PowerWriteDCValueIndex(
-                            ptr::null(),
-                            scheme.as_ptr(),
-                            &subgroup,
-                            &setting,
-                            value,
-                        )
-                    },
-                ),
+                WindowsPowerSource::Ac => ("PowerWriteACValueIndex", unsafe {
+                    PowerWriteACValueIndex(ptr::null(), scheme.as_ptr(), &subgroup, &setting, value)
+                }),
+                WindowsPowerSource::Dc => ("PowerWriteDCValueIndex", unsafe {
+                    PowerWriteDCValueIndex(ptr::null(), scheme.as_ptr(), &subgroup, &setting, value)
+                }),
             };
             if code != ERROR_SUCCESS {
                 return Err(WindowsPowerError::Win32Error { api, code });

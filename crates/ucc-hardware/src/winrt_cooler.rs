@@ -460,13 +460,14 @@ impl WinRtGattBridge for MockWinRtGattBridge {
         let entry = guard.get(&bluetooth_address).ok_or_else(|| {
             WinRtBleError::DeviceNotFound(format_ble_address_u64(bluetooth_address))
         })?;
-        let svc = entry
-            .services
-            .get(&service_uuid)
-            .ok_or_else(|| WinRtBleError::ServiceNotFound {
-                address: format_ble_address_u64(bluetooth_address),
-                service: service_uuid.to_uuid_string(),
-            })?;
+        let svc =
+            entry
+                .services
+                .get(&service_uuid)
+                .ok_or_else(|| WinRtBleError::ServiceNotFound {
+                    address: format_ble_address_u64(bluetooth_address),
+                    service: service_uuid.to_uuid_string(),
+                })?;
         let tx_char_handle = *svc.characteristics.get(&tx_char_uuid).ok_or_else(|| {
             WinRtBleError::CharacteristicNotFound {
                 characteristic: tx_char_uuid.to_uuid_string(),
@@ -903,12 +904,13 @@ mod winrt_ffi {
         ) -> Result<WinRtGattHandles, WinRtBleError> {
             let _com = ComApartmentGuard::acquire()?;
             let guard = self.sessions.lock().unwrap_or_else(|e| e.into_inner());
-            guard.get(&bluetooth_address).cloned().ok_or_else(|| {
-                WinRtBleError::ServiceNotFound {
+            guard
+                .get(&bluetooth_address)
+                .cloned()
+                .ok_or_else(|| WinRtBleError::ServiceNotFound {
                     address: super::format_ble_address_u64(bluetooth_address),
                     service: service_uuid.to_uuid_string(),
-                }
-            })
+                })
         }
 
         fn write_characteristic(

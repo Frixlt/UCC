@@ -8,8 +8,8 @@ use ucc_hardware::cooler::{PACKET_FOOTER, PACKET_HEADER, PACKET_LEN};
 use ucc_hardware::{
     decode_history_binary, BleWriteLimiter, CoolerCommand, CoolerCommandQueue, CoolerController,
     CoolerError, CoolerMode, CoolerPacketEncoder, CoolerState, HistoryCodecError, MetricDataPoint,
-    MetricId, MetricsHistoryStore, MockBleTransport, PumpVoltage, RgbState, BLE_WRITE_GAP,
-    CMD_FAN, CMD_PUMP, CMD_RESET, CMD_RGB,
+    MetricId, MetricsHistoryStore, MockBleTransport, PumpVoltage, RgbState, BLE_WRITE_GAP, CMD_FAN,
+    CMD_PUMP, CMD_RESET, CMD_RGB,
 };
 
 /// Self-contained deterministic SplitMix64 PRNG for offline property-based testing.
@@ -124,8 +124,8 @@ fn decode_cooler_packet(raw: &[u8]) -> Result<CoolerCommand, CoolerError> {
         }
         (CMD_RGB, 0x00) => Ok(CoolerCommand::TurnOffLed),
         (CMD_RGB, 0x01) => {
-            let state = rgb_state_from_u8(raw[6])
-                .ok_or(CoolerError::InvalidFraming(raw[0], raw[7]))?;
+            let state =
+                rgb_state_from_u8(raw[6]).ok_or(CoolerError::InvalidFraming(raw[0], raw[7]))?;
             Ok(CoolerCommand::Rgb {
                 red: raw[3],
                 green: raw[4],
@@ -242,8 +242,15 @@ fn prop_history_binary_roundtrip_and_since_filtering() {
         for ((dec_id, dec_pts), (exp_id, exp_pts)) in
             decoded_all.iter().zip(expected_non_empty.iter())
         {
-            assert_eq!(dec_id, exp_id, "case {case}: canonical MetricId order mismatch");
-            assert_eq!(dec_pts.len(), exp_pts.len(), "case {case}: point count mismatch");
+            assert_eq!(
+                dec_id, exp_id,
+                "case {case}: canonical MetricId order mismatch"
+            );
+            assert_eq!(
+                dec_pts.len(),
+                exp_pts.len(),
+                "case {case}: point count mismatch"
+            );
             for (d, e) in dec_pts.iter().zip(exp_pts.iter()) {
                 assert_eq!(d.timestamp_ms, e.timestamp_ms);
                 assert_eq!(
@@ -416,7 +423,10 @@ fn prop_history_boundary_timestamps_wall_clock_jumps_and_horizon_clamping() {
         let bin_len = decode_history_binary(&store.query_since_binary(mid_ts)).unwrap()[0]
             .1
             .len();
-        assert_eq!(json_len, bin_len, "case {case}: JSON vs binary since count mismatch");
+        assert_eq!(
+            json_len, bin_len,
+            "case {case}: JSON vs binary since count mismatch"
+        );
     }
 }
 
@@ -552,7 +562,10 @@ fn prop_ble_packet_encoder_decoder_roundtrip_and_invariants() {
             assert_eq!(pkt[2], 0x01);
             assert_eq!(pkt[3], speed);
             assert_eq!(pkt[7], PACKET_FOOTER);
-            assert_eq!(decode_cooler_packet(&pkt), Ok(CoolerCommand::FanSpeed(speed)));
+            assert_eq!(
+                decode_cooler_packet(&pkt),
+                Ok(CoolerCommand::FanSpeed(speed))
+            );
         } else {
             assert_eq!(cmd.validate(), Err(CoolerError::InvalidFanSpeed(speed)));
             assert_eq!(
@@ -812,7 +825,9 @@ fn prop_cooler_command_queue_coalescing_throttle_and_generation_cancellation() {
                         limiter_ref.record_write_at(now);
                         last_write = Some(now);
                         assert_eq!(queue.pending_len(), len_before);
-                        assert!(queue.peek_ready_at(now + Duration::from_millis(79)).is_none());
+                        assert!(queue
+                            .peek_ready_at(now + Duration::from_millis(79))
+                            .is_none());
                         assert_eq!(queue.peek_ready_at(now + BLE_WRITE_GAP), Some(head));
                     }
                 }
@@ -901,7 +916,10 @@ fn prop_cooler_controller_reconnect_generation_bump_and_restore() {
         let mut total_sent = 0usize;
         for _ in 0..expected_packets.len() {
             let sent = ctrl.flush_ready(&transport, now).unwrap();
-            assert_eq!(sent, 1, "case {case}: expected exactly 1 packet per 80ms tick");
+            assert_eq!(
+                sent, 1,
+                "case {case}: expected exactly 1 packet per 80ms tick"
+            );
             total_sent += sent;
             // Immediate sub-80ms flush must send 0
             assert_eq!(

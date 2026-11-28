@@ -198,9 +198,7 @@ fn prop_cpu_sparse_core_masks_and_mandatory_core_zero() {
         }),
         ..LegacyProfileDto::default()
     };
-    let profile = sparse_dto
-        .into_profile()
-        .expect("sparse DTO must validate");
+    let profile = sparse_dto.into_profile().expect("sparse DTO must validate");
     assert_eq!(profile.cpu.enabled_cores, Some(vec![0, 4, 8, 12]));
     let roundtrip = LegacyProfileDto::from_profile(&profile);
     assert_eq!(
@@ -505,7 +503,9 @@ fn prop_fan_curve_interpolation_rounding_and_clamping() {
     fp.table_cpu = vec![FanPoint::new(40, 20), FanPoint::new(80, 70)];
     fp.table_gpu = vec![FanPoint::new(40, 35), FanPoint::new(80, 60)];
     for t in [30, 40, 55, 65, 80, 95] {
-        let expected = fp.get_speed_for_temp(t, true).max(fp.get_speed_for_temp(t, false));
+        let expected = fp
+            .get_speed_for_temp(t, true)
+            .max(fp.get_speed_for_temp(t, false));
         assert_eq!(fp.get_water_cooler_fan_speed_for_temp(t), expected);
     }
 

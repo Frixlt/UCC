@@ -81,7 +81,10 @@ fn ipc_frame_decoder_enforces_256_kib_maximum_frame_bound() {
 
     let err_default: Result<IpcRequest, _> = decode_frame(&oversized_frame);
     assert!(err_default.is_err());
-    assert!(err_default.unwrap_err().to_string().contains("exceeds maximum size"));
+    assert!(err_default
+        .unwrap_err()
+        .to_string()
+        .contains("exceeds maximum size"));
 
     let err_bounded: Result<IpcRequest, _> =
         decode_frame_bounded(&oversized_frame, MAX_IPC_FRAME_BYTES);
@@ -297,7 +300,10 @@ fn named_pipe_server_serves_sessions_enforces_acl_bounds_and_shuts_down_cleanly(
         .collect();
     assert_eq!(interactive_resps.len(), 3);
     assert!(interactive_resps[0].ok);
-    assert_eq!(interactive_resps[0].result, Some(json!("ucc-rusted Laptop")));
+    assert_eq!(
+        interactive_resps[0].result,
+        Some(json!("ucc-rusted Laptop"))
+    );
     assert!(!interactive_resps[1].ok);
     assert!(interactive_resps[1]
         .error
@@ -349,9 +355,7 @@ fn pipe_sddl_validator_enforces_case_insensitivity_strict_sids_and_iu_rights_all
 
     // Lowercase forbidden SID (wd) is rejected after normalization.
     assert_eq!(
-        PipeAclPolicy::parse_and_validate(
-            "D:P(A;;GA;;;SY)(A;;GA;;;BA)(A;;GRGW;;;IU)(a;;gr;;;wd)"
-        ),
+        PipeAclPolicy::parse_and_validate("D:P(A;;GA;;;SY)(A;;GA;;;BA)(A;;GRGW;;;IU)(a;;gr;;;wd)"),
         Err(PipeAclError::ForbiddenAllowSid("WD".to_string()))
     );
 
@@ -365,9 +369,7 @@ fn pipe_sddl_validator_enforces_case_insensitivity_strict_sids_and_iu_rights_all
 
     // Object Allow ACE (OA) for a non-allowlisted SID is rejected.
     assert_eq!(
-        PipeAclPolicy::parse_and_validate(
-            "D:P(A;;GA;;;SY)(A;;GA;;;BA)(A;;GRGW;;;IU)(OA;;GR;;;WD)"
-        ),
+        PipeAclPolicy::parse_and_validate("D:P(A;;GA;;;SY)(A;;GA;;;BA)(A;;GRGW;;;IU)(OA;;GR;;;WD)"),
         Err(PipeAclError::ForbiddenAllowSid("WD".to_string()))
     );
 
@@ -497,7 +499,10 @@ fn profile_negative_manual_pump_voltage_sentinel_is_not_escalated_and_v12_is_rej
     };
     assert_eq!(required_access_level(&req_unset), IpcAccessLevel::Control);
     let resp_unset = dispatch_json_rpc_with_identity(&backend, &req_unset, &interactive);
-    assert!(resp_unset.ok, "expected unset -1 sentinel to succeed for IU");
+    assert!(
+        resp_unset.ok,
+        "expected unset -1 sentinel to succeed for IU"
+    );
 
     // Code 1 (V12) must be rejected in ApplyProfile and SaveCustomProfile even for privileged callers
     let v12_profile = json!({
@@ -511,9 +516,15 @@ fn profile_negative_manual_pump_voltage_sentinel_is_not_escalated_and_v12_is_rej
             method: method.into(),
             params: json!({ "profile_json": v12_profile }),
         };
-        assert_eq!(required_access_level(&req_v12), IpcAccessLevel::ManageHardware);
+        assert_eq!(
+            required_access_level(&req_v12),
+            IpcAccessLevel::ManageHardware
+        );
         let resp_v12 = dispatch_json_rpc_with_identity(&backend, &req_v12, &privileged);
-        assert!(!resp_v12.ok, "{method} must reject manualPumpVoltage == 1 (V12)");
+        assert!(
+            !resp_v12.ok,
+            "{method} must reject manualPumpVoltage == 1 (V12)"
+        );
     }
 
     // Canonical snake_case parameter fallbacks work
