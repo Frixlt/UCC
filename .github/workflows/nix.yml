@@ -1,9 +1,19 @@
-name: Nix (experimental, manual)
+name: Nix
 
 permissions:
   contents: read
 
 on:
+  pull_request:
+    paths:
+      - 'flake.nix'
+      - 'flake.lock'
+      - 'package.nix'
+      - 'default.nix'
+      - 'treefmt.nix'
+      - 'nix/**'
+      - 'Cargo.lock'
+      - 'CMakeLists.txt'
   workflow_dispatch:
 
 concurrency:
@@ -11,8 +21,8 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  flake-check:
-    name: nix flake check
+  nix-check-and-build:
+    name: nix flake check, module eval & build .#ucc
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
@@ -26,23 +36,14 @@ jobs:
       - name: Show flake metadata
         run: nix flake metadata
 
+      - name: Evaluate NixOS module
+        run: |
+          nix eval .#nixosModules.uccd --apply 'm: builtins.isFunction m || builtins.isAttrs m'
+
       - name: Run flake checks (build, formatting)
         run: nix flake check --print-build-logs
 
-  build:
-    name: nix build .#ucc
-    runs-on: ubuntu-24.04
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Install Nix
-        uses: DeterminateSystems/nix-installer-action@v17
-
-      - name: Set up Magic Nix Cache
-        uses: DeterminateSystems/magic-nix-cache-action@v9
-
-      - name: Build the package
-        run: nix build .#ucc --print-build-logs
-
-      - name: Show closure size
-        run: nix path-info -sSh ./result
+      - name: Build .#ucc and report closure size
+        run: |
+          nix build .#ucc --print-build-logs
+          nix path-info -sSh ./result
