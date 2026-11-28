@@ -557,7 +557,10 @@ impl UwccBackend {
         }
         let raw = u8::try_from(watts)
             .map_err(|_| PlatformError::InvalidArgument("Power limit out of byte range"))?;
-        let prev_raw = self.transport.ec_read(uwcc_ec_reg::DYNAMIC_BOOST_WATTS).ok();
+        let prev_raw = self
+            .transport
+            .ec_read(uwcc_ec_reg::DYNAMIC_BOOST_WATTS)
+            .ok();
         self.transport
             .ec_write(uwcc_ec_reg::DYNAMIC_BOOST_WATTS, raw)?;
         if (self.info.flags & UWCC_FLAG_HAS_PWDB) != 0 {

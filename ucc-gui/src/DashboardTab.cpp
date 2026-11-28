@@ -146,6 +146,12 @@ void DashboardTab::setWaterCoolerSupported( bool supported )
   }
 }
 
+void DashboardTab::showEvent( QShowEvent *event )
+{
+  QWidget::showEvent( event );
+  refreshDriverHealth();
+}
+
 void DashboardTab::refreshDriverHealth()
 {
   if(m_driverHealthPending || !isVisible() || (window() && window()->isMinimized())) return;

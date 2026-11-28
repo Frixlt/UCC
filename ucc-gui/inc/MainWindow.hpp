@@ -185,6 +185,7 @@ namespace ucc
     QPushButton *m_muxApplyButton = nullptr;
     QLabel *m_muxStatusLabel = nullptr;
     bool m_experimentalRisksAccepted = false;
+    QPointer< QDialog > m_experimentalRiskDialog;
     bool m_experimentalPromptOpen = false;
     bool m_muxAvailable = false;
     QPushButton *m_aboutNavButton = nullptr;

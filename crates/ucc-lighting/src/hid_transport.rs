@@ -598,8 +598,14 @@ impl LightingTransport for UniwillHidTransport {
         }
         for (row_idx, row_buf) in rows.iter().enumerate() {
             let select_row = [0x16, 0x00, row_idx as u8, 0x00, 0x00, 0x00, 0x00, 0x00];
-            self.hid.send_feature_report(&dev.path, &select_row)?;
-            self.hid.send_output_report(&dev.path, row_buf)?;
+            if let Err(err) = self.hid.send_feature_report(&dev.path, &select_row) {
+                self.invalidate_keyboard_cache();
+                return Err(err);
+            }
+            if let Err(err) = self.hid.send_output_report(&dev.path, row_buf) {
+                self.invalidate_keyboard_cache();
+                return Err(err);
+            }
         }
         let cached_b = *self
             .cached_keyboard_brightness
@@ -611,7 +617,10 @@ impl LightingTransport for UniwillHidTransport {
         };
         if level > 0 {
             let commit_user = [0x08, 0x02, 0x33, 0x00, level, 0x00, 0x00, 0x00];
-            self.hid.send_feature_report(&dev.path, &commit_user)?;
+            if let Err(err) = self.hid.send_feature_report(&dev.path, &commit_user) {
+                self.invalidate_keyboard_cache();
+                return Err(err);
+            }
         }
         *self.cached_colors.lock().unwrap_or_else(|e| e.into_inner()) = merged;
         Ok(())
@@ -718,7 +727,11 @@ impl LightingTransport for UniwillHidTransport {
                 if rgb != RgbColor::BLACK {
                     self.ensure_lightbar_ec_power_on()?;
                 }
-                send_for(&fresh)
+                let retry_res = send_for(&fresh);
+                if retry_res.is_err() {
+                    self.invalidate_lightbar_cache();
+                }
+                retry_res
             }
         }
     }

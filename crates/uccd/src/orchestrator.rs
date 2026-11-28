@@ -801,7 +801,8 @@ impl DaemonRuntime {
                                 );
                             }
                             let now = Instant::now();
-                            next_tick = (next_tick + ucc_lighting::LIGHTBAR_FRAME_INTERVAL).max(now);
+                            next_tick =
+                                (next_tick + ucc_lighting::LIGHTBAR_FRAME_INTERVAL).max(now);
                         }
                     })
                 {

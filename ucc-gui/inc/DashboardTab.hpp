@@ -65,7 +65,10 @@ namespace ucc
     /** Emitted whenever the water-cooler status changes (rich-text, e.g. for the status bar). */
     void waterCoolerStatusChanged( const QString &richText );
 
-  private slots:
+  protected:
+  void showEvent( QShowEvent *event ) override;
+
+private slots:
     void onCpuTempChanged();
     void onCpuFrequencyChanged();
     void onCpuPowerChanged();

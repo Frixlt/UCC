@@ -121,7 +121,7 @@ void LightbarTab::save() {
 void LightbarTab::showStatus() {
   const auto json=m_client->getLightbarStatusJSON();
   const auto status=json ? QJsonDocument::fromJson(QByteArray::fromStdString(*json)).object() : QJsonObject();
-  if(status.isEmpty()) {m_status->setText("Lightbar status unavailable");return;}
+  if(status.isEmpty()) {m_save->setEnabled(false);m_test->setEnabled(false);m_managed->setEnabled(false);m_silent->setEnabled(false);m_welcome->setEnabled(false);m_status->setText("Lightbar status unavailable");return;}
   if(!status["available"].toBool()) {m_status->setText("Lightbar hardware not detected. Settings can still be saved.");return;}
   m_status->setText(QString("%1 zones · Hardware brightness 0–%2 · Mode: %3 · %4").arg(status["zones"].toInt()).arg(status["maxBrightness"].toInt()).arg(status["mode"].toString(),status["managed"].toBool() ? "UCC control enabled" : "UCC control disabled"));
   if(!status["ok"].toBool(true)) m_status->setText(m_status->text()+" · "+status["error"].toString());

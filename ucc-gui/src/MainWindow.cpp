@@ -1648,6 +1648,10 @@ void MainWindow::onTabChanged( int index )
       } );
     }
   }
+  else if ( m_experimentalRiskDialog )
+  {
+    m_experimentalRiskDialog->reject();
+  }
 }
 
 void MainWindow::updateExperimentalLockState()
@@ -1671,6 +1675,7 @@ void MainWindow::promptExperimentalRisks()
   m_experimentalPromptOpen = true;
 
   auto *dlg = new QDialog( this );
+  m_experimentalRiskDialog = dlg;
   dlg->setAttribute( Qt::WA_DeleteOnClose );
   dlg->setWindowTitle( "Experimental Features Warning" );
   dlg->setModal( true );

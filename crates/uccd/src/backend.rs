@@ -1182,12 +1182,12 @@ impl LiveUccdBackend {
         if self.water_cooler_enabled.load(Ordering::SeqCst) {
             self.replay_active_cooler_profile();
         }
-        let animating = {
+        {
             let mut lb = self.lock_mutex(&self.lightbar_ctrl);
             let _ = lb.on_resume();
-            lb.is_animating()
-        };
-        self.lightbar_animating.store(animating, Ordering::SeqCst);
+            self.lightbar_animating
+                .store(lb.is_animating(), Ordering::SeqCst);
+        }
         if !self.is_lid_closed() {
             self.restore_lid_lighting();
         }
