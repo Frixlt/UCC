@@ -204,8 +204,8 @@ mod linux_uinput_abi {
     }
 
     const UINPUT_MAGIC: u8 = b'U';
-    pub const UI_DEV_CREATE: u64 = nix::request_code_none!(UINPUT_MAGIC, 1) as u64;
-    pub const UI_DEV_DESTROY: u64 = nix::request_code_none!(UINPUT_MAGIC, 2) as u64;
+    pub const UI_DEV_CREATE: u64 = nix::request_code_none!(UINPUT_MAGIC, 1);
+    pub const UI_DEV_DESTROY: u64 = nix::request_code_none!(UINPUT_MAGIC, 2);
     pub const UI_DEV_SETUP: u64 =
         nix::request_code_write!(UINPUT_MAGIC, 3, std::mem::size_of::<UinputSetup>()) as u64;
     pub const UI_SET_EVBIT: u64 =

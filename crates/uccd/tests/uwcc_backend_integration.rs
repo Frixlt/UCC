@@ -13,7 +13,7 @@ use std::time::Duration;
 use ucc_config::ConfigManager;
 use ucc_dbus::UccdBackend;
 use ucc_hardware::{
-    default_process_runner, DeviceCapabilities, DeviceVendor, DmiInfo, MockHardwareIo,
+    default_process_runner, requests, DeviceCapabilities, DeviceVendor, DmiInfo, MockHardwareIo,
     MockPlatformBackend, MockSysfs, MockUwccTransport, PlatformBackend, PlatformBackendKind,
     PlatformBackendSelection, PlatformCapabilities, PlatformWrite, PowerDeviceController, Sysfs,
     TelemetryConfig, TuxedoIoBackend, UwccBackend, UwccTransportWrite,
@@ -410,6 +410,7 @@ fn tuxedo_io_backend_zero_regression_omits_real_rpm_and_tcc_offset() {
     let tmp = tempfile::tempdir().expect("tempdir");
     let sysfs = Arc::new(MockSysfs::new());
     let hw = MockHardwareIo::new();
+    hw.set_i32_read(requests::R_HWCHECK_UW, 1);
     let dmi = DmiInfo::default();
     let tuxedo_backend: Arc<dyn PlatformBackend> =
         Arc::new(TuxedoIoBackend::new(hw, Some(&dmi), Some(sysfs.as_ref())));
