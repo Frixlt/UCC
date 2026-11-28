@@ -100,11 +100,11 @@ impl FanCurve {
             }
 
             if temp > prev.temp && temp < entry.temp {
-                let temp_diff = entry.temp - prev.temp;
+                let temp_diff = i64::from(entry.temp) - i64::from(prev.temp);
                 if temp_diff == 0 {
                     return prev.speed as i32;
                 }
-                let frac = (temp - prev.temp) as f64 / temp_diff as f64;
+                let frac = (i64::from(temp) - i64::from(prev.temp)) as f64 / temp_diff as f64;
                 let interpolated =
                     prev.speed as f64 + frac * (entry.speed as f64 - prev.speed as f64);
                 return interpolated.round() as i32;
