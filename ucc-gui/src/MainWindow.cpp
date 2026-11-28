@@ -2843,11 +2843,17 @@ void MainWindow::fetchStartupCapabilities()
     if ( values.contains( QStringLiteral( "GetNVIDIAPowerCTRLMaxPowerLimit" ) ) )
       m_gpuMaxPowerLimit = values.value( QStringLiteral( "GetNVIDIAPowerCTRLMaxPowerLimit" ) ).toInt();
     updateCtgpVisibility();
-    updateEditableState();
 
     int defaultPower = 0;
     int maxPower = 0;
-    if ( m_ctgpSlider && hasValidCtgpRange( defaultPower, maxPower ) && !m_currentLoadedProfile.isEmpty() )
+    const bool ctgpValid = hasValidCtgpRange( defaultPower, maxPower );
+    if ( m_ctgpSlider )
+    {
+      const bool isCustom = m_profileManager && !m_currentLoadedProfile.isEmpty()
+                            && m_profileManager->isCustomProfile( m_currentLoadedProfile );
+      m_ctgpSlider->setEnabled( isCustom && ctgpValid );
+    }
+    if ( m_ctgpSlider && ctgpValid && !m_currentLoadedProfile.isEmpty() )
     {
       const QString profileJson = m_profileManager ? m_profileManager->getProfileDetails( m_currentLoadedProfile ) : QString();
       const QJsonDocument profDoc = QJsonDocument::fromJson( profileJson.toUtf8() );
