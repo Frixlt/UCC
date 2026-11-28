@@ -40,6 +40,24 @@ pub const UWCC_FLAG_HAS_SMRW: u32 = 1 << 1;
 pub const UWCC_FLAG_HAS_PWUP: u32 = 1 << 2;
 pub const UWCC_FLAG_HAS_WMI_EVENTS: u32 = 1 << 3;
 pub const UWCC_FLAG_HAS_HWMON: u32 = 1 << 4;
+pub const UWCC_FLAG_HAS_PWBT: u32 = 1 << 5;
+pub const UWCC_FLAG_HAS_PWDB: u32 = 1 << 6;
+pub const UWCC_FLAG_HAS_MUX: u32 = 1 << 7;
+
+/// Operations for `UWCC_IOC_GPU_POWER` (NVIDIA NPCF `PWBT` / `PWDB`).
+pub const UWCC_GPU_POWER_OP_BASE_TGP: u32 = 1;
+pub const UWCC_GPU_POWER_OP_DYNAMIC_BOOST: u32 = 2;
+
+/// Display MUX state constants matching `kernel/uwcc-rs/include/uapi/uwcc.h`.
+pub const UWCC_MUX_ACTIVE_UNKNOWN: u32 = 0;
+pub const UWCC_MUX_ACTIVE_IGPU: u32 = 1;
+pub const UWCC_MUX_ACTIVE_DGPU: u32 = 2;
+
+pub const UWCC_MUX_MODE_UNKNOWN: u32 = 0;
+pub const UWCC_MUX_MODE_DYNAMIC: u32 = 1;
+pub const UWCC_MUX_MODE_DGPU_ONLY: u32 = 2;
+pub const UWCC_MUX_MODE_IGPU_ONLY: u32 = 3;
+pub const UWCC_MUX_MODE_MSHYBRID: u32 = 4;
 
 /// Ioctl sequence numbers matching `kernel/uwcc-rs/include/uapi/uwcc.h`.
 pub const UWCC_NR_GET_INFO: u8 = 0x01;
@@ -47,6 +65,9 @@ pub const UWCC_NR_EC_READ: u8 = 0x02;
 pub const UWCC_NR_EC_WRITE: u8 = 0x03;
 pub const UWCC_NR_SMRW: u8 = 0x04;
 pub const UWCC_NR_PWUP: u8 = 0x05;
+pub const UWCC_NR_GPU_POWER: u8 = 0x06;
+pub const UWCC_NR_MUX_GET: u8 = 0x07;
+pub const UWCC_NR_MUX_SET: u8 = 0x08;
 
 /// Single EC register read/write payload (`struct uwcc_ec_reg`).
 #[repr(C)]
@@ -103,6 +124,25 @@ pub struct UwccWmiEvent {
     pub payload: u32,
 }
 
+/// NVIDIA NPCF GPU power limit payload (`struct uwcc_gpu_power`, 8 bytes).
+#[repr(C)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub struct UwccGpuPower {
+    pub op: u32,
+    pub value: u32,
+}
+
+/// Hardware display MUX state/mode payload (`struct uwcc_mux_state`, 8 bytes).
+#[repr(C)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub struct UwccMuxState {
+    pub active_gpu: u32,
+    pub boot_mode: u32,
+}
+
+const _: () = assert!(std::mem::size_of::<UwccGpuPower>() == 8);
+const _: () = assert!(std::mem::size_of::<UwccMuxState>() == 8);
+
 #[cfg(unix)]
 pub const UWCC_IOC_GET_INFO: u64 = nix::request_code_read!(
     UWCC_MAGIC,
@@ -131,6 +171,27 @@ pub const UWCC_IOC_SMRW: u64 =
 #[cfg(unix)]
 pub const UWCC_IOC_PWUP: u64 =
     nix::request_code_write!(UWCC_MAGIC, UWCC_NR_PWUP, std::mem::size_of::<UwccPwup>()) as u64;
+
+#[cfg(unix)]
+pub const UWCC_IOC_GPU_POWER: u64 = nix::request_code_write!(
+    UWCC_MAGIC,
+    UWCC_NR_GPU_POWER,
+    std::mem::size_of::<UwccGpuPower>()
+) as u64;
+
+#[cfg(unix)]
+pub const UWCC_IOC_MUX_GET: u64 = nix::request_code_read!(
+    UWCC_MAGIC,
+    UWCC_NR_MUX_GET,
+    std::mem::size_of::<UwccMuxState>()
+) as u64;
+
+#[cfg(unix)]
+pub const UWCC_IOC_MUX_SET: u64 = nix::request_code_write!(
+    UWCC_MAGIC,
+    UWCC_NR_MUX_SET,
+    std::mem::size_of::<UwccMuxState>()
+) as u64;
 
 #[cfg(not(unix))]
 const fn linux_ioc(dir: u32, ty: u8, nr: u8, size: usize) -> u64 {
@@ -169,6 +230,30 @@ pub const UWCC_IOC_SMRW: u64 =
 pub const UWCC_IOC_PWUP: u64 =
     linux_ioc(1, UWCC_MAGIC, UWCC_NR_PWUP, std::mem::size_of::<UwccPwup>());
 
+#[cfg(not(unix))]
+pub const UWCC_IOC_GPU_POWER: u64 = linux_ioc(
+    1,
+    UWCC_MAGIC,
+    UWCC_NR_GPU_POWER,
+    std::mem::size_of::<UwccGpuPower>(),
+);
+
+#[cfg(not(unix))]
+pub const UWCC_IOC_MUX_GET: u64 = linux_ioc(
+    2,
+    UWCC_MAGIC,
+    UWCC_NR_MUX_GET,
+    std::mem::size_of::<UwccMuxState>(),
+);
+
+#[cfg(not(unix))]
+pub const UWCC_IOC_MUX_SET: u64 = linux_ioc(
+    1,
+    UWCC_MAGIC,
+    UWCC_NR_MUX_SET,
+    std::mem::size_of::<UwccMuxState>(),
+);
+
 /// Transport abstraction over `/dev/uwcc` ioctls and WMI event reads.
 pub trait UwccTransport: Send + Sync {
     /// Returns `true` when the underlying `/dev/uwcc` handle is open and usable.
@@ -188,6 +273,23 @@ pub trait UwccTransport: Send + Sync {
 
     /// Configures water-cooler power-up boost (`PWUP`).
     fn pwup(&self, enable: bool, level: u32) -> Result<(), PlatformError>;
+
+    /// Dispatches NVIDIA NPCF GPU power limit updates (`PWBT` / `PWDB`).
+    fn set_gpu_power(&self, _op: u32, _value: u32) -> Result<(), PlatformError> {
+        Err(PlatformError::Unsupported(
+            "GPU NPCF power ioctl unsupported",
+        ))
+    }
+
+    /// Reads hardware display MUX state (`MXDS(0)`) and BIOS boot mode (`MXDM(0)`).
+    fn mux_get(&self) -> Result<UwccMuxState, PlatformError> {
+        Err(PlatformError::Unsupported("Display MUX unsupported"))
+    }
+
+    /// Sets persistent BIOS display MUX boot mode (`MXDM(1..=4)`, applies on next reboot).
+    fn mux_set(&self, _boot_mode: u32) -> Result<(), PlatformError> {
+        Err(PlatformError::Unsupported("Display MUX unsupported"))
+    }
 
     /// Non-blocking poll for the next queued WMI event.
     fn poll_event(&self) -> Result<Option<UwccWmiEvent>, PlatformError>;
@@ -370,6 +472,86 @@ impl UwccTransport for UwccDevice {
         Ok(())
     }
 
+    fn set_gpu_power(&self, op: u32, value: u32) -> Result<(), PlatformError> {
+        match op {
+            UWCC_GPU_POWER_OP_BASE_TGP if value <= 300 => {}
+            UWCC_GPU_POWER_OP_DYNAMIC_BOOST if value <= 100 => {}
+            _ => {
+                return Err(PlatformError::InvalidArgument(
+                    "Invalid NVIDIA NPCF GPU power operation or watt bound",
+                ));
+            }
+        }
+        let mut req = UwccGpuPower { op, value };
+        // SAFETY: `UWCC_IOC_GPU_POWER` expects a valid `*mut UwccGpuPower`.
+        let ret = unsafe {
+            libc::ioctl(
+                self.file.as_raw_fd(),
+                UWCC_IOC_GPU_POWER as _,
+                &mut req as *mut UwccGpuPower,
+            )
+        };
+        if ret < 0 {
+            return Err(PlatformError::Ioctl(
+                crate::ioctl::IoctlError::IoctlFailed {
+                    request: UWCC_IOC_GPU_POWER,
+                    source: nix::Error::last(),
+                },
+            ));
+        }
+        Ok(())
+    }
+
+    fn mux_get(&self) -> Result<UwccMuxState, PlatformError> {
+        let mut state = UwccMuxState::default();
+        // SAFETY: `UWCC_IOC_MUX_GET` expects a valid `*mut UwccMuxState`.
+        let ret = unsafe {
+            libc::ioctl(
+                self.file.as_raw_fd(),
+                UWCC_IOC_MUX_GET as _,
+                &mut state as *mut UwccMuxState,
+            )
+        };
+        if ret < 0 {
+            return Err(PlatformError::Ioctl(
+                crate::ioctl::IoctlError::IoctlFailed {
+                    request: UWCC_IOC_MUX_GET,
+                    source: nix::Error::last(),
+                },
+            ));
+        }
+        Ok(state)
+    }
+
+    fn mux_set(&self, boot_mode: u32) -> Result<(), PlatformError> {
+        if !(UWCC_MUX_MODE_DYNAMIC..=UWCC_MUX_MODE_MSHYBRID).contains(&boot_mode) {
+            return Err(PlatformError::InvalidArgument(
+                "MUX boot mode must be 1..=4",
+            ));
+        }
+        let mut req = UwccMuxState {
+            active_gpu: 0,
+            boot_mode,
+        };
+        // SAFETY: `UWCC_IOC_MUX_SET` expects a valid `*mut UwccMuxState`.
+        let ret = unsafe {
+            libc::ioctl(
+                self.file.as_raw_fd(),
+                UWCC_IOC_MUX_SET as _,
+                &mut req as *mut UwccMuxState,
+            )
+        };
+        if ret < 0 {
+            return Err(PlatformError::Ioctl(
+                crate::ioctl::IoctlError::IoctlFailed {
+                    request: UWCC_IOC_MUX_SET,
+                    source: nix::Error::last(),
+                },
+            ));
+        }
+        Ok(())
+    }
+
     fn poll_event(&self) -> Result<Option<UwccWmiEvent>, PlatformError> {
         let mut evt = UwccWmiEvent::default();
         let size = std::mem::size_of::<UwccWmiEvent>();
@@ -437,6 +619,8 @@ pub enum UwccTransportWrite {
     EcWrite { addr: u16, val: u8 },
     Smrw { offset: u16, len: u16 },
     Pwup { enable: bool, level: u32 },
+    GpuPower { op: u32, value: u32 },
+    MuxSet { boot_mode: u32 },
 }
 
 /// Deterministic in-memory `/dev/uwcc` transport for unit & integration tests.
@@ -447,6 +631,7 @@ pub struct MockUwccTransport {
     info: Mutex<UwccInfo>,
     regs: Mutex<BTreeMap<u16, u8>>,
     smrw_table: Mutex<BTreeMap<u16, [u8; UWCC_SMRW_MAX_LEN]>>,
+    mux_state: Mutex<UwccMuxState>,
     events: Mutex<VecDeque<UwccWmiEvent>>,
     journal: Mutex<Vec<UwccTransportWrite>>,
 }
@@ -471,10 +656,17 @@ impl MockUwccTransport {
                     | UWCC_FLAG_HAS_SMRW
                     | UWCC_FLAG_HAS_PWUP
                     | UWCC_FLAG_HAS_WMI_EVENTS
-                    | UWCC_FLAG_HAS_HWMON,
+                    | UWCC_FLAG_HAS_HWMON
+                    | UWCC_FLAG_HAS_PWBT
+                    | UWCC_FLAG_HAS_PWDB
+                    | UWCC_FLAG_HAS_MUX,
             }),
             regs: Mutex::new(BTreeMap::new()),
             smrw_table: Mutex::new(BTreeMap::new()),
+            mux_state: Mutex::new(UwccMuxState {
+                active_gpu: UWCC_MUX_ACTIVE_IGPU,
+                boot_mode: UWCC_MUX_MODE_DYNAMIC,
+            }),
             events: Mutex::new(VecDeque::new()),
             journal: Mutex::new(Vec::new()),
         }
@@ -565,6 +757,10 @@ impl MockUwccTransport {
             .unwrap_or_else(|e| e.into_inner())
             .clear();
     }
+
+    pub fn set_mux_state(&self, state: UwccMuxState) {
+        *self.mux_state.lock().unwrap_or_else(|e| e.into_inner()) = state;
+    }
 }
 
 impl UwccTransport for MockUwccTransport {
@@ -649,6 +845,53 @@ impl UwccTransport for MockUwccTransport {
             .lock()
             .unwrap_or_else(|e| e.into_inner())
             .push(UwccTransportWrite::Pwup { enable, level });
+        Ok(())
+    }
+
+    fn set_gpu_power(&self, op: u32, value: u32) -> Result<(), PlatformError> {
+        if !self.is_available() {
+            return Err(PlatformError::Unavailable);
+        }
+        match op {
+            UWCC_GPU_POWER_OP_BASE_TGP if value <= 300 => {}
+            UWCC_GPU_POWER_OP_DYNAMIC_BOOST if value <= 100 => {}
+            _ => {
+                return Err(PlatformError::InvalidArgument(
+                    "Invalid NVIDIA NPCF GPU power operation or watt bound",
+                ));
+            }
+        }
+        self.journal
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .push(UwccTransportWrite::GpuPower { op, value });
+        Ok(())
+    }
+
+    fn mux_get(&self) -> Result<UwccMuxState, PlatformError> {
+        if !self.is_available() {
+            return Err(PlatformError::Unavailable);
+        }
+        Ok(*self.mux_state.lock().unwrap_or_else(|e| e.into_inner()))
+    }
+
+    fn mux_set(&self, boot_mode: u32) -> Result<(), PlatformError> {
+        if !self.is_available() {
+            return Err(PlatformError::Unavailable);
+        }
+        if !(UWCC_MUX_MODE_DYNAMIC..=UWCC_MUX_MODE_MSHYBRID).contains(&boot_mode) {
+            return Err(PlatformError::InvalidArgument(
+                "MUX boot mode must be 1..=4",
+            ));
+        }
+        self.mux_state
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .boot_mode = boot_mode;
+        self.journal
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .push(UwccTransportWrite::MuxSet { boot_mode });
         Ok(())
     }
 

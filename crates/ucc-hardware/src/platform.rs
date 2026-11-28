@@ -224,6 +224,16 @@ pub trait PlatformBackend: Send + Sync {
     fn poll_wmi_event(&self) -> Result<Option<crate::uwcc::UwccWmiEvent>, PlatformError> {
         Err(PlatformError::Unsupported("WMI event polling unsupported"))
     }
+
+    /// Reads hardware display MUX active GPU and persistent BIOS boot mode when supported.
+    fn read_mux_state(&self) -> Result<crate::uwcc::MuxState, PlatformError> {
+        Err(PlatformError::Unsupported("Display MUX unsupported"))
+    }
+
+    /// Sets persistent BIOS display MUX boot mode (`MXDM(1..=4)`, applies after reboot).
+    fn set_mux_boot_mode(&self, _mode: crate::uwcc::MuxBootMode) -> Result<(), PlatformError> {
+        Err(PlatformError::Unsupported("Display MUX unsupported"))
+    }
 }
 
 /// Validates vendor-specific ODM performance profile wire codes (`W1-12`):

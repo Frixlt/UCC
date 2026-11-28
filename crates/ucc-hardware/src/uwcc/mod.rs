@@ -18,13 +18,93 @@ pub use ramfan::{
     RAMFAN_BASE, RAMFAN_END, RAMFAN_MAX_TEMP_C, RAMFAN_POINTS,
 };
 pub use uapi::{
-    MockUwccTransport, UwccDevice, UwccEcReg, UwccInfo, UwccPwup, UwccSmrw, UwccTransport,
-    UwccTransportWrite, UwccWmiEvent, UWCC_API_VERSION, UWCC_DEVICE_PATH, UWCC_FLAG_HAS_EC,
-    UWCC_FLAG_HAS_HWMON, UWCC_FLAG_HAS_PWUP, UWCC_FLAG_HAS_SMRW, UWCC_FLAG_HAS_WMI_EVENTS,
-    UWCC_IOC_EC_READ, UWCC_IOC_EC_WRITE, UWCC_IOC_GET_INFO, UWCC_IOC_PWUP, UWCC_IOC_SMRW,
-    UWCC_MAGIC, UWCC_NR_EC_READ, UWCC_NR_EC_WRITE, UWCC_NR_GET_INFO, UWCC_NR_PWUP, UWCC_NR_SMRW,
-    UWCC_SMRW_MAX_LEN, UWCC_WMI_RING_CAPACITY,
+    MockUwccTransport, UwccDevice, UwccEcReg, UwccGpuPower, UwccInfo, UwccMuxState, UwccPwup,
+    UwccSmrw, UwccTransport, UwccTransportWrite, UwccWmiEvent, UWCC_API_VERSION, UWCC_DEVICE_PATH,
+    UWCC_FLAG_HAS_EC, UWCC_FLAG_HAS_HWMON, UWCC_FLAG_HAS_MUX, UWCC_FLAG_HAS_PWBT,
+    UWCC_FLAG_HAS_PWDB, UWCC_FLAG_HAS_PWUP, UWCC_FLAG_HAS_SMRW, UWCC_FLAG_HAS_WMI_EVENTS,
+    UWCC_GPU_POWER_OP_BASE_TGP, UWCC_GPU_POWER_OP_DYNAMIC_BOOST, UWCC_IOC_EC_READ,
+    UWCC_IOC_EC_WRITE, UWCC_IOC_GET_INFO, UWCC_IOC_GPU_POWER, UWCC_IOC_MUX_GET, UWCC_IOC_MUX_SET,
+    UWCC_IOC_PWUP, UWCC_IOC_SMRW, UWCC_MAGIC, UWCC_MUX_ACTIVE_DGPU, UWCC_MUX_ACTIVE_IGPU,
+    UWCC_MUX_ACTIVE_UNKNOWN, UWCC_MUX_MODE_DGPU_ONLY, UWCC_MUX_MODE_DYNAMIC,
+    UWCC_MUX_MODE_IGPU_ONLY, UWCC_MUX_MODE_MSHYBRID, UWCC_MUX_MODE_UNKNOWN, UWCC_NR_EC_READ,
+    UWCC_NR_EC_WRITE, UWCC_NR_GET_INFO, UWCC_NR_GPU_POWER, UWCC_NR_MUX_GET, UWCC_NR_MUX_SET,
+    UWCC_NR_PWUP, UWCC_NR_SMRW, UWCC_SMRW_MAX_LEN, UWCC_WMI_RING_CAPACITY,
 };
+
+/// Active display panel owner reported by ACPI `MXDS(0)`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum MuxActiveGpu {
+    Unknown,
+    Igpu,
+    Dgpu,
+}
+
+impl MuxActiveGpu {
+    pub const fn from_raw(raw: u32) -> Self {
+        match raw {
+            UWCC_MUX_ACTIVE_IGPU => Self::Igpu,
+            UWCC_MUX_ACTIVE_DGPU => Self::Dgpu,
+            _ => Self::Unknown,
+        }
+    }
+
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::Igpu => "igpu",
+            Self::Dgpu => "dgpu",
+            Self::Unknown => "unknown",
+        }
+    }
+}
+
+/// Persistent BIOS display MUX boot mode reported/written by ACPI `MXDM`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum MuxBootMode {
+    Unknown,
+    Dynamic,
+    DgpuOnly,
+    IgpuOnly,
+    MsHybrid,
+}
+
+impl MuxBootMode {
+    pub const fn from_raw(raw: u32) -> Self {
+        match raw {
+            UWCC_MUX_MODE_DYNAMIC => Self::Dynamic,
+            UWCC_MUX_MODE_DGPU_ONLY => Self::DgpuOnly,
+            UWCC_MUX_MODE_IGPU_ONLY => Self::IgpuOnly,
+            UWCC_MUX_MODE_MSHYBRID => Self::MsHybrid,
+            _ => Self::Unknown,
+        }
+    }
+
+    pub const fn to_raw(self) -> Option<u32> {
+        match self {
+            Self::Dynamic => Some(UWCC_MUX_MODE_DYNAMIC),
+            Self::DgpuOnly => Some(UWCC_MUX_MODE_DGPU_ONLY),
+            Self::IgpuOnly => Some(UWCC_MUX_MODE_IGPU_ONLY),
+            Self::MsHybrid => Some(UWCC_MUX_MODE_MSHYBRID),
+            Self::Unknown => None,
+        }
+    }
+
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::Dynamic => "dynamic",
+            Self::DgpuOnly => "dgpu_only",
+            Self::IgpuOnly => "igpu_only",
+            Self::MsHybrid => "mshybrid",
+            Self::Unknown => "unknown",
+        }
+    }
+}
+
+/// Combined hardware display MUX telemetry (`MXDS(0)` + `MXDM(0)`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct MuxState {
+    pub active_gpu: MuxActiveGpu,
+    pub boot_mode: MuxBootMode,
+}
 pub use webcam::{UsbWebcamController, UsbWebcamDevice, USB_CLASS_VIDEO, USB_DEVICES_ROOT};
 #[cfg(unix)]
 pub use wmi_events::LinuxUinputEmitter;
@@ -346,7 +426,12 @@ impl UwccBackend {
         }
         let raw = u8::try_from(watts)
             .map_err(|_| PlatformError::InvalidArgument("Power limit out of byte range"))?;
-        self.transport.ec_write(uwcc_ec_reg::CTGP_WATTS, raw)
+        self.transport.ec_write(uwcc_ec_reg::CTGP_WATTS, raw)?;
+        if (self.info.flags & UWCC_FLAG_HAS_PWBT) != 0 {
+            self.transport
+                .set_gpu_power(UWCC_GPU_POWER_OP_BASE_TGP, u32::from(raw))?;
+        }
+        Ok(())
     }
 
     /// Returns `(min, max)` GPU Dynamic Boost wattage limits from `SMRW`.
@@ -370,7 +455,12 @@ impl UwccBackend {
         let raw = u8::try_from(watts)
             .map_err(|_| PlatformError::InvalidArgument("Power limit out of byte range"))?;
         self.transport
-            .ec_write(uwcc_ec_reg::DYNAMIC_BOOST_WATTS, raw)
+            .ec_write(uwcc_ec_reg::DYNAMIC_BOOST_WATTS, raw)?;
+        if (self.info.flags & UWCC_FLAG_HAS_PWDB) != 0 {
+            self.transport
+                .set_gpu_power(UWCC_GPU_POWER_OP_DYNAMIC_BOOST, u32::from(raw))?;
+        }
+        Ok(())
     }
 
     fn require_available(&self) -> Result<(), PlatformError> {
@@ -695,5 +785,28 @@ impl PlatformBackend for UwccBackend {
     fn poll_wmi_event(&self) -> Result<Option<UwccWmiEvent>, PlatformError> {
         self.require_available()?;
         self.transport.poll_event()
+    }
+
+    fn read_mux_state(&self) -> Result<MuxState, PlatformError> {
+        self.require_available()?;
+        if (self.info.flags & UWCC_FLAG_HAS_MUX) == 0 {
+            return Err(PlatformError::Unsupported("Display MUX unsupported"));
+        }
+        let raw = self.transport.mux_get()?;
+        Ok(MuxState {
+            active_gpu: MuxActiveGpu::from_raw(raw.active_gpu),
+            boot_mode: MuxBootMode::from_raw(raw.boot_mode),
+        })
+    }
+
+    fn set_mux_boot_mode(&self, mode: MuxBootMode) -> Result<(), PlatformError> {
+        self.require_available()?;
+        if (self.info.flags & UWCC_FLAG_HAS_MUX) == 0 {
+            return Err(PlatformError::Unsupported("Display MUX unsupported"));
+        }
+        let raw = mode.to_raw().ok_or(PlatformError::InvalidArgument(
+            "MUX boot mode cannot be Unknown",
+        ))?;
+        self.transport.mux_set(raw)
     }
 }

@@ -45,6 +45,11 @@ extern int uwcc_rs_ioctl_ec_write(const struct uwcc_ec_reg *reg,
 extern int uwcc_rs_ioctl_smrw(struct uwcc_smrw *smrw);
 extern int uwcc_rs_ioctl_pwup(const struct uwcc_pwup *pwup,
 			      bool writable, bool sys_admin);
+extern int uwcc_rs_ioctl_gpu_power(const struct uwcc_gpu_power *req,
+				   bool writable, bool sys_admin);
+extern int uwcc_rs_ioctl_mux_get(struct uwcc_mux_state *out_state);
+extern int uwcc_rs_ioctl_mux_set(const struct uwcc_mux_state *req,
+				 bool writable, bool sys_admin);
 
 /* Lifecycle */
 int uwcc_acpi_init(struct uwcc_acpi_caps *out_caps);
@@ -57,9 +62,12 @@ int uwcc_acpi_ec_read(u16 addr, u8 *out_val);
 int uwcc_acpi_ec_write(u16 addr, u8 val);
 int uwcc_acpi_smrw(u16 offset, u16 len, u8 *out_buf);
 int uwcc_acpi_pwup(u32 enable, u32 level);
+int uwcc_acpi_gpu_power(u32 op, u32 value);
+int uwcc_acpi_mux_get(u32 *out_active_gpu, u32 *out_boot_mode);
+int uwcc_acpi_mux_set(u32 boot_mode);
 
 /* Native /sys/class/hwmon registration (D3cold-safe EC-only telemetry) */
-int uwcc_hwmon_register(struct device *parent);
+int uwcc_hwmon_register(void);
 void uwcc_hwmon_unregister(void);
 
 /* Thin kernel helpers for Rust core (IRQ-safe spinlock, waitqueue, monotonic time) */

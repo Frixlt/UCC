@@ -569,3 +569,74 @@ fn platform_backend_selection_parser_and_extended_mock_backend() {
         Err(PlatformError::Unsupported(_))
     ));
 }
+
+#[test]
+fn uwcc_backend_dispatches_npcf_pwbt_pwdb_for_175w_nvidia_unlock_and_mux_switch() {
+    use ucc_hardware::{
+        MuxActiveGpu, MuxBootMode, UwccGpuPower, UwccMuxState, UWCC_FLAG_HAS_EC,
+        UWCC_GPU_POWER_OP_BASE_TGP, UWCC_GPU_POWER_OP_DYNAMIC_BOOST, UWCC_MUX_ACTIVE_DGPU,
+        UWCC_MUX_MODE_DGPU_ONLY,
+    };
+
+    assert_eq!(std::mem::size_of::<UwccGpuPower>(), 8);
+    assert_eq!(std::mem::size_of::<UwccMuxState>(), 8);
+
+    // Configure an RTX 5080 Mobile 175W (150W Base TGP + 25W Dynamic Boost) SMRW table.
+    let transport = Arc::new(MockUwccTransport::chassis_0x1a_default());
+    let mut rtx5080_limits = SmrwPowerLimits::chassis_0x1a_default();
+    rtx5080_limits.ctgp_max_w = 150;
+    rtx5080_limits.dynamic_boost_max_w = 25;
+    transport.set_smrw_table(SMRW_POWER_LIMITS_OFFSET, rtx5080_limits.encode());
+
+    let backend = UwccBackend::new(Arc::clone(&transport) as _, None, None);
+    backend.set_ctgp(150).unwrap();
+    backend.set_dynamic_boost(25).unwrap();
+
+    let journal = transport.journal();
+    assert!(journal.contains(&UwccTransportWrite::GpuPower {
+        op: UWCC_GPU_POWER_OP_BASE_TGP,
+        value: 150,
+    }));
+    assert!(journal.contains(&UwccTransportWrite::GpuPower {
+        op: UWCC_GPU_POWER_OP_DYNAMIC_BOOST,
+        value: 25,
+    }));
+
+    // Verify hardware MUX read (MXDS/MXDM) and reboot-safe BIOS boot mode update (MXDM).
+    let initial_mux = backend.read_mux_state().unwrap();
+    assert_eq!(initial_mux.active_gpu, MuxActiveGpu::Igpu);
+    assert_eq!(initial_mux.boot_mode, MuxBootMode::Dynamic);
+
+    backend.set_mux_boot_mode(MuxBootMode::DgpuOnly).unwrap();
+    assert!(transport.journal().contains(&UwccTransportWrite::MuxSet {
+        boot_mode: UWCC_MUX_MODE_DGPU_ONLY,
+    }));
+
+    transport.set_mux_state(UwccMuxState {
+        active_gpu: UWCC_MUX_ACTIVE_DGPU,
+        boot_mode: UWCC_MUX_MODE_DGPU_ONLY,
+    });
+    let after_reboot_mux = backend.read_mux_state().unwrap();
+    assert_eq!(after_reboot_mux.active_gpu, MuxActiveGpu::Dgpu);
+    assert_eq!(after_reboot_mux.boot_mode, MuxBootMode::DgpuOnly);
+
+    assert!(matches!(
+        backend.set_mux_boot_mode(MuxBootMode::Unknown),
+        Err(PlatformError::InvalidArgument(_))
+    ));
+
+    // Systems without UWCC_FLAG_HAS_MUX report Unsupported cleanly.
+    let no_mux_transport = Arc::new(MockUwccTransport::chassis_0x1a_default());
+    let mut info = no_mux_transport.get_info().unwrap();
+    info.flags = UWCC_FLAG_HAS_EC;
+    no_mux_transport.set_info(info);
+    let no_mux_backend = UwccBackend::new(no_mux_transport, None, None);
+    assert!(matches!(
+        no_mux_backend.read_mux_state(),
+        Err(PlatformError::Unsupported(_))
+    ));
+    assert!(matches!(
+        no_mux_backend.set_mux_boot_mode(MuxBootMode::Dynamic),
+        Err(PlatformError::Unsupported(_))
+    ));
+}

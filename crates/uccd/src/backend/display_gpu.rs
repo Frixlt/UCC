@@ -378,6 +378,16 @@ impl LiveUccdBackend {
             if rpms.iter().any(Option::is_some) {
                 obj.insert("realRpm".to_string(), json!(rpms));
             }
+            if let Ok(mux) = self.platform.read_mux_state() {
+                obj.insert(
+                    "mux".to_string(),
+                    json!({
+                        "supported": true,
+                        "activeGpu": mux.active_gpu.as_str(),
+                        "bootMode": mux.boot_mode.as_str(),
+                    }),
+                );
+            }
         }
         payload.to_string()
     }

@@ -22,7 +22,10 @@ use kernel::prelude::*;
 
 pub use ring_buffer::WmiEvent;
 use ring_buffer::WmiRingBuffer;
-use validation::{validate_ec_read, validate_ec_write, validate_pwup, validate_smrw};
+use validation::{
+    validate_ec_read, validate_ec_write, validate_gpu_power, validate_mux_set, validate_pwup,
+    validate_smrw,
+};
 
 // ---------------------------------------------------------------------------
 // UAPI ABI mirrors (must match include/uapi/uwcc.h byte-for-byte)
@@ -77,8 +80,26 @@ pub struct UwccInfo {
 const _: () = assert!(size_of::<UwccEcReg>() == 4);
 const _: () = assert!(size_of::<UwccSmrw>() == 68);
 const _: () = assert!(size_of::<UwccPwup>() == 8);
+/// UAPI payload for `UWCC_IOC_GPU_POWER` (`struct uwcc_gpu_power`).
+#[repr(C)]
+#[derive(Copy, Clone)]
+pub struct UwccGpuPower {
+    op: u32,
+    value: u32,
+}
+
+/// UAPI payload for `UWCC_IOC_MUX_GET` and `UWCC_IOC_MUX_SET` (`struct uwcc_mux_state`).
+#[repr(C)]
+#[derive(Copy, Clone)]
+pub struct UwccMuxState {
+    active_gpu: u32,
+    boot_mode: u32,
+}
+
 const _: () = assert!(size_of::<UwccInfo>() == 16);
 const _: () = assert!(size_of::<WmiEvent>() == 16);
+const _: () = assert!(size_of::<UwccGpuPower>() == 8);
+const _: () = assert!(size_of::<UwccMuxState>() == 8);
 
 // ---------------------------------------------------------------------------
 // FFI declarations for acpi_shim.c
@@ -101,7 +122,10 @@ extern "C" {
     fn uwcc_acpi_ec_write(addr: u16, val: u8) -> i32;
     fn uwcc_acpi_smrw(offset: u16, len: u16, out_buf: *mut u8) -> i32;
     fn uwcc_acpi_pwup(enable: u32, level: u32) -> i32;
-    fn uwcc_hwmon_register(parent: *mut kernel::bindings::device) -> i32;
+    fn uwcc_acpi_gpu_power(op: u32, value: u32) -> i32;
+    fn uwcc_acpi_mux_get(out_active_gpu: *mut u32, out_boot_mode: *mut u32) -> i32;
+    fn uwcc_acpi_mux_set(boot_mode: u32) -> i32;
+    fn uwcc_hwmon_register() -> i32;
     fn uwcc_hwmon_unregister();
     fn uwcc_state_lock_irqsave() -> c_ulong;
     fn uwcc_state_unlock_irqrestore(flags: c_ulong);
@@ -372,6 +396,92 @@ pub unsafe extern "C" fn uwcc_rs_ioctl_pwup(
     unsafe { uwcc_acpi_pwup(req.enable, req.level) }
 }
 
+/// Validates permissions and parameters, then dispatches `UWCC_IOC_GPU_POWER` (`PWBT`/`PWDB`).
+///
+/// # Safety
+///
+/// `req` must be either null or a valid, readable pointer to `UwccGpuPower`.
+#[no_mangle]
+pub unsafe extern "C" fn uwcc_rs_ioctl_gpu_power(
+    req: *const UwccGpuPower,
+    writable: bool,
+    sys_admin: bool,
+) -> i32 {
+    if req.is_null() {
+        return ERRNO_EINVAL;
+    }
+    if !uwcc_rs_is_ready() {
+        return ERRNO_ENODEV;
+    }
+
+    // SAFETY: `req` is a valid kernel stack pointer copied from userspace by acpi_shim.c.
+    let payload = unsafe { &*req };
+    if let Err(err) = validate_gpu_power(payload.op, payload.value, writable, sys_admin) {
+        return err.to_errno();
+    }
+
+    // SAFETY: Operation and bounds were validated above.
+    unsafe { uwcc_acpi_gpu_power(payload.op, payload.value) }
+}
+
+/// Dispatches read-only `UWCC_IOC_MUX_GET` (`MXDS(0)` and `MXDM(0)`).
+///
+/// # Safety
+///
+/// `out_state` must be either null or a valid, writable pointer to `UwccMuxState`.
+#[no_mangle]
+pub unsafe extern "C" fn uwcc_rs_ioctl_mux_get(out_state: *mut UwccMuxState) -> i32 {
+    if out_state.is_null() {
+        return ERRNO_EINVAL;
+    }
+    if !uwcc_rs_is_ready() {
+        return ERRNO_ENODEV;
+    }
+
+    let mut active_gpu: u32 = 0;
+    let mut boot_mode: u32 = 0;
+    // SAFETY: Output pointers are valid stack locals; acpi_shim serializes ACPI access.
+    let ret = unsafe { uwcc_acpi_mux_get(&mut active_gpu, &mut boot_mode) };
+    if ret != 0 {
+        return ret;
+    }
+
+    // SAFETY: `out_state` is non-null and points to a valid `struct uwcc_mux_state`.
+    unsafe {
+        (*out_state).active_gpu = active_gpu;
+        (*out_state).boot_mode = boot_mode;
+    }
+    0
+}
+
+/// Validates permissions and parameters, then dispatches `UWCC_IOC_MUX_SET` (`MXDM(1..=4)`).
+///
+/// # Safety
+///
+/// `req` must be either null or a valid, readable pointer to `UwccMuxState`.
+#[no_mangle]
+pub unsafe extern "C" fn uwcc_rs_ioctl_mux_set(
+    req: *const UwccMuxState,
+    writable: bool,
+    sys_admin: bool,
+) -> i32 {
+    if req.is_null() {
+        return ERRNO_EINVAL;
+    }
+    if !uwcc_rs_is_ready() {
+        return ERRNO_ENODEV;
+    }
+
+    // SAFETY: `req` is a valid kernel stack pointer copied from userspace by acpi_shim.c.
+    let payload = unsafe { &*req };
+    if let Err(err) = validate_mux_set(payload.active_gpu, payload.boot_mode, writable, sys_admin) {
+        return err.to_errno();
+    }
+
+    // SAFETY: Mode bounds and permissions were validated above.
+    unsafe { uwcc_acpi_mux_set(payload.boot_mode) }
+}
+
 // ---------------------------------------------------------------------------
 // Kernel module entry & teardown
 // ---------------------------------------------------------------------------
@@ -411,8 +521,8 @@ impl kernel::Module for UwccModule {
 
         // Register native /sys/class/hwmon/hwmonX (D3cold-safe EC telemetry).
         let mut flags = caps.flags;
-        // SAFETY: `uwcc_hwmon_register(NULL)` binds to `uwcc_miscdev.this_device`.
-        if unsafe { uwcc_hwmon_register(core::ptr::null_mut()) } == 0 {
+        // SAFETY: `uwcc_hwmon_register()` binds to `uwcc_miscdev.this_device` registered above.
+        if unsafe { uwcc_hwmon_register() } == 0 {
             flags |= UWCC_FLAG_HAS_HWMON;
             with_state(|s| {
                 s.info.flags = flags;

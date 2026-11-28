@@ -12,6 +12,24 @@ pub(crate) const UWCC_SMRW_TABLE_LIMIT: u16 = 0x0400;
 /// Maximum allowed `PWUP` boost level.
 pub(crate) const UWCC_PWUP_MAX_LEVEL: u32 = 3;
 
+/// `UWCC_IOC_GPU_POWER` op: NVIDIA NPCF Base TGP (`PWBT`).
+pub(crate) const UWCC_GPU_POWER_OP_BASE_TGP: u32 = 1;
+
+/// `UWCC_IOC_GPU_POWER` op: NVIDIA NPCF Dynamic Boost (`PWDB`).
+pub(crate) const UWCC_GPU_POWER_OP_DYNAMIC_BOOST: u32 = 2;
+
+/// Maximum permitted Base TGP watt value for `PWBT`.
+pub(crate) const UWCC_PWBT_MAX_WATTS: u32 = 300;
+
+/// Maximum permitted Dynamic Boost watt value for `PWDB`.
+pub(crate) const UWCC_PWDB_MAX_WATTS: u32 = 100;
+
+/// Minimum valid BIOS MUX boot mode (`MXDM`).
+pub(crate) const UWCC_MUX_MODE_MIN: u32 = 1;
+
+/// Maximum valid BIOS MUX boot mode (`MXDM`).
+pub(crate) const UWCC_MUX_MODE_MAX: u32 = 4;
+
 /// Minimum readable Uniwill EC register address.
 pub(crate) const EC_READ_ADDR_MIN: u16 = 0x0400;
 
@@ -147,6 +165,41 @@ pub(crate) const fn validate_pwup(
     Ok(())
 }
 
+/// Validates an `UWCC_IOC_GPU_POWER` (`PWBT` / `PWDB`) request.
+pub(crate) const fn validate_gpu_power(
+    op: u32,
+    value: u32,
+    file_writable: bool,
+    has_sys_admin: bool,
+) -> Result<(), ValidationError> {
+    if !file_writable || !has_sys_admin {
+        return Err(ValidationError::PermissionDenied);
+    }
+    match op {
+        UWCC_GPU_POWER_OP_BASE_TGP if value <= UWCC_PWBT_MAX_WATTS => Ok(()),
+        UWCC_GPU_POWER_OP_DYNAMIC_BOOST if value <= UWCC_PWDB_MAX_WATTS => Ok(()),
+        _ => Err(ValidationError::InvalidArgument),
+    }
+}
+
+/// Validates an `UWCC_IOC_MUX_SET` (`MXDM`) request.
+///
+/// Requires `active_gpu == 0` so callers only request reboot-safe BIOS mode changes (`1..=4`).
+pub(crate) const fn validate_mux_set(
+    active_gpu: u32,
+    boot_mode: u32,
+    file_writable: bool,
+    has_sys_admin: bool,
+) -> Result<(), ValidationError> {
+    if !file_writable || !has_sys_admin {
+        return Err(ValidationError::PermissionDenied);
+    }
+    if active_gpu != 0 || boot_mode < UWCC_MUX_MODE_MIN || boot_mode > UWCC_MUX_MODE_MAX {
+        return Err(ValidationError::InvalidArgument);
+    }
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -249,6 +302,54 @@ mod tests {
         );
         assert_eq!(
             validate_pwup(1, 1, true, false),
+            Err(ValidationError::PermissionDenied)
+        );
+    }
+
+    #[test]
+    fn gpu_power_and_mux_validation() {
+        assert_eq!(validate_gpu_power(1, 150, true, true), Ok(()));
+        assert_eq!(validate_gpu_power(1, 175, true, true), Ok(()));
+        assert_eq!(validate_gpu_power(2, 25, true, true), Ok(()));
+        assert_eq!(validate_gpu_power(2, 0, true, true), Ok(()));
+        assert_eq!(
+            validate_gpu_power(1, 301, true, true),
+            Err(ValidationError::InvalidArgument)
+        );
+        assert_eq!(
+            validate_gpu_power(2, 101, true, true),
+            Err(ValidationError::InvalidArgument)
+        );
+        assert_eq!(
+            validate_gpu_power(3, 25, true, true),
+            Err(ValidationError::InvalidArgument)
+        );
+        assert_eq!(
+            validate_gpu_power(1, 150, false, true),
+            Err(ValidationError::PermissionDenied)
+        );
+        assert_eq!(
+            validate_gpu_power(1, 150, true, false),
+            Err(ValidationError::PermissionDenied)
+        );
+
+        assert_eq!(validate_mux_set(0, 1, true, true), Ok(()));
+        assert_eq!(validate_mux_set(0, 2, true, true), Ok(()));
+        assert_eq!(validate_mux_set(0, 4, true, true), Ok(()));
+        assert_eq!(
+            validate_mux_set(0, 0, true, true),
+            Err(ValidationError::InvalidArgument)
+        );
+        assert_eq!(
+            validate_mux_set(0, 5, true, true),
+            Err(ValidationError::InvalidArgument)
+        );
+        assert_eq!(
+            validate_mux_set(2, 2, true, true),
+            Err(ValidationError::InvalidArgument)
+        );
+        assert_eq!(
+            validate_mux_set(0, 2, false, true),
             Err(ValidationError::PermissionDenied)
         );
     }

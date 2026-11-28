@@ -77,6 +77,10 @@ static bool uwcc_has_ecrr;
 static bool uwcc_has_ecrw;
 static bool uwcc_has_smrw;
 static bool uwcc_has_pwup;
+static bool uwcc_has_pwbt;
+static bool uwcc_has_pwdb;
+static acpi_handle uwcc_mux_handle;
+static bool uwcc_has_mux;
 #if IS_ENABLED(CONFIG_ACPI_WMI)
 static bool uwcc_wmi_registered;
 #endif
@@ -167,11 +171,7 @@ int uwcc_acpi_ec_write(u16 addr, u8 val)
 
 int uwcc_acpi_smrw(u16 offset, u16 len, u8 *out_buf)
 {
-	union acpi_object args[2];
-	struct acpi_object_list params;
-	struct acpi_buffer output = { ACPI_ALLOCATE_BUFFER, NULL };
-	union acpi_object *obj;
-	acpi_status status;
+	u16 pos;
 	int ret = 0;
 
 	if (!out_buf || len == 0 || len > UWCC_SMRW_MAX_LEN)
@@ -182,51 +182,80 @@ int uwcc_acpi_smrw(u16 offset, u16 len, u8 *out_buf)
 	mutex_lock(&uwcc_ec_lock);
 
 	if (!uwcc_acpi_handle || !uwcc_has_smrw) {
-		ret = -ENODEV;
-		goto out_unlock;
+		mutex_unlock(&uwcc_ec_lock);
+		return -ENODEV;
 	}
 
-	args[0].type = ACPI_TYPE_INTEGER;
-	args[0].integer.value = offset;
-	args[1].type = ACPI_TYPE_INTEGER;
-	args[1].integer.value = len;
-
-	params.count = 2;
-	params.pointer = args;
-
-	status = acpi_evaluate_object(uwcc_acpi_handle, "SMRW", &params, &output);
-	if (ACPI_FAILURE(status) || !output.pointer) {
-		ret = -EIO;
-		goto out_unlock;
-	}
-
-	obj = (union acpi_object *)output.pointer;
 	memset(out_buf, 0, len);
 
-	if (obj->type == ACPI_TYPE_BUFFER && obj->buffer.pointer) {
-		size_t copy_len = min_t(size_t, (size_t)len, (size_t)obj->buffer.length);
+	/*
+	 * Uniwill INOU0000 Method(SMRW, 1) accepts a single ACPI_TYPE_BUFFER:
+	 *   buf[0] = 0xBB (read DWord from active GFID power table)
+	 *   buf[1] = 8-bit byte offset (REOF)
+	 *   buf[2..12] = 0
+	 * and returns a 32-bit integer (or buffer on alternate firmware).
+	 */
+	for (pos = 0; pos < len; pos += 4U) {
+		u8 req_buf[13];
+		union acpi_object arg;
+		struct acpi_object_list params;
+		struct acpi_buffer output = { ACPI_ALLOCATE_BUFFER, NULL };
+		union acpi_object *obj;
+		acpi_status status;
+		u16 cur_off = offset + pos;
 
-		memcpy(out_buf, obj->buffer.pointer, copy_len);
-	} else if (obj->type == ACPI_TYPE_INTEGER) {
-		u64 val = obj->integer.value;
-		size_t copy_len = min_t(size_t, (size_t)len, sizeof(val));
+		if (cur_off > 0xFFU) {
+			ret = -ERANGE;
+			break;
+		}
 
-		memcpy(out_buf, &val, copy_len);
-	} else {
-		ret = -EPROTO;
+		memset(req_buf, 0, sizeof(req_buf));
+		req_buf[0] = 0xBB;
+		req_buf[1] = (u8)cur_off;
+
+		arg.type = ACPI_TYPE_BUFFER;
+		arg.buffer.length = sizeof(req_buf);
+		arg.buffer.pointer = req_buf;
+
+		params.count = 1;
+		params.pointer = &arg;
+
+		status = acpi_evaluate_object(uwcc_acpi_handle, "SMRW", &params, &output);
+		if (ACPI_FAILURE(status) || !output.pointer) {
+			kfree(output.pointer);
+			ret = -EIO;
+			break;
+		}
+
+		obj = (union acpi_object *)output.pointer;
+		if (obj->type == ACPI_TYPE_INTEGER) {
+			u32 dword = (u32)(obj->integer.value & 0xFFFFFFFFULL);
+			size_t chunk = min_t(size_t, 4U, (size_t)(len - pos));
+
+			memcpy(out_buf + pos, &dword, chunk);
+			kfree(output.pointer);
+		} else if (obj->type == ACPI_TYPE_BUFFER && obj->buffer.pointer) {
+			size_t copy_len = min_t(size_t, (size_t)(len - pos),
+						(size_t)obj->buffer.length);
+
+			memcpy(out_buf + pos, obj->buffer.pointer, copy_len);
+			kfree(output.pointer);
+			break;
+		} else {
+			kfree(output.pointer);
+			ret = -EPROTO;
+			break;
+		}
 	}
 
-out_unlock:
-	kfree(output.pointer);
 	mutex_unlock(&uwcc_ec_lock);
 	return ret;
 }
 
 int uwcc_acpi_pwup(u32 enable, u32 level)
 {
-	union acpi_object args[2];
+	union acpi_object arg;
 	struct acpi_object_list params;
-	unsigned long long result = 0;
 	acpi_status status;
 	int ret = 0;
 
@@ -242,20 +271,142 @@ int uwcc_acpi_pwup(u32 enable, u32 level)
 		return -ENODEV;
 	}
 
-	args[0].type = ACPI_TYPE_INTEGER;
-	args[0].integer.value = enable;
-	args[1].type = ACPI_TYPE_INTEGER;
-	args[1].integer.value = level;
+	/* Uniwill INOU0000 Method(PWUP, 1) takes 1 integer and notifies NPCF & dGPU. */
+	arg.type = ACPI_TYPE_INTEGER;
+	arg.integer.value = enable ? (u64)level : 0ULL;
 
-	params.count = 2;
-	params.pointer = args;
+	params.count = 1;
+	params.pointer = &arg;
 
-	status = acpi_evaluate_integer(uwcc_acpi_handle, "PWUP", &params, &result);
+	status = acpi_evaluate_object(uwcc_acpi_handle, "PWUP", &params, NULL);
 	if (ACPI_FAILURE(status))
 		ret = -EIO;
 
 	mutex_unlock(&uwcc_ec_lock);
 	return ret;
+}
+
+int uwcc_acpi_gpu_power(u32 op, u32 value)
+{
+	union acpi_object arg;
+	struct acpi_object_list params;
+	const char *method;
+	acpi_status status;
+	int ret = 0;
+
+	mutex_lock(&uwcc_ec_lock);
+
+	if (!uwcc_acpi_handle) {
+		mutex_unlock(&uwcc_ec_lock);
+		return -ENODEV;
+	}
+
+	if (op == UWCC_GPU_POWER_OP_BASE_TGP) {
+		if (!uwcc_has_pwbt) {
+			mutex_unlock(&uwcc_ec_lock);
+			return -ENODEV;
+		}
+		method = "PWBT";
+	} else if (op == UWCC_GPU_POWER_OP_DYNAMIC_BOOST) {
+		if (!uwcc_has_pwdb) {
+			mutex_unlock(&uwcc_ec_lock);
+			return -ENODEV;
+		}
+		method = "PWDB";
+	} else {
+		mutex_unlock(&uwcc_ec_lock);
+		return -EINVAL;
+	}
+
+	arg.type = ACPI_TYPE_INTEGER;
+	arg.integer.value = (u64)value;
+	params.count = 1;
+	params.pointer = &arg;
+
+	status = acpi_evaluate_object(uwcc_acpi_handle, (char *)method, &params, NULL);
+	if (ACPI_FAILURE(status))
+		ret = -EIO;
+
+	mutex_unlock(&uwcc_ec_lock);
+	return ret;
+}
+
+int uwcc_acpi_mux_get(u32 *out_active_gpu, u32 *out_boot_mode)
+{
+	union acpi_object arg;
+	struct acpi_object_list params;
+	unsigned long long active_val = 0;
+	unsigned long long mode_val = 0;
+	acpi_status status;
+
+	if (!out_active_gpu || !out_boot_mode)
+		return -EINVAL;
+
+	mutex_lock(&uwcc_ec_lock);
+
+	if (!uwcc_mux_handle || !uwcc_has_mux) {
+		mutex_unlock(&uwcc_ec_lock);
+		return -ENODEV;
+	}
+
+	arg.type = ACPI_TYPE_INTEGER;
+	arg.integer.value = 0ULL;
+	params.count = 1;
+	params.pointer = &arg;
+
+	status = acpi_evaluate_integer(uwcc_mux_handle, "MXDS", &params, &active_val);
+	if (ACPI_FAILURE(status)) {
+		mutex_unlock(&uwcc_ec_lock);
+		return -EIO;
+	}
+
+	status = acpi_evaluate_integer(uwcc_mux_handle, "MXDM", &params, &mode_val);
+	if (ACPI_FAILURE(status)) {
+		mutex_unlock(&uwcc_ec_lock);
+		return -EIO;
+	}
+
+	*out_active_gpu = (u32)(active_val & 0x0FU);
+	*out_boot_mode = (u32)(mode_val & 0x07U);
+
+	mutex_unlock(&uwcc_ec_lock);
+	return 0;
+}
+
+int uwcc_acpi_mux_set(u32 boot_mode)
+{
+	union acpi_object arg;
+	struct acpi_object_list params;
+	unsigned long long result = 0;
+	acpi_status status;
+
+	if (boot_mode < UWCC_MUX_MODE_DYNAMIC || boot_mode > UWCC_MUX_MODE_MSHYBRID)
+		return -EINVAL;
+
+	mutex_lock(&uwcc_ec_lock);
+
+	if (!uwcc_mux_handle || !uwcc_has_mux) {
+		mutex_unlock(&uwcc_ec_lock);
+		return -ENODEV;
+	}
+
+	/*
+	 * Call MXDM(boot_mode) to persist the BIOS MUX mode via SMI 0xB8 for next reboot.
+	 * Never invokes live MXDS GPIO switching to avoid blank-screen/display-link races.
+	 */
+	arg.type = ACPI_TYPE_INTEGER;
+	arg.integer.value = (u64)(boot_mode & 0x07U);
+	params.count = 1;
+	params.pointer = &arg;
+
+	status = acpi_evaluate_integer(uwcc_mux_handle, "MXDM", &params, &result);
+	if (ACPI_FAILURE(status) || result == 0ULL) {
+		mutex_unlock(&uwcc_ec_lock);
+		return -EIO;
+	}
+
+	mutex_unlock(&uwcc_ec_lock);
+	return 0;
 }
 
 /* --------------------------------------------------------------------------
@@ -374,6 +525,34 @@ static long uwcc_dev_ioctl(struct file *filp, unsigned int cmd, unsigned long ar
 		if (copy_from_user(&pwup, argp, sizeof(pwup)))
 			return -EFAULT;
 		return uwcc_rs_ioctl_pwup(&pwup, writable, capable(CAP_SYS_ADMIN));
+	}
+
+	case UWCC_IOC_GPU_POWER: {
+		struct uwcc_gpu_power req;
+
+		if (copy_from_user(&req, argp, sizeof(req)))
+			return -EFAULT;
+		return uwcc_rs_ioctl_gpu_power(&req, writable, capable(CAP_SYS_ADMIN));
+	}
+
+	case UWCC_IOC_MUX_GET: {
+		struct uwcc_mux_state st;
+
+		memset(&st, 0, sizeof(st));
+		ret = uwcc_rs_ioctl_mux_get(&st);
+		if (ret)
+			return ret;
+		if (copy_to_user(argp, &st, sizeof(st)))
+			return -EFAULT;
+		return 0;
+	}
+
+	case UWCC_IOC_MUX_SET: {
+		struct uwcc_mux_state req;
+
+		if (copy_from_user(&req, argp, sizeof(req)))
+			return -EFAULT;
+		return uwcc_rs_ioctl_mux_set(&req, writable, capable(CAP_SYS_ADMIN));
 	}
 
 	default:
@@ -631,9 +810,9 @@ static const struct hwmon_chip_info uwcc_hwmon_chip_info = {
 	.info = uwcc_hwmon_info,
 };
 
-int uwcc_hwmon_register(struct device *parent)
+int uwcc_hwmon_register(void)
 {
-	struct device *dev = parent ? parent : uwcc_miscdev.this_device;
+	struct device *dev = uwcc_miscdev.this_device;
 	struct device *hdev;
 
 	if (uwcc_hwmon_dev)
@@ -673,6 +852,19 @@ static acpi_status uwcc_find_acpi_cb(acpi_handle handle, u32 level,
 	return AE_CTRL_TERMINATE;
 }
 
+static acpi_status uwcc_find_mux_cb(acpi_handle handle, u32 level,
+				    void *context, void **return_value)
+{
+	(void)level;
+	(void)return_value;
+
+	if (acpi_has_method(handle, "MXDS") && acpi_has_method(handle, "MXDM")) {
+		*(acpi_handle *)context = handle;
+		return AE_CTRL_TERMINATE;
+	}
+	return AE_OK;
+}
+
 int uwcc_acpi_init(struct uwcc_acpi_caps *out_caps)
 {
 	acpi_handle found = NULL;
@@ -695,6 +887,8 @@ int uwcc_acpi_init(struct uwcc_acpi_caps *out_caps)
 	uwcc_has_ecrw = acpi_has_method(found, "ECRW");
 	uwcc_has_smrw = acpi_has_method(found, "SMRW");
 	uwcc_has_pwup = acpi_has_method(found, "PWUP");
+	uwcc_has_pwbt = acpi_has_method(found, "PWBT");
+	uwcc_has_pwdb = acpi_has_method(found, "PWDB");
 
 	if (!uwcc_has_ecrr) {
 		uwcc_acpi_handle = NULL;
@@ -707,6 +901,27 @@ int uwcc_acpi_init(struct uwcc_acpi_caps *out_caps)
 		flags |= UWCC_FLAG_HAS_SMRW;
 	if (uwcc_has_pwup)
 		flags |= UWCC_FLAG_HAS_PWUP;
+	if (uwcc_has_pwbt)
+		flags |= UWCC_FLAG_HAS_PWBT;
+	if (uwcc_has_pwdb)
+		flags |= UWCC_FLAG_HAS_PWDB;
+
+	/* Discover NVIDIA DDS / Parade PS8461E MUX device (MXDS + MXDM) */
+	uwcc_mux_handle = NULL;
+	uwcc_has_mux = false;
+	if (ACPI_SUCCESS(acpi_get_handle(NULL, "\\_SB.PC00.RP09.PXSX.LCD0", &uwcc_mux_handle)) &&
+	    acpi_has_method(uwcc_mux_handle, "MXDS") &&
+	    acpi_has_method(uwcc_mux_handle, "MXDM")) {
+		uwcc_has_mux = true;
+	} else {
+		uwcc_mux_handle = NULL;
+		acpi_walk_namespace(ACPI_TYPE_DEVICE, ACPI_ROOT_OBJECT, 8,
+				    uwcc_find_mux_cb, NULL, &uwcc_mux_handle, NULL);
+		if (uwcc_mux_handle)
+			uwcc_has_mux = true;
+	}
+	if (uwcc_has_mux)
+		flags |= UWCC_FLAG_HAS_MUX;
 
 	if (uwcc_ec_read_locked(UWCC_EC_REG_PROJECT_ID, &proj) == 0)
 		out_caps->project_id = proj;
@@ -746,6 +961,10 @@ void uwcc_acpi_exit(void)
 	uwcc_has_ecrw = false;
 	uwcc_has_smrw = false;
 	uwcc_has_pwup = false;
+	uwcc_has_pwbt = false;
+	uwcc_has_pwdb = false;
+	uwcc_mux_handle = NULL;
+	uwcc_has_mux = false;
 	mutex_unlock(&uwcc_ec_lock);
 
 	wake_up_interruptible_all(&uwcc_wmi_wq);

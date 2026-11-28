@@ -438,3 +438,22 @@ fn tuxedo_io_backend_zero_regression_omits_real_rpm_and_tcc_offset() {
     backend.set_cooler_connected_state(false);
     backend.shutdown();
 }
+
+#[test]
+fn uwcc_system_info_reports_hardware_mux_state_when_supported() {
+    let tmp = tempfile::tempdir().expect("tempdir");
+    let sysfs = Arc::new(MockSysfs::new());
+    let transport = Arc::new(MockUwccTransport::chassis_0x1a_default());
+    let uwcc_platform: Arc<dyn PlatformBackend> = Arc::new(UwccBackend::new(
+        Arc::clone(&transport) as Arc<dyn ucc_hardware::UwccTransport>,
+        None,
+        Some(Arc::clone(&sysfs) as Arc<dyn Sysfs>),
+    ));
+    let backend = build_backend_with_platform(tmp.path(), uwcc_platform, sysfs);
+
+    let info: Value =
+        serde_json::from_str(&backend.get_system_info_json()).expect("valid system info json");
+    assert_eq!(info["mux"]["supported"], true);
+    assert_eq!(info["mux"]["activeGpu"], "igpu");
+    assert_eq!(info["mux"]["bootMode"], "dynamic");
+}
