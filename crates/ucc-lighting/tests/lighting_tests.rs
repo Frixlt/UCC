@@ -51,7 +51,7 @@ fn sysfs_transport_discovers_per_key_kbd_with_numeric_led_ids_and_lightbar_exclu
     fs::write(lb_dir.join("multi_intensity"), "0 0 0 0 0 0 0 0 0\n").unwrap();
 
     let transport = Arc::new(SysfsLedTransport::new(Arc::new(RealSysfs), root));
-    let mut kbd = KeyboardBacklightController::new(Arc::clone(&transport));
+    let mut kbd = KeyboardBacklightController::new(Arc::clone(&transport) as _);
     let caps_json = kbd.init().unwrap();
     let caps = kbd.capabilities().unwrap();
     assert_eq!(caps.zones, 5);
@@ -108,7 +108,7 @@ fn buffer_input_guard_resets_even_when_zone_write_fails() {
     }));
     mock.set_fail_on_keyboard_zones(true);
 
-    let mut kbd = KeyboardBacklightController::new(Arc::clone(&mock));
+    let mut kbd = KeyboardBacklightController::new(Arc::clone(&mock) as _);
     kbd.init().unwrap();
     let err = kbd
         .apply_states(&[KeyboardBacklightState {
@@ -146,7 +146,7 @@ fn lightbar_controller_lifecycle_flash_silent_and_auto_majority_color() {
         RgbColor::new(255, 0, 0),
     ]);
 
-    let mut lb = LightbarController::new(Arc::clone(&mock));
+    let mut lb = LightbarController::new(Arc::clone(&mock) as _);
 
     // 1. Default managed=false: configure writes NOTHING
     lb.configure(&json!({ "managed": false })).unwrap();

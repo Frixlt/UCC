@@ -272,17 +272,29 @@ fn windows_hid_126_key_calibration_lid_logo_zone5_and_ec_hook() {
 
     // LCtrl = LED 0 -> row 0, col 0 (buf[0]=0x00 report id, buf[1]=0x00 pad, B=2, G=23, R=44).
     assert_eq!(
-        (kbd_reports[2].1[44], kbd_reports[2].1[23], kbd_reports[2].1[2]),
+        (
+            kbd_reports[2].1[44],
+            kbd_reports[2].1[23],
+            kbd_reports[2].1[2]
+        ),
         (11, 22, 33)
     );
     // LShift = LED 21 -> row 1, col 0.
     assert_eq!(
-        (kbd_reports[4].1[44], kbd_reports[4].1[23], kbd_reports[4].1[2]),
+        (
+            kbd_reports[4].1[44],
+            kbd_reports[4].1[23],
+            kbd_reports[4].1[2]
+        ),
         (44, 55, 66)
     );
     // Enter = LED 56 -> row 2, col 14.
     assert_eq!(
-        (kbd_reports[6].1[44 + 14], kbd_reports[6].1[23 + 14], kbd_reports[6].1[2 + 14]),
+        (
+            kbd_reports[6].1[44 + 14],
+            kbd_reports[6].1[23 + 14],
+            kbd_reports[6].1[2 + 14]
+        ),
         (77, 88, 99)
     );
 
