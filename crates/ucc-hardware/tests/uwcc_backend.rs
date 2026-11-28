@@ -168,12 +168,17 @@ fn uwcc_backend_tcc_offset_and_pwup() {
     let transport = Arc::new(MockUwccTransport::chassis_0x1a_default());
     let backend = UwccBackend::new(Arc::clone(&transport) as _, None, None);
 
-    backend.set_tcc_offset(15).unwrap();
-    assert_eq!(backend.read_tcc_offset().unwrap(), 15);
-    assert_eq!(transport.get_reg(uwcc_ec_reg::TCC_OFFSET_C), Some(15));
-
-    backend.set_tcc_offset(63).unwrap();
-    assert_eq!(backend.read_tcc_offset().unwrap(), 63);
+    // EC 0x0743 is EC_ADDR_CTGP_DB_CTRL (0x07 on live X6AR55xY); set_tcc_offset must NEVER clobber it
+    transport.set_reg(uwcc_ec_reg::TCC_OFFSET_C, 0x07);
+    assert!(matches!(
+        backend.set_tcc_offset(15),
+        Err(PlatformError::Unsupported(_))
+    ));
+    assert!(matches!(
+        backend.read_tcc_offset(),
+        Err(PlatformError::Unsupported(_))
+    ));
+    assert_eq!(transport.get_reg(uwcc_ec_reg::TCC_OFFSET_C), Some(0x07));
     assert!(matches!(
         backend.set_tcc_offset(64),
         Err(PlatformError::InvalidArgument(_))

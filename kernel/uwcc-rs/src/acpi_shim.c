@@ -195,7 +195,7 @@ int uwcc_acpi_smrw(u16 offset, u16 len, u8 *out_buf)
 	 * Uniwill INOU0000 Method(SMRW, 1) accepts a single ACPI_TYPE_BUFFER:
 	 *   buf[0] = 0xBB (read DWord from active GFID power table)
 	 *   buf[1] = 8-bit byte offset (REOF)
-	 *   buf[2..12] = 0
+	 *   buf[2..63] = 0
 	 * and returns a 32-bit integer (or buffer on alternate firmware).
 	 */
 	for (pos = 0; pos < len; pos += 4U) {

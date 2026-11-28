@@ -700,8 +700,9 @@ impl PlatformBackend for UwccBackend {
 
     fn read_tcc_offset(&self) -> Result<u8, PlatformError> {
         self.require_available()?;
-        let offset = self.transport.ec_read(uwcc_ec_reg::TCC_OFFSET_C)?;
-        Ok(offset.min(MAX_TCC_OFFSET_C))
+        Err(PlatformError::Unsupported(
+            "CPU TCC offset is not mapped to EC 0x0743 (EC_ADDR_CTGP_DB_CTRL)",
+        ))
     }
 
     fn set_tcc_offset(&self, offset_c: u8) -> Result<(), PlatformError> {
@@ -711,7 +712,9 @@ impl PlatformBackend for UwccBackend {
                 "CPU TCC offset must be 0..=63 C",
             ));
         }
-        self.transport.ec_write(uwcc_ec_reg::TCC_OFFSET_C, offset_c)
+        Err(PlatformError::Unsupported(
+            "CPU TCC offset is not mapped to EC 0x0743 (EC_ADDR_CTGP_DB_CTRL)",
+        ))
     }
 
     fn set_pwup(&self, enable: bool, level: u32) -> Result<(), PlatformError> {

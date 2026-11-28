@@ -94,7 +94,7 @@
 - [ ] Провести полную аппаратную приёмку `uwcc-rs` + `UwccBackend` + `HidrawDeviceTransport` на `MECHREVO X6AR55xY` (`M14.9`).
 
 #### E. Завершение Windows-порта (`M15`)
-- [ ] Вынести `nix` под `[target.'cfg(unix)'.dependencies]` в `crates/ucc-hardware/Cargo.toml` и `crates/uccd/Cargo.toml`, заменить негейтированный `nix::Error` и расширить `windows-check.yml` на `ucc-hardware`, `ucc-lighting`, `ucc-cli`, `uccd`.
+- [ ] Вынести `nix` под `[target.'cfg(unix)'.dependencies]` в `crates/ucc-hardware/Cargo.toml`, `crates/uccd/Cargo.toml` и `crates/ucc-desktop/Cargo.toml`, заменить негейтированный `nix::Error` и расширить `windows-check.yml` на `ucc-hardware`, `ucc-lighting`, `ucc-cli`, `uccd`.
 - [ ] Реализовать нативный Windows-трей (`Shell_NotifyIconW` в `crates/ucc-desktop`) и Named Pipe клиент в `ucc-gui` (`M15.5`).
 - [ ] Завершить живую реализацию `LiveWinRtGattBridge` и `WmiBrightnessBridge`, выровнять карту EC-регистров `windows_wmi` ↔ `uwcc`.
 - [ ] Собрать и проверить инсталлятор MSI/WiX/Inno + `winget` (`M15.6`) и провести живое тестирование на Windows 11.

@@ -165,6 +165,7 @@ jobs:
       options: --user root
     env:
       XDG_RUNTIME_DIR: /tmp/ucc-ci-runtime
+      CCACHE_DIR: ${{ github.workspace }}/.ccache
     strategy:
       fail-fast: false
       matrix:
