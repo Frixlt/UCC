@@ -10,6 +10,7 @@ pub mod platform;
 pub mod sysfs;
 pub mod telemetry;
 pub mod traits;
+pub mod uwcc;
 pub mod windows_display;
 pub mod windows_lid;
 pub mod windows_power;
@@ -72,6 +73,23 @@ pub use traits::{
     Clock, GpuBackend, GpuTelemetry, GpuWrite, HardwareIo, HardwareIoWrite, MockClock,
     MockGpuBackend, MockHardwareIo, MockProcessRunner, MockSysfs, ProcessExecution, ProcessOutput,
     ProcessRunner, RealClock, RealProcessRunner, RealSysfs, Sysfs, SysfsWrite,
+};
+#[cfg(unix)]
+pub use uwcc::LinuxUinputEmitter;
+pub use uwcc::{
+    decode_tachometer_rpm, ec_duty_to_percent, hotkey_to_linux_keycode, parse_backend_selection,
+    percent_to_ec_duty, translate_wmi_event, uwcc_ec_reg, MockUinputEmitter, MockUwccTransport,
+    PlatformBackendSelection, RamFanController, RamFanCurve, RamFanPoint, SmrwPowerLimits,
+    UinputEmitter, UsbWebcamController, UsbWebcamDevice, UwccBackend, UwccDevice, UwccEcReg,
+    UwccHotkeyEvent, UwccInfo, UwccPwup, UwccSmrw, UwccTransport, UwccTransportWrite, UwccWmiEvent,
+    CHASSIS_PROJECT_0X1A, MAX_CHARGE_THRESHOLD_PCT, MAX_SANE_FAN_RPM, MAX_TCC_OFFSET_C,
+    MIN_CHARGE_THRESHOLD_PCT, RAMFAN_BASE, RAMFAN_END, RAMFAN_MAX_TEMP_C, RAMFAN_POINTS,
+    SMRW_POWER_LIMITS_LEN, SMRW_POWER_LIMITS_OFFSET, UINPUT_DEVICE_PATH, USB_CLASS_VIDEO,
+    USB_DEVICES_ROOT, UWCC_API_VERSION, UWCC_DEVICE_PATH, UWCC_FLAG_HAS_EC, UWCC_FLAG_HAS_HWMON,
+    UWCC_FLAG_HAS_PWUP, UWCC_FLAG_HAS_SMRW, UWCC_FLAG_HAS_WMI_EVENTS, UWCC_IOC_EC_READ,
+    UWCC_IOC_EC_WRITE, UWCC_IOC_GET_INFO, UWCC_IOC_PWUP, UWCC_IOC_SMRW, UWCC_MAGIC,
+    UWCC_NR_EC_READ, UWCC_NR_EC_WRITE, UWCC_NR_GET_INFO, UWCC_NR_PWUP, UWCC_NR_SMRW,
+    UWCC_SMRW_MAX_LEN, UWCC_WMI_RING_CAPACITY,
 };
 pub use windows_display::{
     DisplayModeSpec, MockWindowsDisplayTransport, WindowsDisplayController, WindowsDisplayError,

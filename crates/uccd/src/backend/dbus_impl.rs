@@ -76,7 +76,10 @@ impl UccdBackend for LiveUccdBackend {
                 .flatten()
                 .map(i32::from)
                 .unwrap_or(-1);
-            return Self::fan_map(tick.timestamp_ms, temp, speed);
+            let rpm = self
+                .latest_fan_rpm(0)
+                .or_else(|| self.platform.read_fan_rpm(0).ok());
+            return Self::fan_map_with_rpm(tick.timestamp_ms, temp, speed, rpm);
         }
         let temp = self.platform.read_fan_temp(0).unwrap_or(-1);
         let speed = self
@@ -84,7 +87,8 @@ impl UccdBackend for LiveUccdBackend {
             .read_fan_speed_percent(0)
             .map(i32::from)
             .unwrap_or(-1);
-        Self::fan_map(unix_ms(), temp, speed)
+        let rpm = self.platform.read_fan_rpm(0).ok();
+        Self::fan_map_with_rpm(unix_ms(), temp, speed, rpm)
     }
 
     fn get_fan_data_gpu1(&self) -> HashMap<String, OwnedValue> {
@@ -98,7 +102,10 @@ impl UccdBackend for LiveUccdBackend {
                 .flatten()
                 .map(i32::from)
                 .unwrap_or(-1);
-            return Self::fan_map(tick.timestamp_ms, temp, speed);
+            let rpm = self
+                .latest_fan_rpm(1)
+                .or_else(|| self.platform.read_fan_rpm(1).ok());
+            return Self::fan_map_with_rpm(tick.timestamp_ms, temp, speed, rpm);
         }
         let temp = self.platform.read_fan_temp(1).unwrap_or(-1);
         let speed = self
@@ -106,7 +113,8 @@ impl UccdBackend for LiveUccdBackend {
             .read_fan_speed_percent(1)
             .map(i32::from)
             .unwrap_or(-1);
-        Self::fan_map(unix_ms(), temp, speed)
+        let rpm = self.platform.read_fan_rpm(1).ok();
+        Self::fan_map_with_rpm(unix_ms(), temp, speed, rpm)
     }
 
     fn get_fan_data_gpu2(&self) -> HashMap<String, OwnedValue> {
@@ -120,7 +128,10 @@ impl UccdBackend for LiveUccdBackend {
                 .flatten()
                 .map(i32::from)
                 .unwrap_or(-1);
-            return Self::fan_map(tick.timestamp_ms, temp, speed);
+            let rpm = self
+                .latest_fan_rpm(2)
+                .or_else(|| self.platform.read_fan_rpm(2).ok());
+            return Self::fan_map_with_rpm(tick.timestamp_ms, temp, speed, rpm);
         }
         let temp = self.platform.read_fan_temp(2).unwrap_or(-1);
         let speed = self
@@ -128,7 +139,8 @@ impl UccdBackend for LiveUccdBackend {
             .read_fan_speed_percent(2)
             .map(i32::from)
             .unwrap_or(-1);
-        Self::fan_map(unix_ms(), temp, speed)
+        let rpm = self.platform.read_fan_rpm(2).ok();
+        Self::fan_map_with_rpm(unix_ms(), temp, speed, rpm)
     }
 
     fn webcam_sw_available(&self) -> bool {

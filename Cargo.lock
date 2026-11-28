@@ -1198,6 +1198,7 @@ dependencies = [
 name = "ucc-lighting"
 version = "0.0.1"
 dependencies = [
+ "libc",
  "serde",
  "serde_json",
  "tempfile",

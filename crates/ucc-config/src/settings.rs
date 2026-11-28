@@ -183,6 +183,13 @@ struct UccSettingsRaw {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub ycbcr420_workaround: Option<Vec<YCbCrWorkaroundEntry>>,
 
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        rename = "platformBackend"
+    )]
+    pub platform_backend: Option<String>,
+
     #[serde(flatten)]
     pub extra: HashMap<String, serde_json::Value>,
 }
@@ -264,6 +271,14 @@ pub struct UccSettings {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub ycbcr420_workaround: Option<Vec<YCbCrWorkaroundEntry>>,
 
+    /// Platform hardware backend selection (`"auto"`, `"uwcc"`, or `"tuxedo_io"`).
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        rename = "platformBackend"
+    )]
+    pub platform_backend: Option<String>,
+
     /// Preserves unknown/vendor-specific legacy attributes without loss.
     #[serde(flatten)]
     pub extra: HashMap<String, serde_json::Value>,
@@ -298,6 +313,7 @@ impl<'de> serde::Deserialize<'de> for UccSettings {
             fan_control_enabled: raw.fan_control_enabled,
             keyboard_backlight_control_supported: raw.keyboard_backlight_control_supported,
             ycbcr420_workaround: raw.ycbcr420_workaround,
+            platform_backend: raw.platform_backend,
             extra: raw.extra,
         })
     }
@@ -493,6 +509,7 @@ pub fn create_default_settings() -> UccSettings {
         fan_control_enabled: Some(true),
         keyboard_backlight_control_supported: Some(true),
         ycbcr420_workaround: Some(Vec::new()),
+        platform_backend: None,
         extra: HashMap::new(),
     }
 }

@@ -1,0 +1,47 @@
+# SPDX-License-Identifier: GPL-2.0-only
+# Arch Linux DKMS package for the uwcc-rs Rust-for-Linux kernel driver.
+
+pkgname=uwcc-dkms
+pkgver=0.0.1
+pkgrel=1
+pkgdesc="Rust-for-Linux DKMS driver for Uniwill INOU0000 EC, WMI events, and D3cold-safe hwmon (/dev/uwcc)"
+arch=('x86_64')
+url="https://github.com/uniwill-control-center/ucc-rusted"
+license=('GPL-2.0-only')
+depends=('dkms')
+conflicts=('tuxedo-drivers-dkms')
+provides=('uwcc-driver')
+source=()
+sha256sums=()
+
+package() {
+	local _srcroot
+	_srcroot="$(cd "${startdir}/../.." && pwd)"
+	local _dkms_dir="${pkgdir}/usr/src/uwcc-rs-${pkgver}"
+
+	install -dm755 "${_dkms_dir}/include/uapi"
+	install -dm755 "${_dkms_dir}/src"
+
+	install -Dm644 "${_srcroot}/Kbuild" "${_dkms_dir}/Kbuild"
+	install -Dm644 "${_srcroot}/Makefile" "${_dkms_dir}/Makefile"
+	install -Dm644 "${_srcroot}/dkms.conf" "${_dkms_dir}/dkms.conf"
+	install -Dm644 "${_srcroot}/include/uapi/uwcc.h" "${_dkms_dir}/include/uapi/uwcc.h"
+
+	install -Dm644 "${_srcroot}/src/acpi_shim.h" "${_dkms_dir}/src/acpi_shim.h"
+	install -Dm644 "${_srcroot}/src/acpi_shim.c" "${_dkms_dir}/src/acpi_shim.c"
+	install -Dm644 "${_srcroot}/src/uwcc_rs.rs" "${_dkms_dir}/src/uwcc_rs.rs"
+	install -Dm644 "${_srcroot}/src/ring_buffer.rs" "${_dkms_dir}/src/ring_buffer.rs"
+	install -Dm644 "${_srcroot}/src/validation.rs" "${_dkms_dir}/src/validation.rs"
+
+	# Userspace UAPI header
+	install -Dm644 "${_srcroot}/include/uapi/uwcc.h" \
+		"${pkgdir}/usr/include/uwcc/uwcc.h"
+
+	# udev rules for /dev/uwcc and ITE hidraw lighting devices
+	install -Dm644 "${_srcroot}/udev/99-uwcc.rules" \
+		"${pkgdir}/usr/lib/udev/rules.d/99-uwcc.rules"
+
+	# Mutually exclusive modprobe blacklist for tuxedo-drivers modules
+	install -Dm644 "${_srcroot}/modprobe/uwcc-blacklist-tuxedo.conf" \
+		"${pkgdir}/usr/lib/modprobe.d/uwcc-blacklist-tuxedo.conf"
+}
