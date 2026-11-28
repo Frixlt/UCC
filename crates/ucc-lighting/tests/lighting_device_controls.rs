@@ -58,7 +58,7 @@ fn keyboard_propagates_buffer_enable_mid_write_and_release_failures() {
     // 1. Enable failure aborts immediately without zone writes
     let mock = Arc::new(MockLightingTransport::new());
     mock.set_keyboard_caps(caps.clone());
-    let mut kbd = KeyboardBacklightController::new(mock.clone());
+    let mut kbd = KeyboardBacklightController::new(Arc::clone(&mock));
     kbd.init().unwrap();
     mock.set_fail_on_buffer_input(true, false);
     assert!(matches!(
@@ -85,7 +85,7 @@ fn lightbar_reports_failure_to_apply_managed_settings_and_recovers_on_retry_and_
         max_brightness: 255,
     }));
     transport.set_fail_on_lightbar_write(true);
-    let mut controller = LightbarController::new(transport.clone());
+    let mut controller = LightbarController::new(Arc::clone(&transport));
     let result = controller.configure(&json!({"managed": true, "welcome_anim": true}));
     assert!(
         result.is_err(),
@@ -139,7 +139,7 @@ fn mechrevo_126_zone_profile_preserves_physical_led_ids_when_a_zone_is_missing()
     profile_states[MECHREVO_LSHIFT_LED_ID as usize].green = 22;
     profile_states[MECHREVO_ENTER_LED_ID as usize].blue = 33;
 
-    let mut kbd = KeyboardBacklightController::new(mock.clone());
+    let mut kbd = KeyboardBacklightController::new(Arc::clone(&mock));
     kbd.init().unwrap();
     kbd.apply_states(&profile_states).unwrap();
 
@@ -257,7 +257,7 @@ fn sysfs_write_keyboard_zones_commits_brightness_after_multi_intensity() {
     let buf_path = base.join("rgb:kbd_backlight/device/controls/buffer_input");
     sysfs.set_file(&buf_path, "0\n");
 
-    let transport = Arc::new(SysfsLedTransport::new(sysfs.clone(), "/"));
+    let transport = Arc::new(SysfsLedTransport::new(Arc::clone(&sysfs), "/"));
     let mut kbd = KeyboardBacklightController::new(transport);
     kbd.init().unwrap();
     sysfs.clear_journal();

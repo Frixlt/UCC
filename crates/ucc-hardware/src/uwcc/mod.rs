@@ -300,15 +300,16 @@ impl SmrwPowerLimits {
         buf
     }
 
-    /// Parses a native 12-byte `INOU0000` `SMRW` buffer (`AX20`/`AX40`/`AX60`/`AX90`/`BX90`).
+    /// Parses a native 12-byte `INOU0000` `SMRW` buffer (`AX20`/`AX40`/`AX60`/`AX90`/`BX90`/`G2X9`).
     ///
     /// Layout verified against `DSDT.dsl`:
     /// - `data[0]`: PL1 max (W)
     /// - `data[1]`: PL2 max (W)
     /// - `data[2]`: PL4 max (W)
-    /// - `data[4]`: Dynamic Boost min (W)
-    /// - `data[5]`: Dynamic Boost max (W)
-    /// - `data[7]`: Base TGP max (W); total cTGP max = `base_tgp + db_max`
+    /// - `data[4]`: cTGP base floor (W) (`0` on `AX*`/`BX*`, e.g. `0x46` = 70 W on `G2X9`)
+    /// - `data[5]`: Dynamic Boost max (W) (e.g. `0x19` = 25 W)
+    /// - `data[7]`: Base TGP offset / max (W); `base_tgp_max = data[4] + data[7]`,
+    ///   total cTGP max = `base_tgp_max + dynamic_boost_max`
     /// - `data[8..12]`: `0xFF` sentinel tail
     pub fn decode_inou0000_12byte(data: &[u8]) -> Option<Self> {
         if data.len() < usize::from(SMRW_INOU0000_LEN) || data[8..12] != [0xFF, 0xFF, 0xFF, 0xFF] {
@@ -317,20 +318,27 @@ impl SmrwPowerLimits {
         let pl1_max_w = i32::from(data[0]);
         let pl2_max_w = i32::from(data[1]);
         let pl4_max_w = i32::from(data[2]);
-        let dynamic_boost_min_w = i32::from(data[4]);
+        let base_tgp_min_w = i32::from(data[4]);
         let dynamic_boost_max_w = i32::from(data[5]);
-        let base_tgp_max_w = i32::from(data[7]);
+        let base_tgp_offset_w = i32::from(data[7]);
+        let base_tgp_max_w = base_tgp_min_w + base_tgp_offset_w;
         let ctgp_max_w = base_tgp_max_w + dynamic_boost_max_w;
 
         if pl1_max_w < 15
             || pl2_max_w < 15
             || pl4_max_w < 15
-            || dynamic_boost_min_w > dynamic_boost_max_w
             || dynamic_boost_max_w > 100
-            || base_tgp_max_w < 35
+            || !(35..=250).contains(&base_tgp_max_w)
+            || ctgp_max_w > i32::from(u8::MAX)
         {
             return None;
         }
+
+        let ctgp_min_w = if base_tgp_min_w > 0 {
+            base_tgp_min_w.min(ctgp_max_w)
+        } else {
+            55.min(ctgp_max_w)
+        };
 
         Some(Self {
             pl1_min_w: 15,
@@ -339,9 +347,9 @@ impl SmrwPowerLimits {
             pl2_max_w,
             pl4_min_w: 25.min(pl4_max_w),
             pl4_max_w,
-            ctgp_min_w: 55.min(ctgp_max_w),
+            ctgp_min_w,
             ctgp_max_w,
-            dynamic_boost_min_w,
+            dynamic_boost_min_w: 0,
             dynamic_boost_max_w,
         })
     }

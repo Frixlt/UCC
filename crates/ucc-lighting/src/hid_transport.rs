@@ -26,8 +26,16 @@ pub const ITE_LIGHTBAR_PRODUCT_IDS: [u16; 2] =
 pub const LIGHTBAR_FRONT_ZONES: usize = 4;
 /// Zone index for the lid logo LED present on 5-zone ITE `048D:7000` controllers.
 pub const LIGHTBAR_LID_LOGO_ZONE_ID: u8 = 5;
-/// Maximum hardware brightness register value accepted by ITE `048D:600B` (`0..=50`).
+/// Maximum hardware brightness register value accepted by ITE `048D:600B` / `048D:7001` (`0..=50`).
 pub const ITE_KEYBOARD_MAX_HW_BRIGHTNESS: u8 = 50;
+/// Number of per-key LED matrix rows on ITE `048D:600B` (ITE 8291r3).
+pub const ITE_KEYBOARD_ROWS: usize = 6;
+/// Number of per-key LED matrix columns per row on ITE `048D:600B` (ITE 8291r3).
+pub const ITE_KEYBOARD_COLS: usize = 21;
+/// Payload length (excluding Report ID `0x00`) of an ITE 8291r3 per-key row output report.
+pub const ITE_KEYBOARD_ROW_REPORT_LEN: usize = 64;
+/// Number of addressable RGB LED slots on ITE `048D:7001` (ITE 8233) Lightbar (`0..16`).
+pub const ITE_LIGHTBAR_8233_SLOTS: usize = 16;
 
 /// Uniwill EC register address controlling Lightbar AC power (`0x0748` `EC_ADDR_LIGHTBAR_AC_CTRL`).
 pub const EC_LIGHTBAR_POWER_REG_PRIMARY: u16 = 0x0748;
@@ -50,6 +58,14 @@ pub trait HidDeviceTransport: Send + Sync {
     fn enumerate_devices(&self) -> Result<Vec<HidDeviceInfo>, LightingError>;
     fn send_feature_report(&self, path: &str, report: &[u8]) -> Result<(), LightingError>;
     fn get_feature_report(&self, path: &str, len: usize) -> Result<Vec<u8>, LightingError>;
+
+    /// Sends a raw HID output report (used for ITE 8291r3 64-byte per-key row frames).
+    ///
+    /// Defaults to [`Self::send_feature_report`] for lightweight test mocks that do not
+    /// distinguish output reports from feature reports.
+    fn send_output_report(&self, path: &str, report: &[u8]) -> Result<(), LightingError> {
+        self.send_feature_report(path, report)
+    }
 
     /// Optional HID usage page metadata for interface disambiguation (`P0-12`).
     fn device_usage_page(&self, _path: &str) -> Option<u16> {
@@ -241,9 +257,14 @@ impl UniwillHidTransport {
     }
 
     /// Scales logical keyboard brightness (`0..=255`) to ITE `048D:600B` hardware range (`0..=50`).
+    ///
+    /// Non-zero inputs (`1..=255`) always map to at least `1` so dim settings never power off LEDs.
     pub fn scale_keyboard_brightness(brightness: u32) -> u8 {
+        if brightness == 0 {
+            return 0;
+        }
         let max_hw = u32::from(ITE_KEYBOARD_MAX_HW_BRIGHTNESS);
-        ((brightness.min(255) * max_hw + 127) / 255).min(max_hw) as u8
+        ((brightness.min(255) * max_hw + 127) / 255).clamp(1, max_hw) as u8
     }
 
     /// Invokes the optional EC Lightbar power-rail callback (`0x767`/`0x768`).
@@ -323,7 +344,7 @@ impl UniwillHidTransport {
         }
         for (idx, rgb) in zone_colors.iter().enumerate() {
             let zone_id = (idx + 1) as u8;
-            let packet = [0x14, zone_id, rgb.r, rgb.g, rgb.b, 0, 0, 0];
+            let packet = [0x14, 0x00, zone_id, rgb.r, rgb.g, rgb.b, 0, 0];
             self.hid.send_feature_report(&dev.path, &packet)?;
         }
         Ok(())
@@ -345,11 +366,11 @@ impl UniwillHidTransport {
         }
         let packet = [
             0x14,
+            0x00,
             LIGHTBAR_LID_LOGO_ZONE_ID,
             rgb.r,
             rgb.g,
             rgb.b,
-            0,
             0,
             0,
         ];
@@ -372,12 +393,14 @@ impl LightingTransport for UniwillHidTransport {
         }))
     }
 
-    fn set_keyboard_buffer_input(&self, enabled: bool) -> Result<(), LightingError> {
-        let Some(dev) = self.find_device(&[ITE_KEYBOARD_PRODUCT_ID])? else {
+    fn set_keyboard_buffer_input(&self, _enabled: bool) -> Result<(), LightingError> {
+        // Sysfs `buffer_input` is only needed to batch per-LED sysfs writes in `ite_8291.ko`.
+        // Direct HID already uploads all 6 rows atomically in `write_keyboard_zones`; sending
+        // command `0x09` (`SET_BRIGHTNESS`) here would overwrite hardware brightness to 0/1.
+        let Some(_dev) = self.find_device(&[ITE_KEYBOARD_PRODUCT_ID])? else {
             return Err(LightingError::Unavailable);
         };
-        let packet = [0x09, 0x02, u8::from(enabled), 0, 0, 0, 0, 0];
-        self.hid.send_feature_report(&dev.path, &packet)
+        Ok(())
     }
 
     fn read_keyboard_brightness(&self) -> Result<Option<u32>, LightingError> {
@@ -391,9 +414,15 @@ impl LightingTransport for UniwillHidTransport {
         let Some(dev) = self.find_device(&[ITE_KEYBOARD_PRODUCT_ID])? else {
             return Err(LightingError::Unavailable);
         };
-        // ITE 048D:600B hardware brightness register accepts 0..=50 (`P0-11`).
+        // ITE 048D:600B (ITE 8291r3) hardware brightness register accepts 0..=50.
+        // Use UserEffect (0x33) when enabled so per-key row colors remain active, and SetOffOp
+        // (0x01) when brightness == 0.
         let level = Self::scale_keyboard_brightness(brightness);
-        let packet = [0x08, 0x02, 0x01, 0x05, level, 0, 0, 0];
+        let packet = if level == 0 {
+            [0x08, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00]
+        } else {
+            [0x08, 0x02, 0x33, 0x00, level, 0x00, 0x00, 0x00]
+        };
         self.hid.send_feature_report(&dev.path, &packet)?;
         *self
             .cached_keyboard_brightness
@@ -406,19 +435,57 @@ impl LightingTransport for UniwillHidTransport {
         let Some(dev) = self.find_device(&[ITE_KEYBOARD_PRODUCT_ID])? else {
             return Err(LightingError::Unavailable);
         };
-        // Chunk into <=64-byte USB HID feature reports (max 16 RGB zones per 51-byte packet, `P0-10`).
-        const ZONES_PER_CHUNK: usize = 16;
-        for (chunk_idx, chunk) in colors.chunks(ZONES_PER_CHUNK).enumerate() {
-            let mut frame = Vec::with_capacity(3 + chunk.len() * 3);
-            frame.push(0x14);
-            frame.push(chunk_idx as u8);
-            frame.push(chunk.len() as u8);
-            for c in chunk {
-                frame.extend_from_slice(&[c.r, c.g, c.b]);
-            }
-            self.hid.send_feature_report(&dev.path, &frame)?;
+        if colors.is_empty() {
+            *self.cached_colors.lock().unwrap_or_else(|e| e.into_inner()) = Vec::new();
+            return Ok(());
         }
-        *self.cached_colors.lock().unwrap_or_else(|e| e.into_inner()) = colors.to_vec();
+        // ITE 8291r3 per-key matrix protocol: 6 rows x 21 columns.
+        // Each row is selected via 8-byte feature report `SET_ROW_INDEX` (`0x16 0x00 row ...`)
+        // followed by a 64-byte planar output report:
+        //   buf[0]       = 0x00 (pad)
+        //   buf[1..22]   = Blue  (21 cols)
+        //   buf[22..43]  = Green (21 cols)
+        //   buf[43..64]  = Red   (21 cols)
+        let mut merged = self
+            .cached_colors
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .clone();
+        if merged.len() < colors.len() {
+            merged.resize(colors.len(), RgbColor::BLACK);
+        }
+        merged[..colors.len()].copy_from_slice(colors);
+
+        let mut rows = [[0u8; ITE_KEYBOARD_ROW_REPORT_LEN]; ITE_KEYBOARD_ROWS];
+        for (idx, c) in merged
+            .iter()
+            .take(ITE_KEYBOARD_ROWS * ITE_KEYBOARD_COLS)
+            .enumerate()
+        {
+            let row = idx / ITE_KEYBOARD_COLS;
+            let col = idx % ITE_KEYBOARD_COLS;
+            rows[row][1 + col] = c.b;
+            rows[row][1 + ITE_KEYBOARD_COLS + col] = c.g;
+            rows[row][1 + 2 * ITE_KEYBOARD_COLS + col] = c.r;
+        }
+        for (row_idx, row_buf) in rows.iter().enumerate() {
+            let select_row = [0x16, 0x00, row_idx as u8, 0x00, 0x00, 0x00, 0x00, 0x00];
+            self.hid.send_feature_report(&dev.path, &select_row)?;
+            self.hid.send_output_report(&dev.path, row_buf)?;
+        }
+        let cached_b = *self
+            .cached_keyboard_brightness
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
+        let level = match cached_b {
+            Some(b) => Self::scale_keyboard_brightness(b),
+            None => ITE_KEYBOARD_MAX_HW_BRIGHTNESS,
+        };
+        if level > 0 {
+            let commit_user = [0x08, 0x02, 0x33, 0x00, level, 0x00, 0x00, 0x00];
+            self.hid.send_feature_report(&dev.path, &commit_user)?;
+        }
+        *self.cached_colors.lock().unwrap_or_else(|e| e.into_inner()) = merged;
         Ok(())
     }
 
@@ -445,13 +512,14 @@ impl LightingTransport for UniwillHidTransport {
         let Some(dev) = self.find_device(&ITE_LIGHTBAR_PRODUCT_IDS)? else {
             return Err(LightingError::Unavailable);
         };
-        let level = brightness.min(255) as u8;
+        let level = Self::scale_keyboard_brightness(brightness);
         if level > 0 {
             self.set_lightbar_ec_power(true)?;
-        }
-        let packet = [0x08, 0x01, level, 0, 0, 0, 0, 0];
-        self.hid.send_feature_report(&dev.path, &packet)?;
-        if level == 0 {
+            let packet = [0x08, 0x02, 0x01, 0x05, level, 0x01, 0x00, 0x00];
+            self.hid.send_feature_report(&dev.path, &packet)?;
+        } else {
+            let packet = [0x08, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00];
+            self.hid.send_feature_report(&dev.path, &packet)?;
             self.set_lightbar_ec_power(false)?;
         }
         Ok(())
@@ -464,10 +532,17 @@ impl LightingTransport for UniwillHidTransport {
         if rgb != RgbColor::BLACK {
             self.ensure_lightbar_ec_power_on()?;
         }
-        let zones = Self::lightbar_zone_count(dev.product_id) as u8;
-        for zone in 1..=zones {
-            let packet = [0x14, zone, rgb.r, rgb.g, rgb.b, 0, 0, 0];
-            self.hid.send_feature_report(&dev.path, &packet)?;
+        if dev.product_id == ITE_LIGHTBAR_PRODUCT_ID_4ZONE {
+            for slot in 0..ITE_LIGHTBAR_8233_SLOTS as u8 {
+                let packet = [0x14, 0x00, slot, rgb.r, rgb.g, rgb.b, 0x00, 0x00];
+                self.hid.send_feature_report(&dev.path, &packet)?;
+            }
+        } else {
+            let zones = Self::lightbar_zone_count(dev.product_id) as u8;
+            for zone in 1..=zones {
+                let packet = [0x14, 0x00, zone, rgb.r, rgb.g, rgb.b, 0x00, 0x00];
+                self.hid.send_feature_report(&dev.path, &packet)?;
+            }
         }
         Ok(())
     }

@@ -1252,3 +1252,88 @@ fn uwcc_backend_ignores_0xff_unpopulated_ec_tdp_ceiling_sentinel() {
     assert_eq!(limits.pl2_max_w, 205);
     assert_eq!(limits.pl4_max_w, 250);
 }
+
+#[test]
+fn uwcc_backend_decodes_12byte_dsdt_g2x9_smrw_without_fallback() {
+    use std::sync::atomic::{AtomicUsize, Ordering};
+    use ucc_hardware::{UwccTransport, UWCC_SMRW_MAX_LEN};
+
+    struct CountingSmrwTransport {
+        inner: MockUwccTransport,
+        calls_over_12: AtomicUsize,
+    }
+
+    impl UwccTransport for CountingSmrwTransport {
+        fn is_available(&self) -> bool {
+            self.inner.is_available()
+        }
+        fn get_info(&self) -> Result<ucc_hardware::UwccInfo, PlatformError> {
+            self.inner.get_info()
+        }
+        fn ec_read(&self, addr: u16) -> Result<u8, PlatformError> {
+            self.inner.ec_read(addr)
+        }
+        fn ec_write(&self, addr: u16, val: u8) -> Result<(), PlatformError> {
+            self.inner.ec_write(addr, val)
+        }
+        fn smrw(&self, req: UwccSmrw) -> Result<UwccSmrw, PlatformError> {
+            if req.len > 12 {
+                self.calls_over_12.fetch_add(1, Ordering::SeqCst);
+            }
+            self.inner.smrw(req)
+        }
+        fn pwup(&self, enable: bool, level: u32) -> Result<(), PlatformError> {
+            self.inner.pwup(enable, level)
+        }
+        fn set_gpu_power(&self, op: u32, watts: u32) -> Result<(), PlatformError> {
+            self.inner.set_gpu_power(op, watts)
+        }
+        fn poll_event(&self) -> Result<Option<ucc_hardware::UwccWmiEvent>, PlatformError> {
+            self.inner.poll_event()
+        }
+        fn mux_get(&self) -> Result<ucc_hardware::UwccMuxState, PlatformError> {
+            self.inner.mux_get()
+        }
+        fn mux_set(&self, boot_mode: u32) -> Result<(), PlatformError> {
+            self.inner.mux_set(boot_mode)
+        }
+    }
+
+    let inner = MockUwccTransport::chassis_0x1a_default();
+    let mut g2x9 = [0u8; UWCC_SMRW_MAX_LEN];
+    g2x9[..12].copy_from_slice(&[
+        0xD2, 0xD2, 0xD2, 0x0A, 0x46, 0x19, 0x57, 0x50, 0xFF, 0xFF, 0xFF, 0xFF,
+    ]);
+    inner.set_smrw_table(SMRW_POWER_LIMITS_OFFSET, g2x9);
+
+    let counting = Arc::new(CountingSmrwTransport {
+        inner,
+        calls_over_12: AtomicUsize::new(0),
+    });
+    let backend = UwccBackend::new(Arc::clone(&counting) as Arc<dyn UwccTransport>, None, None);
+    let limits = backend.smrw_limits();
+
+    assert_eq!(counting.calls_over_12.load(Ordering::SeqCst), 0);
+    assert_eq!(limits.pl1_max_w, 210);
+    assert_eq!(limits.pl2_max_w, 210);
+    assert_eq!(limits.pl4_max_w, 210);
+    assert_eq!(limits.ctgp_min_w, 70);
+    assert_eq!(limits.ctgp_max_w, 175);
+    assert_eq!(limits.dynamic_boost_min_w, 0);
+    assert_eq!(limits.dynamic_boost_max_w, 25);
+}
+
+#[test]
+fn uwcc_12byte_smrw_rejects_excessive_base_tgp_and_ctgp_over_byte_ceiling() {
+    // base_tgp_max = data[4] (200) + data[7] (52) = 252 > 250, ctgp_max = 252 <= 255 -> rejected.
+    let over_base = [
+        0xD2, 0xD2, 0xD2, 0x0A, 200, 0, 0x57, 52, 0xFF, 0xFF, 0xFF, 0xFF,
+    ];
+    assert!(SmrwPowerLimits::decode_inou0000_12byte(&over_base).is_none());
+
+    // base_tgp_max = 220 <= 250, but ctgp_max = 220 + 50 = 270 > u8::MAX (255) -> rejected.
+    let over_ctgp = [
+        0xD2, 0xD2, 0xD2, 0x0A, 120, 50, 0x57, 100, 0xFF, 0xFF, 0xFF, 0xFF,
+    ];
+    assert!(SmrwPowerLimits::decode_inou0000_12byte(&over_ctgp).is_none());
+}

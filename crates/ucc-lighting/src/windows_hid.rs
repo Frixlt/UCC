@@ -25,6 +25,7 @@ pub struct WinHidDeviceRecord {
     pub usage_page: u16,
     pub usage: u16,
     pub feature_report_byte_length: usize,
+    pub output_report_byte_length: usize,
 }
 
 impl WinHidDeviceRecord {
@@ -90,6 +91,39 @@ pub fn frame_windows_feature_report(
     Ok(framed)
 }
 
+/// Frames an unnumbered HID output report payload for Windows by always prepending Report ID `0x00`.
+///
+/// Unlike [`frame_windows_feature_report`], this never treats a leading `0x00` payload byte as an
+/// already-prepended Report ID (required for ITE 8291r3 64-byte planar row buffers whose byte 0 is
+/// a `0x00` pad byte).
+pub fn frame_windows_output_report(
+    report: &[u8],
+    report_byte_length: usize,
+) -> Result<Vec<u8>, LightingError> {
+    if report.is_empty() {
+        return Err(LightingError::InvalidConfig(
+            "HID output report must not be empty".to_string(),
+        ));
+    }
+    if report_byte_length == 0 {
+        return Err(LightingError::InvalidConfig(
+            "HID device reports report byte length == 0".to_string(),
+        ));
+    }
+    let needed = report.len().saturating_add(1);
+    if needed > report_byte_length {
+        return Err(LightingError::InvalidConfig(format!(
+            "HID output report {} (+1 Report ID) exceeds report byte length {}",
+            report.len(),
+            report_byte_length
+        )));
+    }
+    let mut framed = vec![0u8; report_byte_length];
+    framed[0] = 0x00;
+    framed[1..1 + report.len()].copy_from_slice(report);
+    Ok(framed)
+}
+
 /// Strips an optional leading `0x00` Report ID byte from a `HidD_GetFeature` buffer and resizes
 /// cleanly to `requested_len` (truncating or zero-padding as needed).
 pub fn unframe_windows_feature_report(raw: &[u8], requested_len: usize) -> Vec<u8> {
@@ -111,6 +145,11 @@ pub trait WinHidSysApi: Send + Sync {
 
     /// Sends a pre-framed feature report buffer via `HidD_SetFeature`.
     fn set_feature_report(&self, path: &str, report: &[u8]) -> Result<(), LightingError>;
+
+    /// Sends a pre-framed output report buffer (defaults to [`Self::set_feature_report`] for mocks).
+    fn set_output_report(&self, path: &str, report: &[u8]) -> Result<(), LightingError> {
+        self.set_feature_report(path, report)
+    }
 
     /// Reads a feature report buffer via `HidD_GetFeature` (caller sets `buf[0]` to Report ID).
     fn get_feature_report(&self, path: &str, buf: &mut [u8]) -> Result<(), LightingError>;
@@ -203,6 +242,27 @@ impl WinHidSysApi for MockWinHidSysApi {
         Ok(())
     }
 
+    fn set_output_report(&self, path: &str, report: &[u8]) -> Result<(), LightingError> {
+        if *self.fail_writes.lock().unwrap_or_else(|e| e.into_inner()) {
+            return Err(LightingError::WriteFailed(
+                "Simulated HidD_SetOutputReport failure".to_string(),
+            ));
+        }
+        let dev = self.find_device(path).ok_or(LightingError::Unavailable)?;
+        if report.len() != dev.output_report_byte_length {
+            return Err(LightingError::WriteFailed(format!(
+                "HidD_SetOutputReport buffer length {} != device OutputReportByteLength {}",
+                report.len(),
+                dev.output_report_byte_length
+            )));
+        }
+        self.sent_reports
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .push((dev.path.clone(), report.to_vec()));
+        Ok(())
+    }
+
     fn get_feature_report(&self, path: &str, buf: &mut [u8]) -> Result<(), LightingError> {
         if *self.fail_reads.lock().unwrap_or_else(|e| e.into_inner()) {
             return Err(LightingError::WriteFailed(
@@ -288,6 +348,12 @@ impl HidDeviceTransport for WindowsHidTransport {
         let rec = self.resolve_record(path)?;
         let framed = frame_windows_feature_report(report, rec.feature_report_byte_length)?;
         self.sys.set_feature_report(&rec.path, &framed)
+    }
+
+    fn send_output_report(&self, path: &str, report: &[u8]) -> Result<(), LightingError> {
+        let rec = self.resolve_record(path)?;
+        let framed = frame_windows_output_report(report, rec.output_report_byte_length)?;
+        self.sys.set_output_report(&rec.path, &framed)
     }
 
     fn get_feature_report(&self, path: &str, len: usize) -> Result<Vec<u8>, LightingError> {
@@ -406,6 +472,11 @@ mod win_hid_ffi {
         fn HidD_FreePreparsedData(preparsed_data: PreparsedData) -> Boolean;
         fn HidP_GetCaps(preparsed_data: PreparsedData, capabilities: *mut HidpCaps) -> NtStatus;
         fn HidD_SetFeature(
+            hid_device_object: Handle,
+            report_buffer: *const c_void,
+            report_buffer_length: u32,
+        ) -> Boolean;
+        fn HidD_SetOutputReport(
             hid_device_object: Handle,
             report_buffer: *const c_void,
             report_buffer_length: u32,
@@ -660,6 +731,7 @@ mod win_hid_ffi {
                 usage_page: caps.usage_page,
                 usage: caps.usage,
                 feature_report_byte_length: usize::from(caps.feature_report_byte_length),
+                output_report_byte_length: usize::from(caps.output_report_byte_length),
             })
         }
     }
@@ -715,6 +787,23 @@ mod win_hid_ffi {
             if ok == 0 {
                 return Err(LightingError::WriteFailed(format!(
                     "HidD_SetFeature failed on {path}: {}",
+                    std::io::Error::last_os_error()
+                )));
+            }
+            Ok(())
+        }
+
+        fn set_output_report(&self, path: &str, report: &[u8]) -> Result<(), LightingError> {
+            let len = u32::try_from(report.len()).map_err(|_| {
+                LightingError::InvalidConfig("HID output report length exceeds u32::MAX".into())
+            })?;
+            let handle = WinHandleGuard::open(path, GENERIC_READ | GENERIC_WRITE)?;
+            let ok = unsafe {
+                HidD_SetOutputReport(handle.as_raw(), report.as_ptr() as *const c_void, len)
+            };
+            if ok == 0 {
+                return Err(LightingError::WriteFailed(format!(
+                    "HidD_SetOutputReport failed on {path}: {}",
                     std::io::Error::last_os_error()
                 )));
             }

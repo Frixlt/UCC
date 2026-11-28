@@ -367,25 +367,34 @@ fn ite_600b_preserves_physical_calibration_and_caps_brightness_to_50() {
     kbd.apply_states(&states).expect("apply 126-key profile");
 
     let reports = mock_hid.recorded_reports();
-    // 1 buffer enable + 1 brightness + 8 zone chunks (ceil(126/16)) + 1 buffer disable = 11
-    assert_eq!(reports.len(), 11);
-    assert_eq!(reports[0].1, vec![0x09, 0x02, 0x01, 0, 0, 0, 0, 0]);
-    assert_eq!(reports[1].1, vec![0x08, 0x02, 0x01, 0x05, 50, 0, 0, 0]);
-    assert_eq!(reports[10].1, vec![0x09, 0x02, 0x00, 0, 0, 0, 0, 0]);
+    // 1 brightness (UserEffect 0x33) + 6 * (SET_ROW_INDEX 0x16 + 64-byte planar BGR row) + 1 latch = 14.
+    // buffer_input acquire/release must NOT send 0x09 (SET_BRIGHTNESS).
+    assert_eq!(reports.len(), 14);
+    assert!(
+        !reports.iter().any(|(_, r)| r.first() == Some(&0x09)),
+        "buffer_input must not overwrite ITE 8291r3 brightness via command 0x09"
+    );
+    assert_eq!(reports[0].1, vec![0x08, 0x02, 0x33, 0x00, 50, 0, 0, 0]);
+    assert_eq!(reports[13].1, vec![0x08, 0x02, 0x33, 0x00, 50, 0, 0, 0]);
 
-    // Verify every chunked 0x14 frame is <= 64 bytes and preserves calibrated LED offsets
-    let zone_frames: Vec<&Vec<u8>> = reports[2..10].iter().map(|(_, r)| r).collect();
-    for frame in &zone_frames {
-        assert!(frame.len() <= 64);
-        assert_eq!(frame[0], 0x14);
+    // Verify 6 rows x (8-byte SET_ROW_INDEX + 64-byte planar BGR output report)
+    for row in 0..6usize {
+        let sel = &reports[1 + row * 2].1;
+        let data = &reports[2 + row * 2].1;
+        assert_eq!(sel, &vec![0x16, 0x00, row as u8, 0, 0, 0, 0, 0]);
+        assert_eq!(data.len(), 64);
+        assert_eq!(data[0], 0x00);
     }
 
-    // LCtrl = LED 0 -> chunk 0, key offset 0
-    assert_eq!(&zone_frames[0][3..6], &[11, 22, 33]);
-    // LShift = LED 21 -> chunk 1 (16..32), key offset 5 => byte offset 3 + 5*3 = 18..21
-    assert_eq!(&zone_frames[1][18..21], &[44, 55, 66]);
-    // Enter = LED 56 -> chunk 3 (48..64), key offset 8 => byte offset 3 + 8*3 = 27..30
-    assert_eq!(&zone_frames[3][27..30], &[77, 88, 99]);
+    // LCtrl = LED 0 -> row 0, col 0 (B=1+0, G=22+0, R=43+0)
+    let row0 = &reports[2].1;
+    assert_eq!((row0[43], row0[22], row0[1]), (11, 22, 33));
+    // LShift = LED 21 -> row 1, col 0
+    let row1 = &reports[4].1;
+    assert_eq!((row1[43], row1[22], row1[1]), (44, 55, 66));
+    // Enter = LED 56 -> row 2, col 14 (56 = 2*21 + 14)
+    let row2 = &reports[6].1;
+    assert_eq!((row2[43 + 14], row2[22 + 14], row2[1 + 14]), (77, 88, 99));
 
     assert_eq!(
         transport.read_keyboard_brightness().expect("read b"),
@@ -431,10 +440,10 @@ fn ite_lightbar_zones_lid_logo_and_ec_power_hook() {
         .expect("write 4 zones");
     let reports_7001 = mock_7001.recorded_reports();
     assert_eq!(reports_7001.len(), 4);
-    assert_eq!(reports_7001[0].1, vec![0x14, 1, 255, 0, 0, 0, 0, 0]);
-    assert_eq!(reports_7001[1].1, vec![0x14, 2, 0, 255, 0, 0, 0, 0]);
-    assert_eq!(reports_7001[2].1, vec![0x14, 3, 0, 0, 255, 0, 0, 0]);
-    assert_eq!(reports_7001[3].1, vec![0x14, 4, 255, 255, 0, 0, 0, 0]);
+    assert_eq!(reports_7001[0].1, vec![0x14, 0x00, 1, 255, 0, 0, 0, 0]);
+    assert_eq!(reports_7001[1].1, vec![0x14, 0x00, 2, 0, 255, 0, 0, 0]);
+    assert_eq!(reports_7001[2].1, vec![0x14, 0x00, 3, 0, 0, 255, 0, 0]);
+    assert_eq!(reports_7001[3].1, vec![0x14, 0x00, 4, 255, 255, 0, 0, 0]);
 
     // Passing 5 zones to a 4-zone controller must be rejected
     assert!(matches!(
@@ -488,8 +497,12 @@ fn ite_lightbar_zones_lid_logo_and_ec_power_hook() {
     );
     let reports_7000 = mock_7000.recorded_reports();
     assert_eq!(reports_7000.len(), 3);
-    assert_eq!(reports_7000[0].1, vec![0x08, 0x01, 200, 0, 0, 0, 0, 0]);
-    assert_eq!(reports_7000[1].1, vec![0x14, 5, 12, 34, 56, 0, 0, 0]);
+    let expected_lvl = UniwillHidTransport::scale_keyboard_brightness(200);
+    assert_eq!(
+        reports_7000[0].1,
+        vec![0x08, 0x02, 0x01, 0x05, expected_lvl, 0x01, 0, 0]
+    );
+    assert_eq!(reports_7000[1].1, vec![0x14, 0x00, 5, 12, 34, 56, 0, 0]);
     assert_eq!(reports_7000[2].1, vec![0x08, 0x01, 0, 0, 0, 0, 0, 0]);
 
     // Writing all 5 zones (4 front + lid logo) re-enables EC power automatically for non-black
@@ -510,7 +523,7 @@ fn ite_lightbar_zones_lid_logo_and_ec_power_hook() {
     );
     let zone_reports = mock_7000.recorded_reports();
     assert_eq!(zone_reports.len(), 5);
-    assert_eq!(zone_reports[4].1, vec![0x14, 5, 200, 100, 50, 0, 0, 0]);
+    assert_eq!(zone_reports[4].1, vec![0x14, 0x00, 5, 200, 100, 50, 0, 0]);
 }
 
 #[test]
@@ -587,24 +600,22 @@ fn lightbar_controller_over_hid_preserves_all_5_animations_and_flash_stays_off()
         if anim == LightbarAnimation::Flash {
             assert!(lb.is_flash_off());
             for (idx, (_, r)) in final_reports.iter().enumerate() {
-                assert_eq!(r, &vec![0x14, (idx + 1) as u8, 0, 0, 0, 0, 0, 0]);
+                assert_eq!(r, &vec![0x14, 0x00, (idx + 1) as u8, 0, 0, 0, 0, 0]);
             }
         } else {
             assert!(!lb.is_flash_off());
             for (idx, (_, r)) in final_reports.iter().enumerate() {
-                assert_eq!(
-                    r,
-                    &vec![
-                        0x14,
-                        (idx + 1) as u8,
-                        base_rgb.r,
-                        base_rgb.g,
-                        base_rgb.b,
-                        0,
-                        0,
-                        0
-                    ]
-                );
+                let expected = vec![
+                    0x14,
+                    0x00,
+                    (idx + 1) as u8,
+                    base_rgb.r,
+                    base_rgb.g,
+                    base_rgb.b,
+                    0,
+                    0,
+                ];
+                assert_eq!(r, &expected);
             }
         }
     }
@@ -824,7 +835,7 @@ fn uniwill_hid_empty_zones_and_partial_chunk_failure_preserves_cache() {
         .expect("seed initial keyboard zones");
     assert_eq!(transport.read_keyboard_colors().expect("read"), initial);
 
-    // 20 zones split into 2 chunks (16 + 4); fail on chunk index 1 (second call).
+    // 6-row ITE 8291r3 write fails on call index 1 (row 0 output report) and keeps cached colors.
     hid.clear_sent();
     hid.arm_fail_on_call(1);
     let twenty_zones = [RgbColor::new(200, 100, 50); 20];
@@ -907,4 +918,132 @@ fn hidraw_non_linux_stubs_return_unavailable() {
         hidraw.get_feature_report("/dev/hidraw0", 8),
         Err(LightingError::Unavailable)
     ));
+}
+
+#[test]
+fn ite8291_zero_and_dim_brightness_partial_zones_and_8233_16slot_lightbar() {
+    assert_eq!(UniwillHidTransport::scale_keyboard_brightness(0), 0);
+    assert_eq!(UniwillHidTransport::scale_keyboard_brightness(1), 1);
+    assert_eq!(UniwillHidTransport::scale_keyboard_brightness(2), 1);
+    assert_eq!(UniwillHidTransport::scale_keyboard_brightness(255), 50);
+
+    let mock_hid = Arc::new(MockHidTransport::new(vec![
+        HidDeviceInfo {
+            vendor_id: ITE_VENDOR_ID,
+            product_id: ITE_KEYBOARD_PRODUCT_ID,
+            path: "/dev/hidraw1".to_string(),
+        },
+        HidDeviceInfo {
+            vendor_id: ITE_VENDOR_ID,
+            product_id: ITE_LIGHTBAR_PRODUCT_ID_4ZONE,
+            path: "/dev/hidraw0".to_string(),
+        },
+    ]));
+    let transport = UniwillHidTransport::new(Arc::clone(&mock_hid) as _);
+
+    // Brightness 0 emits SetOffOp (0x08 0x01 ...).
+    transport.write_keyboard_brightness(0).expect("kbd off");
+    assert_eq!(
+        mock_hid.recorded_reports()[0].1,
+        vec![0x08, 0x01, 0, 0, 0, 0, 0, 0]
+    );
+
+    // Partial update preserves untouched cached keys.
+    let initial = vec![
+        RgbColor::new(10, 20, 30),
+        RgbColor::new(40, 50, 60),
+        RgbColor::new(70, 80, 90),
+    ];
+    transport.write_keyboard_zones(&initial).expect("initial");
+    transport
+        .write_keyboard_zones(&[RgbColor::new(1, 2, 3)])
+        .expect("partial");
+    assert_eq!(
+        transport.read_keyboard_colors().expect("cached"),
+        vec![
+            RgbColor::new(1, 2, 3),
+            RgbColor::new(40, 50, 60),
+            RgbColor::new(70, 80, 90),
+        ]
+    );
+
+    // ITE 8233 (048D:7001) lightbar color writes all 16 slots 0..16 with [0x14, 0x00, slot, R, G, B, 0, 0].
+    mock_hid.clear_reports();
+    transport
+        .write_lightbar_color(RgbColor::new(0, 128, 255))
+        .expect("8233 color");
+    let lb_reports = mock_hid.recorded_reports();
+    assert_eq!(lb_reports.len(), 16);
+    for (slot, (path, pkt)) in lb_reports.iter().enumerate() {
+        assert_eq!(path, "/dev/hidraw0");
+        assert_eq!(pkt, &vec![0x14, 0x00, slot as u8, 0, 128, 255, 0, 0]);
+    }
+}
+
+#[test]
+fn hidraw_send_output_report_validates_length_and_device_safety() {
+    let tmp = TempDir::new().expect("temp dir");
+    let dev_root = tmp.path().join("dev");
+    fs::create_dir_all(&dev_root).expect("dev root");
+    let regular_file = dev_root.join("hidraw0");
+    fs::write(&regular_file, b"").expect("regular file");
+    let regular_path = regular_file.to_string_lossy().into_owned();
+
+    let hidraw = HidrawDeviceTransport::with_roots(tmp.path().join("sys"), &dev_root);
+
+    #[cfg(target_os = "linux")]
+    {
+        assert!(matches!(
+            hidraw.send_output_report(&regular_path, &[]),
+            Err(LightingError::InvalidConfig(_))
+        ));
+        assert!(matches!(
+            hidraw.send_output_report(&regular_path, &[0u8; 65]),
+            Err(LightingError::InvalidConfig(_))
+        ));
+        assert!(matches!(
+            hidraw.send_output_report("../etc/passwd", &[0u8; 64]),
+            Err(LightingError::InvalidConfig(_))
+        ));
+        assert!(matches!(
+            hidraw.send_output_report(&regular_path, &[0u8; 64]),
+            Err(LightingError::InvalidConfig(_))
+        ));
+    }
+    #[cfg(not(target_os = "linux"))]
+    {
+        assert!(matches!(
+            hidraw.send_output_report(&regular_path, &[0u8; 64]),
+            Err(LightingError::Unavailable)
+        ));
+    }
+}
+
+#[test]
+fn ite8291_cold_cache_zone_write_latches_user_mode_and_zero_brightness_skips_latch() {
+    let mock_hid = Arc::new(MockHidTransport::new(vec![HidDeviceInfo {
+        vendor_id: ITE_VENDOR_ID,
+        product_id: ITE_KEYBOARD_PRODUCT_ID,
+        path: "/dev/hidraw1".to_string(),
+    }]));
+    let transport = UniwillHidTransport::new(Arc::clone(&mock_hid) as _);
+
+    // Cold cache (no prior write_keyboard_brightness): 6*(0x16 + 64B row) + 1 UserEffect latch = 13.
+    transport
+        .write_keyboard_zones(&[RgbColor::new(10, 20, 30)])
+        .expect("cold zone write");
+    let cold_reports = mock_hid.recorded_reports();
+    assert_eq!(cold_reports.len(), 13);
+    assert_eq!(
+        cold_reports[12].1,
+        vec![0x08, 0x02, 0x33, 0x00, 50, 0, 0, 0]
+    );
+
+    // Brightness 0: write_keyboard_zones uploads 6 rows (12 reports) without re-enabling LEDs.
+    transport.write_keyboard_brightness(0).expect("kbd off");
+    mock_hid.clear_reports();
+    transport
+        .write_keyboard_zones(&[RgbColor::new(1, 2, 3)])
+        .expect("dark zone write");
+    assert_eq!(mock_hid.recorded_reports().len(), 12);
 }

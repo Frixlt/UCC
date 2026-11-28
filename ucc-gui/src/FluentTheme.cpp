@@ -221,6 +221,7 @@ QLabel { background: transparent; border: none; }
 QLabel#pageTitle { font-size: 28px; font-weight: 600; }
 QLabel#subtitle { color: @secondary; font-size: 13px; }
 QLabel#muted, QLabel#logsDirectoryPath, QLabel#loggingStatus { color: @secondary; font-size: 12px; }
+QLabel#cpuFanRpmLabel, QLabel#gpuFanRpmLabel { color: @secondary; font-size: 11px; }
 QLabel#sidebarStatusText { color: @secondary; font-size: 12px; font-weight: 400; }
 QLabel#sidebarStatusIndicator { font-size: 12px; font-weight: 400; }
 QLabel#sidebarStatusIndicator[status="accent"] { color: @accent; }
