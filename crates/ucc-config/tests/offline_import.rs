@@ -843,10 +843,14 @@ fn tcc_asar_and_mechrevo_import_edge_cases() {
     .is_err());
     let mut bad_user = user;
     bad_user["aquarisSaveState"] = json!("{malformed-json");
-    assert!(
-        convert_mechrevo_tcc(&settings_crlf, &profiles_crlf, &bad_user, &curves, &hardware)
-            .is_err()
-    );
+    assert!(convert_mechrevo_tcc(
+        &settings_crlf,
+        &profiles_crlf,
+        &bad_user,
+        &curves,
+        &hardware
+    )
+    .is_err());
 
     // 3. convert_offline_import from CRLF Data/ JSON files with multiple profiles + malformed edge cases
     let data_dir = tmp.path().join("crlf_data");

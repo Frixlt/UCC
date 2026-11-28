@@ -590,7 +590,10 @@ fn ipc_monitor_data_since_and_fan_data_zvariant_conversion() {
             );
 
             let wrapped = Value::Value(Box::new(Value::from("nested-variant")));
-            map.insert("wrapped".to_string(), OwnedValue::try_from(wrapped).unwrap());
+            map.insert(
+                "wrapped".to_string(),
+                OwnedValue::try_from(wrapped).unwrap(),
+            );
             map
         }
 

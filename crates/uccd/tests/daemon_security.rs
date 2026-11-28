@@ -880,7 +880,8 @@ fn sleep_state_store_rejects_symlink_and_oversized_file() {
 
     // 1. Symlink at snapshot path must be rejected by both load() and save().
     let target_path = state_dir.join("real-target.json");
-    let original_target = r#"{"version":1,"wasActive":true,"manualMode":"ac","coolerEnabled":false}"#;
+    let original_target =
+        r#"{"version":1,"wasActive":true,"manualMode":"ac","coolerEnabled":false}"#;
     std::fs::write(&target_path, original_target).unwrap();
     std::fs::set_permissions(&target_path, std::fs::Permissions::from_mode(0o600)).unwrap();
 

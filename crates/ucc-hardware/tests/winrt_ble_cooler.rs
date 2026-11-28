@@ -256,8 +256,14 @@ fn winrt_cooler_write_failure_missing_tx_and_ambiguous_discovery() {
 
     bridge.set_fail_write(true);
     let fan_pkt = CoolerPacketEncoder::fan_speed(50).unwrap();
-    assert_eq!(transport.write_packet(fan_pkt), Err(CoolerError::NotConnected));
-    assert_eq!(transport.write_uart(fan_pkt), Err(CoolerError::NotConnected));
+    assert_eq!(
+        transport.write_packet(fan_pkt),
+        Err(CoolerError::NotConnected)
+    );
+    assert_eq!(
+        transport.write_uart(fan_pkt),
+        Err(CoolerError::NotConnected)
+    );
     assert!(bridge.written_packets().is_empty());
 
     // Clearing write failure restores packet transmission.

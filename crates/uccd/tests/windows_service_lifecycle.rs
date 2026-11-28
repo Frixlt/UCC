@@ -229,9 +229,7 @@ fn windows_service_start_pending_abort_and_nonzero_exit_code() {
     abort_via_stop.begin_start().unwrap();
     assert_eq!(abort_via_stop.state(), ServiceState::StartPending);
 
-    let after_stop = abort_via_stop
-        .handle_control(ServiceControl::Stop)
-        .unwrap();
+    let after_stop = abort_via_stop.handle_control(ServiceControl::Stop).unwrap();
     assert_eq!(after_stop, ServiceState::StopPending);
     assert!(abort_via_stop.is_stop_requested());
     assert!(abort_via_stop.stop_flag().load(Ordering::SeqCst));
@@ -323,11 +321,9 @@ fn windows_service_interrogate_preserves_pending_hints() {
 #[cfg(windows)]
 #[test]
 fn win32_run_windows_service_returns_scm_error_outside_scm() {
-    let err = uccd::windows_service::run_windows_service(
-        WindowsServiceConfig::default(),
-        |_stop_flag| 0,
-    )
-    .expect_err("running outside Windows SCM must return ServiceError::ScmError");
+    let err =
+        uccd::windows_service::run_windows_service(WindowsServiceConfig::default(), |_stop_flag| 0)
+            .expect_err("running outside Windows SCM must return ServiceError::ScmError");
     assert!(
         matches!(err, ServiceError::ScmError { code, .. } if code != 0),
         "expected ServiceError::ScmError with non-zero Win32 error code, got: {err:?}"

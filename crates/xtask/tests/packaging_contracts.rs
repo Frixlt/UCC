@@ -533,8 +533,8 @@ fn migration_plan_and_russian_readme_packaging_contracts() {
         "README.ru.md must not be empty"
     );
 
-    let cmake = std::fs::read_to_string(root.join("CMakeLists.txt"))
-        .expect("CMakeLists.txt must exist");
+    let cmake =
+        std::fs::read_to_string(root.join("CMakeLists.txt")).expect("CMakeLists.txt must exist");
     let installs_readme_ru = cmake.lines().any(|line| {
         let trimmed = line.trim();
         trimmed.starts_with("install(FILES")

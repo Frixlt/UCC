@@ -826,9 +826,10 @@ fn windows_display_brightness_clamping_and_refresh_error_paths() {
             }
         }
 
-        let wmi_transport = Win32DisplayTransport::with_wmi_brightness(Box::new(StubWmiBrightness {
-            level: AtomicU8::new(135),
-        }));
+        let wmi_transport =
+            Win32DisplayTransport::with_wmi_brightness(Box::new(StubWmiBrightness {
+                level: AtomicU8::new(135),
+            }));
         assert_eq!(wmi_transport.read_brightness(), Ok(100));
         wmi_transport.write_brightness(180).unwrap();
         assert_eq!(wmi_transport.read_brightness(), Ok(100));

@@ -115,7 +115,13 @@ fn ipc_dispatch_covers_core_methods_and_param_aliases() {
             true
         }
 
-        fn set_water_cooler_led_color(&self, red: i32, green: i32, blue: i32, mode_val: i32) -> bool {
+        fn set_water_cooler_led_color(
+            &self,
+            red: i32,
+            green: i32,
+            blue: i32,
+            mode_val: i32,
+        ) -> bool {
             self.calls
                 .lock()
                 .unwrap()
@@ -223,7 +229,11 @@ fn ipc_dispatch_covers_core_methods_and_param_aliases() {
 
     // Wrong parameter types
     let wrong_type_cases = [
-        ("SetManualPowerMode", json!({ "mode": 42 }), "missing string param 'mode'"),
+        (
+            "SetManualPowerMode",
+            json!({ "mode": 42 }),
+            "missing string param 'mode'",
+        ),
         (
             "SetDisplayBrightness",
             json!({ "brightness": "bright" }),
@@ -234,7 +244,11 @@ fn ipc_dispatch_covers_core_methods_and_param_aliases() {
             json!({ "brightness": 9_999_999_999_i64 }),
             "missing int param 'brightness'",
         ),
-        ("SetWebcam", json!({ "enabled": "yes" }), "missing bool param 'enabled'"),
+        (
+            "SetWebcam",
+            json!({ "enabled": "yes" }),
+            "missing bool param 'enabled'",
+        ),
         (
             "GetMonitorDataSince",
             json!({ "sinceTimestampMs": true }),
@@ -261,7 +275,11 @@ fn ipc_dispatch_covers_core_methods_and_param_aliases() {
 
     // Missing required params
     let missing_param_cases = [
-        ("SetDisplayBrightness", json!({}), "missing int param 'brightness'"),
+        (
+            "SetDisplayBrightness",
+            json!({}),
+            "missing int param 'brightness'",
+        ),
         (
             "SetDisplayRefreshRate",
             json!({ "display": "eDP-1" }),

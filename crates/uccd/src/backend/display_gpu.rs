@@ -1608,8 +1608,7 @@ impl LiveUccdBackend {
         if is_windows_wmi {
             if !self.platform.is_available() {
                 issues.push(
-                    "Аппаратный интерфейс Windows WMI/EC (AcpiTest_MULong) недоступен."
-                        .to_string(),
+                    "Аппаратный интерфейс Windows WMI/EC (AcpiTest_MULong) недоступен.".to_string(),
                 );
             }
         } else if is_uwcc {

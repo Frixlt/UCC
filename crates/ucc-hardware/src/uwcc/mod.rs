@@ -812,8 +812,7 @@ impl PlatformBackend for UwccBackend {
         } else {
             prev & !uwcc_ec_reg::LIGHTBAR_APP_EXISTS_BIT
         };
-        self.transport
-            .ec_write(uwcc_ec_reg::LIGHTBAR_AC_CTRL, next)
+        self.transport.ec_write(uwcc_ec_reg::LIGHTBAR_AC_CTRL, next)
     }
 
     fn read_fn_lock(&self) -> Result<bool, PlatformError> {

@@ -206,8 +206,11 @@ fn legacy_settings_manager_backup_recovery_extensions() {
         let primary = dir.path().join("settings.json");
         let bak = dir.path().join("settings.json.bak");
         fs::write(&primary, "{corrupted primary").expect("write corrupted primary");
-        fs::write(&bak, r#"{"keyboardLayout":"from-dot-bak","fahrenheit":true}"#)
-            .expect("write .bak");
+        fs::write(
+            &bak,
+            r#"{"keyboardLayout":"from-dot-bak","fahrenheit":true}"#,
+        )
+        .expect("write .bak");
 
         let mgr = SettingsManager::new(&primary);
         let recovered = mgr.read_settings().expect("recover from .bak");

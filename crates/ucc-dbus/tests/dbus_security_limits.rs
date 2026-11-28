@@ -711,8 +711,8 @@ impl UccdBackend for LaneIsolationBackend {
             .build()
             .unwrap();
         rt.block_on(async {
-            let _ = tokio::time::timeout(Duration::from_secs(3), self.charging_gate.notified())
-                .await;
+            let _ =
+                tokio::time::timeout(Duration::from_secs(3), self.charging_gate.notified()).await;
         });
         self.charging_in_flight.fetch_sub(1, Ordering::SeqCst);
         true
@@ -787,13 +787,11 @@ async fn offload_lane_isolation_across_independent_lanes() {
     );
 
     // Independent Display and Lighting lanes must complete promptly without blocking.
-    let display_ok = tokio::time::timeout(
-        Duration::from_millis(400),
-        proxy.set_display_brightness(80),
-    )
-    .await
-    .expect("Display lane must not be blocked by saturated Charging lane")
-    .expect("SetDisplayBrightness RPC should succeed");
+    let display_ok =
+        tokio::time::timeout(Duration::from_millis(400), proxy.set_display_brightness(80))
+            .await
+            .expect("Display lane must not be blocked by saturated Charging lane")
+            .expect("SetDisplayBrightness RPC should succeed");
     assert!(display_ok);
 
     let lighting_ok = tokio::time::timeout(

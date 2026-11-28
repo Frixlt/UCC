@@ -218,7 +218,10 @@ fn mock_sysfs_nested_dirs_missing_paths_and_write_journal() {
     // Empty mock sysfs reports missing paths cleanly.
     assert!(!sysfs.exists(&root));
     assert!(!sysfs.exists(&cpu0_gov));
-    assert_eq!(sysfs.read(&cpu0_gov).unwrap_err().kind(), ErrorKind::NotFound);
+    assert_eq!(
+        sysfs.read(&cpu0_gov).unwrap_err().kind(),
+        ErrorKind::NotFound
+    );
     assert_eq!(
         sysfs.read_dir(&missing_dir).unwrap_err().kind(),
         ErrorKind::NotFound
@@ -280,7 +283,10 @@ fn mock_sysfs_nested_dirs_missing_paths_and_write_journal() {
     // Removing the only file under cpu1 removes cpu1 from root read_dir and makes cpu1 NotFound.
     assert_eq!(sysfs.remove_file(&cpu1_gov).as_deref(), Some("powersave"));
     assert!(!sysfs.exists(&cpu1_gov));
-    assert_eq!(sysfs.read(&cpu1_gov).unwrap_err().kind(), ErrorKind::NotFound);
+    assert_eq!(
+        sysfs.read(&cpu1_gov).unwrap_err().kind(),
+        ErrorKind::NotFound
+    );
     assert_eq!(
         sysfs.read_dir(&cpu1).unwrap_err().kind(),
         ErrorKind::NotFound

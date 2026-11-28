@@ -383,7 +383,10 @@ fn windows_hid_unframe_edge_cases_empty_single_and_nonzero_id() {
         unframe_windows_feature_report(&nonzero, 4),
         vec![0x02, 0xAA, 0xBB, 0xCC]
     );
-    assert_eq!(unframe_windows_feature_report(&nonzero, 2), vec![0x02, 0xAA]);
+    assert_eq!(
+        unframe_windows_feature_report(&nonzero, 2),
+        vec![0x02, 0xAA]
+    );
     assert_eq!(
         unframe_windows_feature_report(&nonzero, 6),
         vec![0x02, 0xAA, 0xBB, 0xCC, 0x00, 0x00]

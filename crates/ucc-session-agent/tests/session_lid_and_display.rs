@@ -365,6 +365,8 @@ fn lid_handler_connector_matching_and_dpms_command_ordering() {
 
     // Unsupported backend emits no commands even for internal panels.
     let mut unsupported = LidDisplayHandler::new(RefreshBackend::Unsupported);
-    assert!(unsupported.on_lid_state_changed(false, &monitors).is_empty());
+    assert!(unsupported
+        .on_lid_state_changed(false, &monitors)
+        .is_empty());
     assert!(unsupported.on_lid_state_changed(true, &monitors).is_empty());
 }

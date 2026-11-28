@@ -826,7 +826,10 @@ fn uwcc_backend_ctgp_and_db_respect_pwbt_pwdb_flags_and_fail_writes() {
     backend.set_ctgp(120).unwrap();
     backend.set_dynamic_boost(20).unwrap();
     assert_eq!(transport.get_reg(uwcc_ec_reg::CTGP_WATTS), Some(120));
-    assert_eq!(transport.get_reg(uwcc_ec_reg::DYNAMIC_BOOST_WATTS), Some(20));
+    assert_eq!(
+        transport.get_reg(uwcc_ec_reg::DYNAMIC_BOOST_WATTS),
+        Some(20)
+    );
 
     let journal = transport.journal();
     assert!(!journal
@@ -1103,15 +1106,21 @@ fn usb_webcam_vid_pid_filter_multi_cam_and_errors() {
     all_cams.set_enabled(false).unwrap();
     assert!(!all_cams.is_enabled().unwrap());
     assert_eq!(
-        sysfs.get_file("/sys/bus/usb/devices/1-6/authorized").as_deref(),
+        sysfs
+            .get_file("/sys/bus/usb/devices/1-6/authorized")
+            .as_deref(),
         Some("0")
     );
     assert_eq!(
-        sysfs.get_file("/sys/bus/usb/devices/2-3/authorized").as_deref(),
+        sysfs
+            .get_file("/sys/bus/usb/devices/2-3/authorized")
+            .as_deref(),
         Some("0")
     );
     assert_eq!(
-        sysfs.get_file("/sys/bus/usb/devices/1-4/authorized").as_deref(),
+        sysfs
+            .get_file("/sys/bus/usb/devices/1-4/authorized")
+            .as_deref(),
         Some("1")
     );
 
@@ -1128,11 +1137,15 @@ fn usb_webcam_vid_pid_filter_multi_cam_and_errors() {
     filtered.set_enabled(false).unwrap();
     assert!(!filtered.is_enabled().unwrap());
     assert_eq!(
-        sysfs.get_file("/sys/bus/usb/devices/1-6/authorized").as_deref(),
+        sysfs
+            .get_file("/sys/bus/usb/devices/1-6/authorized")
+            .as_deref(),
         Some("0")
     );
     assert_eq!(
-        sysfs.get_file("/sys/bus/usb/devices/2-3/authorized").as_deref(),
+        sysfs
+            .get_file("/sys/bus/usb/devices/2-3/authorized")
+            .as_deref(),
         Some("1")
     );
 
@@ -1197,7 +1210,9 @@ fn wmi_uinput_mock_emitter_error_propagation_and_unknown_codes() {
         emitter.handle_wmi_event(unknown_evt).unwrap(),
         UwccHotkeyEvent::Unknown(0xBEEF)
     );
-    assert!(!emitter.emit_hotkey(UwccHotkeyEvent::Unknown(0xCAFE)).unwrap());
+    assert!(!emitter
+        .emit_hotkey(UwccHotkeyEvent::Unknown(0xCAFE))
+        .unwrap());
     assert!(emitter.emitted_keys().is_empty());
 
     // Recovering emitter resumes normal key emission

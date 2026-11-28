@@ -804,7 +804,9 @@ fn uniwill_hid_empty_zones_and_partial_chunk_failure_preserves_cache() {
     let transport = UniwillHidTransport::new(Arc::clone(&hid) as _);
 
     // Empty keyboard zone slice succeeds with zero HID reports and empty cache.
-    transport.write_keyboard_zones(&[]).expect("empty kbd zones");
+    transport
+        .write_keyboard_zones(&[])
+        .expect("empty kbd zones");
     assert_eq!(hid.sent_count(), 0);
     assert!(transport.read_keyboard_colors().expect("read").is_empty());
 
