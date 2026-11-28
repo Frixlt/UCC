@@ -272,15 +272,16 @@ void FanControlTab::setupUI()
     while (wcHw->count()) delete wcHw->takeAt(0);
     delete wcHw;
     auto *waterCoolerWidget=FluentTheme::createCard();
-    auto *controls=new QGridLayout(waterCoolerWidget);controls->setContentsMargins(20,20,20,20);controls->setHorizontalSpacing(16);controls->setVerticalSpacing(16);
+    auto *controls=new QGridLayout(waterCoolerWidget);controls->setContentsMargins(16,16,16,16);controls->setHorizontalSpacing(12);controls->setVerticalSpacing(14);
     auto *heading=new QLabel("Cooling controls");heading->setObjectName("cardTitle");controls->addWidget(heading,0,0,1,4);
     controls->addWidget(new QLabel("Water cooler"),1,0);controls->addWidget(m_waterCoolerEnableCheckBox,1,1,Qt::AlignLeft);
     controls->addWidget(fanSpeedLabel,1,2);controls->addWidget(m_fanSpeedSlider,1,3);
     controls->addWidget(pumpVoltageLabel,2,0);controls->addWidget(m_pumpVoltageCombo,2,1,Qt::AlignLeft);
     controls->addWidget(m_ledOnOffCheckBox,2,2);
     m_ledModeCombo->setSizeAdjustPolicy(QComboBox::AdjustToMinimumContentsLengthWithIcon);
-    m_ledModeCombo->setMinimumContentsLength(10);
-    auto *lighting=new QHBoxLayout;lighting->setSpacing(8);lighting->addWidget(ledModeLabel);lighting->addWidget(m_ledModeCombo);lighting->addWidget(m_colorPickerButton);
+    m_ledModeCombo->setMinimumContentsLength(7);
+    m_ledModeCombo->setSizePolicy(QSizePolicy::Expanding,QSizePolicy::Fixed);
+    auto *lighting=new QHBoxLayout;lighting->setSpacing(8);lighting->addWidget(ledModeLabel);lighting->addWidget(m_ledModeCombo,1);lighting->addWidget(m_colorPickerButton);
     controls->addLayout(lighting,2,3);controls->setColumnStretch(3,1);
     layout->addWidget(waterCoolerWidget);
 
