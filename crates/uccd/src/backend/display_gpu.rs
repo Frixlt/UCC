@@ -1599,7 +1599,9 @@ impl LiveUccdBackend {
                 settings_choice.as_deref(),
             ) == ucc_hardware::PlatformBackendSelection::Uwcc
         };
-        let is_windows_wmi = self.platform.kind() == ucc_hardware::PlatformBackendKind::WindowsWmi;
+        let is_windows_wmi = self.platform.kind() == ucc_hardware::PlatformBackendKind::WindowsWmi
+            || (cfg!(windows)
+                && self.platform.kind() == ucc_hardware::PlatformBackendKind::Unsupported);
         let is_uwcc = self.platform.kind() == ucc_hardware::PlatformBackendKind::Uwcc
             || (self.platform.kind() == ucc_hardware::PlatformBackendKind::Unsupported
                 && (uwcc_module_exists || uwcc_dev_exists || configured_uwcc));
@@ -1696,6 +1698,8 @@ impl LiveUccdBackend {
         let healthy = issues.is_empty();
         let message = if healthy {
             String::new()
+        } else if kernel.is_empty() {
+            format!("Проблема с драйверами\n{}", issues.join("\n"))
         } else {
             format!(
                 "Проблема с драйверами · ядро {kernel}\n{}",

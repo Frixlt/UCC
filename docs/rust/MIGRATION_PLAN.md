@@ -36,7 +36,7 @@
 | **M11** | Утилиты и `ucc-gnome` | **Almost Done** | Rust `import-offline`, `xtask maintenance`, `parser-check`, чистая граница `ucc-gnome` готовы; осталась живая приёмка quick controls (`M11.5`). |
 | **M12** | Упаковка и CI/CD | **Almost Done** | `xtask dist`, Arch `PKGBUILD`, Linux/Windows/Nix/Release CI и SBOM готовы; остались `post_upgrade`/clean-install/downgrade drill (`M12.4`, `M12.9`) и автогенерация CLI assets (`BUILD-02`). `M12.3` (DEB/RPM/Nix) — **Deferred**. |
 | **M13** | Финальный cutover, документация и удаление legacy C++ | **In Progress** | `M13.10` (ребрендинг `ucc-rusted`) и `M13.11` (строгая документация EN/RU/AI без `README.en.md`) закрыты; остались живая приёмка (`M13.1–M13.6`), удаление legacy C++ runtime из `CMakeLists.txt` (`M13.7–M13.8`) и релизный тег (`M13.9`). |
-| **M14** | Собственный Rust-драйвер ядра `uwcc-rs` (ADR-05) | **Code Done, HW Pending** | `kernel/uwcc-rs/` (собирается на Linux 7.3.6 + `rustc 1.100.0` + `LLVM=1`), `ECRR`/`ECRW`/`SMRW`/`PWUP`/`PWBT`/`PWDB`, MUX `PS8461E`, `UwccBackend`, `RamFan 1.5`, USB webcam, `HidrawDeviceTransport`, DKMS/Arch/udev/modprobe и CI UAPI/`no_std` готовы (`M14.1–M14.7`); остались `uwcc-dkms` install/rollback (`M14.8`) и полная приёмка на `MECHREVO X6AR55xY` (`M14.9`). |
+| **M14** | Собственный Rust-драйвер ядра `uwcc-rs` (ADR-05) | **Code Done, HW Pending** | `kernel/uwcc-rs/` (workspace `rustc 1.99.1`; проверена сборка на Linux 7.3.6 + `rustc 1.100.0` + `LLVM=1`), `ECRR`/`ECRW`/`SMRW`/`PWUP`/`PWBT`/`PWDB`, MUX `PS8461E`, `UwccBackend`, `RamFan 1.5`, USB webcam, `HidrawDeviceTransport`, DKMS/Arch/udev/modprobe и CI UAPI/`no_std` готовы (`M14.1–M14.7`); остались `uwcc-dkms` install/rollback (`M14.8`) и полная приёмка на `MECHREVO X6AR55xY` (`M14.9`). |
 | **M15** | Порт на Windows 11 (ADR-06) | **In Progress** | Фундамент `M15.1–M15.4` + CI `windows-check.yml` в коде (`platform_paths`, Named Pipe JSON-RPC, SCM service, `WindowsWmiEcBackend`, `nvml.dll`/Power/Display/Lid, WinRT BLE, `WindowsHidTransport`); остались Unix-гейтинг `nix` в `ucc-hardware`/`uccd`, Windows-трей (`Shell_NotifyIconW`), Named Pipe в `ucc-gui`, MSI/WiX/winget (`M15.6`) и тест на живой Windows 11. |
 
 ---
@@ -61,7 +61,7 @@
 ## 4. Единый чек-лист: выполнено vs осталось
 
 ### Выполнено (закрыто в коде и тестах)
-- [x] `M0`–`M6`, `M8`: базовые контракты, `ADR-01..06`, `ucc-core`, `ucc-config`, `ucc-dbus` (123 метода + 7 сигналов), `ucc-cli`, `ucc-hardware`, `ucc-lighting`, `uccd`, `ucc-sleep`, `ucc-hardware`, `ucc-import-check`, `LidController`, `WakeupPolicy`, fuzz/proptest/stress-сьют.
+- [x] `M0`–`M6`, `M8`: базовые контракты, `ADR-01..06`, `ucc-core`, `ucc-config`, `ucc-dbus` (123 метода + 7 сигналов), `ucc-cli`, `ucc-hardware` (крейт + бинарник), `ucc-lighting`, `uccd`, `ucc-sleep`, `ucc-import-check`, `LidController`, `WakeupPolicy`, fuzz/proptest/stress-сьют.
 - [x] `M7.1–M7.4, M7.6–M7.7`: телеметрия CPU/RAPL, i915/xe/AMD/NVML, 10-серийная история и бинарный кодек.
 - [x] `M9.1–M9.4, M9.6–M9.7, M9.9`: Rust `ucc-desktop-tray` (SNI), `ucc-session-agent` (уведомления, Hyprland/KDE refresh, DPMS), `pidfd`, `ActivateWithToken`.
 - [x] `M10.1–M10.6, M10.8–M10.9`: автономный `Qt6::Widgets` `ucc-gui` без `KF6`/`QML`/`Bluetooth`/`libucc-dbus.so`, удаление `crates/ucc-gui`, вкладка `Experimental`, `test_gui_audit`.

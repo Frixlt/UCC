@@ -52,8 +52,8 @@
 
 /* Uniwill EC register addresses used by native hwmon and identity probe */
 #define UWCC_EC_REG_PROJECT_ID   0x0740U
-#define UWCC_EC_REG_EC_VER_HI    0x0400U
-#define UWCC_EC_REG_EC_VER_LO    0x0401U
+#define UWCC_EC_REG_EC_VER_HI    0x0770U
+#define UWCC_EC_REG_EC_VER_LO    0x0771U
 
 /* D3cold-safe EC temperature registers (degrees Celsius) */
 #define UWCC_EC_REG_CPU_TEMP     0x043EU
@@ -179,7 +179,7 @@ int uwcc_acpi_smrw(u16 offset, u16 len, u8 *out_buf)
 
 	if (!out_buf || len == 0 || len > UWCC_SMRW_MAX_LEN)
 		return -EINVAL;
-	if ((u32)offset + (u32)len > 0x0100U)
+	if ((u32)offset + (u32)len > UWCC_SMRW_TABLE_LIMIT)
 		return -ERANGE;
 
 	mutex_lock(&uwcc_ec_lock);
@@ -199,18 +199,14 @@ int uwcc_acpi_smrw(u16 offset, u16 len, u8 *out_buf)
 	 * and returns a 32-bit integer (or buffer on alternate firmware).
 	 */
 	for (pos = 0; pos < len; pos += 4U) {
-		u8 req_buf[13];
+		/* 64-byte zero-padded input buffer prevents AE_AML_BUFFER_LIMIT in DSDT CreateField */
+		u8 req_buf[64];
 		union acpi_object arg;
 		struct acpi_object_list params;
 		struct acpi_buffer output = { ACPI_ALLOCATE_BUFFER, NULL };
 		union acpi_object *obj;
 		acpi_status status;
 		u16 cur_off = offset + pos;
-
-		if (cur_off > 0xFFU) {
-			ret = -ERANGE;
-			break;
-		}
 
 		memset(req_buf, 0, sizeof(req_buf));
 		req_buf[0] = 0xBB;

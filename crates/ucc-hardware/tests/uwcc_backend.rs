@@ -131,7 +131,7 @@ fn uwcc_backend_reads_real_rpm_duty_and_ec_temperatures() {
     // CPU RPM = 3250 (0x0CB2): 0x464 = 0x0C, 0x465 = 0xB2
     transport.set_reg(uwcc_ec_reg::CPU_FAN_RPM_HI, 0x0C);
     transport.set_reg(uwcc_ec_reg::CPU_FAN_RPM_LO, 0xB2);
-    // GPU RPM = 2900 (0x0B54): 0x46C = 0x0B, 0x46B = 0x54
+    // GPU RPM = 2900 (0x0B54): 0x46C = 0x0B, 0x46D = 0x54
     transport.set_reg(uwcc_ec_reg::GPU_FAN_RPM_HI, 0x0B);
     transport.set_reg(uwcc_ec_reg::GPU_FAN_RPM_LO, 0x54);
     // Duty readback 0x75B/0x75C (0..=200 raw)
@@ -644,4 +644,38 @@ fn uwcc_backend_dispatches_npcf_pwbt_pwdb_for_175w_nvidia_unlock_and_mux_switch(
         no_mux_backend.set_mux_boot_mode(MuxBootMode::Dynamic),
         Err(PlatformError::Unsupported(_))
     ));
+}
+
+#[test]
+fn uwcc_backend_upstream_0x1a_register_map_rmw_and_250w_fallback() {
+    // Verify exact upstream uniwill-acpi.c addresses
+    assert_eq!(uwcc_ec_reg::PROJECT_ID, 0x0740);
+    assert_eq!(uwcc_ec_reg::GPU_FAN_RPM_HI, 0x046C);
+    assert_eq!(uwcc_ec_reg::GPU_FAN_RPM_LO, 0x046D);
+    assert_eq!(uwcc_ec_reg::PL1_WATTS, 0x0783);
+    assert_eq!(uwcc_ec_reg::PL2_WATTS, 0x0784);
+    assert_eq!(uwcc_ec_reg::PL4_WATTS, 0x0785);
+    assert_eq!(uwcc_ec_reg::FN_LOCK, 0x07A4);
+    assert_eq!(uwcc_ec_reg::CHARGE_CTRL, 0x07B9);
+    assert_eq!(uwcc_ec_reg::LIGHTBAR_AC_CTRL, 0x0748);
+
+    // Fallback chassis_0x1a_default() must accept MECHREVO X6AR55xY [210, 210, 250] W TDP
+    let transport = Arc::new(MockUwccTransport::chassis_0x1a_default());
+    let backend = UwccBackend::new(Arc::clone(&transport) as _, None, None);
+    backend.set_tdp(0, 210).unwrap();
+    backend.set_tdp(1, 210).unwrap();
+    backend.set_tdp(2, 250).unwrap();
+    assert_eq!(transport.get_reg(uwcc_ec_reg::PL1_WATTS), Some(210));
+    assert_eq!(transport.get_reg(uwcc_ec_reg::PL2_WATTS), Some(210));
+    assert_eq!(transport.get_reg(uwcc_ec_reg::PL4_WATTS), Some(250));
+
+    // FAN_MANUAL_MODE (0x0751) must RMW BIT(7) without clobbering lower level bits (0x05)
+    transport.set_reg(uwcc_ec_reg::FAN_MANUAL_MODE, 0x05);
+    backend.set_fan_speed_percent(0, 60).unwrap();
+    assert_eq!(
+        transport.get_reg(uwcc_ec_reg::FAN_MANUAL_MODE),
+        Some(0x05 | uwcc_ec_reg::FAN_MODE_USER_BIT)
+    );
+    backend.set_fans_auto().unwrap();
+    assert_eq!(transport.get_reg(uwcc_ec_reg::FAN_MANUAL_MODE), Some(0x05));
 }

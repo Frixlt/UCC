@@ -5,7 +5,7 @@
 //! `0x1A` / MECHREVO YAOSHI X6AR55xY): `SMRW` limits parsing, real tachometer RPM,
 //! `PL1`/`PL2`/`PL4` & `TCC` offset, `cTGP`/`Dynamic Boost`, `PWUP`, `RamFan 1.5`
 //! 16-point curves, charging thresholds, EC switches (`Fn Lock`, `Win Lock`,
-//! lightbar power `0x767`/`0x768`, USB sleep charging), USB RGB+IR UVC webcam
+//! lightbar AC control `0x0748`, USB sleep charging), USB RGB+IR UVC webcam
 //! toggle over [`Sysfs`], and WMI-to-uinput hotkey event translation.
 
 pub mod ramfan;
@@ -599,14 +599,22 @@ impl PlatformBackend for UwccBackend {
             }
         };
         let duty = percent_to_ec_duty(percent);
-        self.transport.ec_write(uwcc_ec_reg::FAN_MANUAL_MODE, 1)?;
+        let prev = self.transport.ec_read(uwcc_ec_reg::FAN_MANUAL_MODE)?;
+        self.transport.ec_write(
+            uwcc_ec_reg::FAN_MANUAL_MODE,
+            prev | uwcc_ec_reg::FAN_MODE_USER_BIT,
+        )?;
         self.transport.ec_write(reg, duty)
     }
 
     fn set_fans_auto(&self) -> Result<(), PlatformError> {
         self.require_available()?;
         self.ramfan.restore_firmware_auto()?;
-        self.transport.ec_write(uwcc_ec_reg::FAN_MANUAL_MODE, 0)
+        let prev = self.transport.ec_read(uwcc_ec_reg::FAN_MANUAL_MODE)?;
+        self.transport.ec_write(
+            uwcc_ec_reg::FAN_MANUAL_MODE,
+            prev & !uwcc_ec_reg::FAN_MODE_USER_BIT,
+        )
     }
 
     fn read_tdp(&self, index: usize) -> Result<i32, PlatformError> {
