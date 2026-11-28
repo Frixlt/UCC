@@ -498,7 +498,10 @@ fn ite_lightbar_zones_lid_logo_and_ec_power_hook() {
     let reports_7000 = mock_7000.recorded_reports();
     assert_eq!(reports_7000.len(), 3);
     let expected_lvl = UniwillHidTransport::scale_keyboard_brightness(200);
-    assert_eq!(reports_7000[0].1, vec![0x08, 0x02, 0x01, 0x05, expected_lvl, 0x01, 0, 0]);
+    assert_eq!(
+        reports_7000[0].1,
+        vec![0x08, 0x02, 0x01, 0x05, expected_lvl, 0x01, 0, 0]
+    );
     assert_eq!(reports_7000[1].1, vec![0x14, 0x00, 5, 12, 34, 56, 0, 0]);
     assert_eq!(reports_7000[2].1, vec![0x08, 0x01, 0, 0, 0, 0, 0, 0]);
 
@@ -1012,4 +1015,33 @@ fn hidraw_send_output_report_validates_length_and_device_safety() {
             Err(LightingError::Unavailable)
         ));
     }
+}
+
+#[test]
+fn ite8291_cold_cache_zone_write_latches_user_mode_and_zero_brightness_skips_latch() {
+    let mock_hid = Arc::new(MockHidTransport::new(vec![HidDeviceInfo {
+        vendor_id: ITE_VENDOR_ID,
+        product_id: ITE_KEYBOARD_PRODUCT_ID,
+        path: "/dev/hidraw1".to_string(),
+    }]));
+    let transport = UniwillHidTransport::new(Arc::clone(&mock_hid) as _);
+
+    // Cold cache (no prior write_keyboard_brightness): 6*(0x16 + 64B row) + 1 UserEffect latch = 13.
+    transport
+        .write_keyboard_zones(&[RgbColor::new(10, 20, 30)])
+        .expect("cold zone write");
+    let cold_reports = mock_hid.recorded_reports();
+    assert_eq!(cold_reports.len(), 13);
+    assert_eq!(
+        cold_reports[12].1,
+        vec![0x08, 0x02, 0x33, 0x00, 50, 0, 0, 0]
+    );
+
+    // Brightness 0: write_keyboard_zones uploads 6 rows (12 reports) without re-enabling LEDs.
+    transport.write_keyboard_brightness(0).expect("kbd off");
+    mock_hid.clear_reports();
+    transport
+        .write_keyboard_zones(&[RgbColor::new(1, 2, 3)])
+        .expect("dark zone write");
+    assert_eq!(mock_hid.recorded_reports().len(), 12);
 }

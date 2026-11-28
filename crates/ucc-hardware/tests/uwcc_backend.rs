@@ -1307,3 +1307,20 @@ fn uwcc_backend_decodes_12byte_dsdt_g2x9_smrw_without_fallback() {
     assert_eq!(limits.dynamic_boost_min_w, 0);
     assert_eq!(limits.dynamic_boost_max_w, 25);
 }
+
+#[test]
+fn uwcc_12byte_smrw_rejects_excessive_base_tgp_and_ctgp_over_byte_ceiling() {
+    use ucc_hardware::SmrwPowerLimits;
+
+    // base_tgp_max = data[4] (200) + data[7] (60) = 260 > 250 -> rejected.
+    let over_base = [
+        0xD2, 0xD2, 0xD2, 0x0A, 200, 25, 0x57, 60, 0xFF, 0xFF, 0xFF, 0xFF,
+    ];
+    assert!(SmrwPowerLimits::decode_inou0000_12byte(&over_base).is_none());
+
+    // base_tgp_max = 220 <= 250, but ctgp_max = 220 + 50 = 270 > u8::MAX (255) -> rejected.
+    let over_ctgp = [
+        0xD2, 0xD2, 0xD2, 0x0A, 120, 50, 0x57, 100, 0xFF, 0xFF, 0xFF, 0xFF,
+    ];
+    assert!(SmrwPowerLimits::decode_inou0000_12byte(&over_ctgp).is_none());
+}

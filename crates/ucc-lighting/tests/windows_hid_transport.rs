@@ -2,7 +2,7 @@
 
 use std::sync::Arc;
 use ucc_lighting::{
-    frame_windows_feature_report, unframe_windows_feature_report, HidDeviceTransport,
+    frame_windows_feature_report, frame_windows_output_report, unframe_windows_feature_report, HidDeviceTransport,
     LightingError, LightingTransport, MockWinHidSysApi, RgbColor, UniwillHidTransport,
     WinHidDeviceRecord, WindowsHidTransport, ITE_KEYBOARD_PRODUCT_ID, ITE_VENDOR_ID,
     VENDOR_USAGE_PAGE_MIN,
@@ -40,6 +40,7 @@ fn sample_ite_windows_devices() -> Vec<WinHidDeviceRecord> {
             usage_page: VENDOR_USAGE_PAGE_MIN,
             usage: 0x0001,
             feature_report_byte_length: 9,
+            output_report_byte_length: 65,
         },
     ]
 }
@@ -118,17 +119,29 @@ fn windows_hid_transport_selects_vendor_usage_page_over_boot_keyboard() {
     assert_eq!(reports.len(), 20);
 
     // Every keyboard report targets the vendor lighting interface, never the boot keyboard.
-    for (path, buf) in &reports[..14] {
+    // Feature reports (9 bytes) alternate with 64-byte planar row output reports (65 bytes).
+    for (idx, (path, buf)) in reports[..14].iter().enumerate() {
         assert_eq!(path, WIN_KBD_VENDOR_PATH);
-        assert_eq!(buf.len(), 65);
+        let expected_len = if (1..=12).contains(&idx) && idx % 2 == 0 {
+            65
+        } else {
+            9
+        };
+        assert_eq!(buf.len(), expected_len);
         assert_eq!(buf[0], 0x00);
     }
     // Brightness report: [0x00, 0x08, 0x02, 0x33, 0x00, 50, ...]
     assert_eq!(&reports[0].1[1..6], &[0x08, 0x02, 0x33, 0x00, 50]);
     // Row 0 select + planar BGR row report (col 0 = 10,20,30; col 1 = 40,50,60).
     assert_eq!(&reports[1].1[1..4], &[0x16, 0x00, 0x00]);
-    assert_eq!((reports[2].1[44], reports[2].1[23], reports[2].1[2]), (10, 20, 30));
-    assert_eq!((reports[2].1[45], reports[2].1[24], reports[2].1[3]), (40, 50, 60));
+    assert_eq!(
+        (reports[2].1[44], reports[2].1[23], reports[2].1[2]),
+        (10, 20, 30)
+    );
+    assert_eq!(
+        (reports[2].1[45], reports[2].1[24], reports[2].1[3]),
+        (40, 50, 60)
+    );
 
     // Every lightbar report targets 048D:7000 with exact 9-byte framed buffer.
     for (path, buf) in &reports[14..] {
@@ -242,18 +255,37 @@ fn windows_hid_126_key_calibration_lid_logo_zone5_and_ec_hook() {
     let kbd_reports = sys.sent_reports();
     // 1 brightness + 6 * (SET_ROW_INDEX 0x16 + 64B row) + 1 latch = 14.
     assert_eq!(kbd_reports.len(), 14);
-    for (path, buf) in &kbd_reports {
+    for (idx, (path, buf)) in kbd_reports.iter().enumerate() {
         assert_eq!(path, WIN_KBD_VENDOR_PATH);
-        assert_eq!(buf.len(), 65);
+        let expected_len = if (1..=12).contains(&idx) && idx % 2 == 0 {
+            65
+        } else {
+            9
+        };
+        assert_eq!(buf.len(), expected_len);
         assert_eq!(buf[0], 0x00);
     }
     assert_eq!(&kbd_reports[0].1[1..6], &[0x08, 0x02, 0x33, 0x00, 50]);
     assert_eq!(&kbd_reports[13].1[1..6], &[0x08, 0x02, 0x33, 0x00, 50]);
 
     // LCtrl = LED 0 -> row 0, col 0 (buf[0]=0x00 report id, buf[1]=0x00 pad, B=2, G=23, R=44).
-    assert_eq!((kbd_reports[2].1[44], kbd_reports[2].1[23], kbd_reports[2].1[2]), (11, 22, 33));
+    assert_eq!(
+        (
+            kbd_reports[2].1[44],
+            kbd_reports[2].1[23],
+            kbd_reports[2].1[2],
+        ),
+        (11, 22, 33)
+    );
     // LShift = LED 21 -> row 1, col 0.
-    assert_eq!((kbd_reports[4].1[44], kbd_reports[4].1[23], kbd_reports[4].1[2]), (44, 55, 66));
+    assert_eq!(
+        (
+            kbd_reports[4].1[44],
+            kbd_reports[4].1[23],
+            kbd_reports[4].1[2],
+        ),
+        (44, 55, 66)
+    );
     // Enter = LED 56 -> row 2, col 14.
     assert_eq!(
         (
@@ -404,4 +436,32 @@ fn open_best_lighting_transport_windows_smoke() {
         let _ = transport.detect_keyboard().expect("detect_keyboard smoke");
         let _ = transport.detect_lightbar().expect("detect_lightbar smoke");
     }
+}
+
+#[test]
+fn windows_output_report_framing_preserves_leading_zero_pad_and_validates_bounds() {
+    let mut row = [0u8; 64];
+    row[0] = 0x00;
+    row[1] = 0x33;
+    row[22] = 0x22;
+    row[43] = 0x11;
+
+    let framed = frame_windows_output_report(&row, 65).expect("frame 64-byte row");
+    assert_eq!(framed.len(), 65);
+    assert_eq!(framed[0], 0x00);
+    assert_eq!(framed[1], 0x00);
+    assert_eq!((framed[44], framed[23], framed[2]), (0x11, 0x22, 0x33));
+
+    assert!(matches!(
+        frame_windows_output_report(&[], 65),
+        Err(LightingError::InvalidConfig(_))
+    ));
+    assert!(matches!(
+        frame_windows_output_report(&row, 0),
+        Err(LightingError::InvalidConfig(_))
+    ));
+    assert!(matches!(
+        frame_windows_output_report(&row, 64),
+        Err(LightingError::InvalidConfig(_))
+    ));
 }

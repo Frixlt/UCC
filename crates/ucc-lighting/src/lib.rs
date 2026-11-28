@@ -44,6 +44,6 @@ pub use transport::{
 #[cfg(windows)]
 pub use windows_hid::LiveWinHidSysApi;
 pub use windows_hid::{
-    frame_windows_feature_report, unframe_windows_feature_report, MockWinHidSysApi,
+    frame_windows_feature_report, frame_windows_output_report, unframe_windows_feature_report, MockWinHidSysApi,
     WinHidDeviceRecord, WinHidSysApi, WindowsHidTransport, VENDOR_USAGE_PAGE_MIN,
 };
