@@ -257,9 +257,14 @@ impl UniwillHidTransport {
     }
 
     /// Scales logical keyboard brightness (`0..=255`) to ITE `048D:600B` hardware range (`0..=50`).
+    ///
+    /// Non-zero inputs (`1..=255`) always map to at least `1` so dim settings never power off LEDs.
     pub fn scale_keyboard_brightness(brightness: u32) -> u8 {
+        if brightness == 0 {
+            return 0;
+        }
         let max_hw = u32::from(ITE_KEYBOARD_MAX_HW_BRIGHTNESS);
-        ((brightness.min(255) * max_hw + 127) / 255).min(max_hw) as u8
+        ((brightness.min(255) * max_hw + 127) / 255).clamp(1, max_hw) as u8
     }
 
     /// Invokes the optional EC Lightbar power-rail callback (`0x767`/`0x768`).
@@ -441,8 +446,18 @@ impl LightingTransport for UniwillHidTransport {
         //   buf[1..22]   = Blue  (21 cols)
         //   buf[22..43]  = Green (21 cols)
         //   buf[43..64]  = Red   (21 cols)
+        let mut merged = self
+            .cached_colors
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .clone();
+        if merged.len() < colors.len() {
+            merged.resize(colors.len(), RgbColor::BLACK);
+        }
+        merged[..colors.len()].copy_from_slice(colors);
+
         let mut rows = [[0u8; ITE_KEYBOARD_ROW_REPORT_LEN]; ITE_KEYBOARD_ROWS];
-        for (idx, c) in colors
+        for (idx, c) in merged
             .iter()
             .take(ITE_KEYBOARD_ROWS * ITE_KEYBOARD_COLS)
             .enumerate()
@@ -458,18 +473,19 @@ impl LightingTransport for UniwillHidTransport {
             self.hid.send_feature_report(&dev.path, &select_row)?;
             self.hid.send_output_report(&dev.path, row_buf)?;
         }
-        if let Some(brightness) = *self
+        let cached_b = *self
             .cached_keyboard_brightness
             .lock()
-            .unwrap_or_else(|e| e.into_inner())
-        {
-            let level = Self::scale_keyboard_brightness(brightness);
-            if level > 0 {
-                let commit_user = [0x08, 0x02, 0x33, 0x00, level, 0x00, 0x00, 0x00];
-                self.hid.send_feature_report(&dev.path, &commit_user)?;
-            }
+            .unwrap_or_else(|e| e.into_inner());
+        let level = match cached_b {
+            Some(b) => Self::scale_keyboard_brightness(b),
+            None => ITE_KEYBOARD_MAX_HW_BRIGHTNESS,
+        };
+        if level > 0 {
+            let commit_user = [0x08, 0x02, 0x33, 0x00, level, 0x00, 0x00, 0x00];
+            self.hid.send_feature_report(&dev.path, &commit_user)?;
         }
-        *self.cached_colors.lock().unwrap_or_else(|e| e.into_inner()) = colors.to_vec();
+        *self.cached_colors.lock().unwrap_or_else(|e| e.into_inner()) = merged;
         Ok(())
     }
 

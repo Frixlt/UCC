@@ -330,6 +330,7 @@ impl SmrwPowerLimits {
             || dynamic_boost_max_w > 100
             || base_tgp_max_w < 35
             || base_tgp_max_w > 250
+            || ctgp_max_w > i32::from(u8::MAX)
         {
             return None;
         }

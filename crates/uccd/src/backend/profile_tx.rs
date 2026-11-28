@@ -863,7 +863,11 @@ impl LiveUccdBackend {
             return ApplyOutcome::Failed;
         }
         if let Err(err) = profile.validate() {
-            warn!(profile_id = %profile.id, error = ?err, "Profile apply failed: validation error");
+            warn!(
+                profile_id = %profile.id,
+                error = ?err,
+                "Profile apply failed: validation error"
+            );
             return ApplyOutcome::Failed;
         }
         let committed_profile = self.resolve_profile_with_fan_preset(profile);
@@ -929,14 +933,22 @@ impl LiveUccdBackend {
                     && self.capabilities.perf_profiles_available > 0 =>
             {
                 let Some(code) = self.resolve_odm_profile_code(odm_name) else {
-                    warn!(profile_id = %profile.id, odm = %odm_name, "Profile apply failed: unknown ODM profile name");
+                    warn!(
+                        profile_id = %profile.id,
+                        odm = %odm_name,
+                        "Profile apply failed: unknown ODM profile name"
+                    );
                     return ApplyOutcome::Failed;
                 };
                 let prev = match self.platform.read_perf_profile() {
                     Ok(cur) => Some(cur),
                     Err(PlatformError::Unavailable) => None,
                     Err(err) => {
-                        warn!(profile_id = %profile.id, error = ?err, "Profile apply failed: could not read current ODM profile");
+                        warn!(
+                            profile_id = %profile.id,
+                            error = ?err,
+                            "Profile apply failed: could not read current ODM profile"
+                        );
                         return ApplyOutcome::Failed;
                     }
                 };
@@ -962,11 +974,20 @@ impl LiveUccdBackend {
             }
             for (idx, &watts) in profile.odm_power_limits.iter().enumerate() {
                 let Ok(w_i32) = i32::try_from(watts) else {
-                    warn!(profile_id = %profile.id, channel = idx, watts, "Profile apply failed: TDP overflow");
+                    warn!(
+                        profile_id = %profile.id,
+                        channel = idx,
+                        watts,
+                        "Profile apply failed: TDP overflow"
+                    );
                     return ApplyOutcome::Failed;
                 };
                 let Ok((min_w, max_w)) = self.platform.read_tdp_limits(idx) else {
-                    warn!(profile_id = %profile.id, channel = idx, "Profile apply failed: read_tdp_limits error");
+                    warn!(
+                        profile_id = %profile.id,
+                        channel = idx,
+                        "Profile apply failed: read_tdp_limits error"
+                    );
                     return ApplyOutcome::Failed;
                 };
                 if !(min_w..=max_w).contains(&w_i32) {
@@ -981,7 +1002,11 @@ impl LiveUccdBackend {
                     return ApplyOutcome::Failed;
                 }
                 let Ok(cur_w) = self.platform.read_tdp(idx) else {
-                    warn!(profile_id = %profile.id, channel = idx, "Profile apply failed: read_tdp error");
+                    warn!(
+                        profile_id = %profile.id,
+                        channel = idx,
+                        "Profile apply failed: read_tdp error"
+                    );
                     return ApplyOutcome::Failed;
                 };
                 prev_tdps.push(Some(cur_w));
@@ -1339,7 +1364,11 @@ impl LiveUccdBackend {
                     return ApplyOutcome::Failed;
                 }
                 if !odm_ok {
-                    warn!(profile_id = %profile.id, code, "Profile apply failed: ODM profile write or readback mismatch");
+                    warn!(
+                        profile_id = %profile.id,
+                        code,
+                        "Profile apply failed: ODM profile write or readback mismatch"
+                    );
                     let _ = self.rollback_hardware(
                         hw_odm_prev,
                         true,
@@ -1402,8 +1431,8 @@ impl LiveUccdBackend {
                         let _ = self.reconcile_to_latest_committed(undo);
                         return ApplyOutcome::Failed;
                     }
-                    let readback = self.platform.read_tdp(idx);
-                    if !set_ok || !matches!(readback, Ok(actual) if actual == w) {
+                    let readback = set_ok.then(|| self.platform.read_tdp(idx));
+                    if !matches!(readback, Some(Ok(actual)) if actual == w) {
                         warn!(
                             profile_id = %profile.id,
                             channel = idx,
@@ -1737,7 +1766,10 @@ impl LiveUccdBackend {
                     wrote_kb = applied && prev_kb.is_some();
                 }
                 Err(()) => {
-                    warn!(profile_id = %profile.id, "Profile apply failed: keyboard backlight hardware write error");
+                    warn!(
+                        profile_id = %profile.id,
+                        "Profile apply failed: keyboard backlight hardware write error"
+                    );
                     if let Some(ref snap) = prev_kb {
                         let _ = self.restore_keyboard_rollback(snap, Some(start_epoch));
                     }

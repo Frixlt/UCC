@@ -90,6 +90,39 @@ pub fn frame_windows_feature_report(
     Ok(framed)
 }
 
+/// Frames an unnumbered HID output report payload for Windows by always prepending Report ID `0x00`.
+///
+/// Unlike [`frame_windows_feature_report`], this never treats a leading `0x00` payload byte as an
+/// already-prepended Report ID (required for ITE 8291r3 64-byte planar row buffers whose byte 0 is
+/// a `0x00` pad byte).
+pub fn frame_windows_output_report(
+    report: &[u8],
+    report_byte_length: usize,
+) -> Result<Vec<u8>, LightingError> {
+    if report.is_empty() {
+        return Err(LightingError::InvalidConfig(
+            "HID output report must not be empty".to_string(),
+        ));
+    }
+    if report_byte_length == 0 {
+        return Err(LightingError::InvalidConfig(
+            "HID device reports report byte length == 0".to_string(),
+        ));
+    }
+    let needed = report.len().saturating_add(1);
+    if needed > report_byte_length {
+        return Err(LightingError::InvalidConfig(format!(
+            "HID output report {} (+1 Report ID) exceeds report byte length {}",
+            report.len(),
+            report_byte_length
+        )));
+    }
+    let mut framed = vec![0u8; report_byte_length];
+    framed[0] = 0x00;
+    framed[1..1 + report.len()].copy_from_slice(report);
+    Ok(framed)
+}
+
 /// Strips an optional leading `0x00` Report ID byte from a `HidD_GetFeature` buffer and resizes
 /// cleanly to `requested_len` (truncating or zero-padding as needed).
 pub fn unframe_windows_feature_report(raw: &[u8], requested_len: usize) -> Vec<u8> {
@@ -111,6 +144,11 @@ pub trait WinHidSysApi: Send + Sync {
 
     /// Sends a pre-framed feature report buffer via `HidD_SetFeature`.
     fn set_feature_report(&self, path: &str, report: &[u8]) -> Result<(), LightingError>;
+
+    /// Sends a pre-framed output report buffer (defaults to [`Self::set_feature_report`] for mocks).
+    fn set_output_report(&self, path: &str, report: &[u8]) -> Result<(), LightingError> {
+        self.set_feature_report(path, report)
+    }
 
     /// Reads a feature report buffer via `HidD_GetFeature` (caller sets `buf[0]` to Report ID).
     fn get_feature_report(&self, path: &str, buf: &mut [u8]) -> Result<(), LightingError>;
@@ -288,6 +326,12 @@ impl HidDeviceTransport for WindowsHidTransport {
         let rec = self.resolve_record(path)?;
         let framed = frame_windows_feature_report(report, rec.feature_report_byte_length)?;
         self.sys.set_feature_report(&rec.path, &framed)
+    }
+
+    fn send_output_report(&self, path: &str, report: &[u8]) -> Result<(), LightingError> {
+        let rec = self.resolve_record(path)?;
+        let framed = frame_windows_output_report(report, rec.feature_report_byte_length)?;
+        self.sys.set_output_report(&rec.path, &framed)
     }
 
     fn get_feature_report(&self, path: &str, len: usize) -> Result<Vec<u8>, LightingError> {

@@ -602,19 +602,17 @@ fn lightbar_controller_over_hid_preserves_all_5_animations_and_flash_stays_off()
         } else {
             assert!(!lb.is_flash_off());
             for (idx, (_, r)) in final_reports.iter().enumerate() {
-                assert_eq!(
-                    r,
-                    &vec![
-                        0x14,
-                        0x00,
-                        (idx + 1) as u8,
-                        base_rgb.r,
-                        base_rgb.g,
-                        base_rgb.b,
-                        0,
-                        0
-                    ]
-                );
+                let expected = vec![
+                    0x14,
+                    0x00,
+                    (idx + 1) as u8,
+                    base_rgb.r,
+                    base_rgb.g,
+                    base_rgb.b,
+                    0,
+                    0,
+                ];
+                assert_eq!(r, &expected);
             }
         }
     }
@@ -832,7 +830,7 @@ fn uniwill_hid_empty_zones_and_partial_chunk_failure_preserves_cache() {
         .expect("seed initial keyboard zones");
     assert_eq!(transport.read_keyboard_colors().expect("read"), initial);
 
-    // 20 zones split into 2 chunks (16 + 4); fail on chunk index 1 (second call).
+    // 6-row ITE 8291r3 write fails on call index 1 (row 0 output report) and keeps cached colors.
     hid.clear_sent();
     hid.arm_fail_on_call(1);
     let twenty_zones = [RgbColor::new(200, 100, 50); 20];
@@ -915,4 +913,103 @@ fn hidraw_non_linux_stubs_return_unavailable() {
         hidraw.get_feature_report("/dev/hidraw0", 8),
         Err(LightingError::Unavailable)
     ));
+}
+
+#[test]
+fn ite8291_zero_and_dim_brightness_partial_zones_and_8233_16slot_lightbar() {
+    assert_eq!(UniwillHidTransport::scale_keyboard_brightness(0), 0);
+    assert_eq!(UniwillHidTransport::scale_keyboard_brightness(1), 1);
+    assert_eq!(UniwillHidTransport::scale_keyboard_brightness(2), 1);
+    assert_eq!(UniwillHidTransport::scale_keyboard_brightness(255), 50);
+
+    let mock_hid = Arc::new(MockHidTransport::new(vec![
+        HidDeviceInfo {
+            vendor_id: ITE_VENDOR_ID,
+            product_id: ITE_KEYBOARD_PRODUCT_ID,
+            path: "/dev/hidraw1".to_string(),
+        },
+        HidDeviceInfo {
+            vendor_id: ITE_VENDOR_ID,
+            product_id: ITE_LIGHTBAR_PRODUCT_ID_4ZONE,
+            path: "/dev/hidraw0".to_string(),
+        },
+    ]));
+    let transport = UniwillHidTransport::new(Arc::clone(&mock_hid) as _);
+
+    // Brightness 0 emits SetOffOp (0x08 0x01 ...).
+    transport.write_keyboard_brightness(0).expect("kbd off");
+    assert_eq!(
+        mock_hid.recorded_reports()[0].1,
+        vec![0x08, 0x01, 0, 0, 0, 0, 0, 0]
+    );
+
+    // Partial update preserves untouched cached keys.
+    let initial = vec![
+        RgbColor::new(10, 20, 30),
+        RgbColor::new(40, 50, 60),
+        RgbColor::new(70, 80, 90),
+    ];
+    transport.write_keyboard_zones(&initial).expect("initial");
+    transport
+        .write_keyboard_zones(&[RgbColor::new(1, 2, 3)])
+        .expect("partial");
+    assert_eq!(
+        transport.read_keyboard_colors().expect("cached"),
+        vec![
+            RgbColor::new(1, 2, 3),
+            RgbColor::new(40, 50, 60),
+            RgbColor::new(70, 80, 90),
+        ]
+    );
+
+    // ITE 8233 (048D:7001) lightbar color writes all 16 slots 0..16 with [0x14, 0x00, slot, R, G, B, 0, 0].
+    mock_hid.clear_reports();
+    transport
+        .write_lightbar_color(RgbColor::new(0, 128, 255))
+        .expect("8233 color");
+    let lb_reports = mock_hid.recorded_reports();
+    assert_eq!(lb_reports.len(), 16);
+    for (slot, (path, pkt)) in lb_reports.iter().enumerate() {
+        assert_eq!(path, "/dev/hidraw0");
+        assert_eq!(pkt, &vec![0x14, 0x00, slot as u8, 0, 128, 255, 0, 0]);
+    }
+}
+
+#[test]
+fn hidraw_send_output_report_validates_length_and_device_safety() {
+    let tmp = TempDir::new().expect("temp dir");
+    let dev_root = tmp.path().join("dev");
+    fs::create_dir_all(&dev_root).expect("dev root");
+    let regular_file = dev_root.join("hidraw0");
+    fs::write(&regular_file, b"").expect("regular file");
+    let regular_path = regular_file.to_string_lossy().into_owned();
+
+    let hidraw = HidrawDeviceTransport::with_roots(tmp.path().join("sys"), &dev_root);
+
+    #[cfg(target_os = "linux")]
+    {
+        assert!(matches!(
+            hidraw.send_output_report(&regular_path, &[]),
+            Err(LightingError::InvalidConfig(_))
+        ));
+        assert!(matches!(
+            hidraw.send_output_report(&regular_path, &[0u8; 65]),
+            Err(LightingError::InvalidConfig(_))
+        ));
+        assert!(matches!(
+            hidraw.send_output_report("../etc/passwd", &[0u8; 64]),
+            Err(LightingError::InvalidConfig(_))
+        ));
+        assert!(matches!(
+            hidraw.send_output_report(&regular_path, &[0u8; 64]),
+            Err(LightingError::InvalidConfig(_))
+        ));
+    }
+    #[cfg(not(target_os = "linux"))]
+    {
+        assert!(matches!(
+            hidraw.send_output_report(&regular_path, &[0u8; 64]),
+            Err(LightingError::Unavailable)
+        ));
+    }
 }

@@ -47,7 +47,7 @@ fn t_hw_14b_detect_lightbar_prefers_rgb_lightbar_over_plain_lightbar() {
         sysfs.set_file(format!("{dir}/multi_intensity"), "0 0 0\n");
     }
 
-    let transport = SysfsLedTransport::new(sysfs.clone(), "/");
+    let transport = SysfsLedTransport::new(Arc::clone(&sysfs), "/");
     let caps = transport.detect_lightbar().unwrap().unwrap();
     assert_eq!(caps.zones, 1);
 
@@ -156,7 +156,7 @@ fn t_lighting_snapshot_reads_live_hardware_after_external_change() {
     });
 
     // Cold controller performs live hardware readback.
-    let mut controller = KeyboardBacklightController::new(transport.clone());
+    let mut controller = KeyboardBacklightController::new(Arc::clone(&transport));
     assert!(controller.snapshot_hardware_state().is_some());
     assert_eq!(transport.color_reads.load(Ordering::SeqCst), 1);
     assert_eq!(transport.brightness_reads.load(Ordering::SeqCst), 1);

@@ -255,7 +255,14 @@ fn windows_hid_126_key_calibration_lid_logo_zone5_and_ec_hook() {
     // LShift = LED 21 -> row 1, col 0.
     assert_eq!((kbd_reports[4].1[44], kbd_reports[4].1[23], kbd_reports[4].1[2]), (44, 55, 66));
     // Enter = LED 56 -> row 2, col 14.
-    assert_eq!((kbd_reports[6].1[44 + 14], kbd_reports[6].1[23 + 14], kbd_reports[6].1[2 + 14]), (77, 88, 99));
+    assert_eq!(
+        (
+            kbd_reports[6].1[44 + 14],
+            kbd_reports[6].1[23 + 14],
+            kbd_reports[6].1[2 + 14],
+        ),
+        (77, 88, 99)
+    );
 
     // 2. LightbarController + lid logo zone 5 + write_lightbar_zones + EC hook.
     let mut lb = LightbarController::new(Arc::clone(&transport) as _);

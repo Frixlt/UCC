@@ -202,13 +202,12 @@ void DashboardTab::setupUI()
         fanCol->addWidget(value(*std::get<2>(field),std::get<1>(field),false));
         auto *rpmLabel=muted("");rpmLabel->setWordWrap(false);
         if(rpmObjectName) rpmLabel->setObjectName(rpmObjectName);
-        rpmLabel->setStyleSheet("font-size: 11px;");
         rpmLabel->hide();
         *fanRpm=rpmLabel;
         fanCol->addWidget(rpmLabel);
-        stats->addWidget(fanCell,1,col,Qt::AlignBottom);
+        stats->addWidget(fanCell,1,col,Qt::AlignTop);
       } else {
-        stats->addWidget(value(*std::get<2>(field),std::get<1>(field),col==0),1,col,Qt::AlignBottom);
+        stats->addWidget(value(*std::get<2>(field),std::get<1>(field),col==0),1,col,col==0 ? Qt::AlignBottom : Qt::AlignTop);
       }
       stats->setColumnStretch(col,1);
       if(col<6){auto *line=new QFrame;line->setObjectName("metricDivider");line->setFixedWidth(1);stats->addWidget(line,0,col+1,2,1);}

@@ -1241,7 +1241,7 @@ fn uwcc_backend_ignores_0xff_unpopulated_ec_tdp_ceiling_sentinel() {
 #[test]
 fn uwcc_backend_decodes_12byte_dsdt_g2x9_smrw_without_fallback() {
     use std::sync::atomic::{AtomicUsize, Ordering};
-    use ucc_hardware::{UwccSmrw, UwccTransport, UWCC_SMRW_MAX_LEN};
+    use ucc_hardware::{UwccTransport, UWCC_SMRW_MAX_LEN};
 
     struct CountingSmrwTransport {
         inner: MockUwccTransport,
@@ -1284,7 +1284,7 @@ fn uwcc_backend_decodes_12byte_dsdt_g2x9_smrw_without_fallback() {
         }
     }
 
-    let inner = MockUwccTransport::chassis_0x1a();
+    let inner = MockUwccTransport::chassis_0x1a_default();
     let mut g2x9 = [0u8; UWCC_SMRW_MAX_LEN];
     g2x9[..12].copy_from_slice(&[
         0xD2, 0xD2, 0xD2, 0x0A, 0x46, 0x19, 0x57, 0x50, 0xFF, 0xFF, 0xFF, 0xFF,

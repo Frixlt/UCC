@@ -42,7 +42,8 @@ fn uniwill_hid_transport_handles_keyboard_lightbar_and_logo_zones() {
     transport
         .write_lightbar_color(RgbColor::new(255, 64, 0))
         .unwrap();
-    assert_eq!(hid.recorded_reports().len(), 9);
+    // 1 kbd brightness + 6*(0x16 + 64B row) + 1 latch + 1 lb brightness + 5 lb zones = 20.
+    assert_eq!(hid.recorded_reports().len(), 20);
 
     hid.set_fail_writes(true);
     assert!(transport.write_lightbar_color(RgbColor::default()).is_err());

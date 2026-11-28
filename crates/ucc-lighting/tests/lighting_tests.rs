@@ -51,7 +51,7 @@ fn sysfs_transport_discovers_per_key_kbd_with_numeric_led_ids_and_lightbar_exclu
     fs::write(lb_dir.join("multi_intensity"), "0 0 0 0 0 0 0 0 0\n").unwrap();
 
     let transport = Arc::new(SysfsLedTransport::new(Arc::new(RealSysfs), root));
-    let mut kbd = KeyboardBacklightController::new(transport.clone());
+    let mut kbd = KeyboardBacklightController::new(Arc::clone(&transport));
     let caps_json = kbd.init().unwrap();
     let caps = kbd.capabilities().unwrap();
     assert_eq!(caps.zones, 5);

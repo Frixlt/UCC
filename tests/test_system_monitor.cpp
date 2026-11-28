@@ -45,10 +45,11 @@ public:
     } else if (name == "GetIGpuInfoValuesJSON") value = QString("{\"temp\":42,\"coreFrequency\":350,\"powerDraw\":0.7}");
     else if (name == "GetCpuPowerValuesJSON") value = QString("{\"powerDraw\":21}");
     else if (name.startsWith("GetFanData")) {
-      const int rpm = name == "GetFanDataCPU" ? 1992 : 2002;
+      const qlonglong ts = sleepingGpu ? 0 : 1;
+      const int rpm = name == "GetFanDataCPU" ? 1992 : (name == "GetFanDataGPU1" ? 1900 : 2100);
       value = QVariantMap{{"temp",QVariantMap{{"timestamp",qlonglong(1)},{"data",55}}},
                           {"speed",QVariantMap{{"timestamp",qlonglong(1)},{"data",40}}},
-                          {"realRpm",QVariantMap{{"timestamp",qlonglong(1)},{"data",rpm}}}};
+                          {"realRpm",QVariantMap{{"timestamp",ts},{"data",rpm}}}};
     } else if (name == "GetCpuFrequencyMHz") value = 2400;
     else if (name == "GetWaterCoolerFanSpeed") value = 100;
     else if (name == "GetWaterCoolerPumpLevel") value = 3;
@@ -92,7 +93,7 @@ private slots:
     QCOMPARE(monitor.gpuTemp(),QString("52°C"));
     QCOMPARE(monitor.gpuPower(),QString("45.0 W"));
     QCOMPARE(monitor.cpuFanRpm(),1992);
-    QCOMPARE(monitor.gpuFanRpm(),2002);
+    QCOMPARE(monitor.gpuFanRpm(),2000);
     monitor.setMonitoringActive(false);
     const int reads = gpuReads();
     QTest::qWait(2100);
@@ -145,6 +146,8 @@ private slots:
     QTRY_COMPARE_WITH_TIMEOUT(monitor.iGpuPower(),QString("0.7 W"),4000);
     QCOMPARE(monitor.gpuPower(),QString("--"));QCOMPARE(monitor.gpuTemp(),QString("--"));
     QCOMPARE(monitor.iGpuTemp(),QString("42°C"));
+    QCOMPARE(monitor.cpuFanRpm(),-1);
+    QCOMPARE(monitor.gpuFanRpm(),-1);
     monitor.setMonitoringActive(false);
     call.setArguments({false});QDBusConnection::systemBus().call(call);
   }

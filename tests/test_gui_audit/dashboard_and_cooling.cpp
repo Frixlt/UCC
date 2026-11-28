@@ -12,7 +12,10 @@ void GuiAudit::dashboardWaterCoolerSelectors() {
     ucc::DashboardTab tab(&monitor,profiles.get(),true);
     auto *fan=tab.findChild<QComboBox*>("waterCoolerFanSelector");
     auto *pump=tab.findChild<QComboBox*>("waterCoolerPumpSelector");
-    QVERIFY(fan);QVERIFY(pump);
+    auto *cpuRpm=tab.findChild<QLabel*>("cpuFanRpmLabel");
+    auto *gpuRpm=tab.findChild<QLabel*>("gpuFanRpmLabel");
+    QVERIFY(fan);QVERIFY(pump);QVERIFY(cpuRpm);QVERIFY(gpuRpm);
+    QVERIFY(cpuRpm->isHidden());QVERIFY(gpuRpm->isHidden());
     QStringList options;
     for(int i=0;i<fan->count();++i) options.append(fan->itemText(i));
     QCOMPARE(options,QStringList({"Auto","20%","40%","60%","70%","80%","90%","100%"}));

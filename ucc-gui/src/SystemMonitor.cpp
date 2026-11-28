@@ -120,9 +120,9 @@ void SystemMonitor::updateMetrics()
       setText(m_fanSpeed, formatted(cpuSpeedVal, " %"), &SystemMonitor::fanSpeedChanged);
     if ((snapshot.contains("GetFanDataGPU1") || snapshot.contains("GetFanDataGPU2")) && (gpuFan >= 0 || m_gpuFanSpeed == "--"))
       setText(m_gpuFanSpeed, formatted(gpuFan, " %"), &SystemMonitor::gpuFanSpeedChanged);
-    if (snapshot.contains("GetFanDataCPU") && (cpuRpmVal >= 0 || m_cpuFanRpm < 0))
+    if (snapshot.contains("GetFanDataCPU"))
       setInt(m_cpuFanRpm, cpuRpmVal, &SystemMonitor::cpuFanRpmChanged);
-    if ((snapshot.contains("GetFanDataGPU1") || snapshot.contains("GetFanDataGPU2")) && (gpuRpmVal >= 0 || m_gpuFanRpm < 0))
+    if (snapshot.contains("GetFanDataGPU1") || snapshot.contains("GetFanDataGPU2"))
       setInt(m_gpuFanRpm, gpuRpmVal, &SystemMonitor::gpuFanRpmChanged);
     setInt(m_dGpuComputeUtil, gpu.value("computeUtilPct").toInt(-1), &SystemMonitor::dGpuComputeUtilChanged);
     setInt(m_dGpuMemoryUtil, gpu.value("memoryUtilPct").toInt(-1), &SystemMonitor::dGpuMemoryUtilChanged);

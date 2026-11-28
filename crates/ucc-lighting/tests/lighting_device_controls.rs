@@ -85,7 +85,7 @@ fn lightbar_reports_failure_to_apply_managed_settings_and_recovers_on_retry_and_
         max_brightness: 255,
     }));
     transport.set_fail_on_lightbar_write(true);
-    let mut controller = LightbarController::new(transport.clone());
+    let mut controller = LightbarController::new(Arc::clone(&transport));
     let result = controller.configure(&json!({"managed": true, "welcome_anim": true}));
     assert!(
         result.is_err(),
@@ -257,7 +257,7 @@ fn sysfs_write_keyboard_zones_commits_brightness_after_multi_intensity() {
     let buf_path = base.join("rgb:kbd_backlight/device/controls/buffer_input");
     sysfs.set_file(&buf_path, "0\n");
 
-    let transport = Arc::new(SysfsLedTransport::new(sysfs.clone(), "/"));
+    let transport = Arc::new(SysfsLedTransport::new(Arc::clone(&sysfs), "/"));
     let mut kbd = KeyboardBacklightController::new(transport);
     kbd.init().unwrap();
     sysfs.clear_journal();
