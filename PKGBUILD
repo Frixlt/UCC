@@ -10,7 +10,8 @@ license=('GPL-3.0-or-later')
 depends=('qt6-base' 'qt6-charts' 'systemd-libs' 'dbus' 'polkit' 'hicolor-icon-theme' 'libxcb')
 makedepends=('cmake' 'ninja' 'git' 'pkgconf' 'nlohmann-json' 'qt6-connectivity' 'rust')
 checkdepends=('python' 'gjs' 'nodejs')
-optdepends=('tuxedo-drivers: hardware interface required by uccd'
+optdepends=('uwcc-dkms: native Rust-for-Linux Uniwill EC/WMI/hwmon driver (/dev/uwcc)'
+            'tuxedo-drivers: legacy TUXEDO hardware interface'
             'bluez: Bluetooth water cooler'
             'kscreen: KDE refresh-rate offers'
             'qt6-wayland: native Wayland desktop clients')

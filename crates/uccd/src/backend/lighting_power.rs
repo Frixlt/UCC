@@ -741,6 +741,8 @@ impl LiveUccdBackend {
                     lb.restore_config_preserving_error(prev_cfg);
                 }
             }
+            self.lightbar_animating
+                .store(lb.is_animating(), Ordering::SeqCst);
             let json = lb.settings_json().to_string();
             (res, json)
         };
@@ -765,19 +767,23 @@ impl LiveUccdBackend {
     pub fn is_lightbar_animating(&self) -> bool {
         !self.shutting_down.load(Ordering::SeqCst)
             && !ucc_config::is_read_only_preview()
-            && self.lock_mutex(&self.lightbar_ctrl).is_animating()
+            && self.lightbar_animating.load(Ordering::SeqCst)
     }
 
     /// Advances an active lightbar animation deterministically on periodic daemon ticks (`M8-REVIEW-18`).
     pub fn tick_lightbar_animation(&self, started_at: &mut Option<std::time::Instant>) {
         if self.shutting_down.load(Ordering::SeqCst) || ucc_config::is_read_only_preview() {
+            self.lightbar_animating.store(false, Ordering::SeqCst);
             return;
         }
         let mut lb = self.lock_mutex(&self.lightbar_ctrl);
         if lb.is_animating() {
             lb.tick_now();
-            *started_at = lb.is_animating().then(std::time::Instant::now);
+            let still = lb.is_animating();
+            self.lightbar_animating.store(still, Ordering::SeqCst);
+            *started_at = still.then(std::time::Instant::now);
         } else {
+            self.lightbar_animating.store(false, Ordering::SeqCst);
             *started_at = None;
         }
     }

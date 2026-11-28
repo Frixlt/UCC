@@ -755,32 +755,58 @@ impl DaemonRuntime {
             {
                 let stop = Arc::clone(&worker_stop);
                 let lb_backend = Arc::clone(&backend);
-                tokio::spawn(async move {
-                    let mut anim_started: Option<Instant> = None;
-                    let mut ticker = tokio::time::interval(ucc_lighting::LIGHTBAR_FRAME_INTERVAL);
-                    ticker.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
-                    while !stop.load(Ordering::SeqCst) {
-                        ticker.tick().await;
-                        if stop.load(Ordering::SeqCst) {
-                            break;
+                if let Err(err) = std::thread::Builder::new()
+                    .name("uccd-worker-lightbar".to_string())
+                    .spawn(move || {
+                        let mut anim_started: Option<Instant> = None;
+                        let mut next_tick = Instant::now();
+                        loop {
+                            let animating = lb_backend.is_lightbar_animating();
+                            let wait_dur = if animating {
+                                next_tick.saturating_duration_since(Instant::now())
+                            } else {
+                                anim_started = None;
+                                next_tick = Instant::now();
+                                Duration::from_millis(50)
+                            };
+                            if !wait_dur.is_zero() {
+                                let stopped = stop.0.lock().unwrap_or_else(|e| e.into_inner());
+                                if *stopped {
+                                    break;
+                                }
+                                let (guard, _) = stop
+                                    .1
+                                    .wait_timeout(stopped, wait_dur)
+                                    .unwrap_or_else(|e| e.into_inner());
+                                if *guard {
+                                    break;
+                                }
+                            } else if *stop.0.lock().unwrap_or_else(|e| e.into_inner()) {
+                                break;
+                            }
+                            if !lb_backend.is_lightbar_animating() {
+                                continue;
+                            }
+                            let Some(_op_guard) = lb_backend.enter_worker_hw_op() else {
+                                break;
+                            };
+                            if let Err(payload) = std::panic::catch_unwind(
+                                std::panic::AssertUnwindSafe(|| {
+                                    lb_backend.tick_lightbar_animation(&mut anim_started);
+                                }),
+                            ) {
+                                error!(
+                                    "Lightbar worker panicked: {}",
+                                    format_panic_payload(payload)
+                                );
+                            }
+                            let now = Instant::now();
+                            next_tick = (next_tick + ucc_lighting::LIGHTBAR_FRAME_INTERVAL).max(now);
                         }
-                        if !lb_backend.is_lightbar_animating() {
-                            anim_started = None;
-                            continue;
-                        }
-                        let b = Arc::clone(&lb_backend);
-                        let started = anim_started;
-                        if let Ok(next_started) = tokio::task::spawn_blocking(move || {
-                            let mut st = started;
-                            b.tick_lightbar_animation(&mut st);
-                            st
-                        })
-                        .await
-                        {
-                            anim_started = next_started;
-                        }
-                    }
-                });
+                    })
+                {
+                    warn!("Failed to spawn lightbar worker: {err}");
+                }
             }
 
             if backend.platform_backend_name() == "uwcc" {

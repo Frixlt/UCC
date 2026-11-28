@@ -1317,7 +1317,7 @@ macro_rules! impl_uccd_methods {
                 self.offload_or_checked(
                     OffloadLane::PowerGpu,
                     conn,
-                    header.sender().map(|s| s.as_str()),
+                    sender,
                     false,
                     move |b| b.set_mux_boot_mode(&mode),
                 )

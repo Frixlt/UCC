@@ -706,7 +706,8 @@ impl LiveUccdBackend {
             .speeds_percent
             .len()
             .max(self.capabilities.device.number_of_fans);
-        *self.write_rw(&self.latest_fan_rpms) = self.sample_fan_rpms(num_fans);
+        let rpms = self.sample_fan_rpms(num_fans);
+        *self.write_rw(&self.latest_fan_rpms) = rpms;
         *self.write_rw(&self.latest_fans) = Some(tick.clone());
 
         if self.water_cooler_enabled.load(Ordering::SeqCst) {

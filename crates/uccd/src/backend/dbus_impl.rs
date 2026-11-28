@@ -266,7 +266,11 @@ impl UccdBackend for LiveUccdBackend {
         let Some(_op_guard) = self.enter_hardware_op() else {
             return false;
         };
-        self.lock_mutex(&self.lightbar_ctrl).trigger(force)
+        let mut lb = self.lock_mutex(&self.lightbar_ctrl);
+        let started = lb.trigger(force);
+        self.lightbar_animating
+            .store(lb.is_animating(), Ordering::SeqCst);
+        started
     }
 
     fn set_manual_power_mode(&self, mode_val: &str) -> bool {

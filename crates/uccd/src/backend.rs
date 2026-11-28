@@ -357,6 +357,7 @@ pub struct LiveUccdBackend {
 
     pub(super) keyboard_ctrl: Arc<Mutex<KeyboardBacklightController>>,
     pub(super) lightbar_ctrl: Arc<Mutex<LightbarController>>,
+    pub(super) lightbar_animating: AtomicBool,
     pub(super) lid_closed: AtomicBool,
     pub(super) lid_saved_keyboard_states: Mutex<Option<Vec<ucc_core::KeyboardBacklightState>>>,
     pub(super) lid_saved_wc_rgb: Mutex<Option<ucc_hardware::RgbTarget>>,
@@ -537,6 +538,7 @@ impl LiveUccdBackend {
             cooler_suspending: AtomicBool::new(false),
             keyboard_ctrl: Arc::new(Mutex::new(keyboard_ctrl)),
             lightbar_ctrl: Arc::new(Mutex::new(lightbar_ctrl)),
+            lightbar_animating: AtomicBool::new(false),
             lid_closed: AtomicBool::new(false),
             lid_saved_keyboard_states: Mutex::new(None),
             lid_saved_wc_rgb: Mutex::new(None),
@@ -1036,6 +1038,8 @@ impl LiveUccdBackend {
         if let Some(ref lb_cfg) = lb_val {
             let mut lb = self.lock_mutex(&self.lightbar_ctrl);
             let _ = lb.configure(lb_cfg);
+            self.lightbar_animating
+                .store(lb.is_animating(), Ordering::SeqCst);
         }
         let lightbar_ms = lightbar_started.elapsed().as_millis();
         if self.shutting_down.load(Ordering::SeqCst) {
@@ -1178,7 +1182,12 @@ impl LiveUccdBackend {
         if self.water_cooler_enabled.load(Ordering::SeqCst) {
             self.replay_active_cooler_profile();
         }
-        let _ = self.lock_mutex(&self.lightbar_ctrl).on_resume();
+        let animating = {
+            let mut lb = self.lock_mutex(&self.lightbar_ctrl);
+            let _ = lb.on_resume();
+            lb.is_animating()
+        };
+        self.lightbar_animating.store(animating, Ordering::SeqCst);
         if !self.is_lid_closed() {
             self.restore_lid_lighting();
         }
@@ -1207,6 +1216,7 @@ impl LiveUccdBackend {
         self.sync_water_cooler_pwup(false);
         if !self.shutdown_wait_expired.load(Ordering::SeqCst) {
             let _ = self.lock_mutex(&self.lightbar_ctrl).shutdown();
+            self.lightbar_animating.store(false, Ordering::SeqCst);
         }
         *self.lock_mutex(&self.temporary_fan_curves) = None;
         let auto_res = {

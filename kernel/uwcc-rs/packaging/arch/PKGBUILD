@@ -9,7 +9,7 @@ arch=('x86_64')
 url="https://github.com/uniwill-control-center/ucc-rusted"
 license=('GPL-2.0-only')
 depends=('dkms')
-conflicts=('tuxedo-drivers-dkms')
+conflicts=('tuxedo-drivers' 'tuxedo-drivers-dkms' 'tuxedo-drivers-mechrevo-dkms' 'tuxedo-drivers-mechrevo-cachyos')
 provides=('uwcc-driver')
 source=()
 sha256sums=()
@@ -44,4 +44,8 @@ package() {
 	# Mutually exclusive modprobe blacklist for tuxedo-drivers modules
 	install -Dm644 "${_srcroot}/modprobe/uwcc-blacklist-tuxedo.conf" \
 		"${pkgdir}/usr/lib/modprobe.d/uwcc-blacklist-tuxedo.conf"
+
+	# Auto-load uwcc_rs on boot so /dev/uwcc is present before uccd.service starts
+	install -Dm644 "${_srcroot}/modules-load/uwcc_rs.conf" \
+		"${pkgdir}/usr/lib/modules-load.d/uwcc_rs.conf"
 }

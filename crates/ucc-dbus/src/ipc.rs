@@ -446,6 +446,7 @@ pub fn required_access_level(req: &IpcRequest) -> IpcAccessLevel {
         | "DeleteCustomKeyboardProfile"
         | "SetLightbarSettingsJSON"
         | "TriggerLightbarAnimation"
+        | "SetMuxBootMode"
         | "SetPowerDeviceSettingsJSON"
         | "ScanPowerDevices"
         | "RegisterPowerRequest"

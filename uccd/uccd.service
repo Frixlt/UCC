@@ -1,7 +1,10 @@
 [Unit]
 Description=Uniwill Control Center Daemon
 Documentation=man:uccd(8)
-After=dbus.service systemd-modules-load.service
+Wants=systemd-modules-load.service
+After=dbus.service systemd-modules-load.service systemd-udev-trigger.service bluetooth.service
+StartLimitIntervalSec=60s
+StartLimitBurst=5
 Requires=dbus.service
 Conflicts=tccd.service tuxedo-power.service
 Before=tccd.service tuxedo-power.service
@@ -15,6 +18,8 @@ ExecStopPost=-/usr/lib/ucc/ucc-hardware --fan-auto
 Restart=on-failure
 RestartSec=5s
 TimeoutStopSec=10s
+RuntimeDirectory=ucc
+RuntimeDirectoryMode=0700
 User=root
 StandardOutput=journal
 StandardError=journal
@@ -27,7 +32,7 @@ ProtectHome=yes
 NoNewPrivileges=true
 ReadWritePaths=/etc/ucc /run /sys/devices
 ReadWritePaths=-/proc/sys/kernel/nmi_watchdog -/proc/sys/vm/dirty_writeback_centisecs
-ReadWritePaths=-/sys/module/snd_hda_intel/parameters/power_save -/sys/module/pcie_aspm/parameters/policy
+ReadWritePaths=-/sys/module/snd_hda_intel/parameters/power_save -/sys/module/pcie_aspm/parameters/policy -/sys/firmware/acpi/platform_profile
 # Hardware controls use writable device sysfs (CPU, LEDs and charging).
 ProtectKernelTunables=no
 ReadOnlyPaths=/proc/sys /proc/sysrq-trigger /sys/firmware
