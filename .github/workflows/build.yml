@@ -14,16 +14,52 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  docs-hygiene:
+    name: Repo hygiene, shellcheck & JSON validation
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: Verify no ignored files are tracked in Git
+        run: |
+          TRACKED_IGNORED="$(git ls-files -ci --exclude-standard)"
+          if [ -n "$TRACKED_IGNORED" ]; then
+            echo "Ignored files tracked in Git:" >&2
+            echo "$TRACKED_IGNORED" >&2
+            exit 1
+          fi
+      - name: Validate JSON metadata and execution registries
+        run: |
+          python3 - << 'EOF'
+          import json, pathlib, sys
+          files = list(pathlib.Path("docs/rust").rglob("*.json")) + [pathlib.Path("ucc-gnome/metadata.json")]
+          for p in sorted(files):
+              if p.exists():
+                  json.loads(p.read_text(encoding="utf-8"))
+          print(f"Validated {len(files)} JSON files.")
+          EOF
+      - name: Check shell scripts syntax
+        run: |
+          for script in scripts/*.sh tests/*.sh contrib/package-rust-vendor.sh run-preview.sh; do
+            [ -f "$script" ] && bash -n "$script"
+          done
+          if command -v shellcheck >/dev/null 2>&1; then
+            shellcheck -S warning scripts/check_gui_ldd.sh contrib/package-rust-vendor.sh || true
+          fi
+
   uwcc-kernel-uapi:
-    name: uwcc-rs UAPI ABI, no_std tests & packaging
+    name: uwcc-rs UAPI ABI (C11/C++20), no_std tests & packaging
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@v1
         with:
-          toolchain: "1.89.0"
-      - name: Verify C11 UAPI ABI layout and ioctl definitions
+          toolchain: "1.99.1"
+          components: rustfmt
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: uwcc-kernel-uapi
+      - name: Verify C11 & C++20 UAPI ABI layout and ioctl definitions
         run: |
           gcc -std=gnu11 -Wall -Wextra -Werror -pedantic -x c - -o /tmp/uwcc_uapi_abi << 'EOF'
           #include <stddef.h>
@@ -40,24 +76,39 @@ jobs:
           int main(void) { return 0; }
           EOF
           /tmp/uwcc_uapi_abi
+          g++ -std=c++20 -Wall -Wextra -Werror -fsyntax-only -x c++ - << 'EOF'
+          #include <cstddef>
+          #include <cstdint>
+          #include <sys/ioctl.h>
+          #include "kernel/uwcc-rs/include/uapi/uwcc.h"
+          static_assert(sizeof(uwcc_ec_reg) == 4);
+          static_assert(sizeof(uwcc_smrw) == 68);
+          static_assert(sizeof(uwcc_pwup) == 8);
+          static_assert(sizeof(uwcc_info) == 16);
+          static_assert(sizeof(uwcc_wmi_event) == 16);
+          static_assert(sizeof(uwcc_gpu_power) == 8);
+          static_assert(sizeof(uwcc_mux_state) == 8);
+          EOF
+      - name: Check kernel Rust formatting
+        run: rustfmt --edition 2021 --check kernel/uwcc-rs/src/ring_buffer.rs kernel/uwcc-rs/src/validation.rs
       - name: Run kernel no_std Rust unit tests (ring_buffer & validation)
         run: |
           rustc --edition 2021 --test kernel/uwcc-rs/src/ring_buffer.rs -o /tmp/uwcc_ring_buffer_test
           /tmp/uwcc_ring_buffer_test
           rustc --edition 2021 --test kernel/uwcc-rs/src/validation.rs -o /tmp/uwcc_validation_test
           /tmp/uwcc_validation_test
-      - name: Verify Arch PKGBUILD & DKMS syntax
+      - name: Verify userspace <-> kernel UWCC ABI tests
+        run: cargo test -p ucc-hardware --locked --test uwcc_backend
+      - name: Verify Arch PKGBUILD, DKMS, udev & modprobe configs
         run: |
           bash -n kernel/uwcc-rs/packaging/arch/PKGBUILD
           bash -n kernel/uwcc-rs/dkms.conf
+          test -s kernel/uwcc-rs/udev/99-uwcc.rules
+          test -s kernel/uwcc-rs/modprobe/uwcc-blacklist-tuxedo.conf
 
-  rust:
-    name: rust clippy & tests (${{ matrix.rust }})
+  rust-primary:
+    name: rust fmt, clippy, tests & interop (1.99.1)
     runs-on: ubuntu-24.04
-    strategy:
-      fail-fast: false
-      matrix:
-        rust: ["1.89.0", "1.99.1"]
     steps:
       - uses: actions/checkout@v4
       - name: Install D-Bus runtime
@@ -65,23 +116,22 @@ jobs:
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@v1
         with:
-          toolchain: ${{ matrix.rust }}
+          toolchain: "1.99.1"
           components: clippy, rustfmt
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: rust-primary-1.99.1
       - name: Check manifest version parity
         run: cargo run -p xtask --locked -- check-versions
       - name: Format check
-        if: matrix.rust == '1.99.1'
         run: cargo fmt --all -- --check
       - name: Clippy
-        if: matrix.rust == '1.99.1'
         run: cargo clippy --workspace --all-targets --locked -- -D warnings
       - name: Workspace tests
         run: dbus-run-session -- sh -c 'cargo test --workspace --locked --no-fail-fast'
       - name: Build interop_daemon test fixture
-        if: matrix.rust == '1.99.1'
         run: cargo build -p uccd --example interop_daemon --locked
       - name: Upload interop_daemon artifact
-        if: matrix.rust == '1.99.1'
         uses: actions/upload-artifact@v4
         with:
           name: interop-daemon
@@ -89,15 +139,33 @@ jobs:
           if-no-files-found: error
           retention-days: 7
 
+  rust-msrv:
+    name: rust MSRV tests (1.89.0)
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install D-Bus runtime
+        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends dbus
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@v1
+        with:
+          toolchain: "1.89.0"
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: rust-msrv-1.89.0
+      - name: Workspace tests (MSRV)
+        run: dbus-run-session -- sh -c 'cargo test --workspace --locked --no-fail-fast'
+
   build:
     name: cmake (${{ matrix.build_type }})
-    needs: [rust]
+    needs: [rust-primary]
     runs-on: ubuntu-24.04
     container:
       image: invent-registry.kde.org/neon/docker-images/plasma:unstable
       options: --user root
     env:
       XDG_RUNTIME_DIR: /tmp/ucc-ci-runtime
+      CCACHE_DIR: ${{ github.workspace }}/.ccache
     strategy:
       fail-fast: false
       matrix:
@@ -110,6 +178,7 @@ jobs:
           apt-get install -y --no-install-recommends \
             build-essential \
             ca-certificates \
+            ccache \
             cmake \
             git \
             ninja-build \
@@ -139,6 +208,11 @@ jobs:
         with:
           fetch-depth: 0
 
+      - name: Restore ccache
+        uses: hendrikmuhs/ccache-action@v1.2
+        with:
+          key: cmake-${{ matrix.build_type }}
+
       - name: Download prebuilt interop_daemon
         uses: actions/download-artifact@v4
         with:
@@ -156,6 +230,7 @@ jobs:
         run: |
           runuser -u ucc-ci -- cmake -S . -B build -G Ninja \
             -DCMAKE_BUILD_TYPE=${{ matrix.build_type }} \
+            -DCMAKE_CXX_COMPILER_LAUNCHER=ccache \
             -DCMAKE_CXX_FLAGS="-D_GLIBCXX_ASSERTIONS" \
             -DBUILD_GUI=ON \
             -DBUILD_TRAY=ON \
@@ -165,47 +240,59 @@ jobs:
             -DCMAKE_EXPORT_COMPILE_COMMANDS=ON
 
       - name: Build
-        run: runuser -u ucc-ci -- cmake --build build --parallel 2
+        run: runuser -u ucc-ci -- cmake --build build --parallel "$(nproc)"
 
       - name: Verify ucc-gui ldd invariants (M12.7 / ADR-01)
         run: runuser -u ucc-ci -- bash scripts/check_gui_ldd.sh build/bin/ucc-gui
 
-      - name: Run tests
+      - name: Run CTest & Mechrevo migration script tests
         working-directory: build
         run: |
           runuser -u ucc-ci -- env UCC_INTEROP_DAEMON_BIN="$GITHUB_WORKSPACE/ci-interop/interop_daemon" \
-            ctest --output-on-failure --parallel 2
+            ctest --output-on-failure --parallel "$(nproc)"
+          runuser -u ucc-ci -- python3 "$GITHUB_WORKSPACE/contrib/mechrevo/tests/test_migration.py"
 
       - name: Verify standalone packaged Rust runtime build (BUILD_TRAY=OFF)
         if: matrix.build_type == 'RelWithDebInfo'
         run: |
           runuser -u ucc-ci -- cmake -S . -B build-rust-runtime -G Ninja \
             -DCMAKE_BUILD_TYPE=RelWithDebInfo \
+            -DCMAKE_CXX_COMPILER_LAUNCHER=ccache \
             -DCMAKE_CXX_FLAGS="-D_GLIBCXX_ASSERTIONS" \
             -DUCC_PACKAGE_RUST_RUNTIME=ON \
             -DBUILD_TRAY=OFF \
             -DBUILD_TESTS=ON
-          runuser -u ucc-ci -- cmake --build build-rust-runtime --parallel 2
+          runuser -u ucc-ci -- cmake --build build-rust-runtime --parallel "$(nproc)"
           runuser -u ucc-ci -- bash scripts/check_gui_ldd.sh build-rust-runtime/bin/ucc-gui
           runuser -u ucc-ci -- env UCC_INTEROP_DAEMON_BIN="$GITHUB_WORKSPACE/ci-interop/interop_daemon" \
-            ctest --test-dir build-rust-runtime --output-on-failure --parallel 2
+            ctest --test-dir build-rust-runtime --output-on-failure --parallel "$(nproc)"
 
       - name: Verify read-only preview build (UCC_READ_ONLY_PREVIEW=ON)
         if: matrix.build_type == 'RelWithDebInfo'
         run: |
           runuser -u ucc-ci -- cmake -S . -B build-preview -G Ninja \
             -DCMAKE_BUILD_TYPE=RelWithDebInfo \
+            -DCMAKE_CXX_COMPILER_LAUNCHER=ccache \
             -DCMAKE_CXX_FLAGS="-D_GLIBCXX_ASSERTIONS" \
             -DUCC_READ_ONLY_PREVIEW=ON \
             -DUCC_PACKAGE_RUST_RUNTIME=ON \
             -DBUILD_TRAY=OFF \
             -DBUILD_TESTS=ON
-          runuser -u ucc-ci -- cmake --build build-preview --parallel 2 --target test_gui_audit test_gui_instance test_app_logging ucc-gui
+          runuser -u ucc-ci -- cmake --build build-preview --parallel "$(nproc)" --target test_gui_audit test_gui_instance test_app_logging ucc-gui
           runuser -u ucc-ci -- bash scripts/check_gui_ldd.sh build-preview/bin/ucc-gui
           runuser -u ucc-ci -- ctest --test-dir build-preview -R "^(test_gui_audit_preview_gallery|test_gui_instance|test_app_logging|test_gui_ldd_invariants)$" --output-on-failure
 
       - name: Capture current GUI pages on an isolated bus
         run: runuser -u ucc-ci -- python3 contrib/frixit/capture-gallery.py --build build --output artifacts/ci-gallery
+
+      - name: Upload GUI gallery artifact
+        if: matrix.build_type == 'RelWithDebInfo' || failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: gui-gallery-${{ matrix.build_type }}
+          path: artifacts/ci-gallery
+          if-no-files-found: warn
+          retention-days: 7
 
       - name: Upload compile_commands.json
         if: matrix.build_type == 'RelWithDebInfo'

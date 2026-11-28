@@ -60,3 +60,72 @@ fn config_manager_roundtrips_126_zone_and_host_settings() {
         );
     }
 }
+
+#[test]
+fn config_manager_roundtrips_126_zone_fixture_in_tempdir() {
+    use ucc_config::{create_default_settings, CustomKeyboardProfile};
+
+    let dir = tempfile::tempdir().expect("create tempdir");
+    let target = dir.path().join("settings.json");
+
+    let zones: Vec<ucc_core::KeyboardBacklightState> = (0..126_u16)
+        .map(|i| ucc_core::KeyboardBacklightState {
+            brightness: (i % 50) as u8,
+            red: ((i * 2) % 256) as u8,
+            green: (255 - ((i * 2) % 256)) as u8,
+            blue: ((i * 3) % 256) as u8,
+        })
+        .collect();
+
+    let mut settings = create_default_settings();
+    settings.keyboard_layout = Some("frixit-mechrevo".to_string());
+    settings.keyboard_backlight_states = Some(zones.clone());
+    settings
+        .custom_keyboard_profiles
+        .get_or_insert_default()
+        .insert(
+            "fixture-126".to_string(),
+            CustomKeyboardProfile {
+                id: "fixture-126".to_string(),
+                name: "126-Zone Deterministic Fixture".to_string(),
+                json: serde_json::json!({
+                    "brightness": 31,
+                    "states": zones,
+                }),
+            },
+        );
+
+    let mgr = ConfigManager::with_custom_path(&target);
+    mgr.save(&settings).expect("save 126-zone fixture");
+
+    let (reloaded, recovered) =
+        ConfigManager::load_with_recovery(&target).expect("reload 126-zone fixture");
+    assert!(!recovered);
+    assert_eq!(reloaded, settings);
+
+    let reloaded_zones = reloaded
+        .keyboard_backlight_states
+        .as_ref()
+        .expect("keyboardBacklightStates present");
+    assert_eq!(reloaded_zones.len(), 126);
+    assert_eq!(reloaded_zones[0].brightness, 0);
+    assert_eq!(reloaded_zones[0].red, 0);
+    assert_eq!(reloaded_zones[0].green, 255);
+    assert_eq!(reloaded_zones[63].red, 126);
+    assert_eq!(reloaded_zones[125].blue, 119);
+
+    let custom_kb = reloaded
+        .custom_keyboard_profiles
+        .as_ref()
+        .expect("customKeyboardProfiles present");
+    assert_eq!(
+        custom_kb["fixture-126"].json["states"]
+            .as_array()
+            .map(Vec::len),
+        Some(126)
+    );
+
+    // Verify serialized file has no duplicate keyboardBacklightStates keys
+    let raw = fs::read_to_string(&target).expect("read saved settings");
+    assert_eq!(raw.matches("\"keyboardBacklightStates\"").count(), 1);
+}

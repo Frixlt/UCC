@@ -1270,6 +1270,7 @@ fn fuzz_domain4_backup_recovery_and_persistence_invariants() {
 
 #[test]
 fn fuzz_domain4_symlink_and_platform_paths_safety() {
+    #[cfg_attr(not(unix), allow(unused_variables))]
     let tmp = TempDir::new().expect("create tempdir");
 
     // 1. Symlink safety checks on Unix.

@@ -243,3 +243,86 @@ fn winrt_cooler_discover_and_connect_prefers_saved_identity() {
         Err(CoolerError::NotConnected)
     );
 }
+
+#[test]
+fn winrt_cooler_write_failure_missing_tx_and_ambiguous_discovery() {
+    // 1. Write failure injected via set_fail_write(true) maps to CoolerError::NotConnected without recording packets.
+    let bridge = Arc::new(MockWinRtGattBridge::new());
+    let addr = bridge
+        .add_lct_device("AA:BB:CC:DD:EE:10", "LCT21001")
+        .unwrap();
+    let transport = WinRtCoolerTransport::new(Arc::clone(&bridge) as _);
+    transport.connect_address(addr).unwrap();
+
+    bridge.set_fail_write(true);
+    let fan_pkt = CoolerPacketEncoder::fan_speed(50).unwrap();
+    assert_eq!(transport.write_packet(fan_pkt), Err(CoolerError::NotConnected));
+    assert_eq!(transport.write_uart(fan_pkt), Err(CoolerError::NotConnected));
+    assert!(bridge.written_packets().is_empty());
+
+    // Clearing write failure restores packet transmission.
+    bridge.set_fail_write(false);
+    transport.write_packet(fan_pkt).unwrap();
+    assert_eq!(bridge.written_packets().len(), 1);
+    transport.disconnect().unwrap();
+
+    // 2. Device exposing Nordic UART Service but lacking the TX characteristic fails cleanly and disconnects.
+    let missing_tx_bridge = Arc::new(MockWinRtGattBridge::new());
+    let missing_tx_addr = parse_ble_address_u64("AA:BB:CC:DD:EE:20").unwrap();
+    missing_tx_bridge.add_device(
+        WinRtBleDeviceInfo {
+            bluetooth_address: missing_tx_addr,
+            name: "LCT22002".to_string(),
+            rssi_dbm: -50,
+            advertised_services: vec![NORDIC_UART_SERVICE_GUID],
+        },
+        true,
+        false,
+        true,
+    );
+    let missing_tx_transport = WinRtCoolerTransport::new(Arc::clone(&missing_tx_bridge) as _);
+    let err = missing_tx_transport
+        .connect_address(missing_tx_addr)
+        .unwrap_err();
+    assert_eq!(
+        err,
+        WinRtBleError::CharacteristicNotFound {
+            characteristic: NORDIC_UART_CHAR_TX.to_string(),
+        }
+    );
+    assert!(!missing_tx_transport.is_connected());
+    assert!(missing_tx_transport.active_session().is_none());
+    assert!(!missing_tx_bridge.is_connected(missing_tx_addr));
+
+    // 3. Multiple LCT coolers without a saved address (or with an ambiguous saved name) must fail closed.
+    let multi_bridge = Arc::new(MockWinRtGattBridge::new());
+    multi_bridge
+        .add_lct_device("00:11:22:33:44:10", "LCT21001")
+        .unwrap();
+    multi_bridge
+        .add_lct_device("00:11:22:33:44:20", "LCT21001")
+        .unwrap();
+    let multi_transport = WinRtCoolerTransport::new(Arc::clone(&multi_bridge) as _);
+
+    assert!(matches!(
+        multi_transport.discover_and_connect(None),
+        Err(WinRtBleError::DeviceNotFound(_))
+    ));
+    let empty_saved = SavedCoolerIdentity {
+        address: None,
+        name: None,
+    };
+    assert!(matches!(
+        multi_transport.discover_and_connect(Some(&empty_saved)),
+        Err(WinRtBleError::DeviceNotFound(_))
+    ));
+    let ambiguous_name = SavedCoolerIdentity {
+        address: None,
+        name: Some("LCT21001".to_string()),
+    };
+    assert!(matches!(
+        multi_transport.discover_and_connect(Some(&ambiguous_name)),
+        Err(WinRtBleError::DeviceNotFound(_))
+    ));
+    assert!(!multi_transport.is_connected());
+}

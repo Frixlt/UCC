@@ -196,6 +196,7 @@ void UccdClient::onServiceUnregistered( const QString &service )
   Q_UNUSED( service )
   qWarning() << "[UccdClient] uccd disappeared from the system bus";
   m_connected = false;
+  m_interface.reset();
   emit connectionStatusChanged( false );
 }
 
@@ -1369,29 +1370,32 @@ std::optional< int > UccdClient::getDGpuCoreVoltageMv()
 
 std::optional< int > UccdClient::getFanSpeedRPM()
 {
-  if ( auto percentage = readFanDataValue( m_interface.get(), "GetFanDataCPU", "speed" ) )
+  if ( auto rpm = readFanDataValue( m_interface.get(), "GetFanDataCPU", "realRpm" );
+       rpm && *rpm >= 0 )
   {
-    return ( *percentage ) * 60;
+    return rpm;
   }
   return std::nullopt;
 }
 
 std::optional< int > UccdClient::getGpuFanSpeedRPM()
 {
-  auto gpu1 = readFanDataValue( m_interface.get(), "GetFanDataGPU1", "speed" );
-  auto gpu2 = readFanDataValue( m_interface.get(), "GetFanDataGPU2", "speed" );
+  auto gpu1 = readFanDataValue( m_interface.get(), "GetFanDataGPU1", "realRpm" );
+  auto gpu2 = readFanDataValue( m_interface.get(), "GetFanDataGPU2", "realRpm" );
+  if ( gpu1 && *gpu1 < 0 ) gpu1.reset();
+  if ( gpu2 && *gpu2 < 0 ) gpu2.reset();
 
   if ( gpu1 && gpu2 )
   {
-    return static_cast< int >( ( *gpu1 + *gpu2 ) / 2 ) * 60;
+    return static_cast< int >( ( *gpu1 + *gpu2 ) / 2 );
   }
   if ( gpu1 )
   {
-    return ( *gpu1 ) * 60;
+    return gpu1;
   }
   if ( gpu2 )
   {
-    return ( *gpu2 ) * 60;
+    return gpu2;
   }
   return std::nullopt;
 }

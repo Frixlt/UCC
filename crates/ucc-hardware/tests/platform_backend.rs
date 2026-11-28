@@ -240,3 +240,68 @@ fn uniwill_uses_wire_codes_instead_of_zero_based_ordinals() {
         Err(PlatformError::Unsupported(_))
     ));
 }
+
+#[test]
+fn tuxedo_io_clevo_webcam_and_runtime_disconnect_fail_closed() {
+    let hw = MockHardwareIo::new();
+    hw.set_i32_read(requests::R_HWCHECK_CL, 1);
+    hw.set_i32_read(requests::R_CL_WEBCAM_SW, 1);
+    hw.set_i32_read(requests::R_CL_FANINFO1, (55 << 16) | 128);
+
+    let backend = TuxedoIoBackend::new(hw, None, None);
+    assert!(backend.capabilities().device.webcam_switch);
+    assert!(backend.read_webcam().unwrap());
+
+    backend.set_webcam(false).unwrap();
+    backend.set_webcam(true).unwrap();
+
+    let journal = backend.hardware_io().journal();
+    assert!(journal.iter().any(|w| matches!(
+        w,
+        HardwareIoWrite::WriteI32 {
+            request: requests::W_CL_WEBCAM_SW,
+            val: 0,
+            ..
+        }
+    )));
+    assert!(journal.iter().any(|w| matches!(
+        w,
+        HardwareIoWrite::WriteI32 {
+            request: requests::W_CL_WEBCAM_SW,
+            val: 1,
+            ..
+        }
+    )));
+
+    // Simulate runtime device disconnect: every operation must fail closed with Unavailable
+    backend.hardware_io().set_available(false);
+    assert!(!backend.is_available());
+    assert!(matches!(
+        backend.read_webcam(),
+        Err(PlatformError::Unavailable)
+    ));
+    assert!(matches!(
+        backend.set_webcam(false),
+        Err(PlatformError::Unavailable)
+    ));
+    assert!(matches!(
+        backend.read_fan_temp(0),
+        Err(PlatformError::Unavailable)
+    ));
+    assert!(matches!(
+        backend.read_fan_speed_percent(0),
+        Err(PlatformError::Unavailable)
+    ));
+    assert!(matches!(
+        backend.set_fan_speed_percent(0, 50),
+        Err(PlatformError::Unavailable)
+    ));
+    assert!(matches!(
+        backend.set_fans_auto(),
+        Err(PlatformError::Unavailable)
+    ));
+    assert!(matches!(
+        backend.set_perf_profile(1),
+        Err(PlatformError::Unavailable)
+    ));
+}

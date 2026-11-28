@@ -864,3 +864,56 @@ fn ta_08_ta_09_temporary_wc_curves_drive_wc_auto_and_revert_restores_fan_profile
         "TA-09: RevertFanProfiles must emit ProfileChanged with restored fanProfile ID"
     );
 }
+
+#[cfg(unix)]
+#[test]
+fn sleep_state_store_rejects_symlink_and_oversized_file() {
+    use std::os::unix::fs::{symlink, PermissionsExt};
+    use uccd::{SleepState, SleepStateStore};
+
+    let tmp = tempfile::tempdir().unwrap();
+    let state_dir = tmp.path().join("ucc-sleep");
+    std::fs::create_dir(&state_dir).unwrap();
+    std::fs::set_permissions(&state_dir, std::fs::Permissions::from_mode(0o700)).unwrap();
+
+    let uid = unsafe { nix::libc::geteuid() };
+
+    // 1. Symlink at snapshot path must be rejected by both load() and save().
+    let target_path = state_dir.join("real-target.json");
+    let original_target = r#"{"version":1,"wasActive":true,"manualMode":"ac","coolerEnabled":false}"#;
+    std::fs::write(&target_path, original_target).unwrap();
+    std::fs::set_permissions(&target_path, std::fs::Permissions::from_mode(0o600)).unwrap();
+
+    let symlink_path = state_dir.join("sleep-state.json");
+    symlink(&target_path, &symlink_path).unwrap();
+
+    let symlink_store = SleepStateStore::new(&symlink_path, uid);
+    assert!(
+        symlink_store.load().is_err(),
+        "SleepStateStore::load must reject symlink snapshot"
+    );
+    assert!(
+        symlink_store.save(&SleepState::default()).is_err(),
+        "SleepStateStore::save must reject symlink snapshot"
+    );
+    assert_eq!(
+        std::fs::read_to_string(&target_path).unwrap(),
+        original_target,
+        "SleepStateStore::save must not follow symlink or modify target file"
+    );
+
+    // 2. Oversized regular file (> 4096 bytes) must be rejected by both load() and save().
+    let oversized_path = state_dir.join("sleep-state-oversized.json");
+    std::fs::write(&oversized_path, vec![b' '; 4097]).unwrap();
+    std::fs::set_permissions(&oversized_path, std::fs::Permissions::from_mode(0o600)).unwrap();
+
+    let oversized_store = SleepStateStore::new(&oversized_path, uid);
+    assert!(
+        oversized_store.load().is_err(),
+        "SleepStateStore::load must reject oversized (>4096-byte) snapshot"
+    );
+    assert!(
+        oversized_store.save(&SleepState::default()).is_err(),
+        "SleepStateStore::save must reject oversized (>4096-byte) snapshot"
+    );
+}

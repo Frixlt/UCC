@@ -1,3 +1,4 @@
+#[cfg(unix)]
 use std::sync::Arc;
 use ucc_dbus::*;
 
@@ -31,6 +32,7 @@ fn test_auth_action_ids() {
     );
 }
 
+#[cfg(unix)]
 #[tokio::test]
 async fn test_authorizer_allow_and_deny() {
     let conn = zbus::connection::Builder::session()
@@ -74,6 +76,7 @@ async fn test_authorizer_allow_and_deny() {
     );
 }
 
+#[cfg(unix)]
 #[tokio::test]
 async fn test_tracking_authorizer_records_action() {
     let conn = zbus::connection::Builder::session()
@@ -112,6 +115,7 @@ async fn test_tracking_authorizer_records_action() {
     assert_eq!(recorded[2], (Some(":1.42".to_string()), AuthAction::Read));
 }
 
+#[cfg(unix)]
 #[tokio::test]
 async fn test_async_concurrent_authorization_non_blocking() {
     let conn = zbus::connection::Builder::session()

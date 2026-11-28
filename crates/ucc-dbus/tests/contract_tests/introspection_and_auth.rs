@@ -250,3 +250,92 @@ async fn test_dbus_introspection_contains_all_122_methods_and_7_signals() {
         );
     }
 }
+
+#[tokio::test]
+async fn test_dbus_legacy_path_introspection_and_method_call() {
+    assert_eq!(DBUS_PATH_ALT, "/de/uniwill/uccd");
+
+    let unique_id = std::process::id();
+    let service_name = format!("com.uniwill.uccd.legacyalt{unique_id}");
+
+    let server_conn = zbus::connection::Builder::session()
+        .unwrap()
+        .name(service_name.as_str())
+        .unwrap()
+        .build()
+        .await
+        .unwrap();
+
+    let backend = Arc::new(DefaultUccdBackend);
+    let authorizer = Arc::new(AllowAllAuthorizer);
+    register_uccd_service(&server_conn, backend, authorizer)
+        .await
+        .unwrap();
+
+    let client_conn = zbus::connection::Builder::session()
+        .unwrap()
+        .build()
+        .await
+        .unwrap();
+
+    // Introspect the legacy object path /de/uniwill/uccd
+    let introspect_proxy = zbus::fdo::IntrospectableProxy::builder(&client_conn)
+        .destination(service_name.as_str())
+        .unwrap()
+        .path(DBUS_PATH_ALT)
+        .unwrap()
+        .build()
+        .await
+        .unwrap();
+
+    let xml = introspect_proxy.introspect().await.unwrap();
+    assert!(
+        xml.contains("interface name=\"com.uniwill.uccd\""),
+        "Missing com.uniwill.uccd interface on legacy path {DBUS_PATH_ALT}"
+    );
+    assert!(
+        xml.contains("interface name=\"de.uniwill.uccd\""),
+        "Missing de.uniwill.uccd interface on legacy path {DBUS_PATH_ALT}"
+    );
+    assert!(
+        xml.contains("method name=\"GetDeviceName\""),
+        "Missing GetDeviceName method on legacy path {DBUS_PATH_ALT}"
+    );
+    assert!(
+        xml.contains("signal name=\"ProfileChanged\""),
+        "Missing ProfileChanged signal on legacy path {DBUS_PATH_ALT}"
+    );
+
+    // Invoke methods on /de/uniwill/uccd via legacy interface (de.uniwill.uccd)
+    let legacy_proxy = UccdLegacyProxy::builder(&client_conn)
+        .destination(service_name.as_str())
+        .unwrap()
+        .path(DBUS_PATH_ALT)
+        .unwrap()
+        .build()
+        .await
+        .unwrap();
+
+    assert_eq!(
+        legacy_proxy.get_device_name().await.unwrap(),
+        "ucc-rusted Laptop"
+    );
+    assert_eq!(legacy_proxy.get_power_state().await.unwrap(), "power_ac");
+    assert!(legacy_proxy.set_display_brightness(70).await.unwrap());
+
+    // Invoke methods on /de/uniwill/uccd via primary interface (com.uniwill.uccd)
+    let primary_alt_proxy = UccdProxy::builder(&client_conn)
+        .destination(service_name.as_str())
+        .unwrap()
+        .path(DBUS_PATH_ALT)
+        .unwrap()
+        .build()
+        .await
+        .unwrap();
+
+    assert_eq!(
+        primary_alt_proxy.get_device_name().await.unwrap(),
+        "ucc-rusted Laptop"
+    );
+    assert!(primary_alt_proxy.is_device_supported().await.unwrap());
+}

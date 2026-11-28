@@ -5,7 +5,7 @@
 //! `0x1A` / MECHREVO YAOSHI X6AR55xY): `SMRW` limits parsing, real tachometer RPM,
 //! `PL1`/`PL2`/`PL4` & `TCC` offset, `cTGP`/`Dynamic Boost`, `PWUP`, `RamFan 1.5`
 //! 16-point curves, charging thresholds, EC switches (`Fn Lock`, `Win Lock`,
-//! lightbar power `0x767`/`0x768`, USB sleep charging), USB RGB+IR UVC webcam
+//! lightbar AC control `0x0748`, USB sleep charging), USB RGB+IR UVC webcam
 //! toggle over [`Sysfs`], and WMI-to-uinput hotkey event translation.
 
 pub mod ramfan;
@@ -127,7 +127,10 @@ pub const CHASSIS_PROJECT_0X1A: u32 = 0x1A;
 /// Byte offset into the ACPI `SMRW` table where factory power limits reside.
 pub const SMRW_POWER_LIMITS_OFFSET: u16 = 0;
 
-/// Byte length of the factory power limits block read from `SMRW` (5 pairs of `u16` = 20 bytes).
+/// Byte length of the native `INOU0000` `SMRW` power table (`AX20`/`AX90`/`BX90` = 12 bytes).
+pub const SMRW_INOU0000_LEN: u16 = 12;
+
+/// Byte length of the legacy extended `SMRW` power limits block (5 pairs of `u16` = 20 bytes).
 pub const SMRW_POWER_LIMITS_LEN: u16 = 20;
 
 /// Maximum physically plausible fan tachometer reading (RPM).
@@ -151,16 +154,17 @@ pub mod uwcc_ec_reg {
     pub const CPU_FAN_RPM_HI: u16 = 0x0464;
     pub const CPU_FAN_RPM_LO: u16 = 0x0465;
 
-    /// GPU tachometer RPM low byte (`0x46B`) and high byte (`0x46C`).
-    pub const GPU_FAN_RPM_LO: u16 = 0x046B;
+    /// GPU tachometer RPM low byte (`0x46D`) and high byte (`0x46C`, upstream `EC_ADDR_SECOND_FAN_RPM_1/2`).
+    pub const GPU_FAN_RPM_LO: u16 = 0x046D;
     pub const GPU_FAN_RPM_HI: u16 = 0x046C;
 
     /// Live fan duty readback registers (`0..=200` raw).
     pub const CPU_FAN_DUTY_READ: u16 = 0x075B;
     pub const GPU_FAN_DUTY_READ: u16 = 0x075C;
 
-    /// Manual fan control registers.
+    /// Manual fan control register (`0x0751` `EC_ADDR_MANUAL_FAN_CTRL`, `BIT(7)` = `FAN_MODE_USER`).
     pub const FAN_MANUAL_MODE: u16 = 0x0751;
+    pub const FAN_MODE_USER_BIT: u8 = 1 << 7;
     pub const CPU_FAN_DUTY_WRITE: u16 = 0x1804;
     pub const GPU_FAN_DUTY_WRITE: u16 = 0x1809;
 
@@ -168,24 +172,38 @@ pub mod uwcc_ec_reg {
     pub const PERF_MODE: u16 = 0x0752;
     pub const MODE_ENABLE: u16 = 0x0753;
 
-    /// Power and thermal limit registers.
-    pub const PL1_WATTS: u16 = 0x0740;
-    pub const PL2_WATTS: u16 = 0x0741;
-    pub const PL4_WATTS: u16 = 0x0742;
+    /// Read-only chassis project identifier (`0x1A` on MECHREVO X6AR55xY).
+    pub const PROJECT_ID: u16 = 0x0740;
+
+    /// Power and thermal limit registers (aligned with upstream Linux `uniwill-acpi.c`).
+    pub const PL1_WATTS: u16 = 0x0783;
+    pub const PL2_WATTS: u16 = 0x0784;
+    pub const PL4_WATTS: u16 = 0x0785;
+    /// Read-only EC factory TDP ceiling registers (`0xD2 = 210W` on `YAOSHI Series-X6AR55xY`).
+    pub const TDP_FACTORY_PL1_MAX: u16 = 0x07A7;
+    pub const TDP_FACTORY_PL2_MAX: u16 = 0x07A8;
+    pub const TDP_FACTORY_PL4_MAX: u16 = 0x07A9;
     pub const TCC_OFFSET_C: u16 = 0x0743;
     pub const CTGP_WATTS: u16 = 0x0744;
     pub const DYNAMIC_BOOST_WATTS: u16 = 0x0745;
 
-    /// EC hardware switches & battery charging thresholds.
-    pub const FN_LOCK: u16 = 0x0760;
-    pub const WIN_LOCK: u16 = 0x0761;
+    /// EC hardware switches & battery charging control (upstream `uniwill-acpi.c`).
+    /// `FN_LOCK` is `BIT(3)` of `0x07A4` (`EC_ADDR_OEM_2`), NEVER clobbering other bits.
+    pub const FN_LOCK: u16 = 0x07A4;
+    pub const FN_LOCK_BIT: u8 = 1 << 3;
+    /// `0x0767` (`EC_ADDR_TRIGGER`) `BIT(0)` toggles Super/Win key lock; `0x0768` (`EC_ADDR_SWITCH_STATUS`) `BIT(0)` reads it.
+    pub const WIN_LOCK_TRIGGER: u16 = 0x0767;
+    pub const WIN_LOCK: u16 = 0x0768;
+    pub const WIN_LOCK_BIT: u8 = 1 << 0;
     pub const USB_SLEEP_CHARGING: u16 = 0x0762;
-    pub const CHARGE_START_PCT: u16 = 0x0765;
-    pub const CHARGE_END_PCT: u16 = 0x0766;
+    /// `0x07B9` (`EC_ADDR_CHARGE_CTRL`): bits `6..=0` (`0x7F`) hold charge end threshold percentage.
+    pub const CHARGE_CTRL: u16 = 0x07B9;
+    pub const CHARGE_CTRL_MASK: u8 = 0x7F;
 
-    /// Lightbar / chassis LED EC power rails (`0x767`/`0x768`).
-    pub const LIGHTBAR_POWER_PRIMARY: u16 = 0x0767;
-    pub const LIGHTBAR_POWER_SECONDARY: u16 = 0x0768;
+    /// Lightbar AC control register (`0x0748` `EC_ADDR_LIGHTBAR_AC_CTRL`, `BIT(0)` = `LIGHTBAR_APP_EXISTS`).
+    /// Never write `0x0767`/`0x0768` (those control `SUPER_KEY_LOCK`).
+    pub const LIGHTBAR_AC_CTRL: u16 = 0x0748;
+    pub const LIGHTBAR_APP_EXISTS_BIT: u8 = 1 << 0;
 }
 
 /// Configured backend selection policy (`Auto`, `Uwcc`, or `TuxedoIo`).
@@ -246,17 +264,17 @@ pub struct SmrwPowerLimits {
 }
 
 impl SmrwPowerLimits {
-    /// Default validated bounds for chassis `0x1A` (MECHREVO YAOSHI X6AR55xY).
+    /// Default validated bounds for chassis `0x1A` (MECHREVO YAOSHI X6AR55xY, Arrow Lake-HX + RTX 5080 Mobile).
     pub const fn chassis_0x1a_default() -> Self {
         Self {
             pl1_min_w: 15,
-            pl1_max_w: 90,
+            pl1_max_w: 215,
             pl2_min_w: 20,
-            pl2_max_w: 125,
+            pl2_max_w: 225,
             pl4_min_w: 25,
-            pl4_max_w: 160,
+            pl4_max_w: 255,
             ctgp_min_w: 55,
-            ctgp_max_w: 140,
+            ctgp_max_w: 175,
             dynamic_boost_min_w: 0,
             dynamic_boost_max_w: 25,
         }
@@ -280,6 +298,52 @@ impl SmrwPowerLimits {
             buf[base + 2..base + 4].copy_from_slice(&hi.to_le_bytes());
         }
         buf
+    }
+
+    /// Parses a native 12-byte `INOU0000` `SMRW` buffer (`AX20`/`AX40`/`AX60`/`AX90`/`BX90`).
+    ///
+    /// Layout verified against `DSDT.dsl`:
+    /// - `data[0]`: PL1 max (W)
+    /// - `data[1]`: PL2 max (W)
+    /// - `data[2]`: PL4 max (W)
+    /// - `data[4]`: Dynamic Boost min (W)
+    /// - `data[5]`: Dynamic Boost max (W)
+    /// - `data[7]`: Base TGP max (W); total cTGP max = `base_tgp + db_max`
+    /// - `data[8..12]`: `0xFF` sentinel tail
+    pub fn decode_inou0000_12byte(data: &[u8]) -> Option<Self> {
+        if data.len() < usize::from(SMRW_INOU0000_LEN) || data[8..12] != [0xFF, 0xFF, 0xFF, 0xFF] {
+            return None;
+        }
+        let pl1_max_w = i32::from(data[0]);
+        let pl2_max_w = i32::from(data[1]);
+        let pl4_max_w = i32::from(data[2]);
+        let dynamic_boost_min_w = i32::from(data[4]);
+        let dynamic_boost_max_w = i32::from(data[5]);
+        let base_tgp_max_w = i32::from(data[7]);
+        let ctgp_max_w = base_tgp_max_w + dynamic_boost_max_w;
+
+        if pl1_max_w < 15
+            || pl2_max_w < 15
+            || pl4_max_w < 15
+            || dynamic_boost_min_w > dynamic_boost_max_w
+            || dynamic_boost_max_w > 100
+            || base_tgp_max_w < 35
+        {
+            return None;
+        }
+
+        Some(Self {
+            pl1_min_w: 15,
+            pl1_max_w,
+            pl2_min_w: 20.min(pl2_max_w),
+            pl2_max_w,
+            pl4_min_w: 25.min(pl4_max_w),
+            pl4_max_w,
+            ctgp_min_w: 55.min(ctgp_max_w),
+            ctgp_max_w,
+            dynamic_boost_min_w,
+            dynamic_boost_max_w,
+        })
     }
 
     /// Parses and validates a 64-byte `UwccSmrw::data` buffer into [`SmrwPowerLimits`].
@@ -486,13 +550,42 @@ fn probe_smrw_limits(transport: &dyn UwccTransport) -> SmrwPowerLimits {
     if !transport.is_available() {
         return SmrwPowerLimits::chassis_0x1a_default();
     }
-    let req = UwccSmrw {
+    // 1. Prefer native 12-byte INOU0000 SMRW read (zero AE_AML_BUFFER_LIMIT in kernel dmesg).
+    let req12 = UwccSmrw {
+        offset: SMRW_POWER_LIMITS_OFFSET,
+        len: SMRW_INOU0000_LEN,
+        data: [0u8; UWCC_SMRW_MAX_LEN],
+    };
+    if let Ok(resp) = transport.smrw(req12) {
+        if let Some(mut limits) = SmrwPowerLimits::decode_inou0000_12byte(&resp.data[..12]) {
+            // Merge optional EC factory ceiling registers (0x07A7..=0x07A9, e.g. 0xD2 = 210W).
+            if let Ok(ec_pl1) = transport.ec_read(uwcc_ec_reg::TDP_FACTORY_PL1_MAX) {
+                if (15..u8::MAX).contains(&ec_pl1) {
+                    limits.pl1_max_w = limits.pl1_max_w.max(i32::from(ec_pl1));
+                }
+            }
+            if let Ok(ec_pl2) = transport.ec_read(uwcc_ec_reg::TDP_FACTORY_PL2_MAX) {
+                if (15..u8::MAX).contains(&ec_pl2) {
+                    limits.pl2_max_w = limits.pl2_max_w.max(i32::from(ec_pl2));
+                }
+            }
+            if let Ok(ec_pl4) = transport.ec_read(uwcc_ec_reg::TDP_FACTORY_PL4_MAX) {
+                if (15..u8::MAX).contains(&ec_pl4) {
+                    limits.pl4_max_w = limits.pl4_max_w.max(i32::from(ec_pl4));
+                }
+            }
+            return limits;
+        }
+    }
+
+    // 2. Fall back to legacy 20-byte u16-pair SMRW layout, then chassis 0x1A defaults.
+    let req20 = UwccSmrw {
         offset: SMRW_POWER_LIMITS_OFFSET,
         len: SMRW_POWER_LIMITS_LEN,
         data: [0u8; UWCC_SMRW_MAX_LEN],
     };
     transport
-        .smrw(req)
+        .smrw(req20)
         .ok()
         .and_then(|resp| SmrwPowerLimits::decode(&resp.data))
         .unwrap_or_else(SmrwPowerLimits::chassis_0x1a_default)
@@ -588,14 +681,22 @@ impl PlatformBackend for UwccBackend {
             }
         };
         let duty = percent_to_ec_duty(percent);
-        self.transport.ec_write(uwcc_ec_reg::FAN_MANUAL_MODE, 1)?;
+        let prev = self.transport.ec_read(uwcc_ec_reg::FAN_MANUAL_MODE)?;
+        self.transport.ec_write(
+            uwcc_ec_reg::FAN_MANUAL_MODE,
+            prev | uwcc_ec_reg::FAN_MODE_USER_BIT,
+        )?;
         self.transport.ec_write(reg, duty)
     }
 
     fn set_fans_auto(&self) -> Result<(), PlatformError> {
         self.require_available()?;
         self.ramfan.restore_firmware_auto()?;
-        self.transport.ec_write(uwcc_ec_reg::FAN_MANUAL_MODE, 0)
+        let prev = self.transport.ec_read(uwcc_ec_reg::FAN_MANUAL_MODE)?;
+        self.transport.ec_write(
+            uwcc_ec_reg::FAN_MANUAL_MODE,
+            prev & !uwcc_ec_reg::FAN_MODE_USER_BIT,
+        )
     }
 
     fn read_tdp(&self, index: usize) -> Result<i32, PlatformError> {
@@ -681,8 +782,9 @@ impl PlatformBackend for UwccBackend {
 
     fn read_tcc_offset(&self) -> Result<u8, PlatformError> {
         self.require_available()?;
-        let offset = self.transport.ec_read(uwcc_ec_reg::TCC_OFFSET_C)?;
-        Ok(offset.min(MAX_TCC_OFFSET_C))
+        Err(PlatformError::Unsupported(
+            "CPU TCC offset is not mapped to EC 0x0743 (EC_ADDR_CTGP_DB_CTRL)",
+        ))
     }
 
     fn set_tcc_offset(&self, offset_c: u8) -> Result<(), PlatformError> {
@@ -692,7 +794,9 @@ impl PlatformBackend for UwccBackend {
                 "CPU TCC offset must be 0..=63 C",
             ));
         }
-        self.transport.ec_write(uwcc_ec_reg::TCC_OFFSET_C, offset_c)
+        Err(PlatformError::Unsupported(
+            "CPU TCC offset is not mapped to EC 0x0743 (EC_ADDR_CTGP_DB_CTRL)",
+        ))
     }
 
     fn set_pwup(&self, enable: bool, level: u32) -> Result<(), PlatformError> {
@@ -702,33 +806,48 @@ impl PlatformBackend for UwccBackend {
 
     fn set_lightbar_power(&self, enabled: bool) -> Result<(), PlatformError> {
         self.require_available()?;
-        let val = u8::from(enabled);
+        let prev = self.transport.ec_read(uwcc_ec_reg::LIGHTBAR_AC_CTRL)?;
+        let next = if enabled {
+            prev | uwcc_ec_reg::LIGHTBAR_APP_EXISTS_BIT
+        } else {
+            prev & !uwcc_ec_reg::LIGHTBAR_APP_EXISTS_BIT
+        };
         self.transport
-            .ec_write(uwcc_ec_reg::LIGHTBAR_POWER_PRIMARY, val)?;
-        self.transport
-            .ec_write(uwcc_ec_reg::LIGHTBAR_POWER_SECONDARY, val)
+            .ec_write(uwcc_ec_reg::LIGHTBAR_AC_CTRL, next)
     }
 
     fn read_fn_lock(&self) -> Result<bool, PlatformError> {
         self.require_available()?;
-        Ok(self.transport.ec_read(uwcc_ec_reg::FN_LOCK)? != 0)
+        Ok((self.transport.ec_read(uwcc_ec_reg::FN_LOCK)? & uwcc_ec_reg::FN_LOCK_BIT) != 0)
     }
 
     fn set_fn_lock(&self, enabled: bool) -> Result<(), PlatformError> {
         self.require_available()?;
-        self.transport
-            .ec_write(uwcc_ec_reg::FN_LOCK, u8::from(enabled))
+        let prev = self.transport.ec_read(uwcc_ec_reg::FN_LOCK)?;
+        let next = if enabled {
+            prev | uwcc_ec_reg::FN_LOCK_BIT
+        } else {
+            prev & !uwcc_ec_reg::FN_LOCK_BIT
+        };
+        self.transport.ec_write(uwcc_ec_reg::FN_LOCK, next)
     }
 
     fn read_win_lock(&self) -> Result<bool, PlatformError> {
         self.require_available()?;
-        Ok(self.transport.ec_read(uwcc_ec_reg::WIN_LOCK)? != 0)
+        Ok((self.transport.ec_read(uwcc_ec_reg::WIN_LOCK)? & uwcc_ec_reg::WIN_LOCK_BIT) != 0)
     }
 
     fn set_win_lock(&self, enabled: bool) -> Result<(), PlatformError> {
         self.require_available()?;
-        self.transport
-            .ec_write(uwcc_ec_reg::WIN_LOCK, u8::from(enabled))
+        let currently_locked = self.read_win_lock()?;
+        if currently_locked == enabled {
+            return Ok(());
+        }
+        let prev_trigger = self.transport.ec_read(uwcc_ec_reg::WIN_LOCK_TRIGGER)?;
+        self.transport.ec_write(
+            uwcc_ec_reg::WIN_LOCK_TRIGGER,
+            prev_trigger | uwcc_ec_reg::WIN_LOCK_BIT,
+        )
     }
 
     fn read_usb_sleep_charging(&self) -> Result<bool, PlatformError> {
@@ -744,16 +863,19 @@ impl PlatformBackend for UwccBackend {
 
     fn read_charge_thresholds(&self) -> Result<(u8, u8), PlatformError> {
         self.require_available()?;
-        let start = self.transport.ec_read(uwcc_ec_reg::CHARGE_START_PCT)?;
-        let end = self.transport.ec_read(uwcc_ec_reg::CHARGE_END_PCT)?;
-        if !(MIN_CHARGE_THRESHOLD_PCT..=MAX_CHARGE_THRESHOLD_PCT).contains(&start)
-            || !(MIN_CHARGE_THRESHOLD_PCT..=MAX_CHARGE_THRESHOLD_PCT).contains(&end)
-            || start >= end
-        {
+        let raw = self.transport.ec_read(uwcc_ec_reg::CHARGE_CTRL)?;
+        let end = raw & uwcc_ec_reg::CHARGE_CTRL_MASK;
+        if !(MIN_CHARGE_THRESHOLD_PCT..=MAX_CHARGE_THRESHOLD_PCT).contains(&end) {
             return Err(PlatformError::InvalidArgument(
-                "EC reported invalid charge thresholds",
+                "EC reported invalid charge threshold",
             ));
         }
+        let start = end.saturating_sub(5).max(MIN_CHARGE_THRESHOLD_PCT);
+        let start = if start >= end {
+            end.saturating_sub(1)
+        } else {
+            start
+        };
         Ok((start, end))
     }
 
@@ -767,9 +889,9 @@ impl PlatformBackend for UwccBackend {
                 "Charge thresholds must satisfy 20 <= start < end <= 100",
             ));
         }
-        self.transport
-            .ec_write(uwcc_ec_reg::CHARGE_START_PCT, start)?;
-        self.transport.ec_write(uwcc_ec_reg::CHARGE_END_PCT, end)
+        let prev = self.transport.ec_read(uwcc_ec_reg::CHARGE_CTRL)?;
+        let next = (prev & !uwcc_ec_reg::CHARGE_CTRL_MASK) | (end & uwcc_ec_reg::CHARGE_CTRL_MASK);
+        self.transport.ec_write(uwcc_ec_reg::CHARGE_CTRL, next)
     }
 
     fn set_fan_boost(&self, enabled: bool) -> Result<(), PlatformError> {

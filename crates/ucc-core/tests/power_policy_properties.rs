@@ -549,3 +549,110 @@ fn prop_power_enum_parsing_and_serde_invariants() {
         );
     }
 }
+
+#[test]
+fn power_policy_owner_and_reason_utf8_boundaries() {
+    let mut policy = PowerPolicy::new();
+    assert_eq!(policy.manual_mode(), ManualPowerMode::Auto);
+    assert_eq!(policy.revision(), 0);
+
+    // 1. UTF-8 byte-length boundaries for `name` (max 128 bytes) and `reason` (max 512 bytes).
+    // 2-byte UTF-8 characters ('я'): 64 chars = 128 bytes (ok), 65 chars = 130 bytes (err).
+    let name_2b_ok = "я".repeat(64);
+    let name_2b_too_long = "я".repeat(65);
+    assert_eq!(name_2b_ok.len(), 128);
+    assert_eq!(name_2b_too_long.len(), 130);
+
+    // 4-byte UTF-8 characters ('🚀'): 32 chars = 128 bytes (ok), 33 chars = 132 bytes (err).
+    let name_4b_ok = "🚀".repeat(32);
+    let name_4b_too_long = "🚀".repeat(33);
+    assert_eq!(name_4b_ok.len(), 128);
+    assert_eq!(name_4b_too_long.len(), 132);
+
+    // Reason 2-byte and 4-byte exact 512-byte boundaries.
+    let reason_2b_ok = "я".repeat(256);
+    let reason_2b_too_long = "я".repeat(257);
+    assert_eq!(reason_2b_ok.len(), 512);
+    assert_eq!(reason_2b_too_long.len(), 514);
+
+    let reason_4b_ok = "🚀".repeat(128);
+    let reason_4b_too_long = "🚀".repeat(129);
+    assert_eq!(reason_4b_ok.len(), 512);
+    assert_eq!(reason_4b_too_long.len(), 516);
+
+    // Mixed ASCII + multibyte exact boundary: 125 ASCII + 1x3-byte ('✓') = 128 bytes.
+    let name_mixed_ok = format!("{}✓", "a".repeat(125));
+    let name_mixed_too_long = format!("{}✓", "a".repeat(126));
+    assert_eq!(name_mixed_ok.len(), 128);
+    assert_eq!(name_mixed_too_long.len(), 129);
+
+    let owner_a = ":1.клиент-α";
+    let owner_b = ":1.клиент-🚀";
+
+    assert!(policy.register_request(owner_a, &name_2b_ok, &reason_2b_ok, "type_c"));
+    assert!(policy.register_request(owner_a, &name_4b_ok, &reason_4b_ok, "ac"));
+    assert!(policy.register_request(owner_b, &name_mixed_ok, "режим питания ✓", "bat"));
+
+    assert!(!policy.register_request(owner_a, &name_2b_too_long, "ok", "ac"));
+    assert!(!policy.register_request(owner_a, &name_4b_too_long, "ok", "ac"));
+    assert!(!policy.register_request(owner_a, &name_mixed_too_long, "ok", "ac"));
+    assert!(!policy.register_request(owner_a, "ok", &reason_2b_too_long, "ac"));
+    assert!(!policy.register_request(owner_a, "ok", &reason_4b_too_long, "ac"));
+    assert!(!policy.register_request("", "ok", "ok", "ac"));
+    assert!(!policy.register_request(owner_a, "", "ok", "ac"));
+
+    assert_eq!(policy.requests().len(), 3);
+    // Registering/rejecting requests never alters manual-mode revision.
+    assert_eq!(policy.revision(), 0);
+
+    // Unregister exact (owner, name) works and is idempotent; mismatched owner does nothing.
+    assert!(!policy.unregister_request(owner_b, &name_4b_ok));
+    assert!(policy.unregister_request(owner_a, &name_4b_ok));
+    assert!(!policy.unregister_request(owner_a, &name_4b_ok));
+    assert_eq!(policy.requests().len(), 2);
+
+    // Remaining highest request is owner_a's "type_c", elevating Bat -> TypeC.
+    let d_elevated = policy.evaluate(ProfileState::Bat, true);
+    assert_eq!(d_elevated.effective, ProfileState::TypeC);
+    assert_eq!(d_elevated.profile_state, ProfileState::TypeC);
+
+    // remove_owner removes only owner_a's UTF-8 entries, preserving owner_b.
+    policy.remove_owner(owner_a);
+    assert_eq!(policy.requests().len(), 1);
+    assert!(policy
+        .requests()
+        .contains_key(&(owner_b.to_string(), name_mixed_ok)));
+    let d_after_remove = policy.evaluate(ProfileState::Bat, true);
+    assert_eq!(d_after_remove.effective, ProfileState::Bat);
+    assert_eq!(d_after_remove.profile_state, ProfileState::Wc);
+
+    // 2. Manual mode revision increments strictly on actual mode changes.
+    assert!(policy.set_manual_mode("auto")); // no-op
+    assert_eq!(policy.revision(), 0);
+
+    assert!(!policy.set_manual_mode("wc"));
+    assert!(!policy.set_manual_mode("режим"));
+    assert_eq!(policy.revision(), 0);
+
+    assert!(policy.set_manual_mode("ac"));
+    assert_eq!(policy.manual_mode(), ManualPowerMode::Ac);
+    assert_eq!(policy.revision(), 1);
+
+    assert!(policy.set_manual_mode("ac")); // idempotent
+    assert_eq!(policy.revision(), 1);
+
+    assert!(policy.set_manual_mode("type_c"));
+    assert_eq!(policy.manual_mode(), ManualPowerMode::TypeC);
+    assert_eq!(policy.revision(), 2);
+
+    assert!(policy.set_manual_mode("bat"));
+    assert_eq!(policy.manual_mode(), ManualPowerMode::Bat);
+    assert_eq!(policy.revision(), 3);
+
+    assert!(policy.set_manual_mode("auto"));
+    assert_eq!(policy.manual_mode(), ManualPowerMode::Auto);
+    assert_eq!(policy.revision(), 4);
+
+    let final_decision = policy.evaluate(ProfileState::Ac, false);
+    assert_eq!(final_decision.status["revision"].as_u64(), Some(4));
+}

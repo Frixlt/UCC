@@ -474,3 +474,517 @@ fn windows_nvapi_candidate_path_uses_trusted_system32() {
         r"D:\WinOS\System32\nvapi64.dll"
     );
 }
+
+#[test]
+fn windows_power_error_paths_invalid_raw_and_write_failures() {
+    use ucc_hardware::windows_power::{PowerGuid, WindowsPowerTransport};
+
+    let transport = Arc::new(MockWindowsPowerTransport::new(true));
+    let controller = WindowsPowerController::new(Arc::clone(&transport) as _);
+
+    // Seed AC throttle bounds to (10, 50) so both write-ordering branches can be exercised.
+    transport.seed_value(
+        WindowsPowerSource::Ac,
+        GUID_PROCESSOR_SETTINGS_SUBGROUP,
+        GUID_PROCESSOR_THROTTLE_MINIMUM,
+        10,
+    );
+    transport.seed_value(
+        WindowsPowerSource::Ac,
+        GUID_PROCESSOR_SETTINGS_SUBGROUP,
+        GUID_PROCESSOR_THROTTLE_MAXIMUM,
+        50,
+    );
+
+    // Inject write failures and verify all mutating operations fail closed without journaling.
+    transport.set_fail_writes(true);
+    assert_eq!(
+        controller.set_throttle_bounds(WindowsPowerSource::Ac, 60, 80),
+        Err(WindowsPowerError::Unavailable)
+    );
+    assert_eq!(
+        controller.set_throttle_bounds(WindowsPowerSource::Ac, 5, 40),
+        Err(WindowsPowerError::Unavailable)
+    );
+    assert_eq!(
+        controller.set_epp_percent(WindowsPowerSource::Ac, 50),
+        Err(WindowsPowerError::Unavailable)
+    );
+    assert_eq!(
+        controller.set_epp_str(WindowsPowerSource::Dc, "power"),
+        Err(WindowsPowerError::Unavailable)
+    );
+    assert_eq!(
+        controller.set_max_frequency_mhz(WindowsPowerSource::Ac, 3200),
+        Err(WindowsPowerError::Unavailable)
+    );
+    assert_eq!(
+        controller.set_boost_mode(WindowsPowerSource::Ac, BoostMode::Enabled),
+        Err(WindowsPowerError::Unavailable)
+    );
+    assert_eq!(
+        controller.set_turbo_enabled(WindowsPowerSource::Dc, false),
+        Err(WindowsPowerError::Unavailable)
+    );
+    assert_eq!(
+        transport.apply_active_scheme(),
+        Err(WindowsPowerError::Unavailable)
+    );
+    assert!(transport.journal().is_empty());
+    assert_eq!(
+        controller.read_throttle_bounds(WindowsPowerSource::Ac),
+        Ok((10, 50))
+    );
+
+    // Verify apply_active_scheme failure propagates even when write_value_index succeeds.
+    struct FailOnApplyTransport {
+        inner: MockWindowsPowerTransport,
+    }
+    impl WindowsPowerTransport for FailOnApplyTransport {
+        fn is_available(&self) -> bool {
+            self.inner.is_available()
+        }
+        fn read_value_index(
+            &self,
+            source: WindowsPowerSource,
+            subgroup: PowerGuid,
+            setting: PowerGuid,
+        ) -> Result<u32, WindowsPowerError> {
+            self.inner.read_value_index(source, subgroup, setting)
+        }
+        fn write_value_index(
+            &self,
+            source: WindowsPowerSource,
+            subgroup: PowerGuid,
+            setting: PowerGuid,
+            value: u32,
+        ) -> Result<(), WindowsPowerError> {
+            self.inner
+                .write_value_index(source, subgroup, setting, value)
+        }
+        fn apply_active_scheme(&self) -> Result<(), WindowsPowerError> {
+            Err(WindowsPowerError::Win32Error {
+                api: "PowerSetActiveScheme",
+                code: 5,
+            })
+        }
+    }
+
+    let apply_fail_controller = WindowsPowerController::new(Arc::new(FailOnApplyTransport {
+        inner: MockWindowsPowerTransport::new(true),
+    }));
+    assert_eq!(
+        apply_fail_controller.set_throttle_bounds(WindowsPowerSource::Ac, 20, 80),
+        Err(WindowsPowerError::Win32Error {
+            api: "PowerSetActiveScheme",
+            code: 5,
+        })
+    );
+    assert_eq!(
+        apply_fail_controller.set_epp_percent(WindowsPowerSource::Ac, 25),
+        Err(WindowsPowerError::Win32Error {
+            api: "PowerSetActiveScheme",
+            code: 5,
+        })
+    );
+
+    // Invalid raw values seeded in mock transport must return Unsupported.
+    transport.set_fail_writes(false);
+    transport.seed_value(
+        WindowsPowerSource::Ac,
+        GUID_PROCESSOR_SETTINGS_SUBGROUP,
+        GUID_PROCESSOR_PERF_ENERGY_PREFERENCE,
+        101,
+    );
+    assert!(matches!(
+        controller.read_epp_percent(WindowsPowerSource::Ac),
+        Err(WindowsPowerError::Unsupported(_))
+    ));
+    assert!(matches!(
+        controller.read_epp_str(WindowsPowerSource::Ac),
+        Err(WindowsPowerError::Unsupported(_))
+    ));
+
+    // Invalid raw min throttle (> 100).
+    transport.seed_value(
+        WindowsPowerSource::Ac,
+        GUID_PROCESSOR_SETTINGS_SUBGROUP,
+        GUID_PROCESSOR_THROTTLE_MINIMUM,
+        101,
+    );
+    assert!(matches!(
+        controller.read_throttle_bounds(WindowsPowerSource::Ac),
+        Err(WindowsPowerError::Unsupported(_))
+    ));
+
+    // Invalid raw max throttle (> 100) with valid min.
+    transport.seed_value(
+        WindowsPowerSource::Ac,
+        GUID_PROCESSOR_SETTINGS_SUBGROUP,
+        GUID_PROCESSOR_THROTTLE_MINIMUM,
+        5,
+    );
+    transport.seed_value(
+        WindowsPowerSource::Ac,
+        GUID_PROCESSOR_SETTINGS_SUBGROUP,
+        GUID_PROCESSOR_THROTTLE_MAXIMUM,
+        150,
+    );
+    assert!(matches!(
+        controller.read_throttle_bounds(WindowsPowerSource::Ac),
+        Err(WindowsPowerError::Unsupported(_))
+    ));
+
+    // Invalid raw BoostMode value (> 4).
+    assert_eq!(BoostMode::from_raw(5), None);
+    assert_eq!(BoostMode::from_raw(u32::MAX), None);
+    transport.seed_value(
+        WindowsPowerSource::Dc,
+        GUID_PROCESSOR_SETTINGS_SUBGROUP,
+        GUID_PROCESSOR_PERF_BOOST_MODE,
+        9,
+    );
+    assert!(matches!(
+        controller.read_boost_mode(WindowsPowerSource::Dc),
+        Err(WindowsPowerError::Unsupported(_))
+    ));
+
+    // Unseeded setting lookup returns Unsupported.
+    let unknown_guid = PowerGuid::new(0x1111_2222, 0x3333, 0x4444, [0; 8]);
+    assert!(matches!(
+        transport.read_value_index(
+            WindowsPowerSource::Ac,
+            GUID_PROCESSOR_SETTINGS_SUBGROUP,
+            unknown_guid,
+        ),
+        Err(WindowsPowerError::Unsupported(_))
+    ));
+}
+
+#[test]
+fn windows_display_brightness_clamping_and_refresh_error_paths() {
+    let current = DisplayModeSpec {
+        width: 1920,
+        height: 1080,
+        refresh_hz: 60,
+        bits_per_pel: 32,
+    };
+    let modes = vec![
+        DisplayModeSpec {
+            width: 1920,
+            height: 1080,
+            refresh_hz: 144,
+            bits_per_pel: 32,
+        },
+        DisplayModeSpec {
+            width: 1920,
+            height: 1080,
+            refresh_hz: 60,
+            bits_per_pel: 32,
+        },
+        // Duplicate and zero-Hz entries must be deduplicated/filtered out.
+        DisplayModeSpec {
+            width: 1920,
+            height: 1080,
+            refresh_hz: 60,
+            bits_per_pel: 32,
+        },
+        DisplayModeSpec {
+            width: 1920,
+            height: 1080,
+            refresh_hz: 0,
+            bits_per_pel: 32,
+        },
+    ];
+
+    let transport = Arc::new(MockWindowsDisplayTransport::new(current, modes));
+    let controller = WindowsDisplayController::new(Arc::clone(&transport) as _);
+
+    assert_eq!(
+        controller.supported_refresh_rates(Some(r"\\.\DISPLAY1")),
+        Ok(vec![60, 144])
+    );
+
+    // Out-of-range firmware brightness (> 100) is clamped on read.
+    transport.seed_brightness(145);
+    assert_eq!(controller.read_brightness(), Ok(100));
+    transport.seed_brightness(0);
+    assert_eq!(controller.read_brightness(), Ok(0));
+
+    // Strict set_brightness rejects > 100 without touching transport.
+    assert!(matches!(
+        controller.set_brightness(101),
+        Err(WindowsDisplayError::InvalidArgument(_))
+    ));
+    assert!(matches!(
+        controller.set_brightness(u8::MAX),
+        Err(WindowsDisplayError::InvalidArgument(_))
+    ));
+    assert!(transport.journal().is_empty());
+
+    // Clamped brightness accepts > 100 and caps at 100.
+    assert_eq!(controller.set_brightness_clamped(0), Ok(0));
+    assert_eq!(controller.set_brightness_clamped(255), Ok(100));
+    assert_eq!(controller.read_brightness(), Ok(100));
+
+    // Refresh rate error paths: 0 Hz -> InvalidArgument, unsupported rate -> UnsupportedRefreshRate.
+    assert!(matches!(
+        controller.set_refresh_rate(Some(r"\\.\DISPLAY1"), 0),
+        Err(WindowsDisplayError::InvalidArgument(_))
+    ));
+    assert_eq!(
+        controller.set_refresh_rate(Some(r"\\.\DISPLAY1"), 120),
+        Err(WindowsDisplayError::UnsupportedRefreshRate {
+            requested_hz: 120,
+            width: 1920,
+            height: 1080,
+            bits_per_pel: 32,
+        })
+    );
+
+    // Write failures fail closed for both brightness and refresh rate without mutating state.
+    transport.clear_journal();
+    transport.set_fail_writes(true);
+    assert_eq!(
+        controller.set_brightness(50),
+        Err(WindowsDisplayError::Unavailable)
+    );
+    assert_eq!(
+        controller.set_brightness_clamped(50),
+        Err(WindowsDisplayError::Unavailable)
+    );
+    assert_eq!(
+        controller.set_refresh_rate(Some(r"\\.\DISPLAY1"), 144),
+        Err(WindowsDisplayError::Unavailable)
+    );
+    assert!(transport.journal().is_empty());
+    assert_eq!(controller.current_mode(None), Ok(current));
+
+    // Clearing write failure allows named-device refresh switch.
+    transport.set_fail_writes(false);
+    let applied = controller
+        .set_refresh_rate(Some(r"\\.\DISPLAY1"), 144)
+        .unwrap();
+    assert_eq!(applied.refresh_hz, 144);
+    assert_eq!(
+        transport.journal(),
+        vec![WindowsDisplayWrite::SetRefreshRate {
+            device_name: Some(r"\\.\DISPLAY1".to_string()),
+            refresh_hz: 144,
+        }]
+    );
+
+    // Unavailable transport fails closed across reads and writes.
+    transport.set_available(false);
+    assert_eq!(
+        controller.current_mode(None),
+        Err(WindowsDisplayError::Unavailable)
+    );
+    assert_eq!(
+        controller.enumerate_modes(None),
+        Err(WindowsDisplayError::Unavailable)
+    );
+    assert_eq!(
+        controller.supported_refresh_rates(None),
+        Err(WindowsDisplayError::Unavailable)
+    );
+    assert_eq!(
+        controller.set_refresh_rate(None, 60),
+        Err(WindowsDisplayError::Unavailable)
+    );
+    assert_eq!(
+        controller.read_brightness(),
+        Err(WindowsDisplayError::Unavailable)
+    );
+    assert_eq!(
+        controller.set_brightness(50),
+        Err(WindowsDisplayError::Unavailable)
+    );
+    assert_eq!(
+        controller.set_brightness_clamped(50),
+        Err(WindowsDisplayError::Unavailable)
+    );
+
+    // On Windows, also verify Win32DisplayTransport WMI brightness bridge delegation and clamping.
+    #[cfg(windows)]
+    {
+        use std::sync::atomic::{AtomicU8, Ordering};
+        use ucc_hardware::windows_display::{
+            Win32DisplayTransport, WindowsDisplayTransport, WmiBrightnessBridge,
+        };
+
+        struct StubWmiBrightness {
+            level: AtomicU8,
+        }
+        impl WmiBrightnessBridge for StubWmiBrightness {
+            fn read_wmi_brightness(&self) -> Result<u8, WindowsDisplayError> {
+                Ok(self.level.load(Ordering::SeqCst))
+            }
+            fn write_wmi_brightness(&self, percent: u8) -> Result<(), WindowsDisplayError> {
+                self.level.store(percent, Ordering::SeqCst);
+                Ok(())
+            }
+        }
+
+        let wmi_transport = Win32DisplayTransport::with_wmi_brightness(Box::new(StubWmiBrightness {
+            level: AtomicU8::new(135),
+        }));
+        assert_eq!(wmi_transport.read_brightness(), Ok(100));
+        wmi_transport.write_brightness(180).unwrap();
+        assert_eq!(wmi_transport.read_brightness(), Ok(100));
+        wmi_transport.write_brightness(42).unwrap();
+        assert_eq!(wmi_transport.read_brightness(), Ok(42));
+    }
+}
+
+#[test]
+fn windows_lid_guid_wire_layout_and_event_transitions() {
+    use std::mem::size_of;
+    use ucc_hardware::windows_lid::{LidGuid, DEVICE_NOTIFY_SERVICE_HANDLE};
+    use ucc_hardware::windows_power::PowerGuid;
+
+    // Verify 16-byte repr(C) GUID wire layouts.
+    assert_eq!(size_of::<LidGuid>(), 16);
+    assert_eq!(size_of::<PowerGuid>(), 16);
+    assert_eq!(DEVICE_NOTIFY_WINDOW_HANDLE, 0);
+    assert_eq!(DEVICE_NOTIFY_SERVICE_HANDLE, 1);
+
+    // {BA3E0F4D-B817-4094-A2D1-D56379E6A0F3} in Windows little-endian wire layout.
+    let expected_lid_guid_bytes: [u8; 16] = [
+        0x4D, 0x0F, 0x3E, 0xBA, 0x17, 0xB8, 0x94, 0x40, 0xA2, 0xD1, 0xD5, 0x63, 0x79, 0xE6, 0xA0,
+        0xF3,
+    ];
+    assert_eq!(
+        GUID_LIDSWITCH_STATE_CHANGE.to_le_bytes(),
+        expected_lid_guid_bytes
+    );
+    assert_eq!(GUID_LIDSWITCH_STATE_CHANGE_BYTES, expected_lid_guid_bytes);
+
+    // {54533251-82BE-4824-96C1-47B60B740D00} in Windows little-endian wire layout.
+    let expected_proc_subgroup_bytes: [u8; 16] = [
+        0x51, 0x32, 0x53, 0x54, 0xBE, 0x82, 0x24, 0x48, 0x96, 0xC1, 0x47, 0xB6, 0x0B, 0x74, 0x0D,
+        0x00,
+    ];
+    assert_eq!(
+        GUID_PROCESSOR_SETTINGS_SUBGROUP.to_le_bytes(),
+        expected_proc_subgroup_bytes
+    );
+
+    // Raw DWORD and single-byte payload decoding including unknown states.
+    assert_eq!(LidSwitchState::from_raw(0), Some(LidSwitchState::Closed));
+    assert_eq!(LidSwitchState::from_raw(1), Some(LidSwitchState::Open));
+    assert_eq!(LidSwitchState::from_raw(2), None);
+    assert_eq!(LidSwitchState::from_raw(u32::MAX), None);
+    assert_eq!(LidSwitchState::Closed.as_raw(), 0);
+    assert_eq!(LidSwitchState::Open.as_raw(), 1);
+
+    assert_eq!(
+        parse_lid_power_broadcast(&GUID_LIDSWITCH_STATE_CHANGE_BYTES, &[0]),
+        Some(LidSwitchState::Closed)
+    );
+    assert_eq!(
+        parse_lid_power_broadcast(&GUID_LIDSWITCH_STATE_CHANGE_BYTES, &[1]),
+        Some(LidSwitchState::Open)
+    );
+    assert_eq!(
+        parse_lid_power_broadcast(&GUID_LIDSWITCH_STATE_CHANGE_BYTES, &[2]),
+        None
+    );
+    assert_eq!(
+        parse_lid_power_broadcast(&GUID_LIDSWITCH_STATE_CHANGE_BYTES, &[]),
+        None
+    );
+
+    // Registration error paths and explicit unregister.
+    let transport = Arc::new(MockWindowsLidTransport::new(true));
+    let monitor = WindowsLidMonitor::new(Arc::clone(&transport) as _);
+    assert!(!monitor.is_registered());
+    assert_eq!(monitor.current_state(), None);
+    assert_eq!(monitor.unregister(), Err(WindowsLidError::NotRegistered));
+    assert!(matches!(
+        monitor.register(0, DEVICE_NOTIFY_WINDOW_HANDLE),
+        Err(WindowsLidError::InvalidArgument(_))
+    ));
+
+    transport.set_fail_register(true);
+    assert_eq!(
+        monitor.register(0x5555, DEVICE_NOTIFY_SERVICE_HANDLE),
+        Err(WindowsLidError::Unavailable)
+    );
+    transport.set_fail_register(false);
+
+    let handle = monitor
+        .register(0x5555, DEVICE_NOTIFY_SERVICE_HANDLE)
+        .unwrap();
+    assert!(monitor.is_registered());
+    assert_eq!(monitor.handle(), Some(handle));
+
+    // Event transitions: Open -> duplicate Open -> unknown/non-lid -> Closed -> duplicate Closed -> Open.
+    let observed = Arc::new(Mutex::new(Vec::new()));
+    let observed_cb = Arc::clone(&observed);
+    monitor.on_state_change(move |state| {
+        observed_cb
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .push(state);
+    });
+
+    assert_eq!(
+        monitor.handle_power_broadcast(&GUID_LIDSWITCH_STATE_CHANGE_BYTES, &1u32.to_le_bytes()),
+        Some(LidSwitchState::Open)
+    );
+    // Duplicate Open via 1-byte payload is suppressed.
+    assert_eq!(
+        monitor.handle_power_broadcast(&GUID_LIDSWITCH_STATE_CHANGE_BYTES, &[1]),
+        None
+    );
+    // Unknown state code and unrelated GUID must not alter state or fire callbacks.
+    assert_eq!(
+        monitor.handle_power_broadcast(&GUID_LIDSWITCH_STATE_CHANGE_BYTES, &99u32.to_le_bytes()),
+        None
+    );
+    assert_eq!(
+        monitor.handle_power_broadcast(&expected_proc_subgroup_bytes, &0u32.to_le_bytes()),
+        None
+    );
+    assert_eq!(monitor.current_state(), Some(LidSwitchState::Open));
+
+    // Close via 1-byte payload, then duplicate Close via 4-byte payload.
+    assert_eq!(
+        monitor.handle_power_broadcast(&GUID_LIDSWITCH_STATE_CHANGE_BYTES, &[0]),
+        Some(LidSwitchState::Closed)
+    );
+    assert_eq!(
+        monitor.handle_power_broadcast(&GUID_LIDSWITCH_STATE_CHANGE_BYTES, &0u32.to_le_bytes()),
+        None
+    );
+
+    // Open via raw POWERBROADCAST_SETTING frame with trailing padding bytes.
+    let mut raw_open = Vec::new();
+    raw_open.extend_from_slice(&GUID_LIDSWITCH_STATE_CHANGE_BYTES);
+    raw_open.extend_from_slice(&4u32.to_le_bytes());
+    raw_open.extend_from_slice(&1u32.to_le_bytes());
+    raw_open.extend_from_slice(&[0xAA, 0xBB]);
+    assert_eq!(
+        monitor.handle_raw_broadcast(&raw_open),
+        Some(LidSwitchState::Open)
+    );
+
+    let expected_seq = vec![
+        LidSwitchState::Open,
+        LidSwitchState::Closed,
+        LidSwitchState::Open,
+    ];
+    assert_eq!(monitor.current_state(), Some(LidSwitchState::Open));
+    assert_eq!(monitor.transitions(), expected_seq);
+    assert_eq!(
+        *observed.lock().unwrap_or_else(|e| e.into_inner()),
+        expected_seq
+    );
+
+    monitor.unregister().unwrap();
+    assert!(!monitor.is_registered());
+    assert_eq!(monitor.handle(), None);
+    assert!(transport.active_handles().is_empty());
+    assert_eq!(transport.unregistered_handles(), vec![handle]);
+}

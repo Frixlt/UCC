@@ -169,3 +169,236 @@ fn windows_hid_transport_supports_get_feature_report_and_propagates_errors() {
         Err(LightingError::WriteFailed(_))
     ));
 }
+
+#[test]
+fn windows_hid_126_key_calibration_lid_logo_zone5_and_ec_hook() {
+    use serde_json::json;
+    use std::sync::Mutex;
+    use ucc_core::KeyboardBacklightState;
+    use ucc_lighting::{
+        EcLightbarPowerHook, KeyboardBacklightController, LightbarController,
+        LIGHTBAR_LID_LOGO_ZONE_ID, MECHREVO_ENTER_LED_ID, MECHREVO_EXPECTED_ZONES,
+        MECHREVO_LCTRL_LED_ID, MECHREVO_LSHIFT_LED_ID,
+    };
+
+    let sys = Arc::new(MockWinHidSysApi::new(sample_ite_windows_devices()));
+    let win_hid = Arc::new(WindowsHidTransport::new(Arc::clone(&sys) as _));
+
+    let ec_events: Arc<Mutex<Vec<bool>>> = Arc::new(Mutex::new(Vec::new()));
+    let ec_cb = Arc::clone(&ec_events);
+    let hook: EcLightbarPowerHook = Arc::new(move |enabled| {
+        ec_cb
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .push(enabled);
+        Ok(())
+    });
+
+    let transport = Arc::new(
+        UniwillHidTransport::new(Arc::clone(&win_hid) as _).with_ec_lightbar_power_hook(hook),
+    );
+
+    // 1. 126-key calibrated KeyboardBacklightController over WindowsHidTransport.
+    let mut kbd = KeyboardBacklightController::new(Arc::clone(&transport) as _);
+    kbd.init().expect("init keyboard");
+    let caps = kbd.capabilities().expect("keyboard caps");
+    assert_eq!(caps.zones, MECHREVO_EXPECTED_ZONES);
+    assert_eq!(caps.led_ids[MECHREVO_LCTRL_LED_ID as usize], 0);
+    assert_eq!(caps.led_ids[MECHREVO_LSHIFT_LED_ID as usize], 21);
+    assert_eq!(caps.led_ids[MECHREVO_ENTER_LED_ID as usize], 56);
+
+    let mut states = vec![
+        KeyboardBacklightState {
+            brightness: 255,
+            red: 1,
+            green: 2,
+            blue: 3,
+        };
+        MECHREVO_EXPECTED_ZONES
+    ];
+    states[MECHREVO_LCTRL_LED_ID as usize] = KeyboardBacklightState {
+        brightness: 255,
+        red: 11,
+        green: 22,
+        blue: 33,
+    };
+    states[MECHREVO_LSHIFT_LED_ID as usize] = KeyboardBacklightState {
+        brightness: 255,
+        red: 44,
+        green: 55,
+        blue: 66,
+    };
+    states[MECHREVO_ENTER_LED_ID as usize] = KeyboardBacklightState {
+        brightness: 255,
+        red: 77,
+        green: 88,
+        blue: 99,
+    };
+
+    kbd.apply_states(&states).expect("apply 126-key profile");
+
+    let kbd_reports = sys.sent_reports();
+    // 1 buffer enable + 1 brightness + 8 zone chunks (ceil(126/16)) + 1 buffer disable = 11.
+    assert_eq!(kbd_reports.len(), 11);
+    for (path, buf) in &kbd_reports {
+        assert_eq!(path, WIN_KBD_VENDOR_PATH);
+        assert_eq!(buf.len(), 65);
+        assert_eq!(buf[0], 0x00);
+    }
+    assert_eq!(&kbd_reports[0].1[1..4], &[0x09, 0x02, 0x01]);
+    assert_eq!(&kbd_reports[1].1[1..6], &[0x08, 0x02, 0x01, 0x05, 50]);
+    assert_eq!(&kbd_reports[10].1[1..4], &[0x09, 0x02, 0x00]);
+
+    // Framed zone chunks: [0x00, 0x14, chunk_idx, count, r0, g0, b0, ...].
+    let zone_frames: Vec<&Vec<u8>> = kbd_reports[2..10].iter().map(|(_, b)| b).collect();
+    for frame in &zone_frames {
+        assert_eq!(frame[1], 0x14);
+    }
+    // LCtrl = LED 0 -> chunk 0, offset 0 => bytes 4..7.
+    assert_eq!(&zone_frames[0][4..7], &[11, 22, 33]);
+    // LShift = LED 21 -> chunk 1 (16..32), offset 5 => bytes 4 + 5*3 = 19..22.
+    assert_eq!(&zone_frames[1][19..22], &[44, 55, 66]);
+    // Enter = LED 56 -> chunk 3 (48..64), offset 8 => bytes 4 + 8*3 = 28..31.
+    assert_eq!(&zone_frames[3][28..31], &[77, 88, 99]);
+
+    // 2. LightbarController + lid logo zone 5 + write_lightbar_zones + EC hook.
+    let mut lb = LightbarController::new(Arc::clone(&transport) as _);
+    assert_eq!(lb.status_json()["available"], true);
+    assert_eq!(lb.status_json()["zones"], 5);
+    lb.configure(&json!({
+        "managed": true,
+        "welcome_anim": false,
+        "power_settings": {
+            "ac": {
+                "enabled": true,
+                "brightness_val": 200,
+                "mode": "Pulse (stays on)",
+                "color_mode": [10, 20, 30]
+            }
+        }
+    }))
+    .expect("configure lightbar");
+    assert_eq!(lb.status_json()["ok"], true);
+    assert!(transport.has_lid_logo().expect("has_lid_logo"));
+
+    // Turning brightness off disables EC power; lid logo color re-enables EC power.
+    transport
+        .write_lightbar_brightness(0)
+        .expect("lightbar off");
+    transport
+        .write_lid_logo_color(RgbColor::new(12, 34, 56))
+        .expect("write lid logo zone 5");
+
+    let five_zones = [
+        RgbColor::new(1, 2, 3),
+        RgbColor::new(4, 5, 6),
+        RgbColor::new(7, 8, 9),
+        RgbColor::new(10, 11, 12),
+        RgbColor::new(200, 100, 50),
+    ];
+    transport
+        .write_lightbar_zones(&five_zones)
+        .expect("write 5 lightbar zones");
+
+    assert_eq!(
+        *ec_events.lock().unwrap_or_else(|e| e.into_inner()),
+        vec![true, true, false, true]
+    );
+
+    let all_reports = sys.sent_reports();
+    // 11 kbd + 5 configure color + 1 configure brightness + 1 off + 1 lid logo + 5 zones = 24.
+    assert_eq!(all_reports.len(), 24);
+    for (path, buf) in &all_reports[11..] {
+        assert_eq!(path, WIN_LIGHTBAR_PATH);
+        assert_eq!(buf.len(), 9);
+        assert_eq!(buf[0], 0x00);
+    }
+    assert_eq!(
+        all_reports[18].1,
+        vec![0x00, 0x14, LIGHTBAR_LID_LOGO_ZONE_ID, 12, 34, 56, 0, 0, 0]
+    );
+    assert_eq!(
+        all_reports[23].1,
+        vec![0x00, 0x14, 5, 200, 100, 50, 0, 0, 0]
+    );
+}
+
+#[test]
+fn windows_hid_case_insensitive_cache_and_zero_len_get() {
+    let sys = Arc::new(MockWinHidSysApi::new(sample_ite_windows_devices()));
+    let win_hid = WindowsHidTransport::new(Arc::clone(&sys) as _);
+
+    // Populate device cache via enumeration, then query with uppercased path.
+    let devices = win_hid.enumerate_devices().expect("enumerate");
+    assert_eq!(devices.len(), 3);
+
+    let upper_lb_path = WIN_LIGHTBAR_PATH.to_ascii_uppercase();
+    assert_eq!(
+        win_hid.device_usage_page(&upper_lb_path),
+        Some(VENDOR_USAGE_PAGE_MIN)
+    );
+    win_hid
+        .send_feature_report(&upper_lb_path, &[0x08, 0x01, 0x55, 0, 0, 0, 0, 0])
+        .expect("case-insensitive send");
+    let read_back = win_hid
+        .get_feature_report(&upper_lb_path, 8)
+        .expect("case-insensitive get");
+    assert_eq!(read_back, vec![0x08, 0x01, 0x55, 0, 0, 0, 0, 0]);
+
+    let sent = sys.sent_reports();
+    assert_eq!(sent.len(), 1);
+    assert_eq!(sent[0].0, WIN_LIGHTBAR_PATH);
+
+    // Boot keyboard reports feature_report_byte_length == 0 -> must reject get and send.
+    assert!(matches!(
+        win_hid.get_feature_report(WIN_KBD_BOOT_PATH, 8),
+        Err(LightingError::InvalidConfig(_))
+    ));
+    assert!(matches!(
+        win_hid.send_feature_report(WIN_KBD_BOOT_PATH, &[0x08, 0x01]),
+        Err(LightingError::InvalidConfig(_))
+    ));
+}
+
+#[test]
+fn windows_hid_unframe_edge_cases_empty_single_and_nonzero_id() {
+    assert!(unframe_windows_feature_report(&[], 0).is_empty());
+    assert_eq!(unframe_windows_feature_report(&[], 4), vec![0, 0, 0, 0]);
+
+    // Single-byte buffers are not stripped even when byte 0 is 0x00.
+    assert_eq!(unframe_windows_feature_report(&[0x00], 1), vec![0x00]);
+    assert_eq!(
+        unframe_windows_feature_report(&[0x00], 3),
+        vec![0x00, 0x00, 0x00]
+    );
+    assert_eq!(unframe_windows_feature_report(&[0xAB], 1), vec![0xAB]);
+    assert_eq!(
+        unframe_windows_feature_report(&[0xAB], 3),
+        vec![0xAB, 0x00, 0x00]
+    );
+
+    // Non-zero leading Report ID is preserved verbatim, with truncation or zero-padding.
+    let nonzero = [0x02, 0xAA, 0xBB, 0xCC];
+    assert_eq!(
+        unframe_windows_feature_report(&nonzero, 4),
+        vec![0x02, 0xAA, 0xBB, 0xCC]
+    );
+    assert_eq!(unframe_windows_feature_report(&nonzero, 2), vec![0x02, 0xAA]);
+    assert_eq!(
+        unframe_windows_feature_report(&nonzero, 6),
+        vec![0x02, 0xAA, 0xBB, 0xCC, 0x00, 0x00]
+    );
+    assert!(unframe_windows_feature_report(&[0x00, 0x11, 0x22], 0).is_empty());
+}
+
+#[cfg(windows)]
+#[test]
+fn open_best_lighting_transport_windows_smoke() {
+    use ucc_lighting::open_best_lighting_transport;
+
+    for prefer_hidraw in [true, false] {
+        let transport = open_best_lighting_transport(prefer_hidraw);
+        let _ = transport.detect_keyboard().expect("detect_keyboard smoke");
+        let _ = transport.detect_lightbar().expect("detect_lightbar smoke");
+    }
+}

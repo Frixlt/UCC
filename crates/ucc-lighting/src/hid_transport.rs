@@ -7,9 +7,10 @@
 //! (front Lightbar + lid logo LED zone).
 
 use crate::hidraw_linux::HidrawDeviceTransport;
+#[cfg(not(windows))]
+use crate::transport::SysfsLedTransport;
 use crate::transport::{
     KeyboardCapabilities, LightbarCapabilities, LightingError, LightingTransport, RgbColor,
-    SysfsLedTransport,
 };
 use std::collections::BTreeMap;
 use std::sync::{Arc, Mutex};
@@ -28,12 +29,12 @@ pub const LIGHTBAR_LID_LOGO_ZONE_ID: u8 = 5;
 /// Maximum hardware brightness register value accepted by ITE `048D:600B` (`0..=50`).
 pub const ITE_KEYBOARD_MAX_HW_BRIGHTNESS: u8 = 50;
 
-/// Uniwill EC register addresses controlling Lightbar / chassis LED rail power (`ADR-05`).
-pub const EC_LIGHTBAR_POWER_REG_PRIMARY: u16 = 0x0767;
-pub const EC_LIGHTBAR_POWER_REG_SECONDARY: u16 = 0x0768;
+/// Uniwill EC register address controlling Lightbar AC power (`0x0748` `EC_ADDR_LIGHTBAR_AC_CTRL`).
+pub const EC_LIGHTBAR_POWER_REG_PRIMARY: u16 = 0x0748;
+pub const EC_LIGHTBAR_POWER_REG_SECONDARY: u16 = 0x0748;
 
 /// Optional EC power-rail callback invoked when enabling/disabling Lightbar LED power
-/// (`0x767` / `0x768`) when integrated with `UwccBackend`.
+/// (`0x0748` `EC_ADDR_LIGHTBAR_AC_CTRL` `BIT(0)`) when integrated with `UwccBackend`.
 pub type EcLightbarPowerHook = Arc<dyn Fn(bool) -> Result<(), LightingError> + Send + Sync>;
 
 /// USB HID device identity enumerated by host transport.
@@ -530,7 +531,18 @@ pub fn select_best_lighting_transport(
 /// Pass `prefer_hidraw = true` when running on `UwccBackend` (where `ite_8291`/`ite_8291_lb` are
 /// blacklisted), or `false` when running on legacy `tuxedo-drivers` sysfs LED drivers.
 pub fn open_best_lighting_transport(prefer_hidraw: bool) -> Arc<dyn LightingTransport> {
-    let hidraw: Arc<dyn LightingTransport> = Arc::new(create_hidraw_lighting_transport());
-    let sysfs: Arc<dyn LightingTransport> = Arc::new(SysfsLedTransport::default());
-    select_best_lighting_transport(prefer_hidraw, hidraw, sysfs)
+    #[cfg(windows)]
+    {
+        let _ = prefer_hidraw;
+        let win_hid = Arc::new(crate::windows_hid::WindowsHidTransport::new(Arc::new(
+            crate::windows_hid::LiveWinHidSysApi::new(),
+        )));
+        Arc::new(UniwillHidTransport::new(win_hid))
+    }
+    #[cfg(not(windows))]
+    {
+        let hidraw: Arc<dyn LightingTransport> = Arc::new(create_hidraw_lighting_transport());
+        let sysfs: Arc<dyn LightingTransport> = Arc::new(SysfsLedTransport::default());
+        select_best_lighting_transport(prefer_hidraw, hidraw, sysfs)
+    }
 }

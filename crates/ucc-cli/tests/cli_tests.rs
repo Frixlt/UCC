@@ -314,3 +314,164 @@ fn test_manpage_generation_output() {
     assert!(out.contains("profile"));
     assert!(out.contains("cooler"));
 }
+
+#[test]
+fn test_subcommand_argument_parsing_matrix() {
+    use ucc_cli::cli::{PowerAction, StatemapAction};
+
+    // status --json (trailing global flag)
+    let cli = Cli::try_parse_from(["ucc-cli", "status", "--json"]).expect("parse status --json");
+    assert!(cli.json);
+    assert!(matches!(cli.command, Some(Commands::Status)));
+
+    // monitor --json with defaults and explicit count/interval
+    let mon_default =
+        Cli::try_parse_from(["ucc-cli", "monitor", "--json"]).expect("parse monitor --json");
+    assert!(mon_default.json);
+    match mon_default.command {
+        Some(Commands::Monitor(m)) => {
+            assert_eq!(m.count, 0);
+            assert_eq!(m.interval, 2);
+        }
+        other => panic!("expected Monitor, got {other:?}"),
+    }
+
+    let mon_custom = Cli::try_parse_from([
+        "ucc-cli",
+        "monitor",
+        "--json",
+        "--count",
+        "4",
+        "--interval",
+        "5",
+    ])
+    .expect("parse monitor --json --count 4 --interval 5");
+    assert!(mon_custom.json);
+    match mon_custom.command {
+        Some(Commands::Monitor(m)) => {
+            assert_eq!(m.count, 4);
+            assert_eq!(m.interval, 5);
+        }
+        other => panic!("expected Monitor, got {other:?}"),
+    }
+
+    // profile list and profile set
+    let prof_list =
+        Cli::try_parse_from(["ucc-cli", "profile", "list", "--json"]).expect("parse profile list");
+    assert!(prof_list.json);
+    assert!(matches!(
+        prof_list.command,
+        Some(Commands::Profile {
+            action: Some(ProfileAction::List)
+        })
+    ));
+
+    let prof_set =
+        Cli::try_parse_from(["ucc-cli", "profile", "set", "balanced"]).expect("parse profile set");
+    match prof_set.command {
+        Some(Commands::Profile {
+            action: Some(ProfileAction::Set { id }),
+        }) => assert_eq!(id, "balanced"),
+        other => panic!("expected Profile::Set balanced, got {other:?}"),
+    }
+
+    // gpu (text and --json)
+    let gpu_text = Cli::try_parse_from(["ucc-cli", "gpu"]).expect("parse gpu");
+    assert!(!gpu_text.json);
+    assert!(matches!(gpu_text.command, Some(Commands::Gpu)));
+
+    let gpu_json = Cli::try_parse_from(["ucc-cli", "gpu", "--json"]).expect("parse gpu --json");
+    assert!(gpu_json.json);
+    assert!(matches!(gpu_json.command, Some(Commands::Gpu)));
+
+    // charging set-thresholds and alias set_thresholds
+    for sub in ["set-thresholds", "set_thresholds"] {
+        let ch = Cli::try_parse_from(["ucc-cli", "charging", sub, "40", "80"])
+            .unwrap_or_else(|e| panic!("parse charging {sub}: {e}"));
+        match ch.command {
+            Some(Commands::Charging {
+                action: Some(ChargingAction::SetThresholds { start, end }),
+            }) => {
+                assert_eq!(start, 40);
+                assert_eq!(end, 80);
+            }
+            other => panic!("expected Charging::SetThresholds 40 80, got {other:?}"),
+        }
+    }
+
+    // power mode and power status
+    let pwr_mode =
+        Cli::try_parse_from(["ucc-cli", "power", "mode", "type_c"]).expect("parse power mode");
+    match pwr_mode.command {
+        Some(Commands::Power {
+            action: PowerAction::Mode { mode },
+        }) => assert_eq!(mode, "type_c"),
+        other => panic!("expected Power::Mode type_c, got {other:?}"),
+    }
+
+    let pwr_status = Cli::try_parse_from(["ucc-cli", "power", "status", "--json"])
+        .expect("parse power status --json");
+    assert!(pwr_status.json);
+    assert!(matches!(
+        pwr_status.command,
+        Some(Commands::Power {
+            action: PowerAction::Status
+        })
+    ));
+
+    // statemap set
+    let sm_set = Cli::try_parse_from(["ucc-cli", "statemap", "set", "power_ac", "office"])
+        .expect("parse statemap set");
+    match sm_set.command {
+        Some(Commands::Statemap {
+            action: Some(StatemapAction::Set { state, profile_id }),
+        }) => {
+            assert_eq!(state, "power_ac");
+            assert_eq!(profile_id, "office");
+        }
+        other => panic!("expected Statemap::Set power_ac office, got {other:?}"),
+    }
+}
+
+#[tokio::test]
+async fn test_subcommand_invalid_argument_exit_codes() {
+    // statemap set: missing both args, missing profile_id, or unexpected extra arg -> exit code 1
+    assert_eq!(run_cli(["ucc-cli", "statemap", "set"]).await, 1);
+    assert_eq!(run_cli(["ucc-cli", "statemap", "set", "power_ac"]).await, 1);
+    assert_eq!(
+        run_cli(["ucc-cli", "statemap", "set", "power_ac", "office", "extra"]).await,
+        1
+    );
+
+    // charging set-thresholds: missing args or non-numeric thresholds -> exit code 1
+    assert_eq!(run_cli(["ucc-cli", "charging", "set-thresholds"]).await, 1);
+    assert_eq!(
+        run_cli(["ucc-cli", "charging", "set-thresholds", "40"]).await,
+        1
+    );
+    assert_eq!(
+        run_cli(["ucc-cli", "charging", "set-thresholds", "abc", "80"]).await,
+        1
+    );
+    assert_eq!(
+        run_cli(["ucc-cli", "charging", "set-thresholds", "40", "xyz"]).await,
+        1
+    );
+
+    // power mode: missing subcommand, missing mode value, or extra arg -> exit code 1
+    assert_eq!(run_cli(["ucc-cli", "power"]).await, 1);
+    assert_eq!(run_cli(["ucc-cli", "power", "mode"]).await, 1);
+    assert_eq!(
+        run_cli(["ucc-cli", "power", "mode", "ac", "extra"]).await,
+        1
+    );
+
+    // monitor / gpu / profile invalid arguments -> exit code 1
+    assert_eq!(run_cli(["ucc-cli", "monitor", "--count", "abc"]).await, 1);
+    assert_eq!(run_cli(["ucc-cli", "monitor", "--interval", "-1"]).await, 1);
+    assert_eq!(run_cli(["ucc-cli", "gpu", "unexpected"]).await, 1);
+    assert_eq!(
+        run_cli(["ucc-cli", "profile", "set", "p1", "extra"]).await,
+        1
+    );
+}

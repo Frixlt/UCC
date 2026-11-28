@@ -208,11 +208,75 @@ async function n25_fan_rpm_does_not_fabricate_pct_times_60() {
     assert.equal(gpuRpm, -1, 'N25: missing GPU tachometer must report unavailable (-1)');
 }
 
+// UccdClient must read realRpm from GetFanDataCPU/GPU1/GPU2 when rpm is absent,
+// average GPU1+GPU2 realRpm, and preserve realRpm === 0 instead of falling back to -1.
+async function gnome_client_reads_realRpm_key_from_fan_data() {
+    const UccdClient = loadUccdClient();
+    const client = new UccdClient();
+    client._connected = true;
+
+    let fanPayloads = {
+        GetFanDataCPU: {
+            speed: {timestamp: 1001, data: 55},
+            temp: {timestamp: 1001, data: 66},
+            realRpm: {timestamp: 1001, data: 3250},
+        },
+        GetFanDataGPU1: {
+            speed: {timestamp: 1001, data: 45},
+            temp: {timestamp: 1001, data: 60},
+            realRpm: {timestamp: 1001, data: 2800},
+        },
+        GetFanDataGPU2: {
+            speed: {timestamp: 1001, data: 50},
+            temp: {timestamp: 1001, data: 59},
+            realRpm: {timestamp: 1001, data: 3200},
+        },
+    };
+    client._call = async method => fanPayloads[method] ?? null;
+
+    assert.equal(
+        await client.getFanSpeedRPM(),
+        3250,
+        'getFanSpeedRPM() must read realRpm when rpm key is absent',
+    );
+    assert.equal(
+        await client.getGpuFanSpeedRPM(),
+        3000,
+        'getGpuFanSpeedRPM() must average GPU1 and GPU2 realRpm values',
+    );
+
+    fanPayloads = {
+        GetFanDataCPU: {
+            speed: {timestamp: 1002, data: 0},
+            temp: {timestamp: 1002, data: 40},
+            realRpm: {timestamp: 1002, data: 0},
+        },
+        GetFanDataGPU1: {
+            speed: {timestamp: 1002, data: 0},
+            temp: {timestamp: 1002, data: 38},
+            realRpm: {timestamp: 1002, data: 0},
+        },
+        GetFanDataGPU2: null,
+    };
+
+    assert.equal(
+        await client.getFanSpeedRPM(),
+        0,
+        'getFanSpeedRPM() must preserve realRpm === 0 rather than falling back to -1',
+    );
+    assert.equal(
+        await client.getGpuFanSpeedRPM(),
+        0,
+        'getGpuFanSpeedRPM() must preserve realRpm === 0 rather than falling back to -1',
+    );
+}
+
 async function main() {
     const tests = [
         n23_display_brightness_minus_one_disables_slider_instead_of_minus_one_percent,
         n24_apply_keyboard_profile_injects_keyboardProfileId_and_awaits_result,
         n25_fan_rpm_does_not_fabricate_pct_times_60,
+        gnome_client_reads_realRpm_key_from_fan_data,
     ];
     let failed = 0;
     for (const fn of tests) {
@@ -237,4 +301,5 @@ module.exports = {
     n23_display_brightness_minus_one_disables_slider_instead_of_minus_one_percent,
     n24_apply_keyboard_profile_injects_keyboardProfileId_and_awaits_result,
     n25_fan_rpm_does_not_fabricate_pct_times_60,
+    gnome_client_reads_realRpm_key_from_fan_data,
 };

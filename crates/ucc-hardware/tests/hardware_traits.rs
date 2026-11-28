@@ -194,3 +194,102 @@ impl TimestampExtract for GpuWrite {
         }
     }
 }
+
+#[test]
+fn mock_sysfs_nested_dirs_missing_paths_and_write_journal() {
+    use std::collections::HashSet;
+    use std::io::ErrorKind;
+    use std::path::PathBuf;
+
+    let sysfs = MockSysfs::new();
+    let root = PathBuf::from("sys")
+        .join("devices")
+        .join("system")
+        .join("cpu");
+    let cpu0 = root.join("cpu0");
+    let cpu1 = root.join("cpu1");
+    let cpu0_cpufreq = cpu0.join("cpufreq");
+    let cpu0_gov = cpu0_cpufreq.join("scaling_governor");
+    let cpu0_max = cpu0_cpufreq.join("scaling_max_freq");
+    let cpu1_gov = cpu1.join("cpufreq").join("scaling_governor");
+    let missing_dir = root.join("cpu99");
+    let missing_file = cpu0_cpufreq.join("missing_attr");
+
+    // Empty mock sysfs reports missing paths cleanly.
+    assert!(!sysfs.exists(&root));
+    assert!(!sysfs.exists(&cpu0_gov));
+    assert_eq!(sysfs.read(&cpu0_gov).unwrap_err().kind(), ErrorKind::NotFound);
+    assert_eq!(
+        sysfs.read_dir(&missing_dir).unwrap_err().kind(),
+        ErrorKind::NotFound
+    );
+
+    // Seed nested directory hierarchy and verify immediate-child deduplication in read_dir.
+    sysfs.set_file(&cpu0_gov, "schedutil");
+    sysfs.set_file(&cpu0_max, "4500000");
+    sysfs.set_file(&cpu1_gov, "powersave");
+
+    assert!(sysfs.exists(&cpu0_gov));
+    assert!(sysfs.exists(&cpu0_max));
+    assert!(!sysfs.exists(&missing_file));
+    // Virtual parent directories are not file entries in MockSysfs::exists.
+    assert!(!sysfs.exists(&root));
+
+    let root_entries: HashSet<PathBuf> = sysfs.read_dir(&root).unwrap().into_iter().collect();
+    assert_eq!(root_entries, HashSet::from([cpu0.clone(), cpu1.clone()]));
+
+    let cpu0_entries: HashSet<PathBuf> = sysfs.read_dir(&cpu0).unwrap().into_iter().collect();
+    assert_eq!(cpu0_entries, HashSet::from([cpu0_cpufreq.clone()]));
+
+    let cpufreq_entries: HashSet<PathBuf> =
+        sysfs.read_dir(&cpu0_cpufreq).unwrap().into_iter().collect();
+    assert_eq!(
+        cpufreq_entries,
+        HashSet::from([cpu0_gov.clone(), cpu0_max.clone()])
+    );
+
+    // Read error injection returns PermissionDenied without deleting the file.
+    sysfs.set_read_error(&cpu0_gov);
+    assert_eq!(
+        sysfs.read(&cpu0_gov).unwrap_err().kind(),
+        ErrorKind::PermissionDenied
+    );
+    assert_eq!(sysfs.get_file(&cpu0_gov).as_deref(), Some("schedutil"));
+
+    // Write error injection returns PermissionDenied and leaves file + journal untouched.
+    sysfs.set_write_error(&cpu0_max);
+    assert_eq!(
+        sysfs.write(&cpu0_max, "3000000").unwrap_err().kind(),
+        ErrorKind::PermissionDenied
+    );
+    assert_eq!(sysfs.get_file(&cpu0_max).as_deref(), Some("4500000"));
+    assert!(sysfs.journal().is_empty());
+
+    // Successful writes update backing storage and append to the shared write journal.
+    let journal_handle = sysfs.journal_ref();
+    sysfs.write(&cpu0_gov, "performance").unwrap();
+    sysfs.write(&missing_file, "1").unwrap();
+    assert_eq!(sysfs.get_file(&cpu0_gov).as_deref(), Some("performance"));
+    assert_eq!(sysfs.read(&missing_file).unwrap(), "1");
+    assert_eq!(journal_handle.lock().unwrap().len(), 2);
+    assert_eq!(sysfs.journal()[0].path, cpu0_gov);
+    assert_eq!(sysfs.journal()[0].content, "performance");
+    assert_eq!(sysfs.journal()[1].path, missing_file);
+    assert_eq!(sysfs.journal()[1].content, "1");
+
+    // Removing the only file under cpu1 removes cpu1 from root read_dir and makes cpu1 NotFound.
+    assert_eq!(sysfs.remove_file(&cpu1_gov).as_deref(), Some("powersave"));
+    assert!(!sysfs.exists(&cpu1_gov));
+    assert_eq!(sysfs.read(&cpu1_gov).unwrap_err().kind(), ErrorKind::NotFound);
+    assert_eq!(
+        sysfs.read_dir(&cpu1).unwrap_err().kind(),
+        ErrorKind::NotFound
+    );
+    let remaining_root: HashSet<PathBuf> = sysfs.read_dir(&root).unwrap().into_iter().collect();
+    assert_eq!(remaining_root, HashSet::from([cpu0]));
+
+    // Clearing journal empties recorded writes while preserving stored files.
+    sysfs.clear_journal();
+    assert!(sysfs.journal().is_empty());
+    assert!(sysfs.exists(&missing_file));
+}

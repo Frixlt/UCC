@@ -54,6 +54,7 @@ fn r13_persistence_uses_libc_o_nofollow_not_hardcoded_octal() {
     );
 }
 
+#[cfg(unix)]
 #[test]
 fn p0_08_write_atomic_rejects_broken_and_untrusted_symlinks() {
     use std::os::unix::fs::symlink;

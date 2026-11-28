@@ -293,3 +293,161 @@ fn sysfs_write_keyboard_zones_commits_brightness_after_multi_intensity() {
         assert_eq!(chunk[1], (zone.join("brightness"), "31".to_string()));
     }
 }
+
+#[test]
+fn keyboard_apply_states_rolls_back_brightness_on_zone_failure() {
+    let mock = Arc::new(MockLightingTransport::new());
+    mock.set_keyboard_caps(Some(KeyboardCapabilities {
+        zones: 2,
+        max_brightness: 255,
+        max_red: 255,
+        max_green: 255,
+        max_blue: 255,
+        led_ids: vec![0, 1],
+    }));
+
+    let mut kbd = KeyboardBacklightController::new(Arc::clone(&mock));
+    kbd.init().expect("init keyboard");
+
+    let initial = [
+        KeyboardBacklightState {
+            brightness: 80,
+            red: 10,
+            green: 20,
+            blue: 30,
+        },
+        KeyboardBacklightState {
+            brightness: 80,
+            red: 40,
+            green: 50,
+            blue: 60,
+        },
+    ];
+    kbd.apply_states(&initial).expect("apply initial states");
+    assert_eq!(mock.read_keyboard_brightness_state(), Some(80));
+
+    mock.clear_ops();
+    mock.set_fail_on_keyboard_zones(true);
+
+    let err = kbd
+        .apply_states(&[KeyboardBacklightState {
+            brightness: 220,
+            red: 255,
+            green: 0,
+            blue: 0,
+        }])
+        .unwrap_err();
+    assert!(matches!(err, LightingError::WriteFailed(_)));
+
+    assert_eq!(
+        mock.ops(),
+        vec![
+            LightingOp::SetBufferInput(true),
+            LightingOp::WriteKeyboardBrightness(220),
+            LightingOp::WriteKeyboardBrightness(80),
+            LightingOp::SetBufferInput(false),
+        ]
+    );
+    assert_eq!(mock.read_keyboard_brightness_state(), Some(80));
+    assert_eq!(kbd.current_states(), &initial);
+}
+
+#[test]
+fn keyboard_apply_states_json_and_profile_json_validation() {
+    let mock = Arc::new(MockLightingTransport::new());
+    let mut kbd = KeyboardBacklightController::new(Arc::clone(&mock));
+
+    // Before init (no capabilities): default states JSON is "[]" and apply fails with Unavailable.
+    assert_eq!(kbd.build_default_states_json(), "[]");
+    assert!(matches!(
+        kbd.apply_states_json(r#"[{"brightness":10,"red":1,"green":2,"blue":3}]"#),
+        Err(LightingError::Unavailable)
+    ));
+
+    mock.set_keyboard_caps(Some(KeyboardCapabilities {
+        zones: 2,
+        max_brightness: 50,
+        max_red: 255,
+        max_green: 255,
+        max_blue: 255,
+        led_ids: vec![0, 1],
+    }));
+    kbd.init().expect("init keyboard");
+
+    // build_default_states_json produces one state per zone capped at max_brightness.
+    let defaults_json = kbd.build_default_states_json();
+    let parsed_defaults: serde_json::Value =
+        serde_json::from_str(&defaults_json).expect("valid default states json");
+    assert_eq!(
+        parsed_defaults,
+        json!([
+            { "brightness": 50, "red": 255, "green": 255, "blue": 255 },
+            { "brightness": 50, "red": 255, "green": 255, "blue": 255 }
+        ])
+    );
+    kbd.apply_states_json(&defaults_json)
+        .expect("apply default states json");
+    assert_eq!(kbd.current_states().len(), 2);
+
+    // Malformed and empty JSON rejected for apply_states_json.
+    for bad in ["{not valid", r#"{"brightness":10}"#, "[]"] {
+        assert!(matches!(
+            kbd.apply_states_json(bad),
+            Err(LightingError::InvalidConfig(_))
+        ));
+    }
+
+    // Out-of-range brightness and RGB channels are clamped cleanly.
+    kbd.apply_states_json(
+        r#"[
+            {"brightness": -10, "red": -5, "green": 300, "blue": 100},
+            {"brightness": 999, "red": 500, "green": -1, "blue": 42}
+        ]"#,
+    )
+    .expect("clamped states json");
+    assert_eq!(
+        kbd.current_states(),
+        &[
+            KeyboardBacklightState {
+                brightness: 0,
+                red: 0,
+                green: 255,
+                blue: 100,
+            },
+            KeyboardBacklightState {
+                brightness: 50,
+                red: 255,
+                green: 0,
+                blue: 42,
+            },
+        ]
+    );
+
+    // Profile JSON validation: malformed, missing "states", empty "states", non-array "states".
+    for bad_profile in [
+        "not json",
+        "{}",
+        r#"{"states":[]}"#,
+        r#"{"states":"invalid"}"#,
+    ] {
+        assert!(matches!(
+            kbd.apply_profile_keyboard_json(bad_profile),
+            Err(LightingError::InvalidConfig(_))
+        ));
+    }
+
+    // Valid profile JSON applies and clamps brightness to max_brightness (50).
+    kbd.apply_profile_keyboard_json(
+        r#"{"states":[{"brightness":999,"red":12,"green":34,"blue":56}]}"#,
+    )
+    .expect("apply valid profile json");
+    assert_eq!(
+        kbd.current_states()[0],
+        KeyboardBacklightState {
+            brightness: 50,
+            red: 12,
+            green: 34,
+            blue: 56,
+        }
+    );
+}

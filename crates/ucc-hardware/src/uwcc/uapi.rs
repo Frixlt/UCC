@@ -693,10 +693,8 @@ impl MockUwccTransport {
         transport.set_reg(super::uwcc_ec_reg::PL4_WATTS, 115);
         transport.set_reg(super::uwcc_ec_reg::TCC_OFFSET_C, 0);
         transport.set_reg(super::uwcc_ec_reg::PERF_MODE, 2);
-        transport.set_reg(super::uwcc_ec_reg::CHARGE_START_PCT, 60);
-        transport.set_reg(super::uwcc_ec_reg::CHARGE_END_PCT, 80);
-        transport.set_reg(super::uwcc_ec_reg::LIGHTBAR_POWER_PRIMARY, 1);
-        transport.set_reg(super::uwcc_ec_reg::LIGHTBAR_POWER_SECONDARY, 1);
+        transport.set_reg(super::uwcc_ec_reg::CHARGE_CTRL, 80);
+        transport.set_reg(super::uwcc_ec_reg::LIGHTBAR_AC_CTRL, 0x81);
 
         let limits = super::SmrwPowerLimits::chassis_0x1a_default();
         transport.set_smrw_table(super::SMRW_POWER_LIMITS_OFFSET, limits.encode());
@@ -849,7 +847,7 @@ impl UwccTransport for MockUwccTransport {
     }
 
     fn set_gpu_power(&self, op: u32, value: u32) -> Result<(), PlatformError> {
-        if !self.is_available() {
+        if !self.is_available() || self.fail_writes.load(Ordering::SeqCst) {
             return Err(PlatformError::Unavailable);
         }
         match op {
@@ -876,7 +874,7 @@ impl UwccTransport for MockUwccTransport {
     }
 
     fn mux_set(&self, boot_mode: u32) -> Result<(), PlatformError> {
-        if !self.is_available() {
+        if !self.is_available() || self.fail_writes.load(Ordering::SeqCst) {
             return Err(PlatformError::Unavailable);
         }
         if !(UWCC_MUX_MODE_DYNAMIC..=UWCC_MUX_MODE_MSHYBRID).contains(&boot_mode) {

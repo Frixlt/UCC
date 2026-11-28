@@ -1,6 +1,10 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 
 #include <QCoreApplication>
+#include <QDBusConnection>
+#include <QDBusError>
+#include <QDBusMessage>
+#include <QDBusVirtualObject>
 #include <QElapsedTimer>
 #include <QEventLoop>
 #include <QFileInfo>
@@ -9,13 +13,103 @@
 #include <QJsonObject>
 #include <QProcess>
 #include <QProcessEnvironment>
+#include <QScopeGuard>
 #include <QSignalSpy>
 #include <QTemporaryDir>
 #include <QTest>
+#include <QTextStream>
 #include <QTimer>
 #include <QVariantMap>
 
 #include "UccdClient.hpp"
+
+
+namespace
+{
+class MockInteropDaemon : public QDBusVirtualObject
+{
+  QString m_fanMode = QStringLiteral("real_rpm");
+  QString m_systemInfoJson = QStringLiteral(
+      R"({"sysVendor":"MECHREVO","boardName":"GM7IX0N","manufacturer":"uniwill","laptopModel":"Uniwill Alias","platformBackend":"uwcc","mux":{"supported":true,"activeGpu":"dgpu","bootMode":"dgpu_only"}})");
+
+  static QVariantMap makeFanMap(qlonglong ts, int temp, int speed, std::optional<int> realRpm)
+  {
+    QVariantMap out{
+        {QStringLiteral("temp"), QVariantMap{{QStringLiteral("timestamp"), ts}, {QStringLiteral("data"), temp}}},
+        {QStringLiteral("speed"), QVariantMap{{QStringLiteral("timestamp"), ts}, {QStringLiteral("data"), speed}}},
+    };
+    if (realRpm.has_value()) {
+      out.insert(QStringLiteral("realRpm"),
+                 QVariantMap{{QStringLiteral("timestamp"), ts}, {QStringLiteral("data"), *realRpm}});
+    }
+    return out;
+  }
+
+public:
+  QString introspect(const QString &) const override
+  {
+    return QStringLiteral(
+        "<interface name=\"com.uniwill.uccd\">"
+        "<method name=\"IsDeviceSupported\"><arg type=\"b\" direction=\"out\"/></method>"
+        "</interface>");
+  }
+
+  bool handleMessage(const QDBusMessage &msg, const QDBusConnection &bus) override
+  {
+    const QString member = msg.member();
+    if (member == QStringLiteral("TestSetFanMode")) {
+      m_fanMode = msg.arguments().value(0).toString();
+      bus.send(msg.createReply(true));
+      return true;
+    }
+    if (member == QStringLiteral("TestSetSystemInfo")) {
+      m_systemInfoJson = msg.arguments().value(0).toString();
+      bus.send(msg.createReply(true));
+      return true;
+    }
+    if (member == QStringLiteral("IsDeviceSupported")) {
+      bus.send(msg.createReply(true));
+      return true;
+    }
+    if (member == QStringLiteral("GetSystemInfoJSON")) {
+      bus.send(msg.createReply(m_systemInfoJson));
+      return true;
+    }
+    if (member == QStringLiteral("GetFanDataCPU")) {
+      if (m_fanMode == QStringLiteral("real_rpm")) {
+        bus.send(msg.createReply(makeFanMap(1001, 64, 50, 3250)));
+      } else if (m_fanMode == QStringLiteral("zero_rpm")) {
+        bus.send(msg.createReply(makeFanMap(1002, 40, 0, 0)));
+      } else {
+        bus.send(msg.createReply(makeFanMap(1003, 64, 50, std::nullopt)));
+      }
+      return true;
+    }
+    if (member == QStringLiteral("GetFanDataGPU1")) {
+      if (m_fanMode == QStringLiteral("real_rpm")) {
+        bus.send(msg.createReply(makeFanMap(1001, 60, 45, 2800)));
+      } else if (m_fanMode == QStringLiteral("zero_rpm")) {
+        bus.send(msg.createReply(makeFanMap(1002, 38, 0, 0)));
+      } else {
+        bus.send(msg.createReply(makeFanMap(1003, 60, 45, std::nullopt)));
+      }
+      return true;
+    }
+    if (member == QStringLiteral("GetFanDataGPU2")) {
+      if (m_fanMode == QStringLiteral("real_rpm")) {
+        bus.send(msg.createReply(makeFanMap(1001, 59, 45, 3200)));
+      } else if (m_fanMode == QStringLiteral("zero_rpm")) {
+        bus.send(msg.createReply(makeFanMap(1002, 37, 0, 0)));
+      } else {
+        bus.send(msg.createReply(makeFanMap(1003, 59, 45, std::nullopt)));
+      }
+      return true;
+    }
+    bus.send(msg.createErrorReply(QDBusError::UnknownMethod, QStringLiteral("Unsupported mock method")));
+    return true;
+  }
+};
+} // namespace
 
 class TestRustUccdInterop : public QObject
 {
@@ -25,6 +119,7 @@ private:
   QTemporaryDir m_configDir;
   QString m_daemonBin;
   QProcess *m_daemon = nullptr;
+  QProcess *m_mockDaemon = nullptr;
 
   bool startDaemon()
   {
@@ -76,6 +171,63 @@ private:
     m_daemon = nullptr;
   }
 
+  bool startMockDaemon()
+  {
+    stopMockDaemon();
+    m_mockDaemon = new QProcess(this);
+    m_mockDaemon->setProcessChannelMode(QProcess::SeparateChannels);
+    m_mockDaemon->start(QCoreApplication::applicationFilePath(),
+                        {QStringLiteral("--serve-mock-dbus")});
+    if (!m_mockDaemon->waitForStarted(5000)) {
+      qWarning() << "Failed to start mock D-Bus daemon:" << m_mockDaemon->errorString();
+      return false;
+    }
+
+    QElapsedTimer timer;
+    timer.start();
+    QByteArray out;
+    while (timer.elapsed() < 5000) {
+      if (m_mockDaemon->waitForReadyRead(100)) {
+        out.append(m_mockDaemon->readAllStandardOutput());
+        if (out.contains("READY")) {
+          return true;
+        }
+      }
+      if (m_mockDaemon->state() == QProcess::NotRunning) {
+        qWarning() << "mock D-Bus daemon exited early:" << m_mockDaemon->readAllStandardError();
+        return false;
+      }
+    }
+    return false;
+  }
+
+  void stopMockDaemon()
+  {
+    if (!m_mockDaemon) {
+      return;
+    }
+    if (m_mockDaemon->state() != QProcess::NotRunning) {
+      m_mockDaemon->terminate();
+      if (!m_mockDaemon->waitForFinished(4000)) {
+        m_mockDaemon->kill();
+        m_mockDaemon->waitForFinished(2000);
+      }
+    }
+    m_mockDaemon->deleteLater();
+    m_mockDaemon = nullptr;
+  }
+
+  static void callMockControl(const QString &method, const QVariantList &args = {})
+  {
+    QDBusMessage msg = QDBusMessage::createMethodCall(
+        QStringLiteral("com.uniwill.uccd"),
+        QStringLiteral("/com/uniwill/uccd"),
+        QStringLiteral("com.uniwill.uccd"),
+        method);
+    msg.setArguments(args);
+    QDBusConnection::systemBus().call(msg);
+  }
+
   static QStringList collectDefaultProfileIds(ucc::UccdClient &client)
   {
     const auto raw = client.getDefaultProfilesJSON();
@@ -109,6 +261,7 @@ private slots:
 
   void cleanupTestCase()
   {
+    stopMockDaemon();
     stopDaemon();
   }
 
@@ -317,7 +470,127 @@ private slots:
     QCOMPARE(profileSpy.count(), 1);
 #endif
   }
+
+  void testFanRealRpmAndNoFabrication()
+  {
+    {
+      ucc::UccdClient liveClient;
+      QVERIFY(liveClient.isConnected());
+      QCOMPARE(liveClient.getFanSpeedPercent(), std::optional<int>(40));
+      QCOMPARE(liveClient.getGpuFanSpeedPercent(), std::optional<int>(35));
+      QVERIFY2(!liveClient.getFanSpeedRPM().has_value(),
+               "Absent CPU realRpm must return std::nullopt, never speed * 60");
+      QVERIFY2(!liveClient.getGpuFanSpeedRPM().has_value(),
+               "Absent GPU realRpm must return std::nullopt, never speed * 60");
+    }
+
+    stopDaemon();
+    const auto restoreRustDaemon = qScopeGuard([this] {
+      stopMockDaemon();
+      if (!startDaemon()) {
+        qWarning() << "Failed to restart Rust interop_daemon after mock RPM test";
+      }
+    });
+
+    QVERIFY2(startMockDaemon(), "Mock D-Bus daemon failed to start");
+    ucc::UccdClient mockClient;
+    QTRY_VERIFY_WITH_TIMEOUT(mockClient.isConnected(), 3000);
+
+    callMockControl(QStringLiteral("TestSetFanMode"), {QStringLiteral("real_rpm")});
+    QCOMPARE(mockClient.getFanSpeedRPM(), std::optional<int>(3250));
+    QCOMPARE(mockClient.getGpuFanSpeedRPM(), std::optional<int>(3000));
+
+    callMockControl(QStringLiteral("TestSetFanMode"), {QStringLiteral("zero_rpm")});
+    QCOMPARE(mockClient.getFanSpeedRPM(), std::optional<int>(0));
+    QCOMPARE(mockClient.getGpuFanSpeedRPM(), std::optional<int>(0));
+
+    callMockControl(QStringLiteral("TestSetFanMode"), {QStringLiteral("no_rpm")});
+    QCOMPARE(mockClient.getFanSpeedPercent(), std::optional<int>(50));
+    QCOMPARE(mockClient.getGpuFanSpeedPercent(), std::optional<int>(45));
+    QVERIFY2(!mockClient.getFanSpeedRPM().has_value(),
+             "Missing CPU realRpm must return std::nullopt instead of fabricating speed * 60");
+    QVERIFY2(!mockClient.getGpuFanSpeedRPM().has_value(),
+             "Missing GPU realRpm must return std::nullopt instead of fabricating speed * 60");
+  }
+
+  void testSystemInfoPreservesPlatformBackendAndMux()
+  {
+    {
+      ucc::UccdClient liveClient;
+      QVERIFY(liveClient.isConnected());
+      const auto liveRaw = liveClient.getSystemInfoJSON();
+      QVERIFY(liveRaw.has_value());
+      const QJsonDocument liveDoc = QJsonDocument::fromJson(QByteArray::fromStdString(*liveRaw));
+      QVERIFY(liveDoc.isObject());
+      QCOMPARE(liveDoc.object().value(QStringLiteral("platformBackend")).toString(),
+               QStringLiteral("mock"));
+    }
+
+    stopDaemon();
+    const auto restoreRustDaemon = qScopeGuard([this] {
+      stopMockDaemon();
+      if (!startDaemon()) {
+        qWarning() << "Failed to restart Rust interop_daemon after mock sysinfo test";
+      }
+    });
+
+    QVERIFY2(startMockDaemon(), "Mock D-Bus daemon failed to start");
+    ucc::UccdClient mockClient;
+    QTRY_VERIFY_WITH_TIMEOUT(mockClient.isConnected(), 3000);
+
+    // Non-MECHREVO pass-through preserves platformBackend and mux fields.
+    callMockControl(
+        QStringLiteral("TestSetSystemInfo"),
+        {QStringLiteral(
+            R"({"sysVendor":"TUXEDO","boardName":"GM7IX0N","platformBackend":"uwcc","mux":{"supported":true,"activeGpu":"igpu","bootMode":"hybrid"}})")});
+    const auto passthroughRaw = mockClient.getSystemInfoJSON();
+    QVERIFY(passthroughRaw.has_value());
+    const QJsonObject passthroughObj =
+        QJsonDocument::fromJson(QByteArray::fromStdString(*passthroughRaw)).object();
+    QCOMPARE(passthroughObj.value(QStringLiteral("platformBackend")).toString(),
+             QStringLiteral("uwcc"));
+    const QJsonObject passthroughMux = passthroughObj.value(QStringLiteral("mux")).toObject();
+    QCOMPARE(passthroughMux.value(QStringLiteral("supported")).toBool(false), true);
+    QCOMPARE(passthroughMux.value(QStringLiteral("activeGpu")).toString(), QStringLiteral("igpu"));
+    QCOMPARE(passthroughMux.value(QStringLiteral("bootMode")).toString(), QStringLiteral("hybrid"));
+
+    // MECHREVO OEM rewrite path re-serializes JSON and must preserve platformBackend and mux.
+    callMockControl(
+        QStringLiteral("TestSetSystemInfo"),
+        {QStringLiteral(
+            R"({"sysVendor":"MECHREVO","boardName":"GM7IX0N","manufacturer":"uniwill","laptopModel":"Uniwill Alias","platformBackend":"uwcc","mux":{"supported":true,"activeGpu":"dgpu","bootMode":"dgpu_only"}})")});
+    const auto rewrittenRaw = mockClient.getSystemInfoJSON();
+    QVERIFY(rewrittenRaw.has_value());
+    const QJsonObject rewrittenObj =
+        QJsonDocument::fromJson(QByteArray::fromStdString(*rewrittenRaw)).object();
+    QCOMPARE(rewrittenObj.value(QStringLiteral("manufacturer")).toString(),
+             QStringLiteral("MECHREVO"));
+    QCOMPARE(rewrittenObj.value(QStringLiteral("laptopModel")).toString(),
+             QStringLiteral("MECHREVO GM7IX0N"));
+    QCOMPARE(rewrittenObj.value(QStringLiteral("platformBackend")).toString(),
+             QStringLiteral("uwcc"));
+    const QJsonObject rewrittenMux = rewrittenObj.value(QStringLiteral("mux")).toObject();
+    QCOMPARE(rewrittenMux.value(QStringLiteral("supported")).toBool(false), true);
+    QCOMPARE(rewrittenMux.value(QStringLiteral("activeGpu")).toString(), QStringLiteral("dgpu"));
+    QCOMPARE(rewrittenMux.value(QStringLiteral("bootMode")).toString(), QStringLiteral("dgpu_only"));
+  }
 };
 
-QTEST_MAIN(TestRustUccdInterop)
+int main(int argc, char **argv)
+{
+  QCoreApplication app(argc, argv);
+  if (app.arguments().contains(QStringLiteral("--serve-mock-dbus"))) {
+    MockInteropDaemon service;
+    auto bus = QDBusConnection::systemBus();
+    if (!bus.registerVirtualObject(QStringLiteral("/com/uniwill/uccd"), &service) ||
+        !bus.registerService(QStringLiteral("com.uniwill.uccd"))) {
+      return 2;
+    }
+    QTextStream(stdout) << "READY\n" << Qt::flush;
+    return app.exec();
+  }
+
+  TestRustUccdInterop test;
+  return QTest::qExec(&test, argc, argv);
+}
 #include "test_rust_uccd_interop.moc"

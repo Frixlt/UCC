@@ -6,8 +6,8 @@
 /// Maximum payload length for `UWCC_IOC_SMRW` (matches `UWCC_SMRW_MAX_LEN`).
 pub(crate) const UWCC_SMRW_MAX_LEN: u16 = 64;
 
-/// Maximum addressable byte size of the Uniwill SMRW factory limits table.
-pub(crate) const UWCC_SMRW_TABLE_LIMIT: u16 = 0x0400;
+/// Maximum addressable byte size of the Uniwill SMRW factory limits table (8-bit REOF offset).
+pub(crate) const UWCC_SMRW_TABLE_LIMIT: u16 = 0x0100;
 
 /// Maximum allowed `PWUP` boost level.
 pub(crate) const UWCC_PWUP_MAX_LEVEL: u32 = 3;
@@ -74,23 +74,29 @@ pub(crate) const fn is_valid_ec_read_addr(addr: u16) -> bool {
 /// Returns `true` if `addr` is on the explicit allowlist of safe writable EC registers.
 ///
 /// Read-only sensor registers (`0x043E` CPU temp, `0x044F` GPU temp,
-/// `0x0464`/`0x0465` and `0x046C`/`0x046B` tachometer RPM), read-only chassis
-/// identity (`0x0748` `UWCC_EC_REG_PROJECT_ID`), low firmware/BIOS registers
-/// (`< 0x0400`), and unmapped regions are strictly rejected.
+/// `0x0464`/`0x0465` and `0x046C`/`0x046D` tachometer RPM), read-only chassis
+/// identity (`0x0740` `EC_ADDR_PROJECT_ID`), read-only PWM readback (`0x075B`/`0x075C`),
+/// read-only capability masks (`0x0765`/`0x0766`), read-only ROMID (`0x0770..=0x077D`),
+/// low firmware/BIOS registers (`< 0x0400`), and unmapped regions are strictly rejected.
 #[inline]
 pub(crate) const fn is_valid_ec_write_addr(addr: u16) -> bool {
     match addr {
-        // TDP limits (PL1=0x0740, PL2=0x0741, PL4=0x0742) and thermal/power controls
-        // (explicitly excludes 0x0748 UWCC_EC_REG_PROJECT_ID)
-        0x0740..=0x0745 => true,
-        // Fan manual mode (0x0751), perf mode (0x0752), charge control & fan PWM (0x075B/0x075C)
-        0x0751..=0x075C => true,
-        // Hardware switches (0x0760 FN_LOCK, 0x0761 WIN_LOCK, 0x0762 USB_SLEEP_CHARGING),
-        // battery charge thresholds (0x0765 CHARGE_START_PCT, 0x0766 CHARGE_END_PCT),
-        // and Lightbar / chassis LED EC power switches (0x0767/0x0768 LIGHTBAR_POWER)
-        0x0760..=0x0768 => true,
-        // Additional Uniwill EC hardware switch registers
-        0x0770..=0x078F => true,
+        // AP_OEM manual control latch (0x0741) & cTGP/DB offset controls (0x0743..=0x0745)
+        0x0741 | 0x0743..=0x0745 => true,
+        // Lightbar AC control & RGB registers (0x0748 EC_ADDR_LIGHTBAR_AC_CTRL, 0x0749..=0x074B)
+        0x0748..=0x074B => true,
+        // Manual fan mode / perf controls (0x0751..=0x0753); excludes read-only PWM 0x075B/0x075C
+        0x0751..=0x0753 => true,
+        // USB sleep charging (0x0762) and trigger register (0x0767 EC_ADDR_TRIGGER);
+        // excludes read-only 0x0765/0x0766 (SUPPORT_1/2) and 0x0768 (SWITCH_STATUS)
+        0x0762 | 0x0767 => true,
+        // Upstream Uniwill TDP limits (0x0783 PL1, 0x0784 PL2, 0x0785 PL4) & fan default (0x0786);
+        // excludes read-only ROMID (0x0770..=0x077D) and KBD_STATUS (0x078C)
+        0x0783..=0x0786 => true,
+        // OEM switches (0x07A4 FN_LOCK_SWITCH BIT(3), 0x07A5..=0x07A6 OEM_3/OEM_4)
+        0x07A4..=0x07A6 => true,
+        // Battery charge threshold (0x07B9 EC_ADDR_CHARGE_CTRL) & priority (0x07CC EC_ADDR_CHARGE_PRIO)
+        0x07B9 | 0x07CC => true,
         // RamFan 1.5 16-point curve tables + CUME/UFME flags
         0x0F00..=0x0F5F => true,
         // Legacy Uniwill CPU/GPU fan duty registers
@@ -222,29 +228,29 @@ mod tests {
     fn ec_write_allowlist_and_permissions() {
         // Requires both FMODE_WRITE and CAP_SYS_ADMIN.
         assert_eq!(
-            validate_ec_write(0x0740, 0, false, true),
+            validate_ec_write(0x0783, 0, false, true),
             Err(ValidationError::PermissionDenied)
         );
         assert_eq!(
-            validate_ec_write(0x0740, 0, true, false),
+            validate_ec_write(0x0783, 0, true, false),
             Err(ValidationError::PermissionDenied)
         );
 
-        // Allowed writable registers (including 0x0740..=0x0745 and 0x0760..=0x0768).
+        // Allowed writable registers aligned with upstream uniwill-acpi.c.
         for addr in [
-            0x0740, 0x0741, 0x0742, 0x0745, 0x0751, 0x0752, 0x075B, 0x075C, 0x0760, 0x0761,
-            0x0762, 0x0765, 0x0766, 0x0767, 0x0768, 0x0F00, 0x0F5C, 0x1804, 0x1809,
+            0x0741, 0x0743, 0x0744, 0x0745, 0x0748, 0x0751, 0x0752, 0x0753, 0x0762, 0x0767,
+            0x0783, 0x0784, 0x0785, 0x0786, 0x07A4, 0x07B9, 0x07CC, 0x0F00, 0x0F5C, 0x1804,
+            0x1809,
         ] {
             assert_eq!(validate_ec_write(addr, 0, true, true), Ok(()));
         }
 
-        // Full 0x0760..=0x0768 range must be writable.
-        for addr in 0x0760..=0x0768 {
-            assert_eq!(validate_ec_write(addr, 0, true, true), Ok(()));
-        }
-
-        // Read-only telemetry registers and 0x0748 (PROJECT_ID) must be rejected.
-        for addr in [0x043E, 0x044F, 0x0464, 0x0465, 0x046B, 0x046C, 0x0746, 0x0748, 0x074E] {
+        // Read-only telemetry, 0x0740 (PROJECT_ID), 0x075B/0x075C (PWM RO), 0x0765/0x0766 (SUPPORT),
+        // 0x0768 (SWITCH_STATUS), 0x0770 (ROMID), 0x078C (KBD_STATUS) must be rejected.
+        for addr in [
+            0x043E, 0x044F, 0x0464, 0x0465, 0x046C, 0x046D, 0x0740, 0x0742, 0x0746, 0x074E,
+            0x075B, 0x075C, 0x0760, 0x0765, 0x0766, 0x0768, 0x0770, 0x078C,
+        ] {
             assert_eq!(
                 validate_ec_write(addr, 0, true, true),
                 Err(ValidationError::ReadOnlyOrForbidden)
@@ -266,11 +272,16 @@ mod tests {
     fn smrw_bounds() {
         assert_eq!(validate_smrw(0, 1), Ok(()));
         assert_eq!(validate_smrw(0, 64), Ok(()));
-        assert_eq!(validate_smrw(0x03C0, 64), Ok(()));
+        assert_eq!(validate_smrw(0x00C0, 64), Ok(()));
+        assert_eq!(validate_smrw(0x00FC, 4), Ok(()));
         assert_eq!(validate_smrw(0, 0), Err(ValidationError::InvalidLength));
         assert_eq!(validate_smrw(0, 65), Err(ValidationError::InvalidLength));
         assert_eq!(
-            validate_smrw(0x03C1, 64),
+            validate_smrw(0x00C1, 64),
+            Err(ValidationError::OutOfBounds)
+        );
+        assert_eq!(
+            validate_smrw(0x00FC, 8),
             Err(ValidationError::OutOfBounds)
         );
         assert_eq!(
@@ -357,5 +368,45 @@ mod tests {
         assert_eq!(ValidationError::InvalidLength.to_errno(), -22);
         assert_eq!(ValidationError::InvalidArgument.to_errno(), -22);
         assert_eq!(ValidationError::PermissionDenied.to_errno(), -1);
+    }
+
+    #[test]
+    fn ec_write_rejects_nonzero_pad_and_mux_rejects_missing_sys_admin() {
+        assert_eq!(
+            validate_ec_write(0x0783, 1, true, true),
+            Err(ValidationError::InvalidArgument)
+        );
+        assert_eq!(
+            validate_ec_write(0x0783, 0xFF, true, true),
+            Err(ValidationError::InvalidArgument)
+        );
+        assert_eq!(
+            validate_ec_write(0x0783, 1, false, true),
+            Err(ValidationError::PermissionDenied)
+        );
+        assert_eq!(
+            validate_mux_set(0, 2, true, false),
+            Err(ValidationError::PermissionDenied)
+        );
+
+        for addr in [0x0741, 0x0751, 0x0752, 0x0753, 0x0783, 0x0786] {
+            assert_eq!(validate_ec_write(addr, 0, true, true), Ok(()));
+        }
+        for addr in [0x07B9, 0x07CC, 0x0F00, 0x0F5F, 0x1804, 0x1809] {
+            assert_eq!(validate_ec_write(addr, 0, true, true), Ok(()));
+        }
+
+        for addr in [0x0740, 0x0750, 0x0754, 0x0782, 0x0787, 0x07B8, 0x07BA] {
+            assert_eq!(
+                validate_ec_write(addr, 0, true, true),
+                Err(ValidationError::ReadOnlyOrForbidden)
+            );
+        }
+        for addr in [0x07CB, 0x07CD, 0x0EFF, 0x0F60, 0x1803, 0x1808, 0x180A] {
+            assert_eq!(
+                validate_ec_write(addr, 0, true, true),
+                Err(ValidationError::ReadOnlyOrForbidden)
+            );
+        }
     }
 }

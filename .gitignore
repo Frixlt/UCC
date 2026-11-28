@@ -43,3 +43,38 @@ nvidia_findings/nvml_fine_scan
 nvidia_findings/nvml_scan2
 nvidia_findings/probe_nvapi
 nvidia_findings/probe_nvapi_data
+
+# Vendored crates, CI artifacts, and distro packaging outputs
+vendor/
+ci-interop/
+*.rpm
+*.deb
+*.changes
+*.buildinfo
+*.dsc
+*.tar.gz
+*.sha256
+
+# Kernel out-of-tree build artifacts (kernel/uwcc-rs)
+*.ko
+*.mod
+*.mod.c
+*.mod.o
+*.o
+.*.cmd
+Module.symvers
+modules.order
+
+# IDE, OS, Python, and coverage noise
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+*.swp
+*~
+compile_commands.json
+.clangd/
+*.pyc
+.pytest_cache/
+*.profraw
+*.profdata

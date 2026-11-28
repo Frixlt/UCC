@@ -161,7 +161,7 @@ if( BUILD_TESTS )
   add_subdirectory( tests )
 endif()
 
-install(FILES LICENSE COPYING THIRD_PARTY.md PROJECT_ORIGINS.md README.md README.en.md CHANGELOG.md DESTINATION share/doc/ucc)
+install(FILES LICENSE COPYING THIRD_PARTY.md PROJECT_ORIGINS.md README.md README.ru.md CHANGELOG.md DESTINATION share/doc/ucc)
 install(FILES docs/BUILDING.md docs/COMPARISON.md docs/TESTING.md DESTINATION share/doc/ucc/docs)
 
 # Install GNOME Shell extension

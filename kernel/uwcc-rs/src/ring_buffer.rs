@@ -206,4 +206,49 @@ mod tests {
         assert!(rb.is_empty());
         assert_eq!(rb.pop(), None);
     }
+
+    #[test]
+    fn ring_buffer_overflow_three_times_capacity_and_clear_preserves_dropped() {
+        let mut rb = WmiRingBuffer::new();
+        let total = WMI_RING_CAPACITY * 3;
+        let expected_dropped = (WMI_RING_CAPACITY * 2) as u64;
+
+        for i in 0..total {
+            let no_drop = rb.push(WmiEvent {
+                timestamp_ns: (i as u64) * 10,
+                code: i as u32,
+                payload: (i as u32) ^ 0xA5A5,
+            });
+            assert_eq!(no_drop, i < WMI_RING_CAPACITY);
+        }
+
+        assert!(rb.is_full());
+        assert_eq!(rb.len(), WMI_RING_CAPACITY);
+        assert_eq!(rb.dropped_count(), expected_dropped);
+
+        for expected in (WMI_RING_CAPACITY * 2)..total {
+            let ev = rb.pop().expect("ring must contain newest events");
+            assert_eq!(ev.timestamp_ns, (expected as u64) * 10);
+            assert_eq!(ev.code, expected as u32);
+            assert_eq!(ev.payload, (expected as u32) ^ 0xA5A5);
+        }
+
+        assert!(rb.is_empty());
+        assert_eq!(rb.len(), 0);
+        assert_eq!(rb.pop(), None);
+        assert_eq!(rb.dropped_count(), expected_dropped);
+
+        assert!(rb.push(WmiEvent {
+            timestamp_ns: 9_999,
+            code: 0xDEAD,
+            payload: 0xBEEF,
+        }));
+        assert_eq!(rb.len(), 1);
+
+        rb.clear();
+        assert!(rb.is_empty());
+        assert_eq!(rb.len(), 0);
+        assert_eq!(rb.pop(), None);
+        assert_eq!(rb.dropped_count(), expected_dropped);
+    }
 }

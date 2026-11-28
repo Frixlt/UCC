@@ -320,3 +320,29 @@ fn test_water_cooler_and_ctgp_capabilities() {
     );
     assert!(is_hwp_dynamic_boost_supported(&sysfs));
 }
+
+#[test]
+fn dmi_read_from_sysfs_trimming_and_missing_fields() {
+    let sysfs = MockSysfs::new();
+    sysfs.set_file("/sys/class/dmi/id/sys_vendor", "  MECHREVO \n");
+    sysfs.set_file(
+        "/sys/class/dmi/id/board_name",
+        "\tYAOSHI Series-X6AR55xY\r\n",
+    );
+    sysfs.set_file("/sys/class/dmi/id/product_sku", " 0001 \n");
+    sysfs.set_file("/sys/class/dmi/id/board_version", "Standard\n");
+    // Deliberately omit board_vendor, product_name, and bios_version
+
+    let dmi = DmiInfo::read_from_sysfs(&sysfs);
+    assert_eq!(dmi.sys_vendor, "MECHREVO");
+    assert_eq!(dmi.board_name, "YAOSHI Series-X6AR55xY");
+    assert_eq!(dmi.product_sku, "0001");
+    assert_eq!(dmi.board_version, "Standard");
+    assert!(dmi.board_vendor.is_empty());
+    assert!(dmi.product_name.is_empty());
+    assert!(dmi.bios_version.is_empty());
+
+    // Completely empty sysfs yields default (all empty strings)
+    let empty_sysfs = MockSysfs::new();
+    assert_eq!(DmiInfo::read_from_sysfs(&empty_sysfs), DmiInfo::default());
+}

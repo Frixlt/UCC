@@ -18,10 +18,13 @@
 
 #ifdef __KERNEL__
 
+#include <asm/byteorder.h>
 #include <linux/acpi.h>
 #include <linux/capability.h>
 #include <linux/device.h>
+#include <linux/err.h>
 #include <linux/errno.h>
+#include <linux/minmax.h>
 #include <linux/fs.h>
 #include <linux/hwmon.h>
 #include <linux/ktime.h>
@@ -48,9 +51,9 @@
 #define UWCC_WMI_EVENT_GUID "ABBC0F72-8EA1-11D1-00A0-C90629100000"
 
 /* Uniwill EC register addresses used by native hwmon and identity probe */
-#define UWCC_EC_REG_PROJECT_ID   0x0748U
-#define UWCC_EC_REG_EC_VER_HI    0x0400U
-#define UWCC_EC_REG_EC_VER_LO    0x0401U
+#define UWCC_EC_REG_PROJECT_ID   0x0740U
+#define UWCC_EC_REG_EC_VER_HI    0x0770U
+#define UWCC_EC_REG_EC_VER_LO    0x0771U
 
 /* D3cold-safe EC temperature registers (degrees Celsius) */
 #define UWCC_EC_REG_CPU_TEMP     0x043EU
@@ -61,7 +64,7 @@
 #define UWCC_EC_REG_FAN1_RPM_HI  0x0464U
 #define UWCC_EC_REG_FAN1_RPM_LO  0x0465U
 #define UWCC_EC_REG_FAN2_RPM_HI  0x046CU
-#define UWCC_EC_REG_FAN2_RPM_LO  0x046BU
+#define UWCC_EC_REG_FAN2_RPM_LO  0x046DU
 
 /* Fan PWM duty registers (Uniwill 0..=200 scale) */
 #define UWCC_EC_REG_PWM1         0x075BU
@@ -176,7 +179,7 @@ int uwcc_acpi_smrw(u16 offset, u16 len, u8 *out_buf)
 
 	if (!out_buf || len == 0 || len > UWCC_SMRW_MAX_LEN)
 		return -EINVAL;
-	if ((u32)offset + (u32)len > 0x0400U)
+	if ((u32)offset + (u32)len > UWCC_SMRW_TABLE_LIMIT)
 		return -ERANGE;
 
 	mutex_lock(&uwcc_ec_lock);
@@ -192,22 +195,18 @@ int uwcc_acpi_smrw(u16 offset, u16 len, u8 *out_buf)
 	 * Uniwill INOU0000 Method(SMRW, 1) accepts a single ACPI_TYPE_BUFFER:
 	 *   buf[0] = 0xBB (read DWord from active GFID power table)
 	 *   buf[1] = 8-bit byte offset (REOF)
-	 *   buf[2..12] = 0
+	 *   buf[2..63] = 0
 	 * and returns a 32-bit integer (or buffer on alternate firmware).
 	 */
 	for (pos = 0; pos < len; pos += 4U) {
-		u8 req_buf[13];
+		/* 64-byte zero-padded input buffer prevents AE_AML_BUFFER_LIMIT in DSDT CreateField */
+		u8 req_buf[64];
 		union acpi_object arg;
 		struct acpi_object_list params;
 		struct acpi_buffer output = { ACPI_ALLOCATE_BUFFER, NULL };
 		union acpi_object *obj;
 		acpi_status status;
 		u16 cur_off = offset + pos;
-
-		if (cur_off > 0xFFU) {
-			ret = -ERANGE;
-			break;
-		}
 
 		memset(req_buf, 0, sizeof(req_buf));
 		req_buf[0] = 0xBB;
@@ -223,13 +222,16 @@ int uwcc_acpi_smrw(u16 offset, u16 len, u8 *out_buf)
 		status = acpi_evaluate_object(uwcc_acpi_handle, "SMRW", &params, &output);
 		if (ACPI_FAILURE(status) || !output.pointer) {
 			kfree(output.pointer);
-			ret = -EIO;
+			if (status == AE_AML_BUFFER_LIMIT && pos > 0)
+				ret = 0;
+			else
+				ret = -EIO;
 			break;
 		}
 
 		obj = (union acpi_object *)output.pointer;
 		if (obj->type == ACPI_TYPE_INTEGER) {
-			u32 dword = (u32)(obj->integer.value & 0xFFFFFFFFULL);
+			__le32 dword = cpu_to_le32((u32)(obj->integer.value & 0xFFFFFFFFULL));
 			size_t chunk = min_t(size_t, 4U, (size_t)(len - pos));
 
 			memcpy(out_buf + pos, &dword, chunk);

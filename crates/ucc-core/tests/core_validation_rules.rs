@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 
 use serde_json::{json, Value};
-use ucc_core::{ProfileCpu, PumpVoltage, UccProfile};
+use ucc_core::{ProfileCpu, PumpVoltage, UccProfile, ValidationError};
 
 #[test]
 fn t_cfg_01_profile_roundtrip_preserves_flat_cpp_charging_ctgp_keyboard_and_extra() {
@@ -126,4 +126,102 @@ fn t_daemon_01_pump_voltage_discrete_codes_contract() {
     assert_eq!(PumpVoltage::from_discrete_code(2), Ok(PumpVoltage::V7));
     assert_eq!(PumpVoltage::from_discrete_code(3), Ok(PumpVoltage::V8));
     assert_eq!(PumpVoltage::from_discrete_code(4), Ok(PumpVoltage::Off));
+}
+
+#[test]
+fn profile_manual_fan_speed_and_pump_voltage_deserialization_bounds() {
+    // 1. Valid manualFanSpeed (0..=100) and valid manualPumpVoltage ({0, 2, 3, 4}).
+    for (fan_speed, pump_code) in [(0u8, 0i32), (50, 2), (100, 3), (25, 4)] {
+        let payload = json!({
+            "id": "manual-valid",
+            "name": "Manual Valid",
+            "fan": {
+                "manualFanSpeed": fan_speed,
+                "manualPumpVoltage": pump_code
+            }
+        });
+        let prof: UccProfile =
+            serde_json::from_value(payload).expect("valid manual fan/pump must deserialize");
+        assert_eq!(prof.fan.manual_fan_speed, Some(fan_speed));
+        assert_eq!(prof.fan.manual_pump_voltage, Some(pump_code));
+        assert!(prof.validate().is_ok());
+
+        let out = serde_json::to_value(&prof).expect("serialize valid profile");
+        assert_eq!(out["fan"]["manualFanSpeed"], fan_speed);
+        assert_eq!(out["fan"]["manualPumpVoltage"], pump_code);
+    }
+
+    // 2. Legacy sentinels (-1) and null deserialize to None and are omitted on serialization.
+    for sentinel in [json!(-1), Value::Null] {
+        let payload = json!({
+            "id": "manual-sentinel",
+            "name": "Manual Sentinel",
+            "fan": {
+                "manualFanSpeed": sentinel,
+                "manualPumpVoltage": sentinel
+            }
+        });
+        let prof: UccProfile =
+            serde_json::from_value(payload).expect("sentinel manual fan/pump must deserialize");
+        assert_eq!(prof.fan.manual_fan_speed, None);
+        assert_eq!(prof.fan.manual_pump_voltage, None);
+        assert!(prof.validate().is_ok());
+
+        let out = serde_json::to_value(&prof).expect("serialize sentinel profile");
+        assert!(out["fan"].get("manualFanSpeed").is_none());
+        assert!(out["fan"].get("manualPumpVoltage").is_none());
+    }
+
+    // 3. Out-of-range manualFanSpeed in JSON (-2, 101, 1000) normalizes to None on deserialize,
+    //    while direct struct assignment > 100 is rejected by validate().
+    for oob_fan in [-2i64, 101, 1000] {
+        let payload = json!({
+            "id": "manual-fan-oob",
+            "name": "Manual Fan OOB",
+            "fan": {
+                "manualFanSpeed": oob_fan
+            }
+        });
+        let prof: UccProfile =
+            serde_json::from_value(payload).expect("out-of-range manualFanSpeed normalizes");
+        assert_eq!(prof.fan.manual_fan_speed, None);
+        assert!(prof.validate().is_ok());
+    }
+    let mut direct_oob = UccProfile::new("direct-fan-oob", "Direct Fan OOB");
+    direct_oob.fan.manual_fan_speed = Some(101);
+    assert_eq!(
+        direct_oob.validate(),
+        Err(ValidationError::InvalidFanSpeed { speed: 101 })
+    );
+
+    // 4. Negative manualPumpVoltage (e.g. -5) normalizes to None, whereas forbidden/out-of-range
+    //    non-negative codes (1 = V12, 5, 99) deserialize as Some(code) and fail validate().
+    let neg_pump_payload = json!({
+        "id": "manual-pump-neg",
+        "name": "Manual Pump Neg",
+        "fan": {
+            "manualPumpVoltage": -5
+        }
+    });
+    let neg_pump_prof: UccProfile =
+        serde_json::from_value(neg_pump_payload).expect("negative pump code normalizes to None");
+    assert_eq!(neg_pump_prof.fan.manual_pump_voltage, None);
+    assert!(neg_pump_prof.validate().is_ok());
+
+    for invalid_code in [1i32, 5, 99] {
+        let payload = json!({
+            "id": "manual-pump-invalid",
+            "name": "Manual Pump Invalid",
+            "fan": {
+                "manualPumpVoltage": invalid_code
+            }
+        });
+        let prof: UccProfile = serde_json::from_value(payload)
+            .expect("non-negative pump code deserializes before validation");
+        assert_eq!(prof.fan.manual_pump_voltage, Some(invalid_code));
+        assert_eq!(
+            prof.validate(),
+            Err(ValidationError::InvalidPumpVoltage(invalid_code))
+        );
+    }
 }

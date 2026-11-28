@@ -18,6 +18,7 @@
 
 #define UWCC_API_VERSION        1U
 #define UWCC_SMRW_MAX_LEN       64U
+#define UWCC_SMRW_TABLE_LIMIT   0x0100U
 #define UWCC_WMI_RING_CAPACITY  64U
 
 /* Capability flags reported in struct uwcc_info.flags */
