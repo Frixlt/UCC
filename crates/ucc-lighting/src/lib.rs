@@ -16,7 +16,7 @@ pub mod windows_hid;
 pub use hid_transport::{
     create_hidraw_lighting_transport, create_hidraw_lighting_transport_with_ec_power,
     open_best_lighting_transport, read_sysfs_hidraw_interface_number,
-    select_best_lighting_transport, EcLightbarPowerHook, HidDeviceInfo, HidDeviceTransport,
+    select_best_lighting_transport, EcLidLogoHook, EcLightbarPowerHook, HidDeviceInfo, HidDeviceTransport,
     MockHidTransport, UniwillHidTransport, EC_LIGHTBAR_POWER_REG_PRIMARY,
     EC_LIGHTBAR_POWER_REG_SECONDARY, ITE_KEYBOARD_MAX_HW_BRIGHTNESS, ITE_KEYBOARD_PRODUCT_ID,
     ITE_LIGHTBAR_PRODUCT_IDS, ITE_LIGHTBAR_PRODUCT_ID_4ZONE, ITE_LIGHTBAR_PRODUCT_ID_5ZONE,
@@ -35,7 +35,7 @@ pub use keyboard::{
 };
 pub use lightbar::{
     LightbarAnimation, LightbarColorMode, LightbarController, LightbarPowerMode,
-    LightbarPowerProfile, LightbarSettings, LIGHTBAR_FRAME_INTERVAL,
+    LightbarPowerProfile, LidLogoSettings, LightbarSettings, LIGHTBAR_FRAME_INTERVAL,
 };
 pub use transport::{
     KeyboardCapabilities, LightbarCapabilities, LightingError, LightingOp, LightingTransport,

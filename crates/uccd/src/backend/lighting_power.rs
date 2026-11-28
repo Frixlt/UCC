@@ -21,7 +21,7 @@ use ucc_hardware::{
     RgbTarget, Sysfs,
 };
 use ucc_lighting::{
-    EcLightbarPowerHook, HidrawDeviceTransport, LightingError, LightingTransport,
+    EcLidLogoHook, EcLightbarPowerHook, HidrawDeviceTransport, LightingError, LightingTransport,
     SysfsLedTransport, UniwillHidTransport,
 };
 
@@ -79,7 +79,18 @@ pub fn select_lighting_transport_with_platform(
                         Err(err) => Err(LightingError::WriteFailed(err.to_string())),
                     },
                 );
-            Arc::new(transport.with_ec_lightbar_power_hook(ec_power_hook))
+            let mut transport = transport.with_ec_lightbar_power_hook(ec_power_hook);
+            if platform.has_lid_logo_ec() {
+                let logo_platform = Arc::clone(platform);
+                let logo_hook: EcLidLogoHook = Arc::new(move |enabled, rgb, brightness| {
+                    match logo_platform.set_lid_logo_ec(enabled, rgb.r, rgb.g, rgb.b, brightness) {
+                        Ok(()) | Err(PlatformError::Unsupported(_)) => Ok(()),
+                        Err(err) => Err(LightingError::WriteFailed(err.to_string())),
+                    }
+                });
+                transport = transport.with_ec_lid_logo_hook(logo_hook);
+            }
+            Arc::new(transport)
         } else {
             Arc::new(transport)
         }

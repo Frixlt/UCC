@@ -85,6 +85,21 @@ pub trait LightingTransport: Send + Sync {
         };
         self.write_lightbar_color(first)
     }
+
+    /// Returns `true` when the transport controls a backlit lid logo LED.
+    fn has_lid_logo(&self) -> Result<bool, LightingError> {
+        Ok(false)
+    }
+
+    /// Applies lid logo LED state (`enabled`, RGB `0..=255`, brightness `0..=255`).
+    fn write_lid_logo(
+        &self,
+        _enabled: bool,
+        _rgb: RgbColor,
+        _brightness: u8,
+    ) -> Result<(), LightingError> {
+        Err(LightingError::Unavailable)
+    }
 }
 
 #[derive(Debug, Default)]

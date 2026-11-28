@@ -160,6 +160,23 @@ pub struct LightbarPowerProfile {
     pub color_mode: LightbarColorMode,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct LidLogoSettings {
+    pub enabled: bool,
+    pub brightness: u8,
+    pub color: RgbColor,
+}
+
+impl Default for LidLogoSettings {
+    fn default() -> Self {
+        Self {
+            enabled: false,
+            brightness: 255,
+            color: RgbColor::WHITE,
+        }
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct LightbarSettings {
     pub managed: bool,
@@ -168,6 +185,7 @@ pub struct LightbarSettings {
     pub ac: LightbarPowerProfile,
     pub type_c: LightbarPowerProfile,
     pub bat: LightbarPowerProfile,
+    pub lid_logo: Option<LidLogoSettings>,
 }
 
 impl Default for LightbarSettings {
@@ -194,6 +212,7 @@ impl Default for LightbarSettings {
                 mode: LightbarAnimation::Pulse,
                 color_mode: LightbarColorMode::Auto,
             },
+            lid_logo: None,
         }
     }
 }
@@ -309,6 +328,53 @@ impl LightbarSettings {
             }
         }
 
+        if let Some(logo_val) = obj.get("lid_logo") {
+            let logo_obj = logo_val.as_object().ok_or_else(|| {
+                LightingError::InvalidConfig("lid_logo must be an object".into())
+            })?;
+            let mut logo = result.lid_logo.unwrap_or_default();
+            if let Some(en) = logo_obj.get("enabled") {
+                logo.enabled = en.as_bool().ok_or_else(|| {
+                    LightingError::InvalidConfig("Invalid lid_logo enabled flag".into())
+                })?;
+            }
+            if let Some(br) = logo_obj.get("brightness") {
+                let b = br.as_i64().filter(|_| !br.is_boolean()).ok_or_else(|| {
+                    LightingError::InvalidConfig("lid_logo brightness must be 0..255".into())
+                })?;
+                if !(0..=255).contains(&b) {
+                    return Err(LightingError::InvalidConfig(
+                        "lid_logo brightness must be 0..255".into(),
+                    ));
+                }
+                logo.brightness = b as u8;
+            }
+            if let Some(col) = logo_obj.get("color") {
+                let arr = col.as_array().ok_or_else(|| {
+                    LightingError::InvalidConfig("Invalid lid_logo color".into())
+                })?;
+                if arr.len() != 3 {
+                    return Err(LightingError::InvalidConfig(
+                        "Invalid lid_logo color".into(),
+                    ));
+                }
+                let mut chs = [0u8; 3];
+                for (idx, ch) in arr.iter().enumerate() {
+                    let val = ch.as_i64().filter(|_| !ch.is_boolean()).ok_or_else(|| {
+                        LightingError::InvalidConfig("Invalid lid_logo RGB channel".into())
+                    })?;
+                    if !(0..=255).contains(&val) {
+                        return Err(LightingError::InvalidConfig(
+                            "Invalid lid_logo RGB channel".into(),
+                        ));
+                    }
+                    chs[idx] = val as u8;
+                }
+                logo.color = RgbColor::new(chs[0], chs[1], chs[2]);
+            }
+            result.lid_logo = Some(logo);
+        }
+
         Ok(result)
     }
 
@@ -326,7 +392,7 @@ impl LightbarSettings {
             })
         };
 
-        json!({
+        let mut out = json!({
             "managed": self.managed,
             "silent_mode": self.silent_mode,
             "welcome_anim": self.welcome_anim,
@@ -335,7 +401,15 @@ impl LightbarSettings {
                 "type_c": profile_to_json(&self.type_c),
                 "bat": profile_to_json(&self.bat),
             }
-        })
+        });
+        if let Some(logo) = self.lid_logo {
+            out["lid_logo"] = json!({
+                "enabled": logo.enabled,
+                "brightness": logo.brightness,
+                "color": [logo.color.r, logo.color.g, logo.color.b],
+            });
+        }
+        out
     }
 }
 
@@ -483,6 +557,7 @@ impl LightbarController {
             "animating": self.animating,
             "zones": zones,
             "maxBrightness": max_brightness,
+            "hasLidLogo": self.transport.has_lid_logo().unwrap_or(false),
             "ok": self.last_ok,
             "error": self.last_error,
         })
@@ -647,7 +722,20 @@ impl LightbarController {
         };
         // Clear Flash's idle color before restoring brightness.
         self.write_color_result(idle_color)?;
-        self.write_brightness_result(prof.brightness_val)
+        self.write_brightness_result(prof.brightness_val)?;
+        if let Some(logo) = self.config.lid_logo {
+            if self.transport.has_lid_logo().unwrap_or(false) {
+                if let Err(e) = self
+                    .transport
+                    .write_lid_logo(logo.enabled, logo.color, logo.brightness)
+                {
+                    self.last_ok = false;
+                    self.last_error = e.to_string();
+                    return Err(e);
+                }
+            }
+        }
+        Ok(())
     }
 
     fn write_color(&mut self, rgb: RgbColor) -> bool {

@@ -28,6 +28,11 @@ private:
   QCheckBox *m_managed,*m_silent,*m_welcome;
   QPushButton *m_save,*m_test;
   QLabel *m_status;
+  QWidget *m_logoCard = nullptr;
+  QCheckBox *m_logoEnabled = nullptr;
+  QSpinBox *m_logoBrightness = nullptr;
+  QPushButton *m_logoColorButton = nullptr;
+  QColor m_logoRgb = Qt::white;
   std::array<Mode,3> m_modes;
 };
 }

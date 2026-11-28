@@ -805,21 +805,23 @@ impl UccdBackend for LiveUccdBackend {
     }
 
     fn get_charging_profiles_available(&self) -> String {
-        let Some((avail_path, _)) = self.charging_profile_paths() else {
-            return "[]".to_string();
-        };
-        let tokens = self.read_whitespace_tokens(&avail_path);
+        if let Some((avail_path, _)) = self.charging_profile_paths() {
+            let tokens = self.read_whitespace_tokens(&avail_path);
+            return serde_json::to_string(&tokens).unwrap_or_else(|_| "[]".to_string());
+        }
+        let tokens = self.platform.charging_profiles_available();
         serde_json::to_string(&tokens).unwrap_or_else(|_| "[]".to_string())
     }
 
     fn get_current_charging_profile(&self) -> String {
-        let Some((_, current_path)) = self.charging_profile_paths() else {
-            return String::new();
-        };
-        self.sysfs
-            .read(&current_path)
-            .map(|s| s.trim().to_string())
-            .unwrap_or_default()
+        if let Some((_, current_path)) = self.charging_profile_paths() {
+            return self
+                .sysfs
+                .read(&current_path)
+                .map(|s| s.trim().to_string())
+                .unwrap_or_default();
+        }
+        self.platform.read_charging_profile().unwrap_or_default()
     }
 
     fn set_charging_profile(&self, profile_descriptor: &str) -> bool {
@@ -831,6 +833,13 @@ impl UccdBackend for LiveUccdBackend {
             return false;
         }
         let Some((avail_path, current_path)) = self.charging_profile_paths() else {
+            if self.platform.set_charging_profile(desc).is_ok() {
+                let _ = self.update_settings(|s| {
+                    s.charging_profile = Some(desc.to_string());
+                    Some(())
+                });
+                return true;
+            }
             return false;
         };
         let avail = self.read_whitespace_tokens(&avail_path);

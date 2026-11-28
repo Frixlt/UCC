@@ -569,7 +569,7 @@ fn lightbar_controller_over_hid_preserves_all_5_animations_and_flash_stays_off()
         }))
         .expect("configure animation");
 
-        if anim == LightbarAnimation::Flash {
+        if matches!(anim, LightbarAnimation::Flash | LightbarAnimation::PulseOff) {
             assert!(lb.is_flash_off());
         } else {
             assert!(!lb.is_flash_off());
@@ -597,7 +597,7 @@ fn lightbar_controller_over_hid_preserves_all_5_animations_and_flash_stays_off()
         let final_reports = mock_hid.recorded_reports();
         // 5 zones written on completion (4 front + lid logo zone 5)
         assert_eq!(final_reports.len(), 5);
-        if anim == LightbarAnimation::Flash {
+        if matches!(anim, LightbarAnimation::Flash | LightbarAnimation::PulseOff) {
             assert!(lb.is_flash_off());
             for (idx, (_, r)) in final_reports.iter().enumerate() {
                 assert_eq!(r, &vec![0x14, 0x00, (idx + 1) as u8, 0, 0, 0, 0, 0]);
@@ -967,17 +967,25 @@ fn ite8291_zero_and_dim_brightness_partial_zones_and_8233_16slot_lightbar() {
         ]
     );
 
-    // ITE 8233 (048D:7001) lightbar color writes all 16 slots 0..16 with [0x14, 0x00, slot, R, G, B, 0, 0].
+    // ITE 8233 (048D:7001) lightbar color writes slots 0 and 1 so 0x08 static color index 1 lights up.
     mock_hid.clear_reports();
     transport
         .write_lightbar_color(RgbColor::new(0, 128, 255))
         .expect("8233 color");
     let lb_reports = mock_hid.recorded_reports();
-    assert_eq!(lb_reports.len(), 16);
+    assert_eq!(lb_reports.len(), 2);
     for (slot, (path, pkt)) in lb_reports.iter().enumerate() {
         assert_eq!(path, "/dev/hidraw0");
         assert_eq!(pkt, &vec![0x14, 0x00, slot as u8, 0, 128, 255, 0, 0]);
     }
+
+    // ITE 8233 brightness sends 0x08 enable + 0x09 0x02 (0..=100) full brightness.
+    mock_hid.clear_reports();
+    transport.write_lightbar_brightness(255).expect("8233 br");
+    let br_reports = mock_hid.recorded_reports();
+    assert_eq!(br_reports.len(), 2);
+    assert_eq!(br_reports[0].1, vec![0x08, 0x02, 0x01, 0x05, 50, 0x01, 0, 0]);
+    assert_eq!(br_reports[1].1, vec![0x09, 0x02, 100, 0, 0, 0, 0, 0]);
 }
 
 #[test]
@@ -1046,4 +1054,102 @@ fn ite8291_cold_cache_zone_write_latches_user_mode_and_zero_brightness_skips_lat
         .write_keyboard_zones(&[RgbColor::new(1, 2, 3)])
         .expect("dark zone write");
     assert_eq!(mock_hid.recorded_reports().len(), 12);
+}
+
+#[test]
+fn ite8233_zone3_lid_logo_hid_and_ec_hook_roundtrip() {
+    let mock_hid = Arc::new(MockHidTransport::new(vec![HidDeviceInfo {
+        vendor_id: ITE_VENDOR_ID,
+        product_id: ITE_LIGHTBAR_PRODUCT_ID_4ZONE,
+        path: "/dev/hidraw0".to_string(),
+    }]));
+    let ec_calls: Arc<Mutex<Vec<(bool, RgbColor, u8)>>> = Arc::new(Mutex::new(Vec::new()));
+    let ec_calls_cb = Arc::clone(&ec_calls);
+    let transport = Arc::new(
+        UniwillHidTransport::new(Arc::clone(&mock_hid) as _).with_ec_lid_logo_hook(Arc::new(
+            move |en, rgb, br| {
+                ec_calls_cb
+                    .lock()
+                    .unwrap_or_else(|e| e.into_inner())
+                    .push((en, rgb, br));
+                Ok(())
+            },
+        )),
+    );
+
+    let mut lb = LightbarController::new(Arc::clone(&transport) as _);
+    assert_eq!(lb.status_json()["hasLidLogo"], true);
+
+    mock_hid.clear_reports();
+    lb.configure(&json!({
+        "managed": true,
+        "silent_mode": false,
+        "welcome_anim": false,
+        "power_settings": {
+            "ac": {
+                "enabled": true,
+                "brightness_val": 255,
+                "mode": "Pulse (stays off)",
+                "color_mode": [0, 128, 255]
+            }
+        },
+        "lid_logo": {
+            "enabled": true,
+            "brightness": 255,
+            "color": [0, 255, 255]
+        }
+    }))
+    .expect("configure lid logo on");
+
+    let reports = mock_hid.recorded_reports();
+    assert!(reports
+        .iter()
+        .any(|(_, p)| p == &vec![0x1A, 0x03, 0x01, 0x04, 0, 0, 0, 0x01]));
+    assert!(reports
+        .iter()
+        .any(|(_, p)| p == &vec![0x14, 0x03, 0x01, 0, 255, 255, 0, 0]));
+    assert!(reports
+        .iter()
+        .any(|(_, p)| p == &vec![0x08, 0x23, 0x01, 0x01, 100, 0x01, 0, 0]));
+    assert_eq!(
+        *ec_calls.lock().unwrap_or_else(|e| e.into_inner()),
+        vec![(true, RgbColor::new(0, 255, 255), 255)]
+    );
+
+    mock_hid.clear_reports();
+    lb.configure(&json!({
+        "managed": true,
+        "silent_mode": false,
+        "welcome_anim": false,
+        "power_settings": {
+            "ac": {
+                "enabled": true,
+                "brightness_val": 255,
+                "mode": "Pulse (stays off)",
+                "color_mode": [0, 128, 255]
+            }
+        },
+        "lid_logo": {
+            "enabled": false,
+            "brightness": 0,
+            "color": [0, 0, 0]
+        }
+    }))
+    .expect("configure lid logo off");
+
+    let off_reports = mock_hid.recorded_reports();
+    assert!(off_reports
+        .iter()
+        .any(|(_, p)| p == &vec![0x12, 0x00, 0x03, 0, 0, 0, 0, 0]));
+    assert!(off_reports
+        .iter()
+        .any(|(_, p)| p == &vec![0x1A, 0x03, 0x00, 0, 0, 0, 0, 0x01]));
+    assert_eq!(
+        ec_calls
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .last()
+            .copied(),
+        Some((false, RgbColor::BLACK, 0))
+    );
 }

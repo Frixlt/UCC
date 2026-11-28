@@ -45,6 +45,11 @@ pub const EC_LIGHTBAR_POWER_REG_SECONDARY: u16 = 0x0748;
 /// (`0x0748` `EC_ADDR_LIGHTBAR_AC_CTRL` `BIT(0)`) when integrated with `UwccBackend`.
 pub type EcLightbarPowerHook = Arc<dyn Fn(bool) -> Result<(), LightingError> + Send + Sync>;
 
+/// Optional EC persistence callback for lid logo LED (`0x0767`, `0x07C5`, `0x0769..=0x076B`,
+/// `0x07AB`, `0x078C`) paired with `048D:7001` HID Zone 3 commands.
+pub type EcLidLogoHook =
+    Arc<dyn Fn(bool, RgbColor, u8) -> Result<(), LightingError> + Send + Sync>;
+
 /// USB HID device identity enumerated by host transport.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct HidDeviceInfo {
@@ -231,6 +236,7 @@ pub struct UniwillHidTransport {
     cached_colors: Mutex<Vec<RgbColor>>,
     cached_keyboard_brightness: Mutex<Option<u32>>,
     ec_lightbar_power_hook: Option<EcLightbarPowerHook>,
+    ec_lid_logo_hook: Option<EcLidLogoHook>,
     last_ec_lightbar_power: Mutex<Option<bool>>,
 }
 
@@ -241,13 +247,20 @@ impl UniwillHidTransport {
             cached_colors: Mutex::new(Vec::new()),
             cached_keyboard_brightness: Mutex::new(None),
             ec_lightbar_power_hook: None,
+            ec_lid_logo_hook: None,
             last_ec_lightbar_power: Mutex::new(None),
         }
     }
 
-    /// Attaches an optional EC power-rail hook (`0x767`/`0x768`) for Lightbar / chassis LEDs.
+    /// Attaches an optional EC power-rail hook (`0x0748`) for Lightbar / chassis LEDs.
     pub fn with_ec_lightbar_power_hook(mut self, hook: EcLightbarPowerHook) -> Self {
         self.ec_lightbar_power_hook = Some(hook);
+        self
+    }
+
+    /// Attaches an optional EC lid-logo persistence hook for `048D:7001` Zone 3 lid logos.
+    pub fn with_ec_lid_logo_hook(mut self, hook: EcLidLogoHook) -> Self {
+        self.ec_lid_logo_hook = Some(hook);
         self
     }
 
@@ -320,11 +333,62 @@ impl UniwillHidTransport {
         }
     }
 
-    /// Returns `true` when an ITE `048D:7000` controller with a lid logo LED (zone 5) is present.
+    /// Returns `true` when a lid logo LED is supported (`048D:7000` zone 5 or `048D:7001` + EC).
     pub fn has_lid_logo(&self) -> Result<bool, LightingError> {
-        Ok(self
-            .find_device(&ITE_LIGHTBAR_PRODUCT_IDS)?
-            .is_some_and(|d| d.product_id == ITE_LIGHTBAR_PRODUCT_ID_5ZONE))
+        Ok(self.find_device(&ITE_LIGHTBAR_PRODUCT_IDS)?.is_some_and(|d| {
+            d.product_id == ITE_LIGHTBAR_PRODUCT_ID_5ZONE
+                || (d.product_id == ITE_LIGHTBAR_PRODUCT_ID_4ZONE
+                    && self.ec_lid_logo_hook.is_some())
+        }))
+    }
+
+    /// Writes the lid logo LED (`048D:7001` HID Zone 3 + EC persistence, or `048D:7000` zone 5).
+    pub fn write_lid_logo(
+        &self,
+        enabled: bool,
+        rgb: RgbColor,
+        brightness: u8,
+    ) -> Result<(), LightingError> {
+        let Some(dev) = self.find_device(&ITE_LIGHTBAR_PRODUCT_IDS)? else {
+            return Err(LightingError::Unavailable);
+        };
+        if dev.product_id == ITE_LIGHTBAR_PRODUCT_ID_5ZONE {
+            let color = if enabled && brightness > 0 {
+                let scale = |c: u8| ((u16::from(c) * u16::from(brightness) + 127) / 255) as u8;
+                RgbColor::new(scale(rgb.r), scale(rgb.g), scale(rgb.b))
+            } else {
+                RgbColor::BLACK
+            };
+            return self.write_lid_logo_color(color);
+        }
+        if self.ec_lid_logo_hook.is_none() {
+            return Err(LightingError::Unavailable);
+        }
+        if enabled && brightness > 0 {
+            let lb_level = (((u32::from(brightness) * 100) + 127) / 255).clamp(1, 100) as u8;
+            let pwr_on = [0x1A, 0x03, 0x01, 0x04, 0x00, 0x00, 0x00, 0x01];
+            let set_col = [0x14, 0x03, 0x01, rgb.r, rgb.g, rgb.b, 0x00, 0x00];
+            let apply = [0x08, 0x23, 0x01, 0x01, lb_level, 0x01, 0x00, 0x00];
+            self.hid.send_feature_report(&dev.path, &pwr_on)?;
+            self.hid.send_feature_report(&dev.path, &set_col)?;
+            self.hid.send_feature_report(&dev.path, &apply)?;
+            if let Some(ref hook) = self.ec_lid_logo_hook {
+                hook(true, rgb, brightness)?;
+            }
+        } else {
+            let reset = [0x12, 0x00, 0x03, 0x00, 0x00, 0x00, 0x00, 0x00];
+            let stop_fx = [0x08, 0x05, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00];
+            let clear_z3 = [0x08, 0x01, 0x03, 0x00, 0x00, 0x00, 0x00, 0x00];
+            let pwr_off = [0x1A, 0x03, 0x00, 0x00, 0x00, 0x00, 0x00, 0x01];
+            self.hid.send_feature_report(&dev.path, &reset)?;
+            self.hid.send_feature_report(&dev.path, &stop_fx)?;
+            self.hid.send_feature_report(&dev.path, &clear_z3)?;
+            self.hid.send_feature_report(&dev.path, &pwr_off)?;
+            if let Some(ref hook) = self.ec_lid_logo_hook {
+                hook(false, RgbColor::BLACK, 0)?;
+            }
+        }
+        Ok(())
     }
 
     /// Writes individual per-zone RGB colors to front Lightbar (`1..=4`) and optional lid logo (`5`).
@@ -552,8 +616,10 @@ impl LightingTransport for UniwillHidTransport {
             self.ensure_lightbar_ec_power_on()?;
         }
         if dev.product_id == ITE_LIGHTBAR_PRODUCT_ID_4ZONE {
-            let packet = [0x14, 0x00, 0x00, rgb.r, rgb.g, rgb.b, 0x00, 0x00];
-            self.hid.send_feature_report(&dev.path, &packet)?;
+            for slot in 0..=1u8 {
+                let packet = [0x14, 0x00, slot, rgb.r, rgb.g, rgb.b, 0x00, 0x00];
+                self.hid.send_feature_report(&dev.path, &packet)?;
+            }
         } else {
             let zones = Self::lightbar_zone_count(dev.product_id) as u8;
             for zone in 1..=zones {
@@ -566,6 +632,19 @@ impl LightingTransport for UniwillHidTransport {
 
     fn write_lightbar_zones(&self, zones: &[RgbColor]) -> Result<(), LightingError> {
         UniwillHidTransport::write_lightbar_zones(self, zones)
+    }
+
+    fn has_lid_logo(&self) -> Result<bool, LightingError> {
+        UniwillHidTransport::has_lid_logo(self)
+    }
+
+    fn write_lid_logo(
+        &self,
+        enabled: bool,
+        rgb: RgbColor,
+        brightness: u8,
+    ) -> Result<(), LightingError> {
+        UniwillHidTransport::write_lid_logo(self, enabled, rgb, brightness)
     }
 }
 

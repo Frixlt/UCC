@@ -46,6 +46,17 @@ LightbarTab::LightbarTab(UccdClient *client,QWidget *parent):QWidget(parent),m_c
     });
     tabs->addTab(page,QStringList{"AC","USB-C","Battery"}[i]);
   }
+  m_logoCard=FluentTheme::createCard();m_logoCard->setObjectName("lidLogoCard");
+  auto *logoLayout=new QFormLayout(m_logoCard);logoLayout->setContentsMargins(16,16,16,16);logoLayout->setSpacing(12);
+  auto *logoTitle=new QLabel("Lid logo LED");logoTitle->setObjectName("cardTitle");logoLayout->addRow(logoTitle);
+  m_logoEnabled=new QCheckBox("Enable lid logo backlight");m_logoEnabled->setObjectName("lidLogoEnabled");logoLayout->addRow(m_logoEnabled);
+  m_logoBrightness=new Brightness;m_logoBrightness->setRange(0,255);m_logoBrightness->setValue(255);m_logoBrightness->setObjectName("lidLogoBrightness");logoLayout->addRow("Brightness (0–255)",m_logoBrightness);
+  m_logoColorButton=new QPushButton("Color: #ffffff");m_logoColorButton->setObjectName("lidLogoColor");logoLayout->addRow("Color",m_logoColorButton);
+  connect(m_logoColorButton,&QPushButton::clicked,this,[this] {
+    const auto picked=QColorDialog::getColor(m_logoRgb,this,"Lid logo color");
+    if(picked.isValid()) {m_logoRgb=picked;m_logoColorButton->setText("Color: "+picked.name());}
+  });
+  m_logoCard->hide();layout->addWidget(m_logoCard);
   m_silent=new QCheckBox("Silent mode — suppress notification animations");m_silent->setObjectName("lightbarSilent");layout->addWidget(m_silent);
   m_welcome=new QCheckBox("Welcome animation when the daemon starts");m_welcome->setObjectName("lightbarWelcome");layout->addWidget(m_welcome);
   auto *buttons=new QHBoxLayout;auto *reloadButton=new QPushButton("Reload");buttons->addWidget(reloadButton);buttons->addStretch();
@@ -81,6 +92,14 @@ void LightbarTab::reload() {
     else mode.color->setCurrentIndex(0);
     mode.custom->setText("Custom: "+mode.rgb.name());
   }
+  if(m_settings["lid_logo"].isObject()) {
+    const auto logo=m_settings["lid_logo"].toObject();
+    m_logoEnabled->setChecked(logo["enabled"].toBool());
+    m_logoBrightness->setValue(logo["brightness"].toInt(255));
+    const auto rgb=logo["color"].toArray();
+    if(rgb.size()==3) m_logoRgb=QColor(rgb[0].toInt(),rgb[1].toInt(),rgb[2].toInt());
+    m_logoColorButton->setText("Color: "+m_logoRgb.name());
+  }
   showStatus();
 }
 QJsonObject LightbarTab::collect() const {
@@ -94,7 +113,15 @@ QJsonObject LightbarTab::collect() const {
     else {const auto color=selected=="custom" ? mode.rgb : QColor(selected);p["color_mode"]=QJsonArray{color.red(),color.green(),color.blue()};}
     profiles[modes[i]]=p;
   }
-  settings["power_settings"]=profiles;return settings;
+  settings["power_settings"]=profiles;
+  if(m_logoCard && !m_logoCard->isHidden()) {
+    QJsonObject logo;
+    logo["enabled"]=m_logoEnabled->isChecked();
+    logo["brightness"]=m_logoBrightness->value();
+    logo["color"]=QJsonArray{m_logoRgb.red(),m_logoRgb.green(),m_logoRgb.blue()};
+    settings["lid_logo"]=logo;
+  }
+  return settings;
 }
 void LightbarTab::save() {
   if(readOnlyPreview) return;
@@ -121,6 +148,13 @@ void LightbarTab::showStatus() {
   const auto json=m_client->getLightbarStatusJSON();
   const auto status=json ? QJsonDocument::fromJson(QByteArray::fromStdString(*json)).object() : QJsonObject();
   if(status.isEmpty()) {m_status->setText("Lightbar status unavailable");return;}
+  if(m_logoCard) {
+    const bool hasLogo=status["hasLidLogo"].toBool();
+    m_logoCard->setVisible(hasLogo);
+    m_logoEnabled->setEnabled(hasLogo && !readOnlyPreview);
+    m_logoBrightness->setEnabled(hasLogo && !readOnlyPreview);
+    m_logoColorButton->setEnabled(hasLogo && !readOnlyPreview);
+  }
   if(!status["available"].toBool()) {m_status->setText("Lightbar hardware not detected. Settings can still be saved.");return;}
   m_status->setText(QString("%1 zones · Hardware brightness 0–%2 · Mode: %3 · %4").arg(status["zones"].toInt()).arg(status["maxBrightness"].toInt()).arg(status["mode"].toString(),status["managed"].toBool() ? "UCC control enabled" : "UCC control disabled"));
   if(!status["ok"].toBool(true)) m_status->setText(m_status->text()+" · "+status["error"].toString());
