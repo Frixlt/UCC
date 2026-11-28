@@ -608,6 +608,13 @@ fn dispatch_inner(
         "GetDriverHealthJSON" => {
             IpcResponse::success(req.id, json!(backend.get_driver_health_json()))
         }
+        "GetMuxStateJSON" => IpcResponse::success(req.id, json!(backend.get_mux_state_json())),
+        "SetMuxBootMode" => {
+            let Some(mode) = str_param(p, "mode") else {
+                return IpcResponse::failure(req.id, "missing string param 'mode'");
+            };
+            IpcResponse::success(req.id, json!(backend.set_mux_boot_mode(&mode)))
+        }
         "GetFanProfileNames" => {
             IpcResponse::success(req.id, json!(backend.get_fan_profile_names()))
         }

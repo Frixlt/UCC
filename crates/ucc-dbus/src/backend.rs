@@ -111,6 +111,12 @@ pub trait UccdBackend: Send + Sync + 'static {
     fn get_driver_health_json(&self) -> String {
         "{}".to_string()
     }
+    fn get_mux_state_json(&self) -> String {
+        r#"{"available":false}"#.to_string()
+    }
+    fn set_mux_boot_mode(&self, _mode: &str) -> bool {
+        false
+    }
     fn set_lightbar_settings_json(&self, _json: &str) -> bool {
         true
     }

@@ -1271,6 +1271,59 @@ macro_rules! impl_uccd_methods {
                 self.backend.get_driver_health_json()
             }
 
+            #[zbus(name = "GetMuxStateJSON")]
+            pub async fn get_mux_state_json(
+                &self,
+                #[zbus(header)] header: zbus::message::Header<'_>,
+                #[zbus(connection)] conn: &zbus::Connection,
+            ) -> String {
+                let sender = header.sender().map(|s| s.as_str());
+                if !self
+                    .authorizer
+                    .check_auth(conn, sender, AuthAction::Read)
+                    .await
+                {
+                    return r#"{"available":false}"#.to_string();
+                }
+                self.offload_or_checked(
+                    OffloadLane::Read,
+                    conn,
+                    sender,
+                    r#"{"available":false}"#.to_string(),
+                    |b| b.get_mux_state_json(),
+                )
+                .await
+            }
+
+            #[zbus(name = "SetMuxBootMode")]
+            pub async fn set_mux_boot_mode(
+                &self,
+                #[zbus(header)] header: zbus::message::Header<'_>,
+                #[zbus(connection)] conn: &zbus::Connection,
+                mode: &str,
+            ) -> bool {
+                if !payload_within_limit("SetMuxBootMode", mode) {
+                    return false;
+                }
+                let sender = header.sender().map(|s| s.as_str());
+                if !self
+                    .authorizer
+                    .check_auth(conn, sender, AuthAction::Control)
+                    .await
+                {
+                    return false;
+                }
+                let mode = mode.to_owned();
+                self.offload_or_checked(
+                    OffloadLane::PowerGpu,
+                    conn,
+                    header.sender().map(|s| s.as_str()),
+                    false,
+                    move |b| b.set_mux_boot_mode(&mode),
+                )
+                .await
+            }
+
             #[zbus(name = "SetLightbarSettingsJSON")]
             pub async fn set_lightbar_settings_json(
                 &self,

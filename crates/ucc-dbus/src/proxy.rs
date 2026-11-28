@@ -139,6 +139,12 @@ pub mod primary {
         #[zbus(name = "GetDriverHealthJSON")]
         fn get_driver_health_json(&self) -> zbus::Result<String>;
 
+        #[zbus(name = "GetMuxStateJSON")]
+        fn get_mux_state_json(&self) -> zbus::Result<String>;
+
+        #[zbus(name = "SetMuxBootMode")]
+        fn set_mux_boot_mode(&self, mode: &str) -> zbus::Result<bool>;
+
         #[zbus(name = "SetLightbarSettingsJSON")]
         fn set_lightbar_settings_json(&self, json: &str) -> zbus::Result<bool>;
 
@@ -565,6 +571,12 @@ pub mod legacy {
 
         #[zbus(name = "GetDriverHealthJSON")]
         fn get_driver_health_json(&self) -> zbus::Result<String>;
+
+        #[zbus(name = "GetMuxStateJSON")]
+        fn get_mux_state_json(&self) -> zbus::Result<String>;
+
+        #[zbus(name = "SetMuxBootMode")]
+        fn set_mux_boot_mode(&self, mode: &str) -> zbus::Result<bool>;
 
         #[zbus(name = "SetLightbarSettingsJSON")]
         fn set_lightbar_settings_json(&self, json: &str) -> zbus::Result<bool>;

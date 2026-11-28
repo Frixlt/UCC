@@ -468,6 +468,15 @@ bool UccdClient::triggerLightbarAnimation(bool force)
 {
   return callMethod<bool>("TriggerLightbarAnimation",force).value_or(false);
 }
+std::optional<std::string> UccdClient::getMuxStateJSON()
+{
+  if(auto json=callMethod<QString>("GetMuxStateJSON")) return json->toStdString();
+  return std::nullopt;
+}
+bool UccdClient::setMuxBootMode(const std::string &mode)
+{
+  return callMethod<bool>("SetMuxBootMode",QString::fromStdString(mode)).value_or(false);
+}
 
 bool UccdClient::setManualPowerMode(const std::string &mode)
 {

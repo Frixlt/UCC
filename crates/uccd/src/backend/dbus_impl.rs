@@ -57,6 +57,14 @@ impl UccdBackend for LiveUccdBackend {
         self.get_driver_health_json_impl()
     }
 
+    fn get_mux_state_json(&self) -> String {
+        self.get_mux_state_json_impl()
+    }
+
+    fn set_mux_boot_mode(&self, mode: &str) -> bool {
+        self.set_mux_boot_mode_impl(mode)
+    }
+
     fn tuxedo_wmi_available(&self) -> bool {
         self.platform.is_available()
     }

@@ -81,6 +81,8 @@ public:
   std::optional<std::string> getLightbarStatusJSON();
   bool setLightbarSettingsJSON(const std::string &json);
   bool triggerLightbarAnimation(bool force=false);
+  std::optional<std::string> getMuxStateJSON();
+  bool setMuxBootMode(const std::string &mode);
   bool setManualPowerMode(const std::string &mode);
   bool registerPowerRequest(const std::string &name, const std::string &reason, const std::string &mode);
   bool unregisterPowerRequest(const std::string &name);

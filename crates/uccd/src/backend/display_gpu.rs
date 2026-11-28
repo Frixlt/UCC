@@ -1570,6 +1570,38 @@ impl LiveUccdBackend {
         })
     }
 
+    pub(super) fn get_mux_state_json_impl(&self) -> String {
+        match self.platform.read_mux_state() {
+            Ok(mux) => serde_json::json!({
+                "available": true,
+                "activeGpu": mux.active_gpu.as_str(),
+                "bootMode": mux.boot_mode.as_str(),
+            })
+            .to_string(),
+            Err(_) => serde_json::json!({ "available": false }).to_string(),
+        }
+    }
+
+    pub(super) fn set_mux_boot_mode_impl(&self, mode: &str) -> bool {
+        if ucc_config::is_read_only_preview() || self.write_aborted_by_shutdown() {
+            return false;
+        }
+        let parsed = match mode.trim().to_ascii_lowercase().as_str() {
+            "dynamic" => ucc_hardware::MuxBootMode::Dynamic,
+            "dgpu_only" => ucc_hardware::MuxBootMode::DgpuOnly,
+            "igpu_only" => ucc_hardware::MuxBootMode::IgpuOnly,
+            "mshybrid" => ucc_hardware::MuxBootMode::MsHybrid,
+            _ => return false,
+        };
+        let Some(_op_guard) = self.enter_hardware_op() else {
+            return false;
+        };
+        if self.write_aborted_by_shutdown() {
+            return false;
+        }
+        self.platform.set_mux_boot_mode(parsed).is_ok()
+    }
+
     pub(super) fn get_prime_state_impl(&self) -> String {
         let prime_cmd = if self.sys_root == Path::new("/") {
             Some(PathBuf::from("prime-select"))
