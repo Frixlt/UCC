@@ -1337,3 +1337,41 @@ fn uwcc_12byte_smrw_rejects_excessive_base_tgp_and_ctgp_over_byte_ceiling() {
     ];
     assert!(SmrwPowerLimits::decode_inou0000_12byte(&over_ctgp).is_none());
 }
+
+#[test]
+fn uwcc_backend_charging_profile_rmw_and_lid_logo_ec_sequence() {
+    let transport = Arc::new(MockUwccTransport::chassis_0x1a_default());
+    transport.set_ec_reg(0x07A6, 0x89);
+    transport.set_ec_reg(0x07AB, 0x01);
+    transport.set_ec_reg(0x07C5, 0x48);
+
+    let backend = UwccBackend::new(Arc::clone(&transport) as Arc<dyn UwccTransport>).unwrap();
+    assert_eq!(
+        backend.charging_profiles_available(),
+        vec!["high_capacity", "balanced", "stationary"]
+    );
+    assert_eq!(backend.read_charging_profile().unwrap(), "high_capacity");
+
+    backend.set_charging_profile("balanced").unwrap();
+    assert_eq!(transport.ec_read(0x07A6).unwrap(), 0x99);
+    assert_eq!(backend.read_charging_profile().unwrap(), "balanced");
+
+    backend.set_charging_profile("stationary").unwrap();
+    assert_eq!(transport.ec_read(0x07A6).unwrap(), 0xA9);
+    assert_eq!(backend.read_charging_profile().unwrap(), "stationary");
+    assert!(backend.set_charging_profile("invalid_mode").is_err());
+
+    assert!(backend.has_lid_logo_ec());
+    backend.set_lid_logo_ec(true, 0, 255, 128, 255).unwrap();
+    assert_eq!(transport.ec_read(0x0767).unwrap(), 0x00);
+    assert_eq!(transport.ec_read(0x07C5).unwrap(), 0x68);
+    assert_eq!(transport.ec_read(0x0769).unwrap(), 0);
+    assert_eq!(transport.ec_read(0x076A).unwrap(), 50);
+    assert_eq!(transport.ec_read(0x076B).unwrap(), 25);
+    assert_eq!(transport.ec_read(0x07AB).unwrap(), 0x81);
+    assert_eq!(transport.ec_read(0x078C).unwrap(), 0x10);
+
+    backend.set_lid_logo_ec(false, 0, 0, 0, 0).unwrap();
+    assert_eq!(transport.ec_read(0x07AB).unwrap(), 0x01);
+    assert_eq!(transport.ec_read(0x078C).unwrap(), 0x10);
+}

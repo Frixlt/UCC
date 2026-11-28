@@ -170,6 +170,44 @@ pub trait PlatformBackend: Send + Sync {
         Err(PlatformError::Unsupported("cTGP wattage write unsupported"))
     }
 
+    /// Returns firmware charging profile descriptors when supported directly by the platform backend.
+    fn charging_profiles_available(&self) -> Vec<String> {
+        Vec::new()
+    }
+
+    /// Reads the active firmware charging profile descriptor when supported directly by the platform.
+    fn read_charging_profile(&self) -> Result<String, PlatformError> {
+        Err(PlatformError::Unsupported(
+            "Charging profile read unsupported",
+        ))
+    }
+
+    /// Sets the active firmware charging profile descriptor when supported directly by the platform.
+    fn set_charging_profile(&self, _profile: &str) -> Result<(), PlatformError> {
+        Err(PlatformError::Unsupported(
+            "Charging profile write unsupported",
+        ))
+    }
+
+    /// Returns `true` when the platform EC reports a backlit lid logo LED.
+    fn has_lid_logo_ec(&self) -> bool {
+        false
+    }
+
+    /// Persists lid logo LED state (`enabled`, RGB `0..=255`, brightness `0..=255`) to EC registers.
+    fn set_lid_logo_ec(
+        &self,
+        _enabled: bool,
+        _r: u8,
+        _g: u8,
+        _b: u8,
+        _brightness: u8,
+    ) -> Result<(), PlatformError> {
+        Err(PlatformError::Unsupported(
+            "Lid logo EC control unsupported",
+        ))
+    }
+
     /// Controls EC lightbar / chassis LED power rail (`0x767`/`0x768`) when supported.
     fn set_lightbar_power(&self, _enabled: bool) -> Result<(), PlatformError> {
         Err(PlatformError::Unsupported(

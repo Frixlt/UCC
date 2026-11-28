@@ -87,14 +87,15 @@ pub(crate) const fn is_valid_ec_write_addr(addr: u16) -> bool {
         0x0748..=0x074B => true,
         // Manual fan mode / perf controls (0x0751..=0x0753); excludes read-only PWM 0x075B/0x075C
         0x0751..=0x0753 => true,
-        // USB sleep charging (0x0762) and trigger register (0x0767 EC_ADDR_TRIGGER);
+        // USB sleep charging (0x0762), trigger clear (0x0767), and lid logo RGB (0x0769..=0x076B);
         // excludes read-only 0x0765/0x0766 (SUPPORT_1/2) and 0x0768 (SWITCH_STATUS)
-        0x0762 | 0x0767 => true,
-        // Upstream Uniwill TDP limits (0x0783 PL1, 0x0784 PL2, 0x0785 PL4) & fan default (0x0786);
-        // excludes read-only ROMID (0x0770..=0x077D) and KBD_STATUS (0x078C)
-        0x0783..=0x0786 => true,
-        // OEM switches (0x07A4 FN_LOCK_SWITCH BIT(3), 0x07A5..=0x07A6 OEM_3/OEM_4)
-        0x07A4..=0x07A6 => true,
+        0x0762 | 0x0767 | 0x0769..=0x076B => true,
+        // Upstream Uniwill TDP limits (0x0783 PL1, 0x0784 PL2, 0x0785 PL4), fan default (0x0786),
+        // and lid logo EC commit trigger (0x078C); excludes read-only ROMID (0x0770..=0x077D)
+        0x0783..=0x0786 | 0x078C => true,
+        // OEM switches (0x07A4 FN_LOCK, 0x07A5..=0x07A6 battery mode), lid logo brightness (0x07AB),
+        // and OEM byte 5 (0x07C5 logo/fan-curve flag RMW)
+        0x07A4..=0x07A6 | 0x07AB | 0x07C5 => true,
         // Battery charge threshold (0x07B9 EC_ADDR_CHARGE_CTRL) & priority (0x07CC EC_ADDR_CHARGE_PRIO)
         0x07B9 | 0x07CC => true,
         // RamFan 1.5 16-point curve tables + CUME/UFME flags
@@ -239,17 +240,18 @@ mod tests {
         // Allowed writable registers aligned with upstream uniwill-acpi.c.
         for addr in [
             0x0741, 0x0743, 0x0744, 0x0745, 0x0748, 0x0751, 0x0752, 0x0753, 0x0762, 0x0767,
-            0x0783, 0x0784, 0x0785, 0x0786, 0x07A4, 0x07B9, 0x07CC, 0x0F00, 0x0F5C, 0x1804,
+            0x0769, 0x076A, 0x076B, 0x0783, 0x0784, 0x0785, 0x0786, 0x078C, 0x07A4, 0x07A6,
+            0x07AB, 0x07B9, 0x07C5, 0x07CC, 0x0F00, 0x0F5C, 0x1804,
             0x1809,
         ] {
             assert_eq!(validate_ec_write(addr, 0, true, true), Ok(()));
         }
 
         // Read-only telemetry, 0x0740 (PROJECT_ID), 0x075B/0x075C (PWM RO), 0x0765/0x0766 (SUPPORT),
-        // 0x0768 (SWITCH_STATUS), 0x0770 (ROMID), 0x078C (KBD_STATUS) must be rejected.
+        // 0x0768 (SWITCH_STATUS), 0x0770 (ROMID), 0x077D (ROMID tail) must be rejected.
         for addr in [
             0x043E, 0x044F, 0x0464, 0x0465, 0x046C, 0x046D, 0x0740, 0x0742, 0x0746, 0x074E,
-            0x075B, 0x075C, 0x0760, 0x0765, 0x0766, 0x0768, 0x0770, 0x078C,
+            0x075B, 0x075C, 0x0760, 0x0765, 0x0766, 0x0768, 0x0770, 0x077D,
         ] {
             assert_eq!(
                 validate_ec_write(addr, 0, true, true),

@@ -204,6 +204,24 @@ pub mod uwcc_ec_reg {
     /// Never write `0x0767`/`0x0768` (those control `SUPER_KEY_LOCK`).
     pub const LIGHTBAR_AC_CTRL: u16 = 0x0748;
     pub const LIGHTBAR_APP_EXISTS_BIT: u8 = 1 << 0;
+    /// Battery charging profile mode register (`0x07A6`, mask `0x38`: `0x08`/`0x18`/`0x28`).
+    pub const BATTERY_CHARGE_MODE: u16 = 0x07A6;
+    pub const BATTERY_CHARGE_MODE_MASK: u8 = 0x38;
+    pub const BATTERY_MODE_HIGH_CAPACITY: u8 = 0x08;
+    pub const BATTERY_MODE_BALANCED: u8 = 0x18;
+    pub const BATTERY_MODE_STATIONARY: u8 = 0x28;
+    /// Lid logo EC persistence registers (`0x0767` trigger, `0x0769..=0x076B` RGB 0..=50,
+    /// `0x078C` commit `0x10`, `0x07AB` brightness/exists, `0x07C5` bit 5 logo flag).
+    pub const LOGO_TRIGGER: u16 = 0x0767;
+    pub const LOGO_R: u16 = 0x0769;
+    pub const LOGO_G: u16 = 0x076A;
+    pub const LOGO_B: u16 = 0x076B;
+    pub const LOGO_COMMIT: u16 = 0x078C;
+    pub const LOGO_COMMIT_VAL: u8 = 0x10;
+    pub const LOGO_BRIGHTNESS: u16 = 0x07AB;
+    pub const LOGO_EXISTS_BIT: u8 = 0x01;
+    pub const OEM_BYTE5: u16 = 0x07C5;
+    pub const OEM_BYTE5_LOGO_BIT: u8 = 1 << 5;
 }
 
 /// Configured backend selection policy (`Auto`, `Uwcc`, or `TuxedoIo`).
@@ -827,6 +845,93 @@ impl PlatformBackend for UwccBackend {
 
     fn set_ctgp_watts(&self, watts: i32) -> Result<(), PlatformError> {
         self.set_ctgp(watts)
+    }
+
+    fn charging_profiles_available(&self) -> Vec<String> {
+        if (self.info.flags & UWCC_FLAG_HAS_EC) != 0 {
+            vec![
+                "high_capacity".to_string(),
+                "balanced".to_string(),
+                "stationary".to_string(),
+            ]
+        } else {
+            Vec::new()
+        }
+    }
+
+    fn read_charging_profile(&self) -> Result<String, PlatformError> {
+        self.require_available()?;
+        let raw = self.transport.ec_read(uwcc_ec_reg::BATTERY_CHARGE_MODE)?;
+        let mode = match raw & uwcc_ec_reg::BATTERY_CHARGE_MODE_MASK {
+            uwcc_ec_reg::BATTERY_MODE_BALANCED => "balanced",
+            uwcc_ec_reg::BATTERY_MODE_STATIONARY => "stationary",
+            _ => "high_capacity",
+        };
+        Ok(mode.to_string())
+    }
+
+    fn set_charging_profile(&self, profile: &str) -> Result<(), PlatformError> {
+        self.require_available()?;
+        let bits = match profile.trim() {
+            "high_capacity" => uwcc_ec_reg::BATTERY_MODE_HIGH_CAPACITY,
+            "balanced" => uwcc_ec_reg::BATTERY_MODE_BALANCED,
+            "stationary" => uwcc_ec_reg::BATTERY_MODE_STATIONARY,
+            _ => {
+                return Err(PlatformError::InvalidArgument(
+                    "Unknown charging profile descriptor",
+                ));
+            }
+        };
+        let prev = self.transport.ec_read(uwcc_ec_reg::BATTERY_CHARGE_MODE)?;
+        let next = (prev & !uwcc_ec_reg::BATTERY_CHARGE_MODE_MASK) | bits;
+        self.transport
+            .ec_write(uwcc_ec_reg::BATTERY_CHARGE_MODE, next)
+    }
+
+    fn has_lid_logo_ec(&self) -> bool {
+        if (self.info.flags & UWCC_FLAG_HAS_EC) == 0 {
+            return false;
+        }
+        self.transport
+            .ec_read(uwcc_ec_reg::LOGO_BRIGHTNESS)
+            .is_ok_and(|val| (val & uwcc_ec_reg::LOGO_EXISTS_BIT) != 0)
+    }
+
+    fn set_lid_logo_ec(
+        &self,
+        enabled: bool,
+        r: u8,
+        g: u8,
+        b: u8,
+        brightness: u8,
+    ) -> Result<(), PlatformError> {
+        self.require_available()?;
+        if enabled && brightness > 0 {
+            let scale = |v: u8| -> u8 { ((u16::from(v) * 50 + 127) / 255) as u8 };
+            let br_code = match brightness {
+                1..=85 => 0x21,
+                86..=170 => 0x41,
+                _ => 0x81,
+            };
+            self.transport.ec_write(uwcc_ec_reg::LOGO_TRIGGER, 0x00)?;
+            let oem5 = self.transport.ec_read(uwcc_ec_reg::OEM_BYTE5)?;
+            self.transport.ec_write(
+                uwcc_ec_reg::OEM_BYTE5,
+                oem5 | uwcc_ec_reg::OEM_BYTE5_LOGO_BIT,
+            )?;
+            self.transport.ec_write(uwcc_ec_reg::LOGO_R, scale(r))?;
+            self.transport.ec_write(uwcc_ec_reg::LOGO_G, scale(g))?;
+            self.transport.ec_write(uwcc_ec_reg::LOGO_B, scale(b))?;
+            self.transport
+                .ec_write(uwcc_ec_reg::LOGO_BRIGHTNESS, br_code)?;
+            self.transport
+                .ec_write(uwcc_ec_reg::LOGO_COMMIT, uwcc_ec_reg::LOGO_COMMIT_VAL)
+        } else {
+            self.transport
+                .ec_write(uwcc_ec_reg::LOGO_BRIGHTNESS, uwcc_ec_reg::LOGO_EXISTS_BIT)?;
+            self.transport
+                .ec_write(uwcc_ec_reg::LOGO_COMMIT, uwcc_ec_reg::LOGO_COMMIT_VAL)
+        }
     }
 
     fn set_lightbar_power(&self, enabled: bool) -> Result<(), PlatformError> {
