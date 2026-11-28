@@ -707,13 +707,9 @@ impl UwccBackend {
             uwcc_ec_reg::CUSTOM_MODE_CUME_BIT,
             0,
         )?;
-        // 3. Latch universal fan/custom control (0x07C6 BIT(2)).
-        self.rmw_ec_bits(
-            uwcc_ec_reg::AP_OEM_6,
-            uwcc_ec_reg::AP_OEM_6_UNIVERSAL_FAN_BIT,
-            0,
-        )?;
-        // 4. Set UFME (0x0751 BIT(7)) and clear TBME/HIGH so PMSC stays cleanly in Custom.
+        // 3. Set UFME (0x0751 BIT(7)) and clear TBME/HIGH so PMSC stays cleanly in Custom.
+        // Note: Do NOT set 0x07C6 BIT(2) (ENABLE_UNIVERSAL_FAN_CTRL) here — that bit switches
+        // EC fan control to the 0x0F00..=0x0F5F RamFan table and makes EC ignore 0x1804/0x1809.
         self.rmw_ec_bits(
             uwcc_ec_reg::FAN_MANUAL_MODE,
             uwcc_ec_reg::FAN_MODE_USER_BIT,
@@ -906,10 +902,11 @@ impl PlatformBackend for UwccBackend {
                 uwcc_ec_reg::CUSTOM_MODE_CUME_BIT,
                 0,
             );
+            // Ensure 0x07C6 BIT(2) (RamFan table mode) is cleared so EC obeys 0x1804/0x1809 duty.
             let _ = self.rmw_ec_bits(
                 uwcc_ec_reg::AP_OEM_6,
-                uwcc_ec_reg::AP_OEM_6_UNIVERSAL_FAN_BIT,
                 0,
+                uwcc_ec_reg::AP_OEM_6_UNIVERSAL_FAN_BIT,
             );
         }
         let prev = self.transport.ec_read(uwcc_ec_reg::FAN_MANUAL_MODE)?;

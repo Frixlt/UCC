@@ -1664,7 +1664,10 @@ fn chassis_0x1a_custom_mode_tdp_profiles_mode_enable_and_drop_cleanup() {
     transport.set_reg(uwcc_ec_reg::AP_OEM, 0x80);
     transport.set_reg(uwcc_ec_reg::CUSTOM_MODE_CTRL, 0x48);
     transport.set_reg(uwcc_ec_reg::CUSTOM_MODE_ENABLE, 0x80); // PL4D = 1
-    transport.set_reg(uwcc_ec_reg::AP_OEM_6, 0x00);
+    transport.set_reg(
+        uwcc_ec_reg::AP_OEM_6,
+        uwcc_ec_reg::AP_OEM_6_UNIVERSAL_FAN_BIT,
+    );
     transport.set_reg(uwcc_ec_reg::FAN_MANUAL_MODE, 0x10); // Turbo
     transport.set_reg(uwcc_ec_reg::MODE_ENABLE, 0x55);
 
@@ -1680,7 +1683,9 @@ fn chassis_0x1a_custom_mode_tdp_profiles_mode_enable_and_drop_cleanup() {
             Some(0xC0),
             "CUME BIT(6) must be set while strictly preserving PL4D BIT(7)"
         );
-        assert_eq!(transport.get_reg(uwcc_ec_reg::AP_OEM_6), Some(0x04));
+        // Direct manual fan duty must clear 0x07C6 BIT(2) so EC obeys 0x1804/0x1809.
+        backend.set_fan_speed_percent(0, 75).unwrap();
+        assert_eq!(transport.get_reg(uwcc_ec_reg::AP_OEM_6), Some(0x00));
         assert_eq!(transport.get_reg(uwcc_ec_reg::FAN_MANUAL_MODE), Some(0x80));
         assert_eq!(transport.get_reg(uwcc_ec_reg::PL1_WATTS), Some(120));
         assert_eq!(backend.read_perf_profile().unwrap(), 3);
