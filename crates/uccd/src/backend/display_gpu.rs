@@ -821,13 +821,17 @@ impl LiveUccdBackend {
                 }
             } else if rb.profile_path.is_none() {
                 if let Some(ref prev) = rb.prev_profile {
-                    self.charging_write_seq.fetch_add(1, Ordering::SeqCst);
-                    let rb_ok = self.platform.set_charging_profile(prev).is_ok()
-                        && self.platform.read_charging_profile().ok().as_deref()
-                            == Some(prev.as_str());
-                    self.charging_write_seq.fetch_add(1, Ordering::SeqCst);
-                    if !rb_ok {
+                    if self.shutdown_wait_expired.load(Ordering::SeqCst) {
                         ok = false;
+                    } else {
+                        self.charging_write_seq.fetch_add(1, Ordering::SeqCst);
+                        let rb_ok = self.platform.set_charging_profile(prev).is_ok()
+                            && self.platform.read_charging_profile().ok().as_deref()
+                                == Some(prev.as_str());
+                        self.charging_write_seq.fetch_add(1, Ordering::SeqCst);
+                        if !rb_ok {
+                            ok = false;
+                        }
                     }
                 }
             }
@@ -1790,6 +1794,66 @@ impl LiveUccdBackend {
 
     pub fn nvidia_power_offset(&self) -> Option<i32> {
         *self.lock_mutex(&self.nvidia_power_offset)
+    }
+
+    fn reconcile_platform_charging_profile(&self, fallback: &str) {
+        for _ in 0..4 {
+            if self.shutdown_wait_expired.load(Ordering::SeqCst) {
+                return;
+            }
+            let seq = self.charging_op_seq.load(Ordering::SeqCst);
+            let target = self
+                .lock_mutex(&self.charging_commit_state)
+                .charging_profile
+                .clone()
+                .or_else(|| self.read_rw(&self.settings).charging_profile.clone())
+                .unwrap_or_else(|| fallback.to_string());
+            self.charging_write_seq.fetch_add(1, Ordering::SeqCst);
+            let _ = self.platform.set_charging_profile(&target);
+            self.charging_write_seq.fetch_add(1, Ordering::SeqCst);
+            if self.charging_op_seq.load(Ordering::SeqCst) == seq {
+                return;
+            }
+        }
+    }
+
+    pub(super) fn commit_platform_charging_profile(&self, desc: &str, prev_hw: &str) -> bool {
+        let my_seq = self.charging_op_seq.fetch_add(1, Ordering::SeqCst) + 1;
+        self.charging_write_seq.fetch_add(1, Ordering::SeqCst);
+        let write_ok = self.platform.set_charging_profile(desc).is_ok()
+            && self.platform.read_charging_profile().ok().as_deref() == Some(desc);
+        self.charging_write_seq.fetch_add(1, Ordering::SeqCst);
+        if !write_ok || self.charging_op_seq.load(Ordering::SeqCst) != my_seq {
+            self.reconcile_platform_charging_profile(prev_hw);
+            return false;
+        }
+        let persisted = self
+            .update_settings(|s| {
+                if self.charging_op_seq.load(Ordering::SeqCst) != my_seq {
+                    return None;
+                }
+                s.charging_profile = Some(desc.to_string());
+                Some(())
+            })
+            .is_some();
+        if !persisted {
+            self.reconcile_platform_charging_profile(prev_hw);
+            return false;
+        }
+        let committed = {
+            let mut st = self.lock_mutex(&self.charging_commit_state);
+            if self.charging_op_seq.load(Ordering::SeqCst) == my_seq {
+                st.charging_profile = Some(desc.to_string());
+                true
+            } else {
+                false
+            }
+        };
+        if !committed {
+            self.reconcile_platform_charging_profile(prev_hw);
+            return false;
+        }
+        true
     }
 
     pub(super) fn has_ctgp_controller(&self) -> bool {
