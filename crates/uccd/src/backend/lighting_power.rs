@@ -61,7 +61,7 @@ pub fn select_lighting_transport(
     }
 }
 
-/// Selects the lighting transport and wires the EC Lightbar power rail hook (`0x767`/`0x768`)
+/// Selects the lighting transport and wires the EC Lightbar power rail hook (`0x0748`)
 /// to `platform` when using direct USB `hidraw` (`M14.6` / `ADR-05`).
 pub fn select_lighting_transport_with_platform(
     platform: &Arc<dyn PlatformBackend>,

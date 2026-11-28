@@ -819,6 +819,12 @@ impl LiveUccdBackend {
                 if !self.write_charging_token_checked(p, prev, true) {
                     ok = false;
                 }
+            } else if rb.profile_path.is_none() {
+                if let Some(ref prev) = rb.prev_profile {
+                    if self.platform.set_charging_profile(prev).is_err() {
+                        ok = false;
+                    }
+                }
             }
         }
         if rb.wrote_priority && !superseded() {
@@ -979,6 +985,28 @@ impl LiveUccdBackend {
                     }
                     rb.wrote_profile = true;
                     if !self.write_charging_token_checked(&cur_path, prof_desc, false) {
+                        let _ = self.restore_charging_rollback(&rb, start_epoch);
+                        return Err(());
+                    }
+                } else if explicit_prof {
+                    let _ = self.restore_charging_rollback(&rb, start_epoch);
+                    return Err(());
+                }
+            } else if !self.platform.charging_profiles_available().is_empty() {
+                let avail = self.platform.charging_profiles_available();
+                let desc = prof_desc.trim();
+                if avail.iter().any(|p| p == desc) {
+                    rb.prev_profile = self.platform.read_charging_profile().ok();
+                    if rb.prev_profile.is_none() {
+                        let _ = self.restore_charging_rollback(&rb, start_epoch);
+                        return Err(());
+                    }
+                    rb.wrote_profile = true;
+                    self.charging_write_seq.fetch_add(1, Ordering::SeqCst);
+                    let ok = self.platform.set_charging_profile(desc).is_ok()
+                        && self.platform.read_charging_profile().ok().as_deref() == Some(desc);
+                    self.charging_write_seq.fetch_add(1, Ordering::SeqCst);
+                    if !ok {
                         let _ = self.restore_charging_rollback(&rb, start_epoch);
                         return Err(());
                     }
@@ -1792,12 +1820,23 @@ impl LiveUccdBackend {
                     return false;
                 }
                 let target_w = min_w.saturating_add(offset).clamp(min_w, max_w);
+                let clamped_offset = target_w - min_w;
+                let prev_w = self.platform.read_ctgp_watts().ok();
                 self.ctgp_write_seq.fetch_add(1, Ordering::SeqCst);
                 let res = self.platform.set_ctgp_watts(target_w);
                 self.ctgp_write_seq.fetch_add(1, Ordering::SeqCst);
                 if res.is_ok() {
-                    *self.lock_mutex(&self.nvidia_power_offset) = Some(offset);
-                    return true;
+                    let verified = match self.platform.read_ctgp_watts() {
+                        Ok(actual_w) => actual_w == target_w,
+                        Err(_) => true,
+                    };
+                    if verified {
+                        *self.lock_mutex(&self.nvidia_power_offset) = Some(clamped_offset);
+                        return true;
+                    }
+                    if let Some(pw) = prev_w {
+                        let _ = self.platform.set_ctgp_watts(pw);
+                    }
                 }
                 tracing::warn!(
                     offset,
@@ -1929,12 +1968,9 @@ impl LiveUccdBackend {
         }
         if let Some((min_w, max_w)) = self.platform.read_ctgp_limits() {
             if let Ok(cur_w) = self.platform.read_ctgp_watts() {
-                return Some((cur_w - min_w).clamp(0, max_w - min_w));
+                return Some((cur_w - min_w).clamp(0, (max_w - min_w).max(0)));
             }
-            if let Some(val) = *self.lock_mutex(&self.nvidia_power_offset) {
-                return Some(val);
-            }
-            return Some(0);
+            return *self.lock_mutex(&self.nvidia_power_offset);
         }
         if let Some(ref nvml) = self.nvml {
             let dgpu_bdf = self

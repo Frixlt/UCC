@@ -46,13 +46,14 @@ LightbarTab::LightbarTab(UccdClient *client,QWidget *parent):QWidget(parent),m_c
     });
     tabs->addTab(page,QStringList{"AC","USB-C","Battery"}[i]);
   }
-  m_logoCard=FluentTheme::createCard();m_logoCard->setObjectName("lidLogoCard");
+  m_logoCard=FluentTheme::createCard();m_logoCard->setProperty("role","lidLogoCard");
   auto *logoLayout=new QFormLayout(m_logoCard);logoLayout->setContentsMargins(16,16,16,16);logoLayout->setSpacing(12);
   auto *logoTitle=new QLabel("Lid logo LED");logoTitle->setObjectName("cardTitle");logoLayout->addRow(logoTitle);
   m_logoEnabled=new QCheckBox("Enable lid logo backlight");m_logoEnabled->setObjectName("lidLogoEnabled");logoLayout->addRow(m_logoEnabled);
   m_logoBrightness=new Brightness;m_logoBrightness->setRange(0,255);m_logoBrightness->setValue(255);m_logoBrightness->setObjectName("lidLogoBrightness");logoLayout->addRow("Brightness (0–255)",m_logoBrightness);
   m_logoColorButton=new QPushButton("Color: #ffffff");m_logoColorButton->setObjectName("lidLogoColor");logoLayout->addRow("Color",m_logoColorButton);
   connect(m_logoColorButton,&QPushButton::clicked,this,[this] {
+    if(readOnlyPreview) return;
     const auto picked=QColorDialog::getColor(m_logoRgb,this,"Lid logo color");
     if(picked.isValid()) {m_logoRgb=picked;m_logoColorButton->setText("Color: "+picked.name());}
   });
@@ -62,7 +63,7 @@ LightbarTab::LightbarTab(UccdClient *client,QWidget *parent):QWidget(parent),m_c
   auto *buttons=new QHBoxLayout;auto *reloadButton=new QPushButton("Reload");buttons->addWidget(reloadButton);buttons->addStretch();
   m_test=new QPushButton("Test saved animation");m_test->setObjectName("testLightbar");buttons->addWidget(m_test);
   m_save=new QPushButton("Save and apply");m_save->setObjectName("saveLightbar");m_save->setProperty("primary",true);buttons->addWidget(m_save);layout->addLayout(buttons);
-  auto *hint=new QLabel("Test uses the saved settings for the current effective power mode and bypasses Silent mode. A disabled mode stays off. Flash ends off; the other animations restore the selected color.");
+  auto *hint=new QLabel("Test uses the saved settings for the current effective power mode and bypasses Silent mode. A disabled mode stays off. Flash and Pulse (stays off) end off; the other animations restore the selected color.");
   hint->setWordWrap(true);hint->setObjectName("muted");layout->addWidget(hint);
   m_status=new QLabel;m_status->setObjectName("lightbarStatus");m_status->setWordWrap(true);layout->addWidget(m_status);layout->addStretch();
   connect(reloadButton,&QPushButton::clicked,this,&LightbarTab::reload);
@@ -82,7 +83,7 @@ void LightbarTab::reload() {
   const bool available=doc.isObject() && doc.object()["power_settings"].isObject();
   m_save->setEnabled(available && !readOnlyPreview);m_test->setEnabled(available && !readOnlyPreview);
   m_managed->setEnabled(available && !readOnlyPreview);m_silent->setEnabled(available && !readOnlyPreview);m_welcome->setEnabled(available && !readOnlyPreview);
-  if(!available) {m_status->setText("Lightbar controls require the updated UCC daemon.");return;}
+  if(!available) {if(m_logoCard) {m_logoCard->hide();m_logoEnabled->setEnabled(false);m_logoBrightness->setEnabled(false);m_logoColorButton->setEnabled(false);}m_status->setText("Lightbar controls require the updated UCC daemon.");return;}
   m_settings=doc.object();m_managed->setChecked(m_settings["managed"].toBool());m_silent->setChecked(m_settings["silent_mode"].toBool());m_welcome->setChecked(m_settings["welcome_anim"].toBool());
   for(int i=0;i<3;++i) {
     auto &mode=m_modes[static_cast<size_t>(i)];const auto source=m_settings["power_settings"].toObject()[modes[i]].toObject();
@@ -92,12 +93,19 @@ void LightbarTab::reload() {
     else mode.color->setCurrentIndex(0);
     mode.custom->setText("Custom: "+mode.rgb.name());
   }
-  if(m_settings["lid_logo"].isObject()) {
-    const auto logo=m_settings["lid_logo"].toObject();
-    m_logoEnabled->setChecked(logo["enabled"].toBool());
-    m_logoBrightness->setValue(logo["brightness"].toInt(255));
-    const auto rgb=logo["color"].toArray();
-    if(rgb.size()==3) m_logoRgb=QColor(rgb[0].toInt(),rgb[1].toInt(),rgb[2].toInt());
+  if(m_logoCard && m_logoEnabled && m_logoBrightness && m_logoColorButton) {
+    if(m_settings["lid_logo"].isObject()) {
+      const auto logo=m_settings["lid_logo"].toObject();
+      m_logoEnabled->setChecked(logo["enabled"].toBool(false));
+      m_logoBrightness->setValue(qBound(0,logo["brightness"].toInt(255),255));
+      const auto rgb=logo["color"].toArray();
+      if(rgb.size()==3) m_logoRgb=QColor(qBound(0,rgb[0].toInt(255),255),qBound(0,rgb[1].toInt(255),255),qBound(0,rgb[2].toInt(255),255));
+      else m_logoRgb=Qt::white;
+    } else {
+      m_logoEnabled->setChecked(false);
+      m_logoBrightness->setValue(255);
+      m_logoRgb=Qt::white;
+    }
     m_logoColorButton->setText("Color: "+m_logoRgb.name());
   }
   showStatus();
@@ -147,7 +155,7 @@ void LightbarTab::save() {
 void LightbarTab::showStatus() {
   const auto json=m_client->getLightbarStatusJSON();
   const auto status=json ? QJsonDocument::fromJson(QByteArray::fromStdString(*json)).object() : QJsonObject();
-  if(status.isEmpty()) {m_status->setText("Lightbar status unavailable");return;}
+  if(status.isEmpty()) {if(m_logoCard && m_logoEnabled && m_logoBrightness && m_logoColorButton) {m_logoCard->hide();m_logoEnabled->setEnabled(false);m_logoBrightness->setEnabled(false);m_logoColorButton->setEnabled(false);}m_status->setText("Lightbar status unavailable");return;}
   if(m_logoCard) {
     const bool hasLogo=status["hasLidLogo"].toBool();
     m_logoCard->setVisible(hasLogo);

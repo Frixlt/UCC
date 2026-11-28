@@ -516,10 +516,18 @@ impl UwccBackend {
         }
         let raw = u8::try_from(watts)
             .map_err(|_| PlatformError::InvalidArgument("Power limit out of byte range"))?;
+        let prev_raw = self.transport.ec_read(uwcc_ec_reg::CTGP_WATTS).ok();
         self.transport.ec_write(uwcc_ec_reg::CTGP_WATTS, raw)?;
         if (self.info.flags & UWCC_FLAG_HAS_PWBT) != 0 {
-            self.transport
-                .set_gpu_power(UWCC_GPU_POWER_OP_BASE_TGP, u32::from(raw))?;
+            if let Err(err) = self
+                .transport
+                .set_gpu_power(UWCC_GPU_POWER_OP_BASE_TGP, u32::from(raw))
+            {
+                if let Some(prev) = prev_raw {
+                    let _ = self.transport.ec_write(uwcc_ec_reg::CTGP_WATTS, prev);
+                }
+                return Err(err);
+            }
         }
         Ok(())
     }
@@ -831,7 +839,10 @@ impl PlatformBackend for UwccBackend {
     }
 
     fn read_ctgp_limits(&self) -> Option<(i32, i32)> {
-        if self.capabilities.device.ctgp_supported {
+        if self.is_available()
+            && (self.info.flags & UWCC_FLAG_HAS_EC) != 0
+            && self.capabilities.device.ctgp_supported
+        {
             Some((self.smrw_limits.ctgp_min_w, self.smrw_limits.ctgp_max_w))
         } else {
             None
@@ -840,7 +851,16 @@ impl PlatformBackend for UwccBackend {
 
     fn read_ctgp_watts(&self) -> Result<i32, PlatformError> {
         self.require_available()?;
-        Ok(i32::from(self.transport.ec_read(uwcc_ec_reg::CTGP_WATTS)?))
+        if (self.info.flags & UWCC_FLAG_HAS_EC) == 0 {
+            return Err(PlatformError::Unsupported("EC unavailable for cTGP read"));
+        }
+        let raw = self.transport.ec_read(uwcc_ec_reg::CTGP_WATTS)?;
+        if raw == 0 {
+            return Err(PlatformError::SensorUnavailable(
+                "EC cTGP register uninitialized",
+            ));
+        }
+        Ok(i32::from(raw))
     }
 
     fn set_ctgp_watts(&self, watts: i32) -> Result<(), PlatformError> {
@@ -848,7 +868,7 @@ impl PlatformBackend for UwccBackend {
     }
 
     fn charging_profiles_available(&self) -> Vec<String> {
-        if (self.info.flags & UWCC_FLAG_HAS_EC) != 0 {
+        if self.is_available() && (self.info.flags & UWCC_FLAG_HAS_EC) != 0 {
             vec![
                 "high_capacity".to_string(),
                 "balanced".to_string(),
@@ -861,17 +881,32 @@ impl PlatformBackend for UwccBackend {
 
     fn read_charging_profile(&self) -> Result<String, PlatformError> {
         self.require_available()?;
+        if (self.info.flags & UWCC_FLAG_HAS_EC) == 0 {
+            return Err(PlatformError::Unsupported(
+                "EC unavailable for charging profile read",
+            ));
+        }
         let raw = self.transport.ec_read(uwcc_ec_reg::BATTERY_CHARGE_MODE)?;
         let mode = match raw & uwcc_ec_reg::BATTERY_CHARGE_MODE_MASK {
+            uwcc_ec_reg::BATTERY_MODE_HIGH_CAPACITY => "high_capacity",
             uwcc_ec_reg::BATTERY_MODE_BALANCED => "balanced",
             uwcc_ec_reg::BATTERY_MODE_STATIONARY => "stationary",
-            _ => "high_capacity",
+            _ => {
+                return Err(PlatformError::SensorUnavailable(
+                    "Unrecognized EC battery charging mode",
+                ));
+            }
         };
         Ok(mode.to_string())
     }
 
     fn set_charging_profile(&self, profile: &str) -> Result<(), PlatformError> {
         self.require_available()?;
+        if (self.info.flags & UWCC_FLAG_HAS_EC) == 0 {
+            return Err(PlatformError::Unsupported(
+                "EC unavailable for charging profile write",
+            ));
+        }
         let bits = match profile.trim() {
             "high_capacity" => uwcc_ec_reg::BATTERY_MODE_HIGH_CAPACITY,
             "balanced" => uwcc_ec_reg::BATTERY_MODE_BALANCED,
@@ -889,7 +924,7 @@ impl PlatformBackend for UwccBackend {
     }
 
     fn has_lid_logo_ec(&self) -> bool {
-        if (self.info.flags & UWCC_FLAG_HAS_EC) == 0 {
+        if !self.is_available() || (self.info.flags & UWCC_FLAG_HAS_EC) == 0 {
             return false;
         }
         self.transport
@@ -906,14 +941,20 @@ impl PlatformBackend for UwccBackend {
         brightness: u8,
     ) -> Result<(), PlatformError> {
         self.require_available()?;
+        if !self.has_lid_logo_ec() {
+            return Err(PlatformError::Unsupported(
+                "Lid logo EC hardware not present",
+            ));
+        }
+        let prev_ab = self.transport.ec_read(uwcc_ec_reg::LOGO_BRIGHTNESS)?;
+        let preserved_low = (prev_ab & 0x1F) | uwcc_ec_reg::LOGO_EXISTS_BIT;
         if enabled && brightness > 0 {
             let scale = |v: u8| -> u8 { ((u16::from(v) * 50 + 127) / 255) as u8 };
-            let br_code = match brightness {
-                1..=85 => 0x21,
-                86..=170 => 0x41,
-                _ => 0x81,
+            let br_bits = match brightness {
+                1..=85 => 0x20,
+                86..=170 => 0x40,
+                _ => 0x80,
             };
-            self.transport.ec_write(uwcc_ec_reg::LOGO_TRIGGER, 0x00)?;
             let oem5 = self.transport.ec_read(uwcc_ec_reg::OEM_BYTE5)?;
             self.transport.ec_write(
                 uwcc_ec_reg::OEM_BYTE5,
@@ -923,12 +964,12 @@ impl PlatformBackend for UwccBackend {
             self.transport.ec_write(uwcc_ec_reg::LOGO_G, scale(g))?;
             self.transport.ec_write(uwcc_ec_reg::LOGO_B, scale(b))?;
             self.transport
-                .ec_write(uwcc_ec_reg::LOGO_BRIGHTNESS, br_code)?;
+                .ec_write(uwcc_ec_reg::LOGO_BRIGHTNESS, preserved_low | br_bits)?;
             self.transport
                 .ec_write(uwcc_ec_reg::LOGO_COMMIT, uwcc_ec_reg::LOGO_COMMIT_VAL)
         } else {
             self.transport
-                .ec_write(uwcc_ec_reg::LOGO_BRIGHTNESS, uwcc_ec_reg::LOGO_EXISTS_BIT)?;
+                .ec_write(uwcc_ec_reg::LOGO_BRIGHTNESS, preserved_low)?;
             self.transport
                 .ec_write(uwcc_ec_reg::LOGO_COMMIT, uwcc_ec_reg::LOGO_COMMIT_VAL)
         }

@@ -519,6 +519,9 @@ impl LightbarController {
         self.anim_started = None;
         if self.config.managed {
             self.config.managed = false;
+            if self.config.lid_logo.is_some() && self.transport.has_lid_logo().unwrap_or(false) {
+                let _ = self.transport.write_lid_logo(false, RgbColor::BLACK, 0);
+            }
             return self.write_color_result(RgbColor::BLACK);
         }
         Ok(())
@@ -655,6 +658,13 @@ impl LightbarController {
                 self.resolve_color()
             };
             let _ = self.write_color(final_color);
+            if let Some(logo) = self.config.lid_logo {
+                if self.transport.has_lid_logo().unwrap_or(false) {
+                    let _ = self
+                        .transport
+                        .write_lid_logo(logo.enabled, logo.color, logo.brightness);
+                }
+            }
             return;
         }
 
@@ -720,9 +730,6 @@ impl LightbarController {
         } else {
             RgbColor::BLACK
         };
-        // Clear Flash's idle color before restoring brightness.
-        self.write_color_result(idle_color)?;
-        self.write_brightness_result(prof.brightness_val)?;
         if let Some(logo) = self.config.lid_logo {
             if self.transport.has_lid_logo().unwrap_or(false) {
                 if let Err(e) = self
@@ -735,7 +742,9 @@ impl LightbarController {
                 }
             }
         }
-        Ok(())
+        // Clear Flash/PulseOff idle color before restoring front lightbar brightness.
+        self.write_color_result(idle_color)?;
+        self.write_brightness_result(prof.brightness_val)
     }
 
     fn write_color(&mut self, rgb: RgbColor) -> bool {

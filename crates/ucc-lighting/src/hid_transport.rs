@@ -280,7 +280,7 @@ impl UniwillHidTransport {
         ((brightness.min(255) * max_hw + 127) / 255).clamp(1, max_hw) as u8
     }
 
-    /// Invokes the optional EC Lightbar power-rail callback (`0x767`/`0x768`).
+    /// Invokes the optional EC Lightbar power-rail callback (`0x0748`).
     pub fn set_lightbar_ec_power(&self, enabled: bool) -> Result<(), LightingError> {
         if let Some(hook) = &self.ec_lightbar_power_hook {
             hook(enabled)?;
@@ -655,7 +655,7 @@ pub fn create_hidraw_lighting_transport() -> UniwillHidTransport {
 }
 
 /// Creates a direct Linux `/dev/hidraw*` [`UniwillHidTransport`] with an EC Lightbar
-/// power-rail callback (`0x767`/`0x768`).
+/// power-rail callback (`0x0748`).
 pub fn create_hidraw_lighting_transport_with_ec_power(
     hook: EcLightbarPowerHook,
 ) -> UniwillHidTransport {

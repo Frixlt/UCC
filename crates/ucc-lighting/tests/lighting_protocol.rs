@@ -169,9 +169,10 @@ fn p0_11_hid_lightbar_addresses_all_zones_and_caps_600b_brightness_to_50() {
         .filter(|(p, _)| p == "/dev/hidraw1")
         .map(|(_, r)| r)
         .collect();
-    assert!(
-        lb_reports.len() >= 4,
-        "P0-11: write_lightbar_color on 4-zone 048D:7001 must address all 4 zones, sent only {} report(s)",
+    assert_eq!(
+        lb_reports.len(),
+        2,
+        "P0-11: write_lightbar_color on 048D:7001 must write slots 0 and 1, sent {} report(s)",
         lb_reports.len()
     );
 }

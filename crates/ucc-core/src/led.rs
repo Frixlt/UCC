@@ -29,8 +29,9 @@ impl Default for LedSettings {
 }
 
 impl LedSettings {
-    pub const VALID_ANIMATIONS: [&'static str; 5] = [
+    pub const VALID_ANIMATIONS: [&'static str; 6] = [
         "Pulse (stays on)",
+        "Pulse (stays off)",
         "Flash (stays off)",
         "Rainbow",
         "Police Strobe",

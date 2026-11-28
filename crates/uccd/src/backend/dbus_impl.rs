@@ -833,14 +833,36 @@ impl UccdBackend for LiveUccdBackend {
             return false;
         }
         let Some((avail_path, current_path)) = self.charging_profile_paths() else {
-            if self.platform.set_charging_profile(desc).is_ok() {
-                let _ = self.update_settings(|s| {
+            if ucc_config::is_read_only_preview() || self.write_aborted_by_shutdown() {
+                return false;
+            }
+            let avail = self.platform.charging_profiles_available();
+            if !avail.iter().any(|p| p == desc) {
+                return false;
+            }
+            let Ok(prev_hw) = self.platform.read_charging_profile() else {
+                return false;
+            };
+            self.charging_op_seq.fetch_add(1, Ordering::SeqCst);
+            self.charging_write_seq.fetch_add(1, Ordering::SeqCst);
+            let write_ok = self.platform.set_charging_profile(desc).is_ok()
+                && self.platform.read_charging_profile().ok().as_deref() == Some(desc);
+            self.charging_write_seq.fetch_add(1, Ordering::SeqCst);
+            if !write_ok {
+                let _ = self.platform.set_charging_profile(&prev_hw);
+                return false;
+            }
+            if self
+                .update_settings(|s| {
                     s.charging_profile = Some(desc.to_string());
                     Some(())
-                });
-                return true;
+                })
+                .is_none()
+            {
+                let _ = self.platform.set_charging_profile(&prev_hw);
+                return false;
             }
-            return false;
+            return true;
         };
         let avail = self.read_whitespace_tokens(&avail_path);
         if !avail.iter().any(|p| p == desc) {

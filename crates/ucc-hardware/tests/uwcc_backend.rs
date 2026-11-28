@@ -1339,39 +1339,63 @@ fn uwcc_12byte_smrw_rejects_excessive_base_tgp_and_ctgp_over_byte_ceiling() {
 }
 
 #[test]
-fn uwcc_backend_charging_profile_rmw_and_lid_logo_ec_sequence() {
-    let transport = Arc::new(MockUwccTransport::chassis_0x1a_default());
-    transport.set_ec_reg(0x07A6, 0x89);
-    transport.set_ec_reg(0x07AB, 0x01);
-    transport.set_ec_reg(0x07C5, 0x48);
+fn uwcc_backend_charging_profile_rmw_ctgp_and_lid_logo_ec_sequence() {
+    use ucc_hardware::UwccTransport;
 
-    let backend = UwccBackend::new(Arc::clone(&transport) as Arc<dyn UwccTransport>).unwrap();
+    let transport = Arc::new(MockUwccTransport::chassis_0x1a_default());
+    transport.set_reg(0x07A6, 0x89);
+    transport.set_reg(0x07AB, 0x05); // bit0=exists, bit2=preserved
+    transport.set_reg(0x07C5, 0x48);
+
+    let backend = UwccBackend::new(Arc::clone(&transport) as Arc<dyn UwccTransport>, None, None);
+    let platform: &dyn PlatformBackend = &backend;
+
+    // Uninitialized EC 0x0744 == 0 returns SensorUnavailable; valid write reads back cleanly.
+    assert!(platform.read_ctgp_limits().is_some());
+    assert!(platform.read_ctgp_watts().is_err());
+    platform.set_ctgp_watts(150).unwrap();
+    assert_eq!(platform.read_ctgp_watts().unwrap(), 150);
+
+    // Charging profile RMW preserves unrelated bits (0x81) and round-trips all 3 modes.
     assert_eq!(
-        backend.charging_profiles_available(),
+        platform.charging_profiles_available(),
         vec!["high_capacity", "balanced", "stationary"]
     );
-    assert_eq!(backend.read_charging_profile().unwrap(), "high_capacity");
+    assert_eq!(platform.read_charging_profile().unwrap(), "high_capacity");
 
-    backend.set_charging_profile("balanced").unwrap();
-    assert_eq!(transport.ec_read(0x07A6).unwrap(), 0x99);
-    assert_eq!(backend.read_charging_profile().unwrap(), "balanced");
+    platform.set_charging_profile("balanced").unwrap();
+    assert_eq!(transport.get_reg(0x07A6), 0x99);
+    assert_eq!(platform.read_charging_profile().unwrap(), "balanced");
 
-    backend.set_charging_profile("stationary").unwrap();
-    assert_eq!(transport.ec_read(0x07A6).unwrap(), 0xA9);
-    assert_eq!(backend.read_charging_profile().unwrap(), "stationary");
-    assert!(backend.set_charging_profile("invalid_mode").is_err());
+    platform.set_charging_profile("stationary").unwrap();
+    assert_eq!(transport.get_reg(0x07A6), 0xA9);
+    assert_eq!(platform.read_charging_profile().unwrap(), "stationary");
 
-    assert!(backend.has_lid_logo_ec());
-    backend.set_lid_logo_ec(true, 0, 255, 128, 255).unwrap();
-    assert_eq!(transport.ec_read(0x0767).unwrap(), 0x00);
-    assert_eq!(transport.ec_read(0x07C5).unwrap(), 0x68);
-    assert_eq!(transport.ec_read(0x0769).unwrap(), 0);
-    assert_eq!(transport.ec_read(0x076A).unwrap(), 50);
-    assert_eq!(transport.ec_read(0x076B).unwrap(), 25);
-    assert_eq!(transport.ec_read(0x07AB).unwrap(), 0x81);
-    assert_eq!(transport.ec_read(0x078C).unwrap(), 0x10);
+    platform.set_charging_profile("high_capacity").unwrap();
+    assert_eq!(transport.get_reg(0x07A6), 0x89);
+    assert!(platform.set_charging_profile("invalid_mode").is_err());
 
-    backend.set_lid_logo_ec(false, 0, 0, 0, 0).unwrap();
-    assert_eq!(transport.ec_read(0x07AB).unwrap(), 0x01);
-    assert_eq!(transport.ec_read(0x078C).unwrap(), 0x10);
+    // Lid logo EC sequence preserves low bits in 0x07AB, skips 0x0767 clobber, and commits 0x078C.
+    assert!(platform.has_lid_logo_ec());
+    platform.set_lid_logo_ec(true, 0, 255, 128, 80).unwrap();
+    assert_eq!(transport.get_reg(0x07AB), 0x25);
+    platform.set_lid_logo_ec(true, 0, 255, 128, 128).unwrap();
+    assert_eq!(transport.get_reg(0x07AB), 0x45);
+    platform.set_lid_logo_ec(true, 0, 255, 128, 255).unwrap();
+    assert_eq!(transport.get_reg(0x07C5), 0x68);
+    assert_eq!(transport.get_reg(0x0769), 0);
+    assert_eq!(transport.get_reg(0x076A), 50);
+    assert_eq!(transport.get_reg(0x076B), 25);
+    assert_eq!(transport.get_reg(0x07AB), 0x85);
+    assert_eq!(transport.get_reg(0x078C), 0x10);
+
+    platform.set_lid_logo_ec(false, 0, 0, 0, 0).unwrap();
+    assert_eq!(transport.get_reg(0x07AB), 0x05);
+    assert_eq!(transport.get_reg(0x078C), 0x10);
+
+    // Hardware without LOGO_EXISTS_BIT rejects set_lid_logo_ec without forging bit 0.
+    transport.set_reg(0x07AB, 0x00);
+    assert!(!platform.has_lid_logo_ec());
+    assert!(platform.set_lid_logo_ec(true, 255, 0, 0, 255).is_err());
+    assert_eq!(transport.get_reg(0x07AB), 0x00);
 }

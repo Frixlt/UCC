@@ -1516,7 +1516,6 @@ impl LiveUccdBackend {
 
         if profile.display.use_brightness && self.discover_backlight_device().is_some() {
             if !self.set_display_brightness_internal(profile.display.brightness) {
-                warn!(profile_id = %profile.id, brightness = profile.display.brightness, "Profile apply failed: display brightness write failed");
                 if self.shutting_down.load(Ordering::SeqCst) {
                     return self.abort_apply_on_shutdown(
                         prev_brightness,
@@ -1530,6 +1529,11 @@ impl LiveUccdBackend {
                         cpu_res.rollback,
                     );
                 }
+                warn!(
+                    profile_id = %profile.id,
+                    brightness = profile.display.brightness,
+                    "Profile apply failed: display brightness write failed"
+                );
                 let _ = self.rollback_hardware(
                     hw_odm_prev,
                     wrote_odm,
@@ -1557,7 +1561,6 @@ impl LiveUccdBackend {
         }
         if profile.webcam.use_status && self.webcam_sw_available_impl() {
             if !self.set_webcam_internal(profile.webcam.status) {
-                warn!(profile_id = %profile.id, status = profile.webcam.status, "Profile apply failed: webcam switch write failed");
                 if self.shutting_down.load(Ordering::SeqCst) {
                     return self.abort_apply_on_shutdown(
                         prev_brightness,
@@ -1571,6 +1574,11 @@ impl LiveUccdBackend {
                         cpu_res.rollback,
                     );
                 }
+                warn!(
+                    profile_id = %profile.id,
+                    status = profile.webcam.status,
+                    "Profile apply failed: webcam switch write failed"
+                );
                 self.restore_device_writes(
                     prev_brightness,
                     wrote_brightness,
@@ -1591,26 +1599,45 @@ impl LiveUccdBackend {
             wrote_webcam = true;
         }
 
-        let charging_rb = match self
-            .apply_charging_settings_checked(&committed_profile, Some(start_epoch))
-        {
-            Ok(rb) => rb,
-            Err(()) => {
-                warn!(profile_id = %profile.id, "Profile apply failed: charging settings write failed");
-                if self.shutting_down.load(Ordering::SeqCst) {
-                    return self.abort_apply_on_shutdown(
-                        prev_brightness,
-                        wrote_brightness,
-                        prev_webcam,
-                        wrote_webcam,
-                        hw_odm_prev,
-                        wrote_odm,
-                        &prev_tdps,
-                        tdps_written,
-                        cpu_res.rollback,
+        let charging_rb =
+            match self.apply_charging_settings_checked(&committed_profile, Some(start_epoch)) {
+                Ok(rb) => rb,
+                Err(()) => {
+                    if self.shutting_down.load(Ordering::SeqCst) {
+                        return self.abort_apply_on_shutdown(
+                            prev_brightness,
+                            wrote_brightness,
+                            prev_webcam,
+                            wrote_webcam,
+                            hw_odm_prev,
+                            wrote_odm,
+                            &prev_tdps,
+                            tdps_written,
+                            cpu_res.rollback,
+                        );
+                    }
+                    if self.profile_commit_epoch.load(Ordering::SeqCst) != start_epoch {
+                        self.restore_device_writes(
+                            prev_brightness,
+                            wrote_brightness,
+                            prev_webcam,
+                            wrote_webcam,
+                            Some(start_epoch),
+                        );
+                        return self.reconcile_to_latest_committed(SupersededUndo {
+                            hw_odm_prev,
+                            wrote_odm,
+                            prev_tdps: &prev_tdps,
+                            tdps_written,
+                            cpu_rollback: cpu_res.rollback,
+                            charging_rb: None,
+                            ..Default::default()
+                        });
+                    }
+                    warn!(
+                        profile_id = %profile.id,
+                        "Profile apply failed: charging settings write failed"
                     );
-                }
-                if self.profile_commit_epoch.load(Ordering::SeqCst) != start_epoch {
                     self.restore_device_writes(
                         prev_brightness,
                         wrote_brightness,
@@ -1618,34 +1645,17 @@ impl LiveUccdBackend {
                         wrote_webcam,
                         Some(start_epoch),
                     );
-                    return self.reconcile_to_latest_committed(SupersededUndo {
+                    let _ = self.rollback_hardware(
                         hw_odm_prev,
                         wrote_odm,
-                        prev_tdps: &prev_tdps,
+                        &prev_tdps,
                         tdps_written,
-                        cpu_rollback: cpu_res.rollback,
-                        charging_rb: None,
-                        ..Default::default()
-                    });
+                        cpu_res.rollback,
+                        Some(start_epoch),
+                    );
+                    return ApplyOutcome::Failed;
                 }
-                self.restore_device_writes(
-                    prev_brightness,
-                    wrote_brightness,
-                    prev_webcam,
-                    wrote_webcam,
-                    Some(start_epoch),
-                );
-                let _ = self.rollback_hardware(
-                    hw_odm_prev,
-                    wrote_odm,
-                    &prev_tdps,
-                    tdps_written,
-                    cpu_res.rollback,
-                    Some(start_epoch),
-                );
-                return ApplyOutcome::Failed;
-            }
-        };
+            };
         let post_phase2_charging_seq = self.charging_write_seq.load(Ordering::SeqCst);
         let prev_ctgp = committed_profile
             .nvidia_ctgp_offset
@@ -1697,10 +1707,14 @@ impl LiveUccdBackend {
                 && self.has_ctgp_controller()
             {
                 let Some(base) = prev_ctgp else {
-                    warn!(profile_id = %profile.id, offset, "Profile apply failed: cTGP baseline unavailable");
                     if !self.shutting_down.load(Ordering::SeqCst)
                         && self.profile_commit_epoch.load(Ordering::SeqCst) == start_epoch
                     {
+                        warn!(
+                            profile_id = %profile.id,
+                            offset,
+                            "Profile apply failed: cTGP baseline unavailable"
+                        );
                         let _ = self.restore_charging_rollback(&charging_rb, Some(start_epoch));
                         self.restore_device_writes(
                             prev_brightness,
@@ -1724,7 +1738,11 @@ impl LiveUccdBackend {
                 if self.set_nvidia_power_offset_internal(offset) {
                     wrote_ctgp = true;
                 } else {
-                    warn!(profile_id = %profile.id, offset, "Profile apply failed: cTGP offset write failed");
+                    warn!(
+                        profile_id = %profile.id,
+                        offset,
+                        "Profile apply failed: cTGP offset write failed"
+                    );
                     let _ = self.restore_ctgp_baseline(prev_ctgp, Some(start_epoch));
                     let _ = self.restore_charging_rollback(&charging_rb, Some(start_epoch));
                     self.restore_device_writes(
