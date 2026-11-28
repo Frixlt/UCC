@@ -5,7 +5,7 @@ permissions:
 
 on:
   push:
-    branches: [main]
+    branches: [main, rust/migration, 'feat/**', 'fix/**']
   pull_request:
   workflow_dispatch:
 
@@ -14,6 +14,43 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  uwcc-kernel-uapi:
+    name: uwcc-rs UAPI ABI, no_std tests & packaging
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@v1
+        with:
+          toolchain: "1.89.0"
+      - name: Verify C11 UAPI ABI layout and ioctl definitions
+        run: |
+          gcc -std=gnu11 -Wall -Wextra -Werror -pedantic -x c - -o /tmp/uwcc_uapi_abi << 'EOF'
+          #include <stddef.h>
+          #include <stdint.h>
+          #include <sys/ioctl.h>
+          #include "kernel/uwcc-rs/include/uapi/uwcc.h"
+          _Static_assert(sizeof(struct uwcc_ec_reg) == 4, "uwcc_ec_reg");
+          _Static_assert(sizeof(struct uwcc_smrw) == 68, "uwcc_smrw");
+          _Static_assert(sizeof(struct uwcc_pwup) == 8, "uwcc_pwup");
+          _Static_assert(sizeof(struct uwcc_info) == 16, "uwcc_info");
+          _Static_assert(sizeof(struct uwcc_wmi_event) == 16, "uwcc_wmi_event");
+          _Static_assert(sizeof(struct uwcc_gpu_power) == 8, "uwcc_gpu_power");
+          _Static_assert(sizeof(struct uwcc_mux_state) == 8, "uwcc_mux_state");
+          int main(void) { return 0; }
+          EOF
+          /tmp/uwcc_uapi_abi
+      - name: Run kernel no_std Rust unit tests (ring_buffer & validation)
+        run: |
+          rustc --edition 2021 --test kernel/uwcc-rs/src/ring_buffer.rs -o /tmp/uwcc_ring_buffer_test
+          /tmp/uwcc_ring_buffer_test
+          rustc --edition 2021 --test kernel/uwcc-rs/src/validation.rs -o /tmp/uwcc_validation_test
+          /tmp/uwcc_validation_test
+      - name: Verify Arch PKGBUILD & DKMS syntax
+        run: |
+          bash -n kernel/uwcc-rs/packaging/arch/PKGBUILD
+          bash -n kernel/uwcc-rs/dkms.conf
+
   rust:
     name: rust clippy & tests (${{ matrix.rust }})
     runs-on: ubuntu-24.04
