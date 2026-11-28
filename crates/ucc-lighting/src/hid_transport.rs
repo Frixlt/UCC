@@ -517,6 +517,11 @@ impl LightingTransport for UniwillHidTransport {
             self.set_lightbar_ec_power(true)?;
             let packet = [0x08, 0x02, 0x01, 0x05, level, 0x01, 0x00, 0x00];
             self.hid.send_feature_report(&dev.path, &packet)?;
+            if dev.product_id == ITE_LIGHTBAR_PRODUCT_ID_4ZONE {
+                let lb_level = (((brightness.min(255) * 100) + 127) / 255).clamp(1, 100) as u8;
+                let br_packet = [0x09, 0x02, lb_level, 0x00, 0x00, 0x00, 0x00, 0x00];
+                self.hid.send_feature_report(&dev.path, &br_packet)?;
+            }
         } else {
             let packet = [0x08, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00];
             self.hid.send_feature_report(&dev.path, &packet)?;

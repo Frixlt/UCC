@@ -155,6 +155,21 @@ pub trait PlatformBackend: Send + Sync {
         Err(PlatformError::Unsupported("PWUP unsupported"))
     }
 
+    /// Returns `(min_w, max_w)` GPU cTGP wattage limits when supported directly by the platform backend.
+    fn read_ctgp_limits(&self) -> Option<(i32, i32)> {
+        None
+    }
+
+    /// Reads the current GPU cTGP wattage from EC/platform registers when supported.
+    fn read_ctgp_watts(&self) -> Result<i32, PlatformError> {
+        Err(PlatformError::Unsupported("cTGP wattage read unsupported"))
+    }
+
+    /// Sets the GPU cTGP wattage via EC/platform registers when supported.
+    fn set_ctgp_watts(&self, _watts: i32) -> Result<(), PlatformError> {
+        Err(PlatformError::Unsupported("cTGP wattage write unsupported"))
+    }
+
     /// Controls EC lightbar / chassis LED power rail (`0x767`/`0x768`) when supported.
     fn set_lightbar_power(&self, _enabled: bool) -> Result<(), PlatformError> {
         Err(PlatformError::Unsupported(

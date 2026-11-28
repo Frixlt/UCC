@@ -78,3 +78,8 @@ compile_commands.json
 .pytest_cache/
 *.profraw
 *.profdata
+
+# makepkg build artifacts
+/pkg/
+/src/
+/*.pkg.tar.*

@@ -812,6 +812,23 @@ impl PlatformBackend for UwccBackend {
         self.transport.pwup(enable, level)
     }
 
+    fn read_ctgp_limits(&self) -> Option<(i32, i32)> {
+        if self.capabilities.device.ctgp_supported {
+            Some((self.smrw_limits.ctgp_min_w, self.smrw_limits.ctgp_max_w))
+        } else {
+            None
+        }
+    }
+
+    fn read_ctgp_watts(&self) -> Result<i32, PlatformError> {
+        self.require_available()?;
+        Ok(i32::from(self.transport.ec_read(uwcc_ec_reg::CTGP_WATTS)?))
+    }
+
+    fn set_ctgp_watts(&self, watts: i32) -> Result<(), PlatformError> {
+        self.set_ctgp(watts)
+    }
+
     fn set_lightbar_power(&self, enabled: bool) -> Result<(), PlatformError> {
         self.require_available()?;
         let prev = self.transport.ec_read(uwcc_ec_reg::LIGHTBAR_AC_CTRL)?;

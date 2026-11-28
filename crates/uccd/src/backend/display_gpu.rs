@@ -1759,7 +1759,7 @@ impl LiveUccdBackend {
         if !self.capabilities.device.ctgp_supported {
             return false;
         }
-        if self.nvidia_ctgp_sysfs_path().is_some() {
+        if self.nvidia_ctgp_sysfs_path().is_some() || self.platform.read_ctgp_limits().is_some() {
             return true;
         }
         if self.nvml.is_some() {
@@ -1786,6 +1786,31 @@ impl LiveUccdBackend {
         {
             return false;
         }
+        if self.nvidia_ctgp_sysfs_path().is_none() {
+            if let Some((min_w, max_w)) = self.platform.read_ctgp_limits() {
+                if !(0..=1000).contains(&offset) || self.write_aborted_by_shutdown() {
+                    return false;
+                }
+                let target_w = min_w.saturating_add(offset).clamp(min_w, max_w);
+                self.ctgp_write_seq.fetch_add(1, Ordering::SeqCst);
+                let res = self.platform.set_ctgp_watts(target_w);
+                self.ctgp_write_seq.fetch_add(1, Ordering::SeqCst);
+                if res.is_ok() {
+                    *self.lock_mutex(&self.nvidia_power_offset) = Some(offset);
+                    return true;
+                }
+                tracing::warn!(
+                    offset,
+                    target_w,
+                    min_w,
+                    max_w,
+                    error = ?res.err(),
+                    "Platform cTGP write failed"
+                );
+                return false;
+            }
+        }
+
         if let Some(ref nvml) = self.nvml {
             let dgpu = self
                 .read_rw(&self.latest_telemetry)
@@ -1901,6 +1926,15 @@ impl LiveUccdBackend {
                 .read(&ctgp_path)
                 .ok()
                 .and_then(|raw| raw.trim().parse::<i32>().ok());
+        }
+        if let Some((min_w, max_w)) = self.platform.read_ctgp_limits() {
+            if let Ok(cur_w) = self.platform.read_ctgp_watts() {
+                return Some((cur_w - min_w).clamp(0, max_w - min_w));
+            }
+            if let Some(val) = *self.lock_mutex(&self.nvidia_power_offset) {
+                return Some(val);
+            }
+            return Some(0);
         }
         if let Some(ref nvml) = self.nvml {
             let dgpu_bdf = self
