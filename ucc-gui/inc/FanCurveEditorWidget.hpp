@@ -48,10 +48,12 @@ private:
     bool m_editable = true;
     QString m_title;
 
-    // Live crosshair state
+    // Live crosshair & smoothed trajectory trail state
     bool m_crosshairVisible = false;
     double m_crosshairTemp = 0.0;
     double m_crosshairDuty = 0.0;
+    QVector<Point> m_crosshairTrail;
+    static constexpr int kMaxTrailPoints = 14;
 
     // Multi-select state
     QSet<int> m_selectedIndices;
@@ -66,6 +68,7 @@ private:
 
     QRectF pointRect(const Point &pt) const;
     double minimumTemperature() const;
+    double dutyAtTemperature(double temp) const;
     void resetInteraction();
     void dragTo(const QPointF& position);
     QPointF toWidget(const Point &pt) const;

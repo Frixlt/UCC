@@ -53,17 +53,47 @@ double FanCurveEditorWidget::minimumTemperature() const {
     return m_points.isEmpty() ? 20.0 : std::min(20.0, std::floor(m_points.first().temp / 5.0) * 5.0);
 }
 
+double FanCurveEditorWidget::dutyAtTemperature(double temp) const
+{
+    if (m_points.isEmpty())
+        return 0.0;
+    if (temp <= m_points.first().temp)
+        return m_points.first().duty;
+    if (temp >= m_points.last().temp)
+        return m_points.last().duty;
+    for (int i = 1; i < m_points.size(); ++i) {
+        const Point &a = m_points[i - 1];
+        const Point &b = m_points[i];
+        if (temp <= b.temp) {
+            const double span = b.temp - a.temp;
+            if (span <= 1e-6)
+                return b.duty;
+            const double frac = (temp - a.temp) / span;
+            return std::clamp(a.duty + frac * (b.duty - a.duty), 0.0, 100.0);
+        }
+    }
+    return m_points.last().duty;
+}
+
 void FanCurveEditorWidget::setCrosshair( double temp, double duty )
 {
     m_crosshairVisible = true;
     m_crosshairTemp = temp;
     m_crosshairDuty = duty;
+    if (m_crosshairTrail.isEmpty() ||
+        std::abs(m_crosshairTrail.last().temp - temp) >= 0.25 ||
+        std::abs(m_crosshairTrail.last().duty - duty) >= 0.25) {
+        m_crosshairTrail.append(Point{ temp, duty });
+        while (m_crosshairTrail.size() > kMaxTrailPoints)
+            m_crosshairTrail.removeFirst();
+    }
     update();
 }
 
 void FanCurveEditorWidget::clearCrosshair()
 {
     m_crosshairVisible = false;
+    m_crosshairTrail.clear();
     update();
 }
 
@@ -262,6 +292,23 @@ void FanCurveEditorWidget::paintEvent(QPaintEvent*) {
         cp.setX(std::clamp(cp.x(), (double)plotRect.left(), (double)plotRect.right()));
         cp.setY(std::clamp(cp.y(), (double)plotRect.top(), (double)plotRect.bottom()));
 
+        // Draw fading recent EWMA trajectory trail
+        if (m_crosshairTrail.size() >= 2) {
+            const int n = static_cast<int>(m_crosshairTrail.size());
+            for (int i = 1; i < n; ++i) {
+                QPointF p0 = toWidget(m_crosshairTrail[i - 1]);
+                QPointF p1 = toWidget(m_crosshairTrail[i]);
+                p0.setX(std::clamp(p0.x(), static_cast<double>(plotRect.left()), static_cast<double>(plotRect.right())));
+                p0.setY(std::clamp(p0.y(), static_cast<double>(plotRect.top()), static_cast<double>(plotRect.bottom())));
+                p1.setX(std::clamp(p1.x(), static_cast<double>(plotRect.left()), static_cast<double>(plotRect.right())));
+                p1.setY(std::clamp(p1.y(), static_cast<double>(plotRect.top()), static_cast<double>(plotRect.bottom())));
+                QColor segColor = accentColor;
+                segColor.setAlpha(static_cast<int>(35 + (145 * i) / std::max(1, n - 1)));
+                p.setPen(QPen(segColor, 2.0, Qt::SolidLine, Qt::RoundCap));
+                p.drawLine(p0, p1);
+            }
+        }
+
         // Dashed crosshair lines
         QPen crossPen(accentColor, 1.5, Qt::DashLine);
         p.setPen(crossPen);
@@ -270,10 +317,45 @@ void FanCurveEditorWidget::paintEvent(QPaintEvent*) {
         // Horizontal line (duty)
         p.drawLine(QPointF(plotRect.left(), cp.y()), QPointF(plotRect.right(), cp.y()));
 
+        // Target prediction marker on the configured curve at current temperature
+        const double targetDuty = dutyAtTemperature(m_crosshairTemp);
+        QPointF tp = toWidget(Point{ m_crosshairTemp, targetDuty });
+        tp.setX(std::clamp(tp.x(), static_cast<double>(plotRect.left()), static_cast<double>(plotRect.right())));
+        tp.setY(std::clamp(tp.y(), static_cast<double>(plotRect.top()), static_cast<double>(plotRect.bottom())));
+        const double deltaDuty = targetDuty - m_crosshairDuty;
+        if (std::abs(deltaDuty) >= 1.0) {
+            QColor bridgeColor = curveColor;
+            bridgeColor.setAlpha(180);
+            p.setPen(QPen(bridgeColor, 2.0, Qt::SolidLine));
+            p.drawLine(cp, tp);
+            p.setBrush(bgColor);
+            p.setPen(QPen(curveColor, 2.0));
+            p.drawEllipse(tp, 5.5, 5.5);
+        }
+
         // Draw crosshair dot
         p.setBrush(accentColor);
         p.setPen(QPen(brightText, 1.5));
         p.drawEllipse(cp, 5.0, 5.0);
+
+        // Compact live target readout in top-right header bar (never collides with left title)
+        QFont readoutFont = font();
+        readoutFont.setPointSize(8);
+        readoutFont.setWeight(QFont::DemiBold);
+        p.setFont(readoutFont);
+        const QString readout = std::abs(deltaDuty) >= 1.0
+            ? QString("%1%2C · %3% → Target %4%")
+                  .arg(qRound(m_crosshairTemp))
+                  .arg(QChar(0x00B0))
+                  .arg(qRound(m_crosshairDuty))
+                  .arg(qRound(targetDuty))
+            : QString("%1%2C · %3% (on curve)")
+                  .arg(qRound(m_crosshairTemp))
+                  .arg(QChar(0x00B0))
+                  .arg(qRound(m_crosshairDuty));
+        p.setPen(accentColor);
+        QRectF readoutRect(left, 2, width() - left - right, top - 4);
+        p.drawText(readoutRect, Qt::AlignRight | Qt::AlignVCenter, readout);
 
         // Draw labels
         QFont labelFont = font();
