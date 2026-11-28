@@ -2,6 +2,9 @@
 
 use crate::auth::{AuthAction, Authorizer, PolkitAuthorizer};
 use crate::backend::{DefaultUccdBackend, UccdBackend};
+use crate::ipc::{
+    is_valid_pump_voltage_code, profile_requires_manage_hardware, FORBIDDEN_PUMP_VOLTAGE_CODE,
+};
 use std::collections::HashMap;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
@@ -44,6 +47,7 @@ pub(crate) struct OffloadLanes {
     cooler: Arc<Semaphore>,
     display: Arc<Semaphore>,
     misc: Arc<Semaphore>,
+    pool: Arc<OffloadWorkerPool>,
 }
 
 impl OffloadLanes {
@@ -57,6 +61,7 @@ impl OffloadLanes {
             cooler: Arc::new(Semaphore::new(4)),
             display: Arc::new(Semaphore::new(4)),
             misc: Arc::new(Semaphore::new(8)),
+            pool: OffloadWorkerPool::new(),
         }
     }
 
@@ -115,58 +120,6 @@ fn payload_within_limit(method: &str, payload: &str) -> bool {
     false
 }
 
-fn has_active_charging_value(v: &serde_json::Value) -> bool {
-    match v {
-        serde_json::Value::Null => false,
-        serde_json::Value::String(s) => !s.trim().is_empty(),
-        serde_json::Value::Number(n) => n.as_i64() != Some(-1),
-        _ => true,
-    }
-}
-
-fn profile_requires_manage_hardware(profile_json: &str) -> bool {
-    let Ok(val) = serde_json::from_str::<serde_json::Value>(profile_json) else {
-        return false;
-    };
-    let has_custom_tdp = match val.get("odmPowerLimits") {
-        Some(serde_json::Value::Array(arr)) => !arr.is_empty(),
-        Some(serde_json::Value::Object(obj)) => obj
-            .get("tdpValues")
-            .and_then(|v| v.as_array())
-            .is_some_and(|arr| !arr.is_empty()),
-        _ => false,
-    };
-    let disables_fan_control = val
-        .get("fan")
-        .and_then(|f| f.get("useControl"))
-        .and_then(|v| v.as_bool())
-        == Some(false);
-    let has_top_charging = [
-        "chargingProfile",
-        "chargingPriority",
-        "chargeStartThreshold",
-        "chargeEndThreshold",
-        "chargeType",
-    ]
-    .iter()
-    .any(|k| val.get(*k).is_some_and(has_active_charging_value));
-    let has_nested_charging = val
-        .get("charging")
-        .and_then(|c| c.as_object())
-        .is_some_and(|obj| {
-            [
-                "chargingProfile",
-                "chargingPriority",
-                "startThreshold",
-                "endThreshold",
-                "chargeType",
-            ]
-            .iter()
-            .any(|k| obj.get(*k).is_some_and(has_active_charging_value))
-        });
-    has_custom_tdp || disables_fan_control || has_top_charging || has_nested_charging
-}
-
 async fn sender_is_alive(conn: &zbus::Connection, sender: &str) -> bool {
     if !sender.starts_with(':') {
         return true;
@@ -178,6 +131,99 @@ async fn sender_is_alive(conn: &zbus::Connection, sender: &str) -> bool {
         return false;
     };
     proxy.name_has_owner(unique).await.unwrap_or(false)
+}
+
+const MAX_OFFLOAD_WORKERS: usize = 48;
+const OFFLOAD_WORKER_IDLE_TIMEOUT: Duration = Duration::from_secs(5);
+
+struct OffloadPoolState {
+    queue: std::collections::VecDeque<Box<dyn FnOnce() + Send + 'static>>,
+    idle_workers: usize,
+    total_workers: usize,
+}
+
+struct OffloadWorkerPool {
+    state: std::sync::Mutex<OffloadPoolState>,
+    cvar: std::sync::Condvar,
+}
+
+impl OffloadWorkerPool {
+    fn new() -> Arc<Self> {
+        Arc::new(Self {
+            state: std::sync::Mutex::new(OffloadPoolState {
+                queue: std::collections::VecDeque::new(),
+                idle_workers: 0,
+                total_workers: 0,
+            }),
+            cvar: std::sync::Condvar::new(),
+        })
+    }
+
+    fn execute(self: &Arc<Self>, job: Box<dyn FnOnce() + Send + 'static>) -> std::io::Result<()> {
+        let mut st = self.state.lock().unwrap_or_else(|e| e.into_inner());
+        st.queue.push_back(job);
+        if st.idle_workers >= st.queue.len() {
+            self.cvar.notify_one();
+            return Ok(());
+        }
+        if st.total_workers < MAX_OFFLOAD_WORKERS {
+            st.total_workers += 1;
+            drop(st);
+            let pool = Arc::clone(self);
+            if let Err(err) = std::thread::Builder::new()
+                .name("uccd-dbus-io".to_string())
+                .spawn(move || pool.worker_loop())
+            {
+                let mut st = self.state.lock().unwrap_or_else(|e| e.into_inner());
+                st.total_workers = st.total_workers.saturating_sub(1);
+                if st.total_workers == 0 {
+                    st.queue.clear();
+                    return Err(err);
+                }
+                self.cvar.notify_one();
+            }
+            return Ok(());
+        }
+        self.cvar.notify_one();
+        Ok(())
+    }
+
+    fn worker_loop(self: Arc<Self>) {
+        struct WorkerGuard {
+            pool: Arc<OffloadWorkerPool>,
+        }
+        impl Drop for WorkerGuard {
+            fn drop(&mut self) {
+                let mut st = self.pool.state.lock().unwrap_or_else(|e| e.into_inner());
+                st.total_workers = st.total_workers.saturating_sub(1);
+                if st.total_workers == 0 {
+                    st.queue.clear();
+                }
+            }
+        }
+        let _guard = WorkerGuard {
+            pool: Arc::clone(&self),
+        };
+        let mut st = self.state.lock().unwrap_or_else(|e| e.into_inner());
+        loop {
+            if let Some(job) = st.queue.pop_front() {
+                drop(st);
+                job();
+                st = self.state.lock().unwrap_or_else(|e| e.into_inner());
+            } else {
+                st.idle_workers += 1;
+                let (guard, timeout_res) = self
+                    .cvar
+                    .wait_timeout(st, OFFLOAD_WORKER_IDLE_TIMEOUT)
+                    .unwrap_or_else(|e| e.into_inner());
+                st = guard;
+                st.idle_workers = st.idle_workers.saturating_sub(1);
+                if timeout_res.timed_out() && st.queue.is_empty() {
+                    break;
+                }
+            }
+        }
+    }
 }
 
 fn format_panic_payload(payload: Box<dyn std::any::Any + Send>) -> String {
@@ -211,27 +257,25 @@ where
     };
     let backend = Arc::clone(backend);
     let (tx, rx) = tokio::sync::oneshot::channel::<Result<R, String>>();
-    match std::thread::Builder::new()
-        .name("uccd-dbus-io".to_string())
-        .spawn(move || {
-            let _permit = permit;
-            let outcome = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| f(&backend)))
-                .map_err(format_panic_payload);
-            let _ = tx.send(outcome);
-        }) {
-        Ok(_) => match rx.await {
+    match lanes.pool.execute(Box::new(move || {
+        let _permit = permit;
+        let outcome = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| f(&backend)))
+            .map_err(format_panic_payload);
+        let _ = tx.send(outcome);
+    })) {
+        Ok(()) => match rx.await {
             Ok(Ok(val)) => val,
             Ok(Err(panic_msg)) => {
-                tracing::error!("{label} offload thread panicked: {panic_msg}");
+                tracing::error!("{label} offload worker panicked: {panic_msg}");
                 fallback
             }
             Err(_) => {
-                tracing::error!("{label} offload thread closed channel unexpectedly");
+                tracing::error!("{label} offload worker closed channel unexpectedly");
                 fallback
             }
         },
         Err(err) => {
-            tracing::error!("Failed to spawn {label} offload thread: {err}");
+            tracing::error!("Failed to dispatch {label} offload job: {err}");
             fallback
         }
     }
@@ -258,33 +302,31 @@ where
     };
     let backend = Arc::clone(backend);
     let (tx, rx) = tokio::sync::oneshot::channel::<Result<(), String>>();
-    match std::thread::Builder::new()
-        .name("uccd-dbus-io".to_string())
-        .spawn(move || {
-            let _permit = permit;
-            let outcome = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| f(&backend)))
-                .map_err(format_panic_payload);
-            let _ = tx.send(outcome);
-        }) {
-        Ok(_) => match rx.await {
+    match lanes.pool.execute(Box::new(move || {
+        let _permit = permit;
+        let outcome = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| f(&backend)))
+            .map_err(format_panic_payload);
+        let _ = tx.send(outcome);
+    })) {
+        Ok(()) => match rx.await {
             Ok(Ok(())) => Ok(()),
             Ok(Err(panic_msg)) => {
-                tracing::error!("{label} offload thread panicked: {panic_msg}");
+                tracing::error!("{label} offload worker panicked: {panic_msg}");
                 Err(zbus::fdo::Error::Failed(format!(
-                    "{label} offload thread panicked: {panic_msg}"
+                    "{label} offload worker panicked: {panic_msg}"
                 )))
             }
             Err(_) => {
-                tracing::error!("{label} offload thread closed channel unexpectedly");
+                tracing::error!("{label} offload worker closed channel unexpectedly");
                 Err(zbus::fdo::Error::Failed(format!(
-                    "{label} offload thread terminated unexpectedly"
+                    "{label} offload worker terminated unexpectedly"
                 )))
             }
         },
         Err(err) => {
-            tracing::error!("Failed to spawn {label} offload thread: {err}");
+            tracing::error!("Failed to dispatch {label} offload job: {err}");
             Err(zbus::fdo::Error::Failed(format!(
-                "Failed to spawn {label} offload thread: {err}"
+                "Failed to dispatch {label} offload job: {err}"
             )))
         }
     }
@@ -311,34 +353,32 @@ where
     };
     let backend = Arc::clone(backend);
     let (tx, rx) = tokio::sync::oneshot::channel::<Result<Result<(), String>, String>>();
-    match std::thread::Builder::new()
-        .name("uccd-dbus-io".to_string())
-        .spawn(move || {
-            let _permit = permit;
-            let outcome = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| f(&backend)))
-                .map_err(format_panic_payload);
-            let _ = tx.send(outcome);
-        }) {
-        Ok(_) => match rx.await {
+    match lanes.pool.execute(Box::new(move || {
+        let _permit = permit;
+        let outcome = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| f(&backend)))
+            .map_err(format_panic_payload);
+        let _ = tx.send(outcome);
+    })) {
+        Ok(()) => match rx.await {
             Ok(Ok(Ok(()))) => Ok(()),
             Ok(Ok(Err(msg))) => Err(zbus::fdo::Error::Failed(msg)),
             Ok(Err(panic_msg)) => {
-                tracing::error!("{label} offload thread panicked: {panic_msg}");
+                tracing::error!("{label} offload worker panicked: {panic_msg}");
                 Err(zbus::fdo::Error::Failed(format!(
-                    "{label} offload thread panicked: {panic_msg}"
+                    "{label} offload worker panicked: {panic_msg}"
                 )))
             }
             Err(_) => {
-                tracing::error!("{label} offload thread closed channel unexpectedly");
+                tracing::error!("{label} offload worker closed channel unexpectedly");
                 Err(zbus::fdo::Error::Failed(format!(
-                    "{label} offload thread terminated unexpectedly"
+                    "{label} offload worker terminated unexpectedly"
                 )))
             }
         },
         Err(err) => {
-            tracing::error!("Failed to spawn {label} offload thread: {err}");
+            tracing::error!("Failed to dispatch {label} offload job: {err}");
             Err(zbus::fdo::Error::Failed(format!(
-                "Failed to spawn {label} offload thread: {err}"
+                "Failed to dispatch {label} offload job: {err}"
             )))
         }
     }
@@ -975,6 +1015,9 @@ macro_rules! impl_uccd_methods {
                 display: &str,
                 refresh_rate: i32,
             ) -> bool {
+                if !payload_within_limit("SetDisplayRefreshRate", display) {
+                    return false;
+                }
                 let sender = header.sender().map(|s| s.as_str());
                 if !self
                     .authorizer
@@ -1059,10 +1102,8 @@ macro_rules! impl_uccd_methods {
                 {
                     return String::new();
                 }
-                self.offload_or(OffloadLane::PowerGpu, String::new(), |b| {
-                    b.get_prime_state()
-                })
-                .await
+                self.offload_or(OffloadLane::Read, String::new(), |b| b.get_prime_state())
+                    .await
             }
 
             #[zbus(name = "ConsumeModeReapplyPending")]
@@ -1308,7 +1349,7 @@ macro_rules! impl_uccd_methods {
                 let sender = header.sender().map(|s| s.as_str());
                 if !self
                     .authorizer
-                    .check_auth(conn, sender, AuthAction::Control)
+                    .check_auth(conn, sender, AuthAction::ManageHardware)
                     .await
                 {
                     return false;
@@ -1381,6 +1422,9 @@ macro_rules! impl_uccd_methods {
                 #[zbus(connection)] conn: &zbus::Connection,
                 mode_val: &str,
             ) -> bool {
+                if !payload_within_limit("SetManualPowerMode", mode_val) {
+                    return false;
+                }
                 let sender = header.sender().map(|s| s.as_str());
                 if !self
                     .authorizer
@@ -1409,6 +1453,12 @@ macro_rules! impl_uccd_methods {
                 reason: &str,
                 mode_val: &str,
             ) -> bool {
+                if !payload_within_limit("RegisterPowerRequest", name)
+                    || !payload_within_limit("RegisterPowerRequest", reason)
+                    || !payload_within_limit("RegisterPowerRequest", mode_val)
+                {
+                    return false;
+                }
                 let sender = header.sender().map(|s| s.as_str());
                 if !self
                     .authorizer
@@ -1461,6 +1511,9 @@ macro_rules! impl_uccd_methods {
                 #[zbus(connection)] conn: &zbus::Connection,
                 name: &str,
             ) -> bool {
+                if !payload_within_limit("UnregisterPowerRequest", name) {
+                    return false;
+                }
                 let sender = header.sender().map(|s| s.as_str());
                 if !self
                     .authorizer
@@ -1488,6 +1541,9 @@ macro_rules! impl_uccd_methods {
                 #[zbus(connection)] conn: &zbus::Connection,
                 profile_name: &str,
             ) -> bool {
+                if !payload_within_limit("SetTempProfile", profile_name) {
+                    return false;
+                }
                 let sender = header.sender().map(|s| s.as_str());
                 if !self
                     .authorizer
@@ -1514,6 +1570,9 @@ macro_rules! impl_uccd_methods {
                 #[zbus(connection)] conn: &zbus::Connection,
                 id: &str,
             ) -> bool {
+                if !payload_within_limit("SetActiveProfile", id) {
+                    return false;
+                }
                 let sender = header.sender().map(|s| s.as_str());
                 if !self
                     .authorizer
@@ -1826,6 +1885,9 @@ macro_rules! impl_uccd_methods {
                 #[zbus(connection)] conn: &zbus::Connection,
                 profile_id: &str,
             ) -> bool {
+                if !payload_within_limit("DeleteCustomProfile", profile_id) {
+                    return false;
+                }
                 let sender = header.sender().map(|s| s.as_str());
                 if !self
                     .authorizer
@@ -1882,6 +1944,9 @@ macro_rules! impl_uccd_methods {
                 #[zbus(connection)] conn: &zbus::Connection,
                 name: &str,
             ) -> String {
+                if !payload_within_limit("GetFanProfile", name) {
+                    return "{}".to_string();
+                }
                 let sender = header.sender().map(|s| s.as_str());
                 if !self
                     .authorizer
@@ -1918,7 +1983,9 @@ macro_rules! impl_uccd_methods {
                 name: &str,
                 json: &str,
             ) -> bool {
-                if !payload_within_limit("SetFanProfile", json) {
+                if !payload_within_limit("SetFanProfile", name)
+                    || !payload_within_limit("SetFanProfile", json)
+                {
                     return false;
                 }
                 let sender = header.sender().map(|s| s.as_str());
@@ -1966,6 +2033,11 @@ macro_rules! impl_uccd_methods {
                 state: &str,
                 profile_id: &str,
             ) -> bool {
+                if !payload_within_limit("SetStateMap", state)
+                    || !payload_within_limit("SetStateMap", profile_id)
+                {
+                    return false;
+                }
                 let sender = header.sender().map(|s| s.as_str());
                 if !self
                     .authorizer
@@ -2141,7 +2213,10 @@ macro_rules! impl_uccd_methods {
                 name: &str,
                 json: &str,
             ) -> bool {
-                if !payload_within_limit("SaveCustomKeyboardProfile", json) {
+                if !payload_within_limit("SaveCustomKeyboardProfile", id)
+                    || !payload_within_limit("SaveCustomKeyboardProfile", name)
+                    || !payload_within_limit("SaveCustomKeyboardProfile", json)
+                {
                     return false;
                 }
                 let sender = header.sender().map(|s| s.as_str());
@@ -2172,6 +2247,9 @@ macro_rules! impl_uccd_methods {
                 #[zbus(connection)] conn: &zbus::Connection,
                 id: &str,
             ) -> bool {
+                if !payload_within_limit("DeleteCustomKeyboardProfile", id) {
+                    return false;
+                }
                 let sender = header.sender().map(|s| s.as_str());
                 if !self
                     .authorizer
@@ -2217,7 +2295,10 @@ macro_rules! impl_uccd_methods {
                 name: &str,
                 json: &str,
             ) -> bool {
-                if !payload_within_limit("SaveCustomFanProfile", json) {
+                if !payload_within_limit("SaveCustomFanProfile", id)
+                    || !payload_within_limit("SaveCustomFanProfile", name)
+                    || !payload_within_limit("SaveCustomFanProfile", json)
+                {
                     return false;
                 }
                 let sender = header.sender().map(|s| s.as_str());
@@ -2248,6 +2329,9 @@ macro_rules! impl_uccd_methods {
                 #[zbus(connection)] conn: &zbus::Connection,
                 id: &str,
             ) -> bool {
+                if !payload_within_limit("DeleteCustomFanProfile", id) {
+                    return false;
+                }
                 let sender = header.sender().map(|s| s.as_str());
                 if !self
                     .authorizer
@@ -2342,10 +2426,13 @@ macro_rules! impl_uccd_methods {
                 #[zbus(connection)] conn: &zbus::Connection,
                 profile_descriptor: &str,
             ) -> bool {
+                if !payload_within_limit("SetChargingProfile", profile_descriptor) {
+                    return false;
+                }
                 let sender = header.sender().map(|s| s.as_str());
                 if !self
                     .authorizer
-                    .check_auth(conn, sender, AuthAction::Control)
+                    .check_auth(conn, sender, AuthAction::ManageHardware)
                     .await
                 {
                     return false;
@@ -2402,10 +2489,13 @@ macro_rules! impl_uccd_methods {
                 #[zbus(connection)] conn: &zbus::Connection,
                 priority_descriptor: &str,
             ) -> bool {
+                if !payload_within_limit("SetChargingPriority", priority_descriptor) {
+                    return false;
+                }
                 let sender = header.sender().map(|s| s.as_str());
                 if !self
                     .authorizer
-                    .check_auth(conn, sender, AuthAction::Control)
+                    .check_auth(conn, sender, AuthAction::ManageHardware)
                     .await
                 {
                     return false;
@@ -2563,6 +2653,9 @@ macro_rules! impl_uccd_methods {
                 #[zbus(connection)] conn: &zbus::Connection,
                 type_val: &str,
             ) -> bool {
+                if !payload_within_limit("SetChargeType", type_val) {
+                    return false;
+                }
                 let sender = header.sender().map(|s| s.as_str());
                 if !self
                     .authorizer
@@ -2768,7 +2861,7 @@ macro_rules! impl_uccd_methods {
                 let sender = header.sender().map(|s| s.as_str());
                 if !self
                     .authorizer
-                    .check_auth(conn, sender, AuthAction::Control)
+                    .check_auth(conn, sender, AuthAction::ManageHardware)
                     .await
                 {
                     return false;
@@ -2996,9 +3089,23 @@ macro_rules! impl_uccd_methods {
                 let sender = header.sender().map(|s| s.as_str());
                 if !self
                     .authorizer
-                    .check_auth(conn, sender, AuthAction::Control)
+                    .check_auth(conn, sender, AuthAction::ManageHardware)
                     .await
                 {
+                    return false;
+                }
+                if voltage == FORBIDDEN_PUMP_VOLTAGE_CODE {
+                    tracing::warn!(
+                        "Rejecting forbidden water cooler pump voltage code {} (V12) on D-Bus",
+                        voltage
+                    );
+                    return false;
+                }
+                if !is_valid_pump_voltage_code(voltage) {
+                    tracing::warn!(
+                        "Rejecting invalid water cooler pump voltage code {} on D-Bus",
+                        voltage
+                    );
                     return false;
                 }
                 self.offload_or_checked(

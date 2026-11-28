@@ -10,7 +10,40 @@ use ucc_core::{ProfileState, UccProfile};
 
 pub const DEFAULT_SETTINGS_FILE: &str = "/etc/ucc/settings";
 
+/// Maximum size in bytes (16 MiB) allowed when reading legacy settings or backup files.
+const MAX_LEGACY_SETTINGS_BYTES: u64 = 16 * 1024 * 1024;
+
 use crate::error::ConfigError;
+
+fn read_bounded_to_string(path: &Path) -> std::io::Result<String> {
+    use std::io::Read as _;
+    let meta = fs::metadata(path)?;
+    if meta.len() > MAX_LEGACY_SETTINGS_BYTES {
+        return Err(std::io::Error::new(
+            std::io::ErrorKind::InvalidData,
+            format!(
+                "Legacy settings file {} exceeds maximum allowed size of {} bytes",
+                path.display(),
+                MAX_LEGACY_SETTINGS_BYTES
+            ),
+        ));
+    }
+    let file = fs::File::open(path)?;
+    let mut buf = Vec::new();
+    file.take(MAX_LEGACY_SETTINGS_BYTES + 1)
+        .read_to_end(&mut buf)?;
+    if buf.len() as u64 > MAX_LEGACY_SETTINGS_BYTES {
+        return Err(std::io::Error::new(
+            std::io::ErrorKind::InvalidData,
+            format!(
+                "Legacy settings file {} exceeds maximum allowed size of {} bytes",
+                path.display(),
+                MAX_LEGACY_SETTINGS_BYTES
+            ),
+        ));
+    }
+    String::from_utf8(buf).map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidData, e))
+}
 
 /// YCbCr 4:2:0 workaround port configuration
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize, Default)]
@@ -354,10 +387,11 @@ impl SettingsManager {
         crate::persistence::write_atomic(&self.settings_file, json.as_bytes())
     }
 
-    /// Reads settings from disk, falling back to `.backup` if the primary file is corrupted.
+    /// Reads settings from disk (bounded to 16 MiB), falling back to `.bak`/`.backup`
+    /// if the primary file is corrupted or oversized.
     pub fn read_settings(&self) -> Result<TccSettings, ConfigError> {
         if self.settings_file.exists() {
-            if let Ok(content) = fs::read_to_string(&self.settings_file) {
+            if let Ok(content) = read_bounded_to_string(&self.settings_file) {
                 if let Some(settings) = self.parse_settings_json(&content) {
                     return Ok(settings);
                 }
@@ -374,7 +408,7 @@ impl SettingsManager {
 
         for backup_file in &candidate_backups {
             if backup_file.exists() {
-                if let Ok(content) = fs::read_to_string(backup_file) {
+                if let Ok(content) = read_bounded_to_string(backup_file) {
                     if let Some(settings) = self.parse_settings_json(&content) {
                         return Ok(settings);
                     }

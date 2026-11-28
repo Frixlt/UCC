@@ -984,25 +984,15 @@ pub fn prepare_deployment(
         &["--install", &build_str],
         &[("DESTDIR", &stage_str)],
     )?;
-    let manifest_path_str = repo_root.join("Cargo.toml").display().to_string();
+    let xtask_exe = std::env::current_exe()
+        .map_err(|e| format!("Failed resolving current xtask executable: {e}"))?;
+    let xtask_exe_str = xtask_exe.display().to_string();
     let stage_usr_str = stage.join("usr").display().to_string();
     let rust_bin_str = rust_release_dir.display().to_string();
     let runtime_out = run_checked(
         runner,
-        "cargo",
-        &[
-            "run",
-            "--manifest-path",
-            &manifest_path_str,
-            "-p",
-            "xtask",
-            "--locked",
-            "--offline",
-            "--",
-            "install-runtime",
-            &stage_usr_str,
-            &rust_bin_str,
-        ],
+        &xtask_exe_str,
+        &["install-runtime", &stage_usr_str, &rust_bin_str],
         &[],
     )?;
     write_private_file(
@@ -1057,12 +1047,12 @@ pub fn prepare_deployment(
     ];
     for dep in [
         "qt6-base",
-        "qt6-connectivity",
-        "qt6-svg",
+        "qt6-charts",
+        "systemd-libs",
         "dbus",
         "polkit",
-        "systemd-libs",
         "hicolor-icon-theme",
+        "libxcb",
     ] {
         metadata.push(format!("depend = {dep}"));
     }

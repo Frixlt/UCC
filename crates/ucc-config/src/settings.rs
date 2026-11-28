@@ -9,7 +9,9 @@ use crate::defaults::{
     PROFILE_ID_HIGH_PERFORMANCE, PROFILE_ID_MAX_ENERGY_SAVE, PROFILE_ID_OFFICE, PROFILE_ID_QUIET,
 };
 use serde::{Deserialize, Serialize};
+use std::borrow::Cow;
 use std::collections::{BTreeMap, HashMap};
+use std::fmt;
 use ucc_core::{KeyboardBacklightState, UccProfile};
 
 /// Supported format variants for display YCbCr 4:2:0 workaround entries.
@@ -111,88 +113,18 @@ where
     Ok(Some(out))
 }
 
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-struct UccSettingsRaw {
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub keyboard_layout: Option<String>,
+#[derive(Deserialize)]
+#[serde(transparent)]
+struct CustomFanProfilesField(
+    #[serde(deserialize_with = "deserialize_custom_fan_profiles")]
+    Option<HashMap<String, CustomFanProfile>>,
+);
 
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub keyboard_backlight_states: Option<Vec<KeyboardBacklightState>>,
-
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub custom_keyboard_profiles: Option<HashMap<String, CustomKeyboardProfile>>,
-
-    #[serde(
-        default,
-        skip_serializing_if = "Option::is_none",
-        deserialize_with = "deserialize_custom_fan_profiles"
-    )]
-    pub custom_fan_profiles: Option<HashMap<String, CustomFanProfile>>,
-
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub power_devices: Option<serde_json::Value>,
-
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub lightbar: Option<serde_json::Value>,
-
-    #[serde(default)]
-    pub state_map: HashMap<String, String>,
-
-    #[serde(default)]
-    pub profiles: HashMap<String, UccProfile>,
-
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub charging_profile: Option<String>,
-
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub charging_priority: Option<String>,
-
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub charge_type: Option<String>,
-
-    #[serde(
-        default,
-        skip_serializing_if = "Option::is_none",
-        deserialize_with = "ucc_core::charging::deserialize_opt_threshold"
-    )]
-    pub charge_start_threshold: Option<u8>,
-
-    #[serde(
-        default,
-        skip_serializing_if = "Option::is_none",
-        deserialize_with = "ucc_core::charging::deserialize_opt_threshold"
-    )]
-    pub charge_end_threshold: Option<u8>,
-
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub shutdown_time: Option<String>,
-
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub fahrenheit: Option<bool>,
-
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub cpu_settings_enabled: Option<bool>,
-
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub fan_control_enabled: Option<bool>,
-
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub keyboard_backlight_control_supported: Option<bool>,
-
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub ycbcr420_workaround: Option<Vec<YCbCrWorkaroundEntry>>,
-
-    #[serde(
-        default,
-        skip_serializing_if = "Option::is_none",
-        rename = "platformBackend"
-    )]
-    pub platform_backend: Option<String>,
-
-    #[serde(flatten)]
-    pub extra: HashMap<String, serde_json::Value>,
-}
+#[derive(Deserialize)]
+#[serde(transparent)]
+struct OptThresholdField(
+    #[serde(deserialize_with = "ucc_core::charging::deserialize_opt_threshold")] Option<u8>,
+);
 
 /// Complete Frixit Control Center settings structure (stored in `settings.json`).
 #[derive(Debug, Clone, PartialEq, Serialize)]
@@ -289,33 +221,113 @@ impl<'de> serde::Deserialize<'de> for UccSettings {
     where
         D: serde::Deserializer<'de>,
     {
-        // Parse through generic JSON Value first to handle legacy C++ writer quirk
-        // where `keyboardBacklightStates` was serialized twice, preserving last-value semantics.
-        let val = serde_json::Value::deserialize(deserializer)?;
-        let raw: UccSettingsRaw = serde_json::from_value(val).map_err(serde::de::Error::custom)?;
-        Ok(UccSettings {
-            keyboard_layout: raw.keyboard_layout,
-            keyboard_backlight_states: raw.keyboard_backlight_states,
-            custom_keyboard_profiles: raw.custom_keyboard_profiles,
-            custom_fan_profiles: raw.custom_fan_profiles,
-            power_devices: raw.power_devices,
-            lightbar: raw.lightbar,
-            state_map: raw.state_map,
-            profiles: raw.profiles,
-            charging_profile: raw.charging_profile,
-            charging_priority: raw.charging_priority,
-            charge_type: raw.charge_type,
-            charge_start_threshold: raw.charge_start_threshold,
-            charge_end_threshold: raw.charge_end_threshold,
-            shutdown_time: raw.shutdown_time,
-            fahrenheit: raw.fahrenheit,
-            cpu_settings_enabled: raw.cpu_settings_enabled,
-            fan_control_enabled: raw.fan_control_enabled,
-            keyboard_backlight_control_supported: raw.keyboard_backlight_control_supported,
-            ycbcr420_workaround: raw.ycbcr420_workaround,
-            platform_backend: raw.platform_backend,
-            extra: raw.extra,
-        })
+        struct UccSettingsVisitor;
+
+        impl<'de> serde::de::Visitor<'de> for UccSettingsVisitor {
+            type Value = UccSettings;
+
+            fn expecting(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+                formatter.write_str("a UCC settings JSON object")
+            }
+
+            fn visit_map<A>(self, mut map: A) -> Result<Self::Value, A::Error>
+            where
+                A: serde::de::MapAccess<'de>,
+            {
+                let mut keyboard_layout: Option<String> = None;
+                let mut keyboard_backlight_states: Option<Vec<KeyboardBacklightState>> = None;
+                let mut custom_keyboard_profiles: Option<HashMap<String, CustomKeyboardProfile>> =
+                    None;
+                let mut custom_fan_profiles: Option<HashMap<String, CustomFanProfile>> = None;
+                let mut power_devices: Option<serde_json::Value> = None;
+                let mut lightbar: Option<serde_json::Value> = None;
+                let mut state_map: HashMap<String, String> = HashMap::new();
+                let mut profiles: HashMap<String, UccProfile> = HashMap::new();
+                let mut charging_profile: Option<String> = None;
+                let mut charging_priority: Option<String> = None;
+                let mut charge_type: Option<String> = None;
+                let mut charge_start_threshold: Option<u8> = None;
+                let mut charge_end_threshold: Option<u8> = None;
+                let mut shutdown_time: Option<String> = None;
+                let mut fahrenheit: Option<bool> = None;
+                let mut cpu_settings_enabled: Option<bool> = None;
+                let mut fan_control_enabled: Option<bool> = None;
+                let mut keyboard_backlight_control_supported: Option<bool> = None;
+                let mut ycbcr420_workaround: Option<Vec<YCbCrWorkaroundEntry>> = None;
+                let mut platform_backend: Option<String> = None;
+                let mut extra: HashMap<String, serde_json::Value> = HashMap::new();
+
+                // Single-pass map scan: overwrites on duplicate keys (preserving last-value
+                // semantics for legacy C++ writer duplicate `keyboardBacklightStates` quirk)
+                // without building an intermediate `serde_json::Value` DOM.
+                while let Some(key) = map.next_key::<Cow<'de, str>>()? {
+                    match key.as_ref() {
+                        "keyboardLayout" => keyboard_layout = map.next_value()?,
+                        "keyboardBacklightStates" => {
+                            keyboard_backlight_states = map.next_value()?;
+                        }
+                        "customKeyboardProfiles" => {
+                            custom_keyboard_profiles = map.next_value()?;
+                        }
+                        "customFanProfiles" => {
+                            custom_fan_profiles = map.next_value::<CustomFanProfilesField>()?.0;
+                        }
+                        "powerDevices" => power_devices = map.next_value()?,
+                        "lightbar" => lightbar = map.next_value()?,
+                        "stateMap" => state_map = map.next_value()?,
+                        "profiles" => profiles = map.next_value()?,
+                        "chargingProfile" => charging_profile = map.next_value()?,
+                        "chargingPriority" => charging_priority = map.next_value()?,
+                        "chargeType" => charge_type = map.next_value()?,
+                        "chargeStartThreshold" => {
+                            charge_start_threshold = map.next_value::<OptThresholdField>()?.0;
+                        }
+                        "chargeEndThreshold" => {
+                            charge_end_threshold = map.next_value::<OptThresholdField>()?.0;
+                        }
+                        "shutdownTime" => shutdown_time = map.next_value()?,
+                        "fahrenheit" => fahrenheit = map.next_value()?,
+                        "cpuSettingsEnabled" => cpu_settings_enabled = map.next_value()?,
+                        "fanControlEnabled" => fan_control_enabled = map.next_value()?,
+                        "keyboardBacklightControlSupported" => {
+                            keyboard_backlight_control_supported = map.next_value()?;
+                        }
+                        "ycbcr420Workaround" => ycbcr420_workaround = map.next_value()?,
+                        "platformBackend" => platform_backend = map.next_value()?,
+                        _ => {
+                            let v: serde_json::Value = map.next_value()?;
+                            extra.insert(key.into_owned(), v);
+                        }
+                    }
+                }
+
+                Ok(UccSettings {
+                    keyboard_layout,
+                    keyboard_backlight_states,
+                    custom_keyboard_profiles,
+                    custom_fan_profiles,
+                    power_devices,
+                    lightbar,
+                    state_map,
+                    profiles,
+                    charging_profile,
+                    charging_priority,
+                    charge_type,
+                    charge_start_threshold,
+                    charge_end_threshold,
+                    shutdown_time,
+                    fahrenheit,
+                    cpu_settings_enabled,
+                    fan_control_enabled,
+                    keyboard_backlight_control_supported,
+                    ycbcr420_workaround,
+                    platform_backend,
+                    extra,
+                })
+            }
+        }
+
+        deserializer.deserialize_map(UccSettingsVisitor)
     }
 }
 
@@ -326,10 +338,9 @@ impl Default for UccSettings {
 }
 
 impl UccSettings {
-    /// Deserializes settings from a JSON string.
+    /// Deserializes settings directly from a JSON string in a single pass.
     pub fn from_json(json_str: &str) -> Result<Self, serde_json::Error> {
-        let val: serde_json::Value = serde_json::from_str(json_str)?;
-        serde_json::from_value(val)
+        serde_json::from_str(json_str)
     }
 
     /// Serializes settings into a pretty-printed JSON string.

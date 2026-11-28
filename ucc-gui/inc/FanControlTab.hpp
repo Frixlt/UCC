@@ -23,7 +23,6 @@
 #include <QLabel>
 #include <QTabWidget>
 #include <QVBoxLayout>
-#include <QDBusInterface>
 #include <QTimer>
 
 #include "FanCurveEditorWidget.hpp"
@@ -152,7 +151,6 @@ private:
   PumpCurveEditorWidget *m_pumpCurveEditor = nullptr;
 
   // Water cooler hardware controls (moved from HardwareTab)
-  QDBusInterface *m_waterCoolerDbus = nullptr;
   QTimer *m_waterCoolerPollTimer = nullptr;
   bool m_isWcConnected = false;
   QCheckBox *m_waterCoolerEnableCheckBox = nullptr;

@@ -254,10 +254,10 @@ MonitorTab::MonitorTab( UccdClient *client, QWidget *parent )
 
   m_fetchTimer.setInterval( 2000 );
   connect( &m_fetchTimer, &QTimer::timeout, this, &MonitorTab::fetchData );
-  // Scroll the view independently of polling. Values remain real samples;
-  // the one-poll presentation delay reveals their connecting segments smoothly.
-  m_frameTimer.setInterval( 16 );
-  m_frameTimer.setTimerType( Qt::PreciseTimer );
+  // Advance chart axes at a modest 1 Hz CoarseTimer cadence instead of a 60 Hz
+  // PreciseTimer so QCharts are not continuously relayouted between telemetry polls.
+  m_frameTimer.setInterval( 1000 );
+  m_frameTimer.setTimerType( Qt::CoarseTimer );
   connect( &m_frameTimer, &QTimer::timeout, this, &MonitorTab::renderFrame );
 }
 

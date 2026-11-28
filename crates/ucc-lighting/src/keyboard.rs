@@ -295,8 +295,7 @@ impl KeyboardBacklightController {
             .capabilities
             .as_ref()
             .filter(|c| c.zones > 0)
-            .ok_or(LightingError::Unavailable)?
-            .clone();
+            .ok_or(LightingError::Unavailable)?;
         if states.is_empty() {
             return Err(LightingError::InvalidConfig(
                 "Keyboard states array cannot be empty".into(),
@@ -317,7 +316,7 @@ impl KeyboardBacklightController {
                 .write_keyboard_brightness(target_brightness)?;
 
             if caps.max_red > 0 {
-                let zone_colors = map_states_by_led_id(&caps, states);
+                let zone_colors = map_states_by_led_id(caps, states);
                 if let Err(err) = self.transport.write_keyboard_zones(&zone_colors) {
                     if let Some(prev_b) = prev_brightness {
                         let _ = self.transport.write_keyboard_brightness(prev_b);
@@ -346,23 +345,20 @@ impl KeyboardBacklightController {
         Ok(())
     }
 
-    pub fn apply_states_json(&mut self, states_json: &str) -> Result<(), LightingError> {
-        let caps = self
+    fn apply_raw_states(&mut self, raw: Vec<KeyboardStateDto>) -> Result<(), LightingError> {
+        let max_b = self
             .capabilities
             .as_ref()
             .filter(|c| c.zones > 0)
             .ok_or(LightingError::Unavailable)?
-            .clone();
-
-        let raw: Vec<KeyboardStateDto> = serde_json::from_str(states_json)
-            .map_err(|e| LightingError::InvalidConfig(e.to_string()))?;
+            .max_brightness
+            .min(u8::MAX as u32) as i64;
         if raw.is_empty() {
             return Err(LightingError::InvalidConfig(
                 "Keyboard states JSON cannot be empty".into(),
             ));
         }
 
-        let max_b = caps.max_brightness.min(u8::MAX as u32) as i64;
         let normalized: Vec<KeyboardBacklightState> = raw
             .into_iter()
             .map(|entry| KeyboardBacklightState {
@@ -376,17 +372,25 @@ impl KeyboardBacklightController {
         self.apply_states(&normalized)
     }
 
+    pub fn apply_states_json(&mut self, states_json: &str) -> Result<(), LightingError> {
+        let raw: Vec<KeyboardStateDto> = serde_json::from_str(states_json)
+            .map_err(|e| LightingError::InvalidConfig(e.to_string()))?;
+        self.apply_raw_states(raw)
+    }
+
     pub fn apply_profile_keyboard_json(
         &mut self,
         keyboard_data_json: &str,
     ) -> Result<(), LightingError> {
-        let value: serde_json::Value = serde_json::from_str(keyboard_data_json)
+        #[derive(Deserialize)]
+        struct ProfileKeyboardDto {
+            states: Option<Vec<KeyboardStateDto>>,
+        }
+        let dto: ProfileKeyboardDto = serde_json::from_str(keyboard_data_json)
             .map_err(|e| LightingError::InvalidConfig(e.to_string()))?;
-        let states_val = value
-            .get("states")
+        let raw = dto
+            .states
             .ok_or_else(|| LightingError::InvalidConfig("Missing keyboard states field".into()))?;
-        let states_str = serde_json::to_string(states_val)
-            .map_err(|e| LightingError::InvalidConfig(e.to_string()))?;
-        self.apply_states_json(&states_str)
+        self.apply_raw_states(raw)
     }
 }

@@ -301,7 +301,7 @@ void DashboardTab::setupUI()
   connect(waterControls,&QPushButton::clicked,this,[this]{if(auto *navigation=window()->findChild<QListWidget *>("navigation")) navigation->setCurrentRow(3);});
   m_waterCoolerCard = water;
   m_waterCoolerCard->setVisible(m_waterCoolerSupported);layout->addWidget(m_waterCoolerCard);
-  new HardwareTab(m_systemMonitor,body);
+  layout->addWidget(new HardwareTab(m_systemMonitor,body));
   layout->addStretch();
 }
 

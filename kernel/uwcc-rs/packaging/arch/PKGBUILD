@@ -11,6 +11,7 @@ license=('GPL-2.0-only')
 depends=('dkms')
 conflicts=('tuxedo-drivers' 'tuxedo-drivers-dkms' 'tuxedo-drivers-mechrevo-dkms' 'tuxedo-drivers-mechrevo-cachyos')
 provides=('uwcc-driver')
+install=uwcc-dkms.install
 source=()
 sha256sums=()
 

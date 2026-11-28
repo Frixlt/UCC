@@ -8,7 +8,7 @@ arch=('x86_64')
 url='https://github.com/Frixlt/UCC'
 license=('GPL-3.0-or-later')
 depends=('qt6-base' 'qt6-charts' 'systemd-libs' 'dbus' 'polkit' 'hicolor-icon-theme' 'libxcb')
-makedepends=('cmake' 'ninja' 'git' 'pkgconf' 'nlohmann-json' 'qt6-connectivity' 'rust')
+makedepends=('cmake' 'ninja' 'git' 'pkgconf' 'nlohmann-json' 'rust')
 checkdepends=('python' 'gjs' 'nodejs')
 optdepends=('uwcc-dkms: native Rust-for-Linux Uniwill EC/WMI/hwmon driver (/dev/uwcc)'
             'tuxedo-drivers: legacy TUXEDO hardware interface'
@@ -50,7 +50,7 @@ check() {
   (cd "$source_root" && cargo build -p uccd --example interop_daemon --locked --offline --target-dir "$srcdir/rust")
   CARGO_TARGET_DIR="$srcdir/rust" \
     UCC_INTEROP_DAEMON_BIN="$srcdir/rust/debug/examples/interop_daemon" \
-    ctest --test-dir "$srcdir/build" -j1 --output-on-failure
+    ctest --test-dir "$srcdir/build" -j"$(nproc)" --output-on-failure
   python3 "$source_root/contrib/mechrevo/tests/test_migration.py"
 }
 

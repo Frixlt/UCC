@@ -167,18 +167,27 @@ unsafe impl Sync for StateCell {}
 
 static DRIVER_STATE: StateCell = StateCell(UnsafeCell::new(DriverState::new()));
 
+struct StateGuard {
+    flags: c_ulong,
+}
+
+impl Drop for StateGuard {
+    #[inline]
+    fn drop(&mut self) {
+        // SAFETY: Releases `uwcc_state_lock` and restores IRQ state matching `uwcc_state_lock_irqsave`.
+        unsafe { uwcc_state_unlock_irqrestore(self.flags) };
+    }
+}
+
 #[inline]
 fn with_state<R>(f: impl FnOnce(&mut DriverState) -> R) -> R {
     // SAFETY: Acquires `uwcc_state_lock` with IRQs saved to serialize access to `DRIVER_STATE`.
-    let flags = unsafe { uwcc_state_lock_irqsave() };
-    let res = {
-        // SAFETY: `uwcc_state_lock` is held, granting exclusive access to `DRIVER_STATE`.
-        let state = unsafe { &mut *DRIVER_STATE.0.get() };
-        f(state)
+    let _guard = StateGuard {
+        flags: unsafe { uwcc_state_lock_irqsave() },
     };
-    // SAFETY: Releases `uwcc_state_lock` and restores IRQ state matching `uwcc_state_lock_irqsave`.
-    unsafe { uwcc_state_unlock_irqrestore(flags) };
-    res
+    // SAFETY: `uwcc_state_lock` is held for the lifetime of `_guard`, granting exclusive access.
+    let state = unsafe { &mut *DRIVER_STATE.0.get() };
+    f(state)
 }
 
 fn c_ret_to_result(ret: i32) -> Result {
@@ -490,45 +499,56 @@ struct UwccModule;
 
 impl kernel::Module for UwccModule {
     fn init(_module: &'static ThisModule) -> Result<Self> {
+        // Mark state ready and clear ring buffer BEFORE registering WMI/event handlers
+        // inside `uwcc_acpi_init()` so early WMI events are never dropped on init.
+        // Neither hwmon nor /dev/uwcc is exposed yet.
+        with_state(|s| {
+            s.ring.clear();
+            s.ready = true;
+        });
+
         let mut caps = UwccAcpiCaps::default();
         // SAFETY: `caps` is a valid stack struct; initializes ACPI INOU0000 and WMI driver.
         let ret = unsafe { uwcc_acpi_init(&mut caps) };
-        c_ret_to_result(ret)?;
+        if let Err(err) = c_ret_to_result(ret) {
+            with_state(|s| {
+                s.ready = false;
+            });
+            return Err(err);
+        }
+
+        // Register native /sys/class/hwmon/hwmonX BEFORE exposing /dev/uwcc so
+        // `UWCC_FLAG_HAS_HWMON` is finalized prior to any userspace `UWCC_IOC_GET_INFO`.
+        let mut flags = caps.flags;
+        // SAFETY: ACPI EC handle is initialized above; hwmon binds to the ACPI device (or NULL).
+        if unsafe { uwcc_hwmon_register() } == 0 {
+            flags |= UWCC_FLAG_HAS_HWMON;
+        } else {
+            pr_warn!("uwcc_rs: hwmon registration failed; continuing with /dev/uwcc only\n");
+        }
 
         with_state(|s| {
             s.info = UwccInfo {
                 api_version: UWCC_API_VERSION,
                 project_id: caps.project_id,
                 ec_version: caps.ec_version,
-                flags: caps.flags,
+                flags,
             };
-            s.ring.clear();
-            s.ready = true;
         });
 
-        // Register /dev/uwcc miscdevice first so `uwcc_miscdev.this_device` provides a valid
-        // non-NULL parent `struct device *` for `hwmon_device_register_with_info`.
-        // SAFETY: State is initialized and ready before exposing /dev/uwcc.
+        // SAFETY: State, WMI, and hwmon are fully initialized before exposing /dev/uwcc.
         let misc_ret = unsafe { uwcc_misc_register() };
         if let Err(err) = c_ret_to_result(misc_ret) {
             with_state(|s| {
                 s.ready = false;
             });
-            // SAFETY: Roll back WMI driver and ACPI state on failure.
-            unsafe { uwcc_acpi_exit() };
+            // SAFETY: Unwind in strict reverse order: wake readers, unregister hwmon, exit ACPI/WMI.
+            unsafe {
+                uwcc_wmi_wake_all();
+                uwcc_hwmon_unregister();
+                uwcc_acpi_exit();
+            }
             return Err(err);
-        }
-
-        // Register native /sys/class/hwmon/hwmonX (D3cold-safe EC telemetry).
-        let mut flags = caps.flags;
-        // SAFETY: `uwcc_hwmon_register()` binds to `uwcc_miscdev.this_device` registered above.
-        if unsafe { uwcc_hwmon_register() } == 0 {
-            flags |= UWCC_FLAG_HAS_HWMON;
-            with_state(|s| {
-                s.info.flags = flags;
-            });
-        } else {
-            pr_warn!("uwcc_rs: hwmon registration failed; continuing with /dev/uwcc only\n");
         }
 
         pr_info!(
@@ -547,12 +567,12 @@ impl Drop for UwccModule {
         with_state(|s| {
             s.ready = false;
         });
-        // SAFETY: Wakes any blocked /dev/uwcc readers, deregisters /dev/uwcc,
-        // and tears down hwmon, WMI driver, and ACPI handle (via uwcc_acpi_exit).
+        // SAFETY: Unwind in strict reverse order of init: wake blocked readers,
+        // deregister /dev/uwcc, unregister hwmon, and tear down WMI driver & ACPI handles.
         unsafe {
             uwcc_wmi_wake_all();
-            uwcc_hwmon_unregister();
             uwcc_misc_deregister();
+            uwcc_hwmon_unregister();
             uwcc_acpi_exit();
         }
         pr_info!("uwcc_rs: unloaded\n");

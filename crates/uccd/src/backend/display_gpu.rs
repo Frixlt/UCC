@@ -134,29 +134,77 @@ impl LiveUccdBackend {
         None
     }
 
-    pub(super) fn lookup_pci_ids(&self, vendor: u32, device: u32) -> Option<String> {
-        for rel in [
-            "usr/share/hwdata/pci.ids",
-            "usr/share/misc/pci.ids",
-            "usr/share/pci.ids",
-        ] {
-            let candidate = self.sys_root.join(rel);
-            if let Ok(content) = self.sysfs.read(&candidate) {
-                if let Some(found) = Self::lookup_pci_ids_in_text(&content, vendor, device) {
-                    return Some(found);
+    fn host_pci_ids_index() -> &'static std::collections::HashMap<(u32, u32), String> {
+        static INDEX: std::sync::OnceLock<std::collections::HashMap<(u32, u32), String>> =
+            std::sync::OnceLock::new();
+        INDEX.get_or_init(|| {
+            let mut map = std::collections::HashMap::new();
+            for host in [
+                "/usr/share/hwdata/pci.ids",
+                "/usr/share/misc/pci.ids",
+                "/usr/share/pci.ids",
+            ] {
+                if let Ok(content) = std::fs::read_to_string(host) {
+                    let mut current_vendor: Option<u32> = None;
+                    for line in content.lines() {
+                        if line.is_empty() || line.starts_with('#') {
+                            continue;
+                        }
+                        if line.starts_with("C ") {
+                            break;
+                        }
+                        if !line.starts_with('\t') {
+                            let mut parts = line.splitn(2, char::is_whitespace);
+                            let vid_str = parts.next().unwrap_or_default().trim();
+                            current_vendor = if vid_str.len() == 4 {
+                                u32::from_str_radix(vid_str, 16).ok()
+                            } else {
+                                None
+                            };
+                        } else if !line.starts_with("\t\t") {
+                            if let Some(vid) = current_vendor {
+                                let stripped = line.trim_start_matches('\t');
+                                let mut parts = stripped.splitn(2, char::is_whitespace);
+                                let did_str = parts.next().unwrap_or_default().trim();
+                                if did_str.len() == 4 {
+                                    if let Ok(did) = u32::from_str_radix(did_str, 16) {
+                                        if let Some(name) = parts.next() {
+                                            let trimmed = name.trim();
+                                            if !trimmed.is_empty() {
+                                                map.entry((vid, did))
+                                                    .or_insert_with(|| trimmed.to_string());
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    if !map.is_empty() {
+                        break;
+                    }
                 }
             }
-        }
+            map
+        })
+    }
+
+    pub(super) fn lookup_pci_ids(&self, vendor: u32, device: u32) -> Option<String> {
         if self.sys_root != Path::new("/") {
-            for host in ["/usr/share/hwdata/pci.ids", "/usr/share/misc/pci.ids"] {
-                if let Ok(content) = std::fs::read_to_string(host) {
+            for rel in [
+                "usr/share/hwdata/pci.ids",
+                "usr/share/misc/pci.ids",
+                "usr/share/pci.ids",
+            ] {
+                let candidate = self.sys_root.join(rel);
+                if let Ok(content) = self.sysfs.read(&candidate) {
                     if let Some(found) = Self::lookup_pci_ids_in_text(&content, vendor, device) {
                         return Some(found);
                     }
                 }
             }
         }
-        None
+        Self::host_pci_ids_index().get(&(vendor, device)).cloned()
     }
 
     pub(super) fn read_pci_gpu_product_name(&self, dev_dir: &Path) -> Option<String> {
@@ -501,10 +549,7 @@ impl LiveUccdBackend {
         best.map(|(_, path, max_val, is_amdgpu)| (path, max_val, is_amdgpu))
     }
 
-    pub(super) fn get_display_brightness_impl(&self) -> i32 {
-        let Some((dev, max_val, is_amdgpu)) = self.discover_backlight_device() else {
-            return -1;
-        };
+    fn read_backlight_percent(&self, dev: &Path, max_val: i32, is_amdgpu: bool) -> i32 {
         let raw = self
             .sysfs
             .read(&dev.join("actual_brightness"))
@@ -524,6 +569,13 @@ impl LiveUccdBackend {
             }
             _ => -1,
         }
+    }
+
+    pub(super) fn get_display_brightness_impl(&self) -> i32 {
+        let Some((dev, max_val, is_amdgpu)) = self.discover_backlight_device() else {
+            return -1;
+        };
+        self.read_backlight_percent(&dev, max_val, is_amdgpu)
     }
 
     pub(super) fn set_display_brightness_internal(&self, brightness: i32) -> bool {
@@ -568,10 +620,13 @@ impl LiveUccdBackend {
                     break;
                 }
             }
-            let actual = self.get_display_brightness_impl();
+            let actual = self.read_backlight_percent(&dev, max_val, is_amdgpu);
             if self.shutting_down.load(Ordering::SeqCst)
                 || self.shutdown_wait_expired.load(Ordering::SeqCst)
             {
+                break;
+            }
+            if actual < 0 && !dev.exists() {
                 break;
             }
             if actual >= 0 && (actual - brightness).abs() <= tol {
@@ -1599,10 +1654,15 @@ impl LiveUccdBackend {
         if self.write_aborted_by_shutdown() {
             return false;
         }
-        self.platform.set_mux_boot_mode(parsed).is_ok()
+        let ok = self.platform.set_mux_boot_mode(parsed).is_ok();
+        if ok {
+            *self.lock_mutex(&self.prime_state_cache) = None;
+        }
+        ok
     }
 
     pub(super) fn get_prime_state_impl(&self) -> String {
+        const PRIME_STATE_CACHE_TTL: Duration = Duration::from_secs(10);
         let prime_cmd = if self.sys_root == Path::new("/") {
             Some(PathBuf::from("prime-select"))
         } else {
@@ -1614,6 +1674,14 @@ impl LiveUccdBackend {
             .find(|p| p.is_file())
         };
         if let Some(cmd) = prime_cmd {
+            {
+                let cache = self.lock_mutex(&self.prime_state_cache);
+                if let Some((cached_at, ref val)) = *cache {
+                    if cached_at.elapsed() < PRIME_STATE_CACHE_TTL {
+                        return val.clone();
+                    }
+                }
+            }
             if let Ok(mut child) = std::process::Command::new(cmd)
                 .arg("query")
                 .stdout(std::process::Stdio::piped())
@@ -1628,6 +1696,8 @@ impl LiveUccdBackend {
                                 if output.status.success() {
                                     let stdout = String::from_utf8_lossy(&output.stdout);
                                     if let Some(mapped) = Self::map_prime_token(&stdout) {
+                                        *self.lock_mutex(&self.prime_state_cache) =
+                                            Some((Instant::now(), mapped.clone()));
                                         return mapped;
                                     }
                                 }
@@ -1914,7 +1984,7 @@ impl LiveUccdBackend {
         if self.nvidia_ctgp_sysfs_path().is_some() || self.platform.read_ctgp_limits().is_some() {
             return true;
         }
-        if self.nvml.is_some() {
+        if self.nvml_wrapper().is_some() {
             return self
                 .read_rw(&self.latest_telemetry)
                 .as_ref()
@@ -1979,7 +2049,7 @@ impl LiveUccdBackend {
             }
         }
 
-        if let Some(ref nvml) = self.nvml {
+        if let Some(nvml) = self.nvml_wrapper() {
             let dgpu = self
                 .read_rw(&self.latest_telemetry)
                 .as_ref()
@@ -2101,7 +2171,7 @@ impl LiveUccdBackend {
             }
             return *self.lock_mutex(&self.nvidia_power_offset);
         }
-        if let Some(ref nvml) = self.nvml {
+        if let Some(nvml) = self.nvml_wrapper() {
             let dgpu_bdf = self
                 .read_rw(&self.latest_telemetry)
                 .as_ref()

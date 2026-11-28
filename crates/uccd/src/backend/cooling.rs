@@ -8,7 +8,7 @@ use serde_json::Value;
 use std::collections::{BTreeMap, HashMap};
 use std::path::Path;
 use std::sync::atomic::Ordering;
-use std::sync::Arc;
+use std::sync::{Arc, OnceLock};
 use std::time::{Duration, Instant};
 use tokio::sync::watch;
 use tracing::{debug, warn};
@@ -113,7 +113,16 @@ pub(super) struct ApplyFanProfilesDto {
     pub(super) fan_profile_id: Option<String>,
 }
 
+pub(super) fn builtin_fan_profiles_cached() -> &'static [FanProfile] {
+    static BUILTINS: OnceLock<Vec<FanProfile>> = OnceLock::new();
+    BUILTINS.get_or_init(build_builtin_fan_profiles)
+}
+
 pub(super) fn builtin_fan_profiles() -> Vec<FanProfile> {
+    builtin_fan_profiles_cached().to_vec()
+}
+
+fn build_builtin_fan_profiles() -> Vec<FanProfile> {
     let pts = |pairs: &[(i32, u8)]| -> Vec<FanPoint> {
         pairs.iter().map(|&(t, s)| FanPoint::new(t, s)).collect()
     };
@@ -527,7 +536,7 @@ impl LiveUccdBackend {
         if trimmed.is_empty() {
             return false;
         }
-        builtin_fan_profiles().iter().any(|fp| {
+        builtin_fan_profiles_cached().iter().any(|fp| {
             fp.id.eq_ignore_ascii_case(trimmed)
                 || fp.name.eq_ignore_ascii_case(trimmed)
                 || fp.id.strip_prefix("fan-").is_some_and(|short| {
@@ -548,9 +557,21 @@ impl LiveUccdBackend {
                 m.get(trimmed)
                     .or_else(|| m.values().find(|e| e.name.eq_ignore_ascii_case(trimmed)))
             }) {
+                {
+                    let cache = self.lock_mutex(&self.custom_fan_profile_cache);
+                    if let Some((cached_name, cached_json, cached_fp)) = cache.get(&entry.id) {
+                        if cached_name == &entry.name && cached_json == &entry.json {
+                            return Some(cached_fp.clone());
+                        }
+                    }
+                }
                 if let Some((fp, _)) =
                     normalize_and_parse_custom_fan_profile(&entry.id, &entry.name, &entry.json)
                 {
+                    self.lock_mutex(&self.custom_fan_profile_cache).insert(
+                        entry.id.clone(),
+                        (entry.name.clone(), entry.json.clone(), fp.clone()),
+                    );
                     return Some(fp);
                 }
             }
@@ -581,7 +602,7 @@ impl LiveUccdBackend {
             "freezy" | "freezy [built-in]" | "fan-freezy" => "fan-freezy",
             _ => trimmed,
         };
-        let builtins = builtin_fan_profiles();
+        let builtins = builtin_fan_profiles_cached();
         if let Some(fp) = builtins.iter().find(|fp| {
             fp.id.eq_ignore_ascii_case(normalized_id)
                 || fp.name.eq_ignore_ascii_case(trimmed)
@@ -722,10 +743,13 @@ impl LiveUccdBackend {
         }
 
         if self.sensor_data_collection.load(Ordering::SeqCst) {
-            let cpu_duty = tick.speeds_percent.first().copied().flatten();
-            let gpu_duty = tick.speeds_percent.get(1).copied().flatten();
-            if let Ok(col) = self.telemetry.try_lock() {
-                col.record_fan_duties(ts, cpu_duty, gpu_duty);
+            if let Some(cpu_duty) = tick.speeds_percent.first().copied().flatten() {
+                self.history
+                    .push(ucc_hardware::MetricId::CpuFanDuty, ts, f64::from(cpu_duty));
+            }
+            if let Some(gpu_duty) = tick.speeds_percent.get(1).copied().flatten() {
+                self.history
+                    .push(ucc_hardware::MetricId::GpuFanDuty, ts, f64::from(gpu_duty));
             }
         }
         tick
@@ -1305,6 +1329,7 @@ impl LiveUccdBackend {
             return false;
         }
         self.write_rw(&self.custom_fan_profiles).remove(id);
+        self.lock_mutex(&self.custom_fan_profile_cache).remove(id);
         true
     }
 
@@ -1380,10 +1405,14 @@ pub async fn run_water_cooler_ble_loop(
     backend: Arc<LiveUccdBackend>,
     mut stop_rx: watch::Receiver<bool>,
 ) {
+    const BLE_BACKOFF_MS: &[u64] = &[500, 2000, 5000, 10000];
     let client = BluezCoolerClient::new_system(connection);
     let mut active_session: Option<BluezGattSession> = None;
     let mut connect_since: Option<Instant> = None;
     let mut disconnect_since: Option<Instant> = None;
+    let mut backoff_idx: usize = 0;
+    let mut last_wc_enabled = backend.water_cooler_enabled.load(Ordering::SeqCst);
+    let mut sig_rx = backend.subscribe_signals();
 
     loop {
         if *stop_rx.borrow() || backend.shutting_down.load(Ordering::SeqCst) {
@@ -1391,10 +1420,11 @@ pub async fn run_water_cooler_ble_loop(
         }
         if backend.cooler_suspending.load(Ordering::SeqCst) {
             if let Some(sess) = active_session.take() {
-                let _ = sess.disconnect().await;
+                let _ = tokio::time::timeout(Duration::from_secs(3), sess.disconnect()).await;
             }
             connect_since = None;
             disconnect_since = None;
+            backoff_idx = 0;
             tokio::select! {
                 biased;
                 _ = stop_rx.changed() => break,
@@ -1403,9 +1433,15 @@ pub async fn run_water_cooler_ble_loop(
             continue;
         }
         let wc_enabled = backend.water_cooler_enabled.load(Ordering::SeqCst);
+        if wc_enabled != last_wc_enabled {
+            last_wc_enabled = wc_enabled;
+            backoff_idx = 0;
+        }
+        let mut had_activity = false;
         if !wc_enabled {
             if let Some(sess) = active_session.take() {
                 let _ = tokio::time::timeout(Duration::from_secs(3), sess.disconnect()).await;
+                had_activity = true;
             }
             connect_since = None;
             disconnect_since = None;
@@ -1418,6 +1454,7 @@ pub async fn run_water_cooler_ble_loop(
                     status: "disconnected".to_string(),
                 });
                 sync_wc_power_and_targets(&backend, false).await;
+                had_activity = true;
             }
         } else if active_session.is_none() {
             let saved = load_saved_cooler_identity(Path::new(AQUARIS_CONFIG_PATH));
@@ -1429,6 +1466,7 @@ pub async fn run_water_cooler_ble_loop(
                                 active_session = Some(sess);
                                 disconnect_since = None;
                                 connect_since.get_or_insert_with(Instant::now);
+                                had_activity = true;
                                 {
                                     let mut cooler = backend.lock_mutex(&backend.cooler_controller);
                                     backend.apply_lid_blank_to_wc_if_closed_locked(&mut cooler);
@@ -1447,6 +1485,7 @@ pub async fn run_water_cooler_ble_loop(
                 }
             }
         } else if let Some(ref sess) = active_session {
+            had_activity = true;
             if let Some(since) = connect_since {
                 if since.elapsed() >= WC_CONNECT_DEBOUNCE
                     && !backend.water_cooler_connected.swap(true, Ordering::SeqCst)
@@ -1491,14 +1530,48 @@ pub async fn run_water_cooler_ble_loop(
             }
         }
 
-        tokio::select! {
-            biased;
-            _ = stop_rx.changed() => break,
-            _ = tokio::time::sleep(Duration::from_millis(500)) => {}
+        let sleep_dur = if had_activity || active_session.is_some() {
+            backoff_idx = 0;
+            Duration::from_millis(BLE_BACKOFF_MS[0])
+        } else {
+            let dur = Duration::from_millis(BLE_BACKOFF_MS[backoff_idx]);
+            backoff_idx = (backoff_idx + 1).min(BLE_BACKOFF_MS.len() - 1);
+            dur
+        };
+
+        let sleep = tokio::time::sleep(sleep_dur);
+        tokio::pin!(sleep);
+        let mut sig_closed = false;
+        let mut should_exit = false;
+        loop {
+            tokio::select! {
+                biased;
+                _ = stop_rx.changed() => {
+                    should_exit = true;
+                    break;
+                }
+                sig = sig_rx.recv(), if !sig_closed => {
+                    match sig {
+                        Ok(DbusSignalEvent::ProfileChanged { .. })
+                        | Err(tokio::sync::broadcast::error::RecvError::Lagged(_)) => {
+                            backoff_idx = 0;
+                            break;
+                        }
+                        Err(tokio::sync::broadcast::error::RecvError::Closed) => {
+                            sig_closed = true;
+                        }
+                        Ok(_) => {}
+                    }
+                }
+                _ = &mut sleep => break,
+            }
+        }
+        if should_exit {
+            break;
         }
     }
 
     if let Some(sess) = active_session {
-        let _ = sess.disconnect().await;
+        let _ = tokio::time::timeout(Duration::from_secs(2), sess.disconnect()).await;
     }
 }

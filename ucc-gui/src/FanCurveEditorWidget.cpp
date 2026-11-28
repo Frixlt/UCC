@@ -2,6 +2,8 @@
 #include <QPainter>
 #include <QPalette>
 #include <QMouseEvent>
+#include <QResizeEvent>
+#include <QEvent>
 #include <QMenu>
 #include <algorithm>
 #include <cmath>
@@ -147,6 +149,140 @@ void FanCurveEditorWidget::enforceMonotonicity(int modifiedIndex) {
     }
 }
 
+void FanCurveEditorWidget::resizeEvent(QResizeEvent *event) {
+    m_gridCacheDirty = true;
+    QWidget::resizeEvent(event);
+}
+
+void FanCurveEditorWidget::changeEvent(QEvent *event) {
+    if (event) {
+        switch (event->type()) {
+        case QEvent::PaletteChange:
+        case QEvent::StyleChange:
+        case QEvent::FontChange:
+#if QT_VERSION >= QT_VERSION_CHECK(6, 6, 0)
+        case QEvent::DevicePixelRatioChange:
+            m_gridCacheDirty = true;
+            break;
+#endif
+        default:
+            break;
+        }
+    }
+    QWidget::changeEvent(event);
+}
+
+void FanCurveEditorWidget::ensureGridCache(const QRectF &plotRect, double minimum,
+                                           const QColor &bgColor, const QColor &gridColor,
+                                           const QColor &labelColor) {
+    const qreal dpr = devicePixelRatioF();
+    const QSize logicalSize = size();
+    if (logicalSize.isEmpty())
+        return;
+
+    const bool unchanged = !m_gridCacheDirty
+        && !m_gridCache.isNull()
+        && m_gridCacheSize == logicalSize
+        && qFuzzyCompare(m_gridCacheDpr, dpr)
+        && qFuzzyCompare(m_gridCacheMinTemp, minimum)
+        && m_gridCacheTitle == m_title
+        && m_gridCacheBg == bgColor.rgba()
+        && m_gridCacheGrid == gridColor.rgba()
+        && m_gridCacheLabel == labelColor.rgba();
+    if (unchanged)
+        return;
+
+    const int left = 80, right = 20, top = 28;
+    const QSize pixelSize(qMax(1, qRound(logicalSize.width() * dpr)),
+                          qMax(1, qRound(logicalSize.height() * dpr)));
+    m_gridCache = QPixmap(pixelSize);
+    m_gridCache.setDevicePixelRatio(dpr);
+    m_gridCache.fill(bgColor);
+
+    QPainter gp(&m_gridCache);
+    gp.setRenderHint(QPainter::Antialiasing);
+
+    // Draw title at the top of the widget if set
+    if (!m_title.isEmpty()) {
+        QFont titleFont = font();
+        titleFont.setPointSize(11);
+        titleFont.setWeight(QFont::Bold);
+        gp.setFont(titleFont);
+        gp.setPen(labelColor);
+        QRectF titleRect(left, 2, logicalSize.width() - left - right, top - 4);
+        gp.drawText(titleRect, Qt::AlignLeft | Qt::AlignVCenter, m_title);
+    }
+
+    // Draw grid and ticks/labels
+    QFont tickFont = font();
+    tickFont.setPointSize(9);
+    tickFont.setWeight(QFont::Normal);
+    gp.setFont(tickFont);
+
+    // Y grid/ticks/labels (0-100% every 20%)
+    for (int i = 0; i <= 5; ++i) {
+        double frac = i / 5.0;
+        qreal y = plotRect.top() + (1.0 - frac) * plotRect.height();
+        qreal yy = qRound(y) + 0.5;
+        gp.setPen(gridColor);
+        gp.drawLine(QPointF(qRound(plotRect.left()) + 0.5, yy), QPointF(qRound(plotRect.right()) + 0.5, yy));
+        int duty = i * 20;
+        QString label = QString::number(duty) + "%";
+        gp.setPen(labelColor);
+        QRectF labelRect(0, yy - 12, left - 16, 24);
+        gp.drawText(labelRect, Qt::AlignRight | Qt::AlignVCenter, label);
+    }
+
+    // X grid/ticks/labels (minimum-100 degC)
+    const int tickStep = (logicalSize.width() - left - right) < 850 ? 10 : 5;
+    for (int temp = static_cast<int>(minimum); temp <= 100; temp += tickStep) {
+        double frac = (temp - minimum) / (100.0 - minimum);
+        qreal x = plotRect.left() + frac * plotRect.width();
+        qreal xx = qRound(x) + 0.5;
+        gp.setPen(gridColor);
+        gp.drawLine(QPointF(xx, qRound(plotRect.top()) + 0.5), QPointF(xx, qRound(plotRect.bottom()) + 0.5));
+        QString label = QString::number(temp) + QChar(0x00B0) + "C";
+        gp.setPen(labelColor);
+        QRectF labelRect(xx - 20, plotRect.bottom() + 12, 40, 20);
+        gp.drawText(labelRect, Qt::AlignHCenter | Qt::AlignTop, label);
+    }
+
+    // Axis labels
+    QFont axisFont = font();
+    axisFont.setPointSize(11);
+    axisFont.setWeight(QFont::Normal);
+    gp.setPen(labelColor);
+    QFont yFont = axisFont;
+    yFont.setPointSize(10);
+    gp.save();
+    int yLabelX = 14;
+    gp.translate(yLabelX, plotRect.center().y());
+    gp.rotate(-90);
+    gp.setFont(yFont);
+    QRectF yLabelRect(-plotRect.height() / 2, -12, plotRect.height(), 24);
+    gp.drawText(yLabelRect, Qt::AlignCenter, "% Duty");
+    gp.restore();
+
+    gp.setFont(axisFont);
+    QRectF xLabelRect(plotRect.left(), plotRect.bottom() + 28, plotRect.width(), 20);
+    gp.drawText(xLabelRect, Qt::AlignHCenter | Qt::AlignTop, "Temperature (°C)");
+
+    // Draw border around plot area (half-pixel aligned)
+    gp.setPen(QPen(labelColor, 1));
+    QRectF borderRect(qRound(plotRect.left()) + 0.5, qRound(plotRect.top()) + 0.5,
+                      qRound(plotRect.width()) - 1.0, qRound(plotRect.height()) - 1.0);
+    gp.drawRect(borderRect);
+
+    m_gridCacheSize = logicalSize;
+    m_gridCacheDpr = dpr;
+    m_gridCacheMinTemp = minimum;
+    m_gridCacheTitle = m_title;
+    m_gridCacheBg = bgColor.rgba();
+    m_gridCacheGrid = gridColor.rgba();
+    m_gridCacheLabel = labelColor.rgba();
+    m_gridCacheDirty = false;
+}
+
 void FanCurveEditorWidget::paintEvent(QPaintEvent*) {
     QPainter p(this);
     p.setRenderHint(QPainter::Antialiasing);
@@ -167,96 +303,22 @@ void FanCurveEditorWidget::paintEvent(QPaintEvent*) {
     const QColor selectedFill  = darkTheme ? QColor( 0xff, 0xa7, 0x26 ) : QColor( 0xfb, 0x8c, 0x00 );
     const QColor selectedBorder= darkTheme ? QColor( 0xff, 0x6f, 0x00 ) : QColor( 0xe6, 0x51, 0x00 );
 
-    p.fillRect(rect(), bgColor);
     // Margins for axes
     int left = 80, right = 20, top = 28, bottom = 68;
-
-    // Draw title at the top of the widget if set
-    if (!m_title.isEmpty()) {
-        QFont titleFont = font();
-        titleFont.setPointSize(11);
-        titleFont.setWeight(QFont::Bold);
-        p.setFont(titleFont);
-        p.setPen(labelColor);
-        QRectF titleRect(left, 2, width() - left - right, top - 4);
-        p.drawText(titleRect, Qt::AlignLeft | Qt::AlignVCenter, m_title);
-    }
-
     QRectF plotRect(left, top, width() - left - right, height() - top - bottom);
+    const double minimum = minimumTemperature();
 
-    // Draw grid and ticks/labels
+    // Blit cached static background/grid/axes/labels layer; only dynamic curve,
+    // EWMA trajectory trail, and crosshair are painted per tick/drag.
+    ensureGridCache(plotRect, minimum, bgColor, gridColor, labelColor);
+    if (!m_gridCache.isNull())
+        p.drawPixmap(0, 0, m_gridCache);
+    else
+        p.fillRect(rect(), bgColor);
+
     QFont tickFont = font();
     tickFont.setPointSize(9);
     tickFont.setWeight(QFont::Normal);
-    p.setFont(tickFont);
-
-    // Y grid/ticks/labels (0-100% every 20%)
-    const double clampedCrossY = m_crosshairVisible
-        ? std::clamp(toWidget(Point{m_crosshairTemp, m_crosshairDuty}).y(),
-                     static_cast<double>(plotRect.top()),
-                     static_cast<double>(plotRect.bottom()))
-        : -1.0;
-    for (int i = 0; i <= 5; ++i) {
-        double frac = i / 5.0;
-        qreal y = plotRect.top() + (1.0 - frac) * plotRect.height();
-        qreal yy = qRound(y) + 0.5;
-        // grid line
-        p.setPen(gridColor);
-        p.drawLine(QPointF(qRound(plotRect.left()) + 0.5, yy), QPointF(qRound(plotRect.right()) + 0.5, yy));
-        // Skip static tick label when live crosshair readout occupies the same vertical band.
-        if (m_crosshairVisible && std::abs(yy - clampedCrossY) < 16.0)
-            continue;
-        // tick label
-        int duty = i * 20;
-        QString label = QString::number(duty) + "%";
-        p.setPen(labelColor);
-        QRectF labelRect(0, yy-12, left-16, 24);
-        p.drawText(labelRect, Qt::AlignRight|Qt::AlignVCenter, label);
-    }
-
-    // X grid/ticks/labels (20-100 degC every 5 degC)
-    const double minimum = minimumTemperature();
-    const int tickStep = (width() - left - right) < 850 ? 10 : 5;
-    for (int temp = static_cast<int>(minimum); temp <= 100; temp += tickStep) {
-        double frac = (temp - minimum) / (100.0 - minimum);
-        qreal x = plotRect.left() + frac * plotRect.width();
-        qreal xx = qRound(x) + 0.5;
-        // grid line
-        p.setPen(gridColor);
-        p.drawLine(QPointF(xx, qRound(plotRect.top()) + 0.5), QPointF(xx, qRound(plotRect.bottom()) + 0.5));
-        // tick label
-        QString label = QString::number(temp) + QChar(0x00B0) + "C";
-        p.setPen(labelColor);
-        QRectF labelRect(xx-20, plotRect.bottom()+12, 40, 20);
-        p.drawText(labelRect, Qt::AlignHCenter|Qt::AlignTop, label);
-    }
-
-    // Axis labels
-    QFont axisFont = font();
-    axisFont.setPointSize(11);
-    axisFont.setWeight(QFont::Normal);
-    p.setPen(labelColor);
-    // Y axis label rotated, outside tick labels
-    QFont yFont = axisFont;
-    yFont.setPointSize(10);
-    p.save();
-    int yLabelX = 14; // close to the left edge of the widget
-    p.translate(yLabelX, plotRect.center().y());
-    p.rotate(-90);
-    p.setFont(yFont);
-    QRectF yLabelRect(-plotRect.height()/2, -12, plotRect.height(), 24);
-    p.drawText(yLabelRect, Qt::AlignCenter, "% Duty");
-    p.restore();
-    // X axis label
-    p.setFont(axisFont);
-    QRectF xLabelRect(plotRect.left(), plotRect.bottom() + 28, plotRect.width(), 20);
-    p.drawText(xLabelRect, Qt::AlignHCenter|Qt::AlignTop, "Temperature (°C)");
-
-    // Draw border around plot area (half-pixel aligned)
-    p.setPen(QPen(labelColor, 1));
-    QRectF borderRect(qRound(plotRect.left()) + 0.5, qRound(plotRect.top()) + 0.5,
-                      qRound(plotRect.width()) - 1.0, qRound(plotRect.height()) - 1.0);
-    p.drawRect(borderRect);
 
     // Draw curve
     p.setFont(tickFont);

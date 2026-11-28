@@ -34,25 +34,24 @@ pub struct FanCurve {
 
 impl FanCurve {
     pub fn new(points: Vec<FanPoint>) -> Result<Self, ValidationError> {
-        let curve = Self { points };
-        curve.validate()?;
-        Ok(curve)
+        Self::validate_slice(&points)?;
+        Ok(Self { points })
     }
 
-    /// Validates fan curve monotonicity invariants:
+    /// Validates a slice of fan curve points against monotonicity invariants without allocating:
     /// 1. Curve must not be empty.
     /// 2. Temperatures must be strictly monotonically increasing: `t_{i-1} < t_i`.
     /// 3. Fan speeds must be monotonically non-decreasing: `s_{i-1} <= s_i`.
     /// 4. Speeds must be in range 0..=100%.
-    pub fn validate(&self) -> Result<(), ValidationError> {
-        if self.points.is_empty() {
+    pub fn validate_slice(points: &[FanPoint]) -> Result<(), ValidationError> {
+        if points.is_empty() {
             return Err(ValidationError::EmptyFanCurve);
         }
 
-        for (i, point) in self.points.iter().enumerate() {
+        for (i, point) in points.iter().enumerate() {
             point.validate()?;
             if i > 0 {
-                let prev = &self.points[i - 1];
+                let prev = &points[i - 1];
                 if point.temp <= prev.temp {
                     return Err(ValidationError::NonMonotonicTemperature {
                         index: i,
@@ -72,46 +71,66 @@ impl FanCurve {
         Ok(())
     }
 
-    /// Computes fan speed percentage (0..=100) for a given temperature via linear interpolation.
-    /// Returns -1 if the curve is empty.
+    /// Validates fan curve monotonicity invariants:
+    /// 1. Curve must not be empty.
+    /// 2. Temperatures must be strictly monotonically increasing: `t_{i-1} < t_i`.
+    /// 3. Fan speeds must be monotonically non-decreasing: `s_{i-1} <= s_i`.
+    /// 4. Speeds must be in range 0..=100%.
+    pub fn validate(&self) -> Result<(), ValidationError> {
+        Self::validate_slice(&self.points)
+    }
+
+    /// Computes fan speed percentage (0..=100) for a given temperature directly from a slice
+    /// via exact integer-rounded linear interpolation (round-half-away-from-zero, avoiding
+    /// IEEE-754 1-ULP drift).
+    /// Returns -1 if the slice is empty.
     /// Clamps below the first entry to the first speed, and above the last entry to the last speed.
-    /// Uses standard round-half-away-from-zero interpolation matching C++ `std::lround`.
-    pub fn get_speed_for_temp(&self, temp: i32) -> i32 {
-        if self.points.is_empty() {
+    pub fn get_speed_for_temp_slice(points: &[FanPoint], temp: i32) -> i32 {
+        if points.is_empty() {
             return -1;
         }
 
-        let first = &self.points[0];
+        let first = &points[0];
         if temp <= first.temp {
             return first.speed as i32;
         }
 
-        let last = &self.points[self.points.len() - 1];
+        let last = &points[points.len() - 1];
         if temp >= last.temp {
             return last.speed as i32;
         }
 
-        for i in 1..self.points.len() {
-            let prev = &self.points[i - 1];
-            let entry = &self.points[i];
+        for window in points.windows(2) {
+            let prev = &window[0];
+            let entry = &window[1];
 
             if entry.temp == temp {
                 return entry.speed as i32;
             }
 
             if temp > prev.temp && temp < entry.temp {
-                let temp_diff = i64::from(entry.temp) - i64::from(prev.temp);
-                if temp_diff == 0 {
+                let temp_diff = i128::from(entry.temp) - i128::from(prev.temp);
+                if temp_diff == 0 || prev.speed == entry.speed {
                     return prev.speed as i32;
                 }
-                let frac = (i64::from(temp) - i64::from(prev.temp)) as f64 / temp_diff as f64;
-                let interpolated =
-                    prev.speed as f64 + frac * (entry.speed as f64 - prev.speed as f64);
-                return interpolated.round() as i32;
+                let dt = i128::from(temp) - i128::from(prev.temp);
+                let ds = i128::from(entry.speed) - i128::from(prev.speed);
+                // Exact non-negative rational value: (prev.speed * temp_diff + dt * ds) / temp_diff.
+                // Round half away from zero: (2 * total_num + temp_diff) / (2 * temp_diff).
+                let total_num = i128::from(prev.speed) * temp_diff + dt * ds;
+                return ((total_num * 2 + temp_diff) / (2 * temp_diff)) as i32;
             }
         }
 
         last.speed as i32
+    }
+
+    /// Computes fan speed percentage (0..=100) for a given temperature via linear interpolation.
+    /// Returns -1 if the curve is empty.
+    /// Clamps below the first entry to the first speed, and above the last entry to the last speed.
+    /// Uses exact round-half-away-from-zero interpolation matching C++ `std::lround`.
+    pub fn get_speed_for_temp(&self, temp: i32) -> i32 {
+        Self::get_speed_for_temp_slice(&self.points, temp)
     }
 }
 
@@ -209,11 +228,16 @@ pub const fn voltage_to_pump_speed(voltage: PumpVoltage) -> u8 {
 }
 
 /// Step-wise (floor) lookup for pump speed based on temperature, matching C++ `FanProfile::getPumpSpeedForTemp`.
-/// Automatically sorts entries by temperature and clamps legacy pump level 4 (V12) to V11 for safe hardware execution.
+/// Scans in O(n) without allocating or sorting (breaking duplicate-temperature ties by last entry,
+/// matching stable sort semantics) and clamps legacy pump level 4 (V12) to V11 for safe hardware execution.
 pub fn get_pump_speed_for_temp(table: &[PumpPoint], temp: i32) -> PumpVoltage {
-    let mut matching: Vec<&PumpPoint> = table.iter().filter(|p| temp >= p.temp).collect();
-    matching.sort_by_key(|p| p.temp);
-    if let Some(entry) = matching.last() {
+    let mut best: Option<&PumpPoint> = None;
+    for entry in table {
+        if temp >= entry.temp && best.is_none_or(|b| entry.temp >= b.temp) {
+            best = Some(entry);
+        }
+    }
+    if let Some(entry) = best {
         let speed_clamped = entry.speed.min(3);
         if let Ok(voltage) = pump_speed_to_voltage(speed_clamped) {
             return voltage;
@@ -252,18 +276,18 @@ impl FanProfile {
     }
 
     pub fn is_valid(&self) -> bool {
-        !self.table_cpu.is_empty() && !self.table_gpu.is_empty()
+        !self.table_cpu.is_empty() && !self.table_gpu.is_empty() && self.validate().is_ok()
     }
 
     pub fn validate(&self) -> Result<(), ValidationError> {
         if !self.table_cpu.is_empty() {
-            FanCurve::new(self.table_cpu.clone())?.validate()?;
+            FanCurve::validate_slice(&self.table_cpu)?;
         }
         if !self.table_gpu.is_empty() {
-            FanCurve::new(self.table_gpu.clone())?.validate()?;
+            FanCurve::validate_slice(&self.table_gpu)?;
         }
         if !self.table_water_cooler_fan.is_empty() {
-            FanCurve::new(self.table_water_cooler_fan.clone())?.validate()?;
+            FanCurve::validate_slice(&self.table_water_cooler_fan)?;
         }
         for point in &self.table_pump {
             point.validate()?;
@@ -277,10 +301,7 @@ impl FanProfile {
         } else {
             &self.table_gpu
         };
-        FanCurve {
-            points: points.clone(),
-        }
-        .get_speed_for_temp(temp)
+        FanCurve::get_speed_for_temp_slice(points, temp)
     }
 
     /// Returns water cooler fan speed. If the water cooler fan table is empty,
@@ -291,10 +312,7 @@ impl FanProfile {
             let gpu_speed = self.get_speed_for_temp(temp, false);
             cpu_speed.max(gpu_speed)
         } else {
-            FanCurve {
-                points: self.table_water_cooler_fan.clone(),
-            }
-            .get_speed_for_temp(temp)
+            FanCurve::get_speed_for_temp_slice(&self.table_water_cooler_fan, temp)
         }
     }
 

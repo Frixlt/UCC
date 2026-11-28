@@ -444,33 +444,48 @@ impl UwccBackend {
         sysfs: Option<Arc<dyn Sysfs>>,
     ) -> Self {
         let info = transport.get_info().unwrap_or_default();
-        let smrw_limits = probe_smrw_limits(transport.as_ref());
+        let api_version_valid = info.api_version == UWCC_API_VERSION;
+        if transport.is_available() && !api_version_valid {
+            tracing::warn!(
+                found = info.api_version,
+                expected = UWCC_API_VERSION,
+                "UWCC driver API version mismatch; disabling backend operations"
+            );
+        }
+        let smrw_limits = if api_version_valid {
+            probe_smrw_limits(transport.as_ref(), info.flags)
+        } else {
+            SmrwPowerLimits::chassis_0x1a_default()
+        };
         let webcam = sysfs.map(UsbWebcamController::new);
         let has_webcam_sysfs = webcam.is_some();
 
         let device_id = dmi.and_then(|d| identify_device(d, None));
-        let water_cooler_supported = (info.flags & UWCC_FLAG_HAS_PWUP) != 0
-            || info.project_id == CHASSIS_PROJECT_0X1A
-            || is_water_cooler_supported(device_id);
+        let has_ec = api_version_valid && (info.flags & UWCC_FLAG_HAS_EC) != 0;
+        let has_pwup = api_version_valid && (info.flags & UWCC_FLAG_HAS_PWUP) != 0;
+        let water_cooler_supported = has_pwup
+            || (api_version_valid
+                && (info.project_id == CHASSIS_PROJECT_0X1A
+                    || is_water_cooler_supported(device_id)));
 
         let capabilities = PlatformCapabilities {
             backend: PlatformBackendKind::Uwcc,
             device: DeviceCapabilities {
                 vendor: DeviceVendor::Uniwill,
                 device_id,
-                number_of_fans: 2,
-                fans_min_speed: 20,
-                fans_off_available: true,
-                fan_control: true,
-                tdp_control: true,
-                charging_thresholds: true,
-                ctgp_supported: true,
+                number_of_fans: if has_ec { 2 } else { 0 },
+                fans_min_speed: if has_ec { 20 } else { 0 },
+                fans_off_available: has_ec,
+                fan_control: has_ec,
+                tdp_control: has_ec,
+                charging_thresholds: has_ec,
+                ctgp_supported: has_ec,
                 water_cooler_supported,
-                webcam_switch: has_webcam_sysfs,
+                webcam_switch: api_version_valid && has_webcam_sysfs,
                 ..DeviceCapabilities::default()
             },
-            tdp_channels: 3,
-            perf_profiles_available: 3,
+            tdp_channels: if has_ec { 3 } else { 0 },
+            perf_profiles_available: if has_ec { 3 } else { 0 },
         };
 
         let ramfan = RamFanController::new(Arc::clone(&transport));
@@ -583,6 +598,41 @@ impl UwccBackend {
         if !self.transport.is_available() {
             return Err(PlatformError::Unavailable);
         }
+        if self.info.api_version != UWCC_API_VERSION {
+            return Err(PlatformError::Unsupported(
+                "UWCC driver API version mismatch",
+            ));
+        }
+        Ok(())
+    }
+
+    fn require_ec(&self) -> Result<(), PlatformError> {
+        self.require_available()?;
+        if (self.info.flags & UWCC_FLAG_HAS_EC) == 0 {
+            return Err(PlatformError::Unsupported(
+                "EC interface unavailable in UWCC flags",
+            ));
+        }
+        Ok(())
+    }
+
+    fn require_pwup(&self) -> Result<(), PlatformError> {
+        self.require_available()?;
+        if (self.info.flags & UWCC_FLAG_HAS_PWUP) == 0 {
+            return Err(PlatformError::Unsupported(
+                "PWUP interface unavailable in UWCC flags",
+            ));
+        }
+        Ok(())
+    }
+
+    fn require_wmi_events(&self) -> Result<(), PlatformError> {
+        self.require_available()?;
+        if (self.info.flags & UWCC_FLAG_HAS_WMI_EVENTS) == 0 {
+            return Err(PlatformError::Unsupported(
+                "WMI events unavailable in UWCC flags",
+            ));
+        }
         Ok(())
     }
 
@@ -598,8 +648,8 @@ impl UwccBackend {
     }
 }
 
-fn probe_smrw_limits(transport: &dyn UwccTransport) -> SmrwPowerLimits {
-    if !transport.is_available() {
+fn probe_smrw_limits(transport: &dyn UwccTransport, flags: u32) -> SmrwPowerLimits {
+    if !transport.is_available() || (flags & UWCC_FLAG_HAS_SMRW) == 0 {
         return SmrwPowerLimits::chassis_0x1a_default();
     }
     // 1. Prefer native 12-byte INOU0000 SMRW read (zero AE_AML_BUFFER_LIMIT in kernel dmesg).
@@ -611,19 +661,21 @@ fn probe_smrw_limits(transport: &dyn UwccTransport) -> SmrwPowerLimits {
     if let Ok(resp) = transport.smrw(req12) {
         if let Some(mut limits) = SmrwPowerLimits::decode_inou0000_12byte(&resp.data[..12]) {
             // Merge optional EC factory ceiling registers (0x07A7..=0x07A9, e.g. 0xD2 = 210W).
-            if let Ok(ec_pl1) = transport.ec_read(uwcc_ec_reg::TDP_FACTORY_PL1_MAX) {
-                if (15..u8::MAX).contains(&ec_pl1) {
-                    limits.pl1_max_w = limits.pl1_max_w.max(i32::from(ec_pl1));
+            if (flags & UWCC_FLAG_HAS_EC) != 0 {
+                if let Ok(ec_pl1) = transport.ec_read(uwcc_ec_reg::TDP_FACTORY_PL1_MAX) {
+                    if (15..u8::MAX).contains(&ec_pl1) {
+                        limits.pl1_max_w = limits.pl1_max_w.max(i32::from(ec_pl1));
+                    }
                 }
-            }
-            if let Ok(ec_pl2) = transport.ec_read(uwcc_ec_reg::TDP_FACTORY_PL2_MAX) {
-                if (15..u8::MAX).contains(&ec_pl2) {
-                    limits.pl2_max_w = limits.pl2_max_w.max(i32::from(ec_pl2));
+                if let Ok(ec_pl2) = transport.ec_read(uwcc_ec_reg::TDP_FACTORY_PL2_MAX) {
+                    if (15..u8::MAX).contains(&ec_pl2) {
+                        limits.pl2_max_w = limits.pl2_max_w.max(i32::from(ec_pl2));
+                    }
                 }
-            }
-            if let Ok(ec_pl4) = transport.ec_read(uwcc_ec_reg::TDP_FACTORY_PL4_MAX) {
-                if (15..u8::MAX).contains(&ec_pl4) {
-                    limits.pl4_max_w = limits.pl4_max_w.max(i32::from(ec_pl4));
+                if let Ok(ec_pl4) = transport.ec_read(uwcc_ec_reg::TDP_FACTORY_PL4_MAX) {
+                    if (15..u8::MAX).contains(&ec_pl4) {
+                        limits.pl4_max_w = limits.pl4_max_w.max(i32::from(ec_pl4));
+                    }
                 }
             }
             return limits;
@@ -660,7 +712,7 @@ impl PlatformBackend for UwccBackend {
     }
 
     fn is_available(&self) -> bool {
-        self.transport.is_available()
+        self.transport.is_available() && self.info.api_version == UWCC_API_VERSION
     }
 
     fn capabilities(&self) -> PlatformCapabilities {
@@ -668,7 +720,7 @@ impl PlatformBackend for UwccBackend {
     }
 
     fn read_fan_temp(&self, fan_idx: usize) -> Result<i32, PlatformError> {
-        self.require_available()?;
+        self.require_ec()?;
         let reg = match fan_idx {
             0 => uwcc_ec_reg::CPU_TEMP_C,
             1 => uwcc_ec_reg::GPU_TEMP_C,
@@ -686,7 +738,7 @@ impl PlatformBackend for UwccBackend {
     }
 
     fn read_fan_speed_percent(&self, fan_idx: usize) -> Result<u8, PlatformError> {
-        self.require_available()?;
+        self.require_ec()?;
         let reg = match fan_idx {
             0 => uwcc_ec_reg::CPU_FAN_DUTY_READ,
             1 => uwcc_ec_reg::GPU_FAN_DUTY_READ,
@@ -701,7 +753,7 @@ impl PlatformBackend for UwccBackend {
     }
 
     fn read_fan_rpm(&self, fan_idx: usize) -> Result<u32, PlatformError> {
-        self.require_available()?;
+        self.require_ec()?;
         let (hi_reg, lo_reg) = match fan_idx {
             0 => (uwcc_ec_reg::CPU_FAN_RPM_HI, uwcc_ec_reg::CPU_FAN_RPM_LO),
             1 => (uwcc_ec_reg::GPU_FAN_RPM_HI, uwcc_ec_reg::GPU_FAN_RPM_LO),
@@ -717,7 +769,7 @@ impl PlatformBackend for UwccBackend {
     }
 
     fn set_fan_speed_percent(&self, fan_idx: usize, percent: u8) -> Result<(), PlatformError> {
-        self.require_available()?;
+        self.require_ec()?;
         if percent > 100 {
             return Err(PlatformError::InvalidArgument(
                 "Fan speed percentage must be 0..=100",
@@ -751,23 +803,28 @@ impl PlatformBackend for UwccBackend {
     }
 
     fn set_fans_auto(&self) -> Result<(), PlatformError> {
-        self.require_available()?;
-        self.ramfan.restore_firmware_auto()?;
-        let prev = self.transport.ec_read(uwcc_ec_reg::FAN_MANUAL_MODE)?;
-        self.transport.ec_write(
-            uwcc_ec_reg::FAN_MANUAL_MODE,
-            prev & !uwcc_ec_reg::FAN_MODE_USER_BIT,
-        )
+        self.require_ec()?;
+        let ramfan_res = self.ramfan.restore_firmware_auto();
+        let ec_res = self
+            .transport
+            .ec_read(uwcc_ec_reg::FAN_MANUAL_MODE)
+            .and_then(|prev| {
+                self.transport.ec_write(
+                    uwcc_ec_reg::FAN_MANUAL_MODE,
+                    prev & !uwcc_ec_reg::FAN_MODE_USER_BIT,
+                )
+            });
+        ramfan_res.and(ec_res)
     }
 
     fn read_tdp(&self, index: usize) -> Result<i32, PlatformError> {
-        self.require_available()?;
+        self.require_ec()?;
         let reg = Self::tdp_reg(index)?;
         Ok(i32::from(self.transport.ec_read(reg)?))
     }
 
     fn read_tdp_limits(&self, index: usize) -> Result<(i32, i32), PlatformError> {
-        self.require_available()?;
+        self.require_ec()?;
         self.smrw_limits
             .tdp_bounds(index)
             .ok_or(PlatformError::InvalidArgument(
@@ -776,7 +833,7 @@ impl PlatformBackend for UwccBackend {
     }
 
     fn set_tdp(&self, index: usize, watts: i32) -> Result<(), PlatformError> {
-        self.require_available()?;
+        self.require_ec()?;
         let (min_w, max_w) = self.read_tdp_limits(index)?;
         if !(min_w..=max_w).contains(&watts) {
             return Err(PlatformError::InvalidArgument(
@@ -790,7 +847,7 @@ impl PlatformBackend for UwccBackend {
     }
 
     fn read_perf_profile(&self) -> Result<i32, PlatformError> {
-        self.require_available()?;
+        self.require_ec()?;
         let code = i32::from(self.transport.ec_read(uwcc_ec_reg::PERF_MODE)?);
         if !(1..=3).contains(&code) {
             return Err(PlatformError::Unavailable);
@@ -799,7 +856,7 @@ impl PlatformBackend for UwccBackend {
     }
 
     fn set_perf_profile(&self, profile_code: i32) -> Result<(), PlatformError> {
-        self.require_available()?;
+        self.require_ec()?;
         if !(1..=3).contains(&profile_code) {
             return Err(PlatformError::InvalidArgument(
                 "Uniwill performance profile code must be 1..=3",
@@ -810,13 +867,13 @@ impl PlatformBackend for UwccBackend {
     }
 
     fn set_mode_enable(&self, enable: bool) -> Result<(), PlatformError> {
-        self.require_available()?;
+        self.require_ec()?;
         self.transport
             .ec_write(uwcc_ec_reg::MODE_ENABLE, u8::from(enable))
     }
 
     fn set_mode(&self, mode: i32) -> Result<(), PlatformError> {
-        self.require_available()?;
+        self.require_ec()?;
         if !(0..=255).contains(&mode) {
             return Err(PlatformError::InvalidArgument(
                 "Uniwill mode must be in 0..=255",
@@ -861,7 +918,7 @@ impl PlatformBackend for UwccBackend {
     }
 
     fn set_pwup(&self, enable: bool, level: u32) -> Result<(), PlatformError> {
-        self.require_available()?;
+        self.require_pwup()?;
         self.transport.pwup(enable, level)
     }
 
@@ -999,7 +1056,7 @@ impl PlatformBackend for UwccBackend {
     }
 
     fn set_lightbar_power(&self, enabled: bool) -> Result<(), PlatformError> {
-        self.require_available()?;
+        self.require_ec()?;
         let prev = self.transport.ec_read(uwcc_ec_reg::LIGHTBAR_AC_CTRL)?;
         let next = if enabled {
             prev | uwcc_ec_reg::LIGHTBAR_APP_EXISTS_BIT
@@ -1010,12 +1067,12 @@ impl PlatformBackend for UwccBackend {
     }
 
     fn read_fn_lock(&self) -> Result<bool, PlatformError> {
-        self.require_available()?;
+        self.require_ec()?;
         Ok((self.transport.ec_read(uwcc_ec_reg::FN_LOCK)? & uwcc_ec_reg::FN_LOCK_BIT) != 0)
     }
 
     fn set_fn_lock(&self, enabled: bool) -> Result<(), PlatformError> {
-        self.require_available()?;
+        self.require_ec()?;
         let prev = self.transport.ec_read(uwcc_ec_reg::FN_LOCK)?;
         let next = if enabled {
             prev | uwcc_ec_reg::FN_LOCK_BIT
@@ -1026,12 +1083,12 @@ impl PlatformBackend for UwccBackend {
     }
 
     fn read_win_lock(&self) -> Result<bool, PlatformError> {
-        self.require_available()?;
+        self.require_ec()?;
         Ok((self.transport.ec_read(uwcc_ec_reg::WIN_LOCK)? & uwcc_ec_reg::WIN_LOCK_BIT) != 0)
     }
 
     fn set_win_lock(&self, enabled: bool) -> Result<(), PlatformError> {
-        self.require_available()?;
+        self.require_ec()?;
         let currently_locked = self.read_win_lock()?;
         if currently_locked == enabled {
             return Ok(());
@@ -1044,18 +1101,18 @@ impl PlatformBackend for UwccBackend {
     }
 
     fn read_usb_sleep_charging(&self) -> Result<bool, PlatformError> {
-        self.require_available()?;
+        self.require_ec()?;
         Ok(self.transport.ec_read(uwcc_ec_reg::USB_SLEEP_CHARGING)? != 0)
     }
 
     fn set_usb_sleep_charging(&self, enabled: bool) -> Result<(), PlatformError> {
-        self.require_available()?;
+        self.require_ec()?;
         self.transport
             .ec_write(uwcc_ec_reg::USB_SLEEP_CHARGING, u8::from(enabled))
     }
 
     fn read_charge_thresholds(&self) -> Result<(u8, u8), PlatformError> {
-        self.require_available()?;
+        self.require_ec()?;
         let raw = self.transport.ec_read(uwcc_ec_reg::CHARGE_CTRL)?;
         let end = raw & uwcc_ec_reg::CHARGE_CTRL_MASK;
         if !(MIN_CHARGE_THRESHOLD_PCT..=MAX_CHARGE_THRESHOLD_PCT).contains(&end) {
@@ -1073,7 +1130,7 @@ impl PlatformBackend for UwccBackend {
     }
 
     fn set_charge_thresholds(&self, start: u8, end: u8) -> Result<(), PlatformError> {
-        self.require_available()?;
+        self.require_ec()?;
         if !(MIN_CHARGE_THRESHOLD_PCT..=MAX_CHARGE_THRESHOLD_PCT).contains(&start)
             || !(MIN_CHARGE_THRESHOLD_PCT..=MAX_CHARGE_THRESHOLD_PCT).contains(&end)
             || start >= end
@@ -1088,17 +1145,17 @@ impl PlatformBackend for UwccBackend {
     }
 
     fn set_fan_boost(&self, enabled: bool) -> Result<(), PlatformError> {
-        self.require_available()?;
+        self.require_ec()?;
         self.ramfan.set_fan_boost(enabled)
     }
 
     fn apply_ramfan_curve(&self, curve: &RamFanCurve) -> Result<(), PlatformError> {
-        self.require_available()?;
+        self.require_ec()?;
         self.ramfan.apply_curve(curve)
     }
 
     fn poll_wmi_event(&self) -> Result<Option<UwccWmiEvent>, PlatformError> {
-        self.require_available()?;
+        self.require_wmi_events()?;
         self.transport.poll_event()
     }
 

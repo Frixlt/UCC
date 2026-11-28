@@ -56,17 +56,10 @@ void HardwareTab::setupUI( QWidget *parent )
   m_displayBrightnessSlider=new QSlider(Qt::Horizontal);m_displayBrightnessSlider->setObjectName("displayBrightnessSlider");m_displayBrightnessSlider->setTracking(false);m_displayBrightnessSlider->setRange(0,100);m_displayBrightnessSlider->setValue(50);
   m_displayBrightnessValueLabel=new QLabel("—");m_displayBrightnessValueLabel->setMinimumWidth(40);
   brightness->addWidget(m_displayBrightnessSlider,1);brightness->addWidget(m_displayBrightnessValueLabel);FluentTheme::styleSliderRow(brightness,m_displayBrightnessValueLabel);controlsLayout->addLayout(brightness);
-  if ( parent )
-  {
-    if ( auto *parentLayout = qobject_cast< QVBoxLayout * >( parent->layout() ) )
-      parentLayout->addWidget( quickControlsGroup );
-  }
-  else
-  {
-    auto *ownLayout = new QVBoxLayout( this );
-    ownLayout->setContentsMargins( 0, 0, 0, 0 );
-    ownLayout->addWidget( quickControlsGroup );
-  }
+  Q_UNUSED( parent )
+  auto *ownLayout = new QVBoxLayout( this );
+  ownLayout->setContentsMargins( 0, 0, 0, 0 );
+  ownLayout->addWidget( quickControlsGroup );
 
 }
 

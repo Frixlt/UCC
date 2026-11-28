@@ -4,6 +4,7 @@
 #include <QVector>
 #include <QPointF>
 #include <QSet>
+#include <QPixmap>
 
 class FanCurveEditorWidget : public QWidget {
     Q_OBJECT
@@ -23,7 +24,7 @@ public:
     bool isEditable() const { return m_editable; }
 
     /** Set a title string drawn at the top of the widget. */
-    void setTitle(const QString &title) { m_title = title; update(); }
+    void setTitle(const QString &title) { if (m_title != title) { m_title = title; m_gridCacheDirty = true; update(); } }
     QString title() const { return m_title; }
 
     /** Set the live crosshair position (temperature in degC, duty in %). */
@@ -37,6 +38,8 @@ signals:
 
 protected:
     void paintEvent(QPaintEvent *event) override;
+    void resizeEvent(QResizeEvent *event) override;
+    void changeEvent(QEvent *event) override;
     void mousePressEvent(QMouseEvent *event) override;
     void mouseMoveEvent(QMouseEvent *event) override;
     void mouseReleaseEvent(QMouseEvent *event) override;
@@ -77,4 +80,16 @@ private:
     void addPoint(const Point &pt);
     void removePoint(int idx);
     void enforceMonotonicity(int modifiedIndex);
+    void ensureGridCache(const QRectF &plotRect, double minimum,
+                         const QColor &bgColor, const QColor &gridColor, const QColor &labelColor);
+
+    QPixmap m_gridCache;
+    QSize m_gridCacheSize;
+    qreal m_gridCacheDpr = 0.0;
+    double m_gridCacheMinTemp = -1.0;
+    QString m_gridCacheTitle;
+    QRgb m_gridCacheBg = 0;
+    QRgb m_gridCacheGrid = 0;
+    QRgb m_gridCacheLabel = 0;
+    bool m_gridCacheDirty = true;
 };

@@ -1,10 +1,27 @@
 cmake_minimum_required(VERSION 3.16)
 project(uccd VERSION ${CMAKE_PROJECT_VERSION})
 
-# Install systemd service files
-install(FILES uccd.service uccd-pre-sleep.service uccd-sleep.service
+# Install systemd service files (deduplicate legacy uccd-pre-sleep.service as a symlink)
+    RESULT_VARIABLE _ucc_symlink_res
+install(FILES uccd.service uccd-sleep.service
   DESTINATION lib/systemd/system
 )
+  if(NOT _ucc_symlink_res EQUAL 0)
+    message(FATAL_ERROR "Failed to create uccd-pre-sleep.service symlink (exit \${_ucc_symlink_res})")
+  endif()
+install(CODE "
+  file(MAKE_DIRECTORY \"\$ENV{DESTDIR}\${CMAKE_INSTALL_PREFIX}/lib/systemd/system\")
+  file(REMOVE \"\$ENV{DESTDIR}\${CMAKE_INSTALL_PREFIX}/lib/systemd/system/uccd-pre-sleep.service\")
+  execute_process(
+    COMMAND \"\${CMAKE_COMMAND}\" -E create_symlink
+      uccd-sleep.service
+      \"\$ENV{DESTDIR}\${CMAKE_INSTALL_PREFIX}/lib/systemd/system/uccd-pre-sleep.service\"
+    RESULT_VARIABLE _ucc_symlink_res
+  )
+  if(NOT _ucc_symlink_res EQUAL 0)
+    message(FATAL_ERROR "Failed to create uccd-pre-sleep.service symlink (exit \${_ucc_symlink_res})")
+  endif()
+")
 
 # Install DBus system service file for activation
 install(FILES com.uniwill.uccd.service
@@ -21,7 +38,17 @@ install(FILES com.uniwill.uccd.policy
   DESTINATION share/polkit-1/actions
 )
 
-if(UCC_PACKAGE_RUST_RUNTIME AND NOT BUILD_TESTS)
+if(UCC_PACKAGE_RUST_RUNTIME)
+  if(BUILD_TESTS)
+    # Only ucc-import-check is referenced by tests/CMakeLists.txt (test_import_check).
+    # Avoid compiling the legacy C++ uccd daemon or requiring Qt6::Bluetooth (qt6-connectivity).
+    set(CMAKE_CXX_STANDARD 20)
+    set(CMAKE_CXX_STANDARD_REQUIRED ON)
+    find_package(Qt6 REQUIRED COMPONENTS Core)
+    add_executable(ucc-import-check src/import-check.cpp)
+    target_include_directories(ucc-import-check PRIVATE inc)
+    target_link_libraries(ucc-import-check PRIVATE Qt6::Core)
+  endif()
   return()
 endif()
 

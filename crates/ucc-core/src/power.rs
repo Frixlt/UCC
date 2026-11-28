@@ -292,11 +292,16 @@ impl PowerPolicy {
 
     /// Registers or updates an application power mode request.
     ///
-    /// Validates owner non-empty, name length 1..=128, reason length <= 512,
+    /// Validates owner length 1..=256, name length 1..=128, reason length <= 512,
     /// and mode is either empty or one of {"ac", "type_c", "bat"}.
     /// Enforces max 256 total requests and max 32 requests per owner.
     pub fn register_request(&mut self, owner: &str, name: &str, reason: &str, mode: &str) -> bool {
-        if owner.is_empty() || name.is_empty() || name.len() > 128 || reason.len() > 512 {
+        if owner.is_empty()
+            || owner.len() > 256
+            || name.is_empty()
+            || name.len() > 128
+            || reason.len() > 512
+        {
             return false;
         }
 

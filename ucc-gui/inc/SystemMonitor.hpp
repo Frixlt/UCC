@@ -72,7 +72,7 @@ class SystemMonitor : public QObject
   Q_PROPERTY( QString chargeType READ chargeType WRITE setChargeType NOTIFY chargeTypeChanged )
 
 public:
-  explicit SystemMonitor( QObject *parent = nullptr );
+  explicit SystemMonitor( UccdClient *client = nullptr, QObject *parent = nullptr );
   ~SystemMonitor() override;
 
   QString cpuUsage() const { return m_cpuUsage; }
@@ -171,7 +171,8 @@ private slots:
 private:
   void initializeChargingState();
 
-  std::unique_ptr< UccdClient > m_client;
+  std::unique_ptr< UccdClient > m_ownedClient;
+  UccdClient *m_client = nullptr;
   QTimer *m_updateTimer;
   QElapsedTimer m_controlsAge;
   bool m_metricsPending = false;

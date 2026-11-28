@@ -14,6 +14,7 @@
  */
 
 #include "SystemMonitor.hpp"
+#include <QPointer>
 #include "CommonTypes.hpp"
 #include <QDebug>
 #include <QJsonDocument>
@@ -24,9 +25,10 @@
 namespace ucc
 {
 
-SystemMonitor::SystemMonitor( QObject *parent )
+SystemMonitor::SystemMonitor( UccdClient *client, QObject *parent )
   : QObject( parent )
-  , m_client( std::make_unique< UccdClient >( this ) )
+  , m_ownedClient( client ? nullptr : std::make_unique< UccdClient >( this ) )
+  , m_client( client ? client : m_ownedClient.get() )
   , m_updateTimer( new QTimer( this ) )
 {
   // Refresh visible metrics every two seconds; all bus reads are asynchronous.
@@ -37,7 +39,7 @@ SystemMonitor::SystemMonitor( QObject *parent )
   initializeChargingState();
 
   // Re-init charging capabilities if uccd wasn't running at startup
-  connect( m_client.get(), &UccdClient::connectionStatusChanged,
+  connect( m_client, &UccdClient::connectionStatusChanged,
            this, [this]( bool connected ) {
     if ( connected )
     {
@@ -71,7 +73,9 @@ void SystemMonitor::updateMetrics()
   const bool controls = !m_controlsAge.isValid() || m_controlsAge.elapsed() >= 10000;
   if (controls) m_controlsAge.restart();
   const auto brightnessRevision = m_brightnessRevision;
-  m_client->requestMonitoringSnapshot(controls, [this, generation, brightnessRevision](const QVariantMap &snapshot) {
+  QPointer<SystemMonitor> self(this);
+  m_client->requestMonitoringSnapshot(controls, [this, self, generation, brightnessRevision](const QVariantMap &snapshot) {
+    if (!self) return;
     m_metricsPending = false;
     if (!m_monitoringActive || generation != m_monitorGeneration || snapshot.isEmpty()) return;
     const auto json = [&snapshot](const QString &method) {
@@ -152,7 +156,7 @@ void SystemMonitor::updateMetrics()
       if (value != m_fnLock) { m_fnLock = value; emit fnLockChanged(); }
     }
     emit metricsUpdated();
-  });
+  }, this);
 }
 
 void SystemMonitor::setDisplayBrightness( int brightness )
@@ -163,7 +167,9 @@ void SystemMonitor::setDisplayBrightness( int brightness )
   m_queuedBrightness = -1;
   m_brightnessPending = true;
   ++m_brightnessRevision;
-  m_client->setDisplayBrightnessAsync(target, [this, target](bool success) {
+  QPointer<SystemMonitor> self(this);
+  m_client->setDisplayBrightnessAsync(target, [this, self, target](bool success) {
+    if (!self) return;
     m_brightnessPending = false;
     if (success) m_displayBrightness = target;
     if (m_queuedBrightness >= 0 && m_queuedBrightness != target) {
@@ -172,7 +178,7 @@ void SystemMonitor::setDisplayBrightness( int brightness )
     }
     m_queuedBrightness = -1;
     emit displayBrightnessChanged();
-  });
+  }, this);
 }
 
 void SystemMonitor::setWebcamEnabled( bool enabled )

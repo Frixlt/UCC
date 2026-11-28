@@ -192,13 +192,13 @@ impl ProfileFanControl {
         }
 
         if !self.table_cpu.is_empty() {
-            FanCurve::new(self.table_cpu.clone())?.validate()?;
+            FanCurve::validate_slice(&self.table_cpu)?;
         }
         if !self.table_gpu.is_empty() {
-            FanCurve::new(self.table_gpu.clone())?.validate()?;
+            FanCurve::validate_slice(&self.table_gpu)?;
         }
         if !self.table_water_cooler_fan.is_empty() {
-            FanCurve::new(self.table_water_cooler_fan.clone())?.validate()?;
+            FanCurve::validate_slice(&self.table_water_cooler_fan)?;
         }
         for point in &self.table_pump {
             point.validate()?;
@@ -260,14 +260,18 @@ where
     }
 }
 
-fn serialize_odm_power_limits<S>(limits: &Vec<u32>, serializer: S) -> Result<S::Ok, S::Error>
+fn serialize_odm_power_limits_ref<S>(limits: &&[u32], serializer: S) -> Result<S::Ok, S::Error>
 where
     S: serde::Serializer,
 {
     use serde::ser::SerializeMap;
     let mut map = serializer.serialize_map(Some(1))?;
-    map.serialize_entry("tdpValues", limits)?;
+    map.serialize_entry("tdpValues", *limits)?;
     map.end()
+}
+
+fn is_empty_u32_slice(slice: &&[u32]) -> bool {
+    slice.is_empty()
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -289,7 +293,7 @@ where
     }
 }
 
-fn serialize_odm_profile<S>(name: &Option<String>, serializer: S) -> Result<S::Ok, S::Error>
+fn serialize_odm_profile_ref<S>(name: &Option<&str>, serializer: S) -> Result<S::Ok, S::Error>
 where
     S: serde::Serializer,
 {
@@ -297,7 +301,7 @@ where
     match name {
         Some(n) => {
             let mut map = serializer.serialize_map(Some(1))?;
-            map.serialize_entry("name", n)?;
+            map.serialize_entry("name", *n)?;
             map.end()
         }
         None => serializer.serialize_none(),
@@ -324,7 +328,7 @@ pub struct UccProfile {
     pub extra: std::collections::BTreeMap<String, serde_json::Value>,
 }
 
-#[derive(Serialize, Deserialize)]
+#[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct UccProfileWire {
     id: String,
@@ -341,66 +345,93 @@ struct UccProfileWire {
     fan: ProfileFanControl,
     #[serde(default)]
     keyboard: ProfileKeyboard,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(default)]
     lid: Option<ProfileLidLighting>,
     #[serde(
         default,
         rename = "odmProfile",
-        skip_serializing_if = "Option::is_none",
-        deserialize_with = "deserialize_odm_profile",
-        serialize_with = "serialize_odm_profile"
+        deserialize_with = "deserialize_odm_profile"
     )]
     odm_profile_name: Option<String>,
     #[serde(
         default,
         rename = "odmPowerLimits",
-        skip_serializing_if = "Vec::is_empty",
-        deserialize_with = "deserialize_odm_power_limits",
-        serialize_with = "serialize_odm_power_limits"
+        deserialize_with = "deserialize_odm_power_limits"
     )]
     odm_power_limits: Vec<u32>,
-    #[serde(
-        default,
-        rename = "nvidiaCTGPOffset",
-        skip_serializing_if = "Option::is_none"
-    )]
+    #[serde(default, rename = "nvidiaCTGPOffset")]
     nvidia_ctgp_offset: Option<i32>,
-    #[serde(
-        default,
-        rename = "selectedKeyboardProfile",
-        skip_serializing_if = "Option::is_none"
-    )]
+    #[serde(default, rename = "selectedKeyboardProfile")]
     selected_keyboard_profile: Option<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(default)]
     charging: Option<ChargingPolicy>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(default)]
     charging_profile: Option<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(default)]
     charging_priority: Option<String>,
     #[serde(
         default,
-        skip_serializing_if = "Option::is_none",
         deserialize_with = "crate::charging::deserialize_opt_charge_type"
     )]
     charge_type: Option<ChargeType>,
     #[serde(
         default,
-        skip_serializing_if = "Option::is_none",
         deserialize_with = "crate::charging::deserialize_opt_threshold"
     )]
     charge_start_threshold: Option<u8>,
     #[serde(
         default,
-        skip_serializing_if = "Option::is_none",
         deserialize_with = "crate::charging::deserialize_opt_threshold"
     )]
     charge_end_threshold: Option<u8>,
-    #[serde(
-        flatten,
-        default,
-        skip_serializing_if = "std::collections::BTreeMap::is_empty"
-    )]
+    #[serde(flatten, default)]
     extra: std::collections::BTreeMap<String, serde_json::Value>,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct UccProfileWireRef<'a> {
+    id: &'a str,
+    name: &'a str,
+    description: &'a str,
+    display: &'a ProfileDisplay,
+    cpu: &'a ProfileCpu,
+    webcam: &'a ProfileWebcam,
+    fan: &'a ProfileFanControl,
+    keyboard: &'a ProfileKeyboard,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    lid: Option<&'a ProfileLidLighting>,
+    #[serde(
+        rename = "odmProfile",
+        skip_serializing_if = "Option::is_none",
+        serialize_with = "serialize_odm_profile_ref"
+    )]
+    odm_profile_name: Option<&'a str>,
+    #[serde(
+        rename = "odmPowerLimits",
+        skip_serializing_if = "is_empty_u32_slice",
+        serialize_with = "serialize_odm_power_limits_ref"
+    )]
+    odm_power_limits: &'a [u32],
+    #[serde(rename = "nvidiaCTGPOffset", skip_serializing_if = "Option::is_none")]
+    nvidia_ctgp_offset: Option<i32>,
+    #[serde(
+        rename = "selectedKeyboardProfile",
+        skip_serializing_if = "Option::is_none"
+    )]
+    selected_keyboard_profile: Option<&'a str>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    charging_profile: Option<&'a str>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    charging_priority: Option<&'a str>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    charge_type: Option<ChargeType>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    charge_start_threshold: Option<u8>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    charge_end_threshold: Option<u8>,
+    #[serde(flatten, skip_serializing_if = "std::collections::BTreeMap::is_empty")]
+    extra: &'a std::collections::BTreeMap<String, serde_json::Value>,
 }
 
 impl<'de> Deserialize<'de> for UccProfile {
@@ -450,27 +481,26 @@ impl Serialize for UccProfile {
     where
         S: serde::Serializer,
     {
-        let wire = UccProfileWire {
-            id: self.id.clone(),
-            name: self.name.clone(),
-            description: self.description.clone(),
-            display: self.display.clone(),
-            cpu: self.cpu.clone(),
-            webcam: self.webcam.clone(),
-            fan: self.fan.clone(),
-            keyboard: self.keyboard.clone(),
-            lid: self.lid.clone(),
-            odm_profile_name: self.odm_profile_name.clone(),
-            odm_power_limits: self.odm_power_limits.clone(),
+        let wire = UccProfileWireRef {
+            id: &self.id,
+            name: &self.name,
+            description: &self.description,
+            display: &self.display,
+            cpu: &self.cpu,
+            webcam: &self.webcam,
+            fan: &self.fan,
+            keyboard: &self.keyboard,
+            lid: self.lid.as_ref(),
+            odm_profile_name: self.odm_profile_name.as_deref(),
+            odm_power_limits: &self.odm_power_limits,
             nvidia_ctgp_offset: self.nvidia_ctgp_offset,
-            selected_keyboard_profile: self.selected_keyboard_profile.clone(),
-            charging: None,
-            charging_profile: self.charging.charging_profile.clone(),
-            charging_priority: self.charging.charging_priority.clone(),
+            selected_keyboard_profile: self.selected_keyboard_profile.as_deref(),
+            charging_profile: self.charging.charging_profile.as_deref(),
+            charging_priority: self.charging.charging_priority.as_deref(),
             charge_type: self.charging.charge_type,
             charge_start_threshold: self.charging.start_threshold,
             charge_end_threshold: self.charging.end_threshold,
-            extra: self.extra.clone(),
+            extra: &self.extra,
         };
         wire.serialize(serializer)
     }

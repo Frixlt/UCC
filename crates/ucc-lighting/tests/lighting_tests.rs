@@ -279,16 +279,14 @@ fn lightbar_welcome_skip_shutdown_and_keyboard_changed_guards() {
         .expect("configure after skip_welcome");
     assert!(!lb_skipped.is_animating());
 
-    // 3. keyboard_changed() updates idle color when managed + Auto + idle + not flash_off.
+    // 3. keyboard_changed() updates idle color when managed + Auto + idle + not flash_off,
+    //    skipping redundant brightness writes when brightness is unchanged (glint fix).
     mock.set_keyboard_colors(vec![RgbColor::new(50, 100, 150)]);
     mock.clear_ops();
     lb.keyboard_changed();
     assert_eq!(
         mock.ops(),
-        vec![
-            LightingOp::WriteLightbarColor(RgbColor::new(50, 100, 150)),
-            LightingOp::WriteLightbarBrightness(180),
-        ]
+        vec![LightingOp::WriteLightbarColor(RgbColor::new(50, 100, 150))]
     );
 
     // Guard: keyboard_changed() is a no-op while animating.

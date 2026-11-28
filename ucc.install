@@ -1,7 +1,11 @@
 ## arg 1: new package version
 
 post_install() {
-  systemctl daemon-reload
+  ucc_restore_settings
+  if [ -d /run/systemd/system ]; then
+    systemctl daemon-reload 2>/dev/null || true
+    systemctl reload dbus.service 2>/dev/null || true
+  fi
   echo ":: Enable uccd.service and uccd-sleep.service after installing the hardware driver."
   echo ":: Read /usr/share/doc/ucc/PROJECT_ORIGINS.md before replacing an existing controller."
 }
@@ -18,15 +22,48 @@ ucc_preserve_settings() {
   fi
 }
 
+# Recover backup-marked /etc/ucc/*.pacsave files (including cross-pkgname
+# replacements and sibling configs) without overwriting existing active files.
+ucc_recover_pacsave_configs() {
+  local package_root="${1:-}"
+  local etc_dir="$package_root/etc/ucc"
+  local cfg target pacsave
+
+  for cfg in settings settings.json aquaris.json profiles.json; do
+    target="$etc_dir/$cfg"
+    pacsave="$target.pacsave"
+    if [ ! -e "$target" ] && [ ! -L "$target" ] && [ -f "$pacsave" ] && [ ! -L "$pacsave" ]; then
+      if install -d -m 0755 "$etc_dir" && install -m 0600 "$pacsave" "$target"; then
+        rm -f "$pacsave"
+      fi
+    fi
+  done
+
+  for pacsave in "$etc_dir"/*.pacsave; do
+    [ -f "$pacsave" ] && [ ! -L "$pacsave" ] || continue
+    target="${pacsave%.pacsave}"
+    if [ ! -e "$target" ] && [ ! -L "$target" ]; then
+      if install -d -m 0755 "$etc_dir" && install -m 0600 "$pacsave" "$target"; then
+        rm -f "$pacsave"
+      fi
+    fi
+  done
+}
+
 ucc_restore_settings() {
   local package_root="${1:-}"
   if [ ! -e "$package_root/etc/ucc/settings" ] && [ ! -L "$package_root/etc/ucc/settings" ] &&
       [ -f "$package_root/var/lib/ucc/package-upgrade/settings" ] &&
       [ -f "$package_root/var/lib/ucc/package-upgrade/pending" ]; then
-    install -d -m 0755 "$package_root/etc/ucc"
-    install -m 0600 "$package_root/var/lib/ucc/package-upgrade/settings" "$package_root/etc/ucc/settings"
+    if install -d -m 0755 "$package_root/etc/ucc" &&
+        install -m 0600 "$package_root/var/lib/ucc/package-upgrade/settings" "$package_root/etc/ucc/settings"; then
+      if [ -f "$package_root/etc/ucc/settings.pacsave" ] && [ ! -L "$package_root/etc/ucc/settings.pacsave" ]; then
+        rm -f "$package_root/etc/ucc/settings.pacsave"
+      fi
+    fi
   fi
   rm -f "$package_root/var/lib/ucc/package-upgrade/pending"
+  ucc_recover_pacsave_configs "$package_root"
 }
 
 pre_upgrade() {
@@ -93,9 +130,12 @@ ucc_migrate_sleep_hook() {
 
 post_upgrade() {
   ucc_restore_settings
-  systemctl daemon-reload
-  # Replace old suspend-target links while preserving disabled or runtime-only hooks.
-  ucc_migrate_sleep_hook
+  if [ -d /run/systemd/system ]; then
+    systemctl daemon-reload 2>/dev/null || true
+    systemctl reload dbus.service 2>/dev/null || true
+    # Replace old suspend-target links while preserving disabled or runtime-only hooks.
+    ucc_migrate_sleep_hook
+  fi
 
   echo ":: Restart uccd and desktop clients when ready to use the upgraded version."
 
@@ -104,17 +144,21 @@ post_upgrade() {
 }
 
 pre_remove() {
-  echo ":: Stopping uccd daemon..."
-  systemctl stop uccd-sleep.service 2>/dev/null || true
-  systemctl stop uccd.service 2>/dev/null || true
+  if [ -d /run/systemd/system ]; then
+    echo ":: Stopping uccd daemon..."
+    systemctl stop uccd-sleep.service 2>/dev/null || true
+    systemctl stop uccd.service 2>/dev/null || true
 
-  echo ":: Disabling uccd services..."
-  systemctl disable uccd.service 2>/dev/null || true
-  systemctl disable uccd-pre-sleep.service uccd-sleep.service 2>/dev/null || true
+    echo ":: Disabling uccd services..."
+    systemctl disable uccd.service 2>/dev/null || true
+    systemctl disable uccd-pre-sleep.service uccd-sleep.service 2>/dev/null || true
+  fi
 }
 
 post_remove() {
-  systemctl daemon-reload
+  if [ -d /run/systemd/system ]; then
+    systemctl daemon-reload 2>/dev/null || true
+  fi
 
   gtk-update-icon-cache -q -t -f usr/share/icons/hicolor 2>/dev/null || true
   update-desktop-database -q usr/share/applications 2>/dev/null || true

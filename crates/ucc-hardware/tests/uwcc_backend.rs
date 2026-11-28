@@ -1405,3 +1405,204 @@ fn uwcc_backend_charging_profile_rmw_ctgp_and_lid_logo_ec_sequence() {
     assert!(platform.set_lid_logo_ec(true, 255, 0, 0, 255).is_err());
     assert_eq!(transport.get_reg(0x07AB), Some(0x00));
 }
+
+#[test]
+fn uwcc_backend_api_version_and_capability_flags_enforcement() {
+    use ucc_hardware::{
+        UwccTransport, UWCC_API_VERSION, UWCC_FLAG_HAS_EC, UWCC_FLAG_HAS_PWUP, UWCC_FLAG_HAS_SMRW,
+        UWCC_FLAG_HAS_WMI_EVENTS,
+    };
+
+    // 1. API version mismatch disables availability, capabilities, and operations.
+    let bad_ver = Arc::new(MockUwccTransport::chassis_0x1a_default());
+    let mut info = bad_ver.get_info().unwrap();
+    info.api_version = UWCC_API_VERSION + 1;
+    bad_ver.set_info(info);
+    let bad_backend = UwccBackend::new(bad_ver, None, None);
+    assert!(!bad_backend.is_available());
+    assert!(!bad_backend.capabilities().device.fan_control);
+    assert_eq!(bad_backend.capabilities().tdp_channels, 0);
+    assert!(matches!(
+        bad_backend.read_fan_temp(0),
+        Err(PlatformError::Unsupported(_))
+    ));
+
+    // 2. Missing EC/PWUP/WMI_EVENTS flags gate capabilities and methods fail-closed.
+    let no_ec = Arc::new(MockUwccTransport::chassis_0x1a_default());
+    let mut info = no_ec.get_info().unwrap();
+    info.flags = UWCC_FLAG_HAS_SMRW; // No EC, PWUP, or WMI_EVENTS
+    no_ec.set_info(info);
+    let no_ec_backend = UwccBackend::new(no_ec, None, None);
+    assert!(no_ec_backend.is_available());
+    assert!(!no_ec_backend.capabilities().device.fan_control);
+    assert!(!no_ec_backend.capabilities().device.tdp_control);
+    assert_eq!(no_ec_backend.capabilities().device.number_of_fans, 0);
+    assert!(matches!(
+        no_ec_backend.read_fan_temp(0),
+        Err(PlatformError::Unsupported(_))
+    ));
+    assert!(matches!(
+        no_ec_backend.set_pwup(true, 1),
+        Err(PlatformError::Unsupported(_))
+    ));
+    assert!(matches!(
+        no_ec_backend.poll_wmi_event(),
+        Err(PlatformError::Unsupported(_))
+    ));
+
+    // 3. EC-only flags enable EC while gating PWUP and WMI_EVENTS.
+    let ec_only = Arc::new(MockUwccTransport::chassis_0x1a_default());
+    let mut info = ec_only.get_info().unwrap();
+    info.flags = UWCC_FLAG_HAS_EC;
+    ec_only.set_info(info);
+    let ec_only_backend = UwccBackend::new(ec_only, None, None);
+    assert!(ec_only_backend.capabilities().device.fan_control);
+    assert!(ec_only_backend.read_fan_temp(0).is_ok());
+    assert!(matches!(
+        ec_only_backend.set_pwup(true, 1),
+        Err(PlatformError::Unsupported(_))
+    ));
+    assert!(matches!(
+        ec_only_backend.poll_wmi_event(),
+        Err(PlatformError::Unsupported(_))
+    ));
+
+    let _ = (UWCC_FLAG_HAS_PWUP, UWCC_FLAG_HAS_WMI_EVENTS);
+}
+
+#[test]
+fn uwcc_set_fans_auto_clears_manual_mode_even_when_ramfan_restore_fails() {
+    use ucc_hardware::UwccTransport;
+
+    struct FailRamFanCtrlTransport(MockUwccTransport);
+    impl UwccTransport for FailRamFanCtrlTransport {
+        fn is_available(&self) -> bool {
+            self.0.is_available()
+        }
+        fn get_info(&self) -> Result<UwccInfo, PlatformError> {
+            self.0.get_info()
+        }
+        fn ec_read(&self, addr: u16) -> Result<u8, PlatformError> {
+            self.0.ec_read(addr)
+        }
+        fn ec_write(&self, addr: u16, val: u8) -> Result<(), PlatformError> {
+            if addr == ramfan_reg::CTRL {
+                return Err(PlatformError::Unavailable);
+            }
+            self.0.ec_write(addr, val)
+        }
+        fn smrw(&self, req: UwccSmrw) -> Result<UwccSmrw, PlatformError> {
+            self.0.smrw(req)
+        }
+        fn pwup(&self, enable: bool, level: u32) -> Result<(), PlatformError> {
+            self.0.pwup(enable, level)
+        }
+        fn poll_event(&self) -> Result<Option<UwccWmiEvent>, PlatformError> {
+            self.0.poll_event()
+        }
+    }
+
+    let inner = MockUwccTransport::chassis_0x1a_default();
+    inner.set_reg(
+        uwcc_ec_reg::FAN_MANUAL_MODE,
+        0x03 | uwcc_ec_reg::FAN_MODE_USER_BIT,
+    );
+    let transport = Arc::new(FailRamFanCtrlTransport(inner));
+    let backend = UwccBackend::new(Arc::clone(&transport) as _, None, None);
+
+    // Must return Err because ramfan restore failed, YET still clear FAN_MODE_USER_BIT!
+    assert!(backend.set_fans_auto().is_err());
+    assert_eq!(
+        transport.0.get_reg(uwcc_ec_reg::FAN_MANUAL_MODE),
+        Some(0x03)
+    );
+}
+
+#[test]
+fn ramfan_diff_write_cache_skips_unchanged_and_invalidates_on_reset_or_error() {
+    let transport = Arc::new(MockUwccTransport::chassis_0x1a_default());
+    let ctrl = RamFanController::new(Arc::clone(&transport) as _);
+    let mut curve = RamFanCurve::balanced_default();
+
+    // First apply writes all 64 curve registers + CTRL + COMMIT = 66 writes.
+    transport.clear_journal();
+    ctrl.apply_curve(&curve).unwrap();
+    assert_eq!(transport.journal().len(), 66);
+
+    // Re-applying identical curve performs 0 EC writes.
+    transport.clear_journal();
+    ctrl.apply_curve(&curve).unwrap();
+    assert_eq!(transport.journal().len(), 0);
+
+    // Modifying a single breakpoint duty writes only that 1 register + CTRL + COMMIT = 3 writes.
+    curve.cpu[RAMFAN_POINTS - 1].duty_percent = 99;
+    transport.clear_journal();
+    ctrl.apply_curve(&curve).unwrap();
+    assert_eq!(transport.journal().len(), 3);
+
+    // restore_firmware_auto invalidates cache so next apply writes all 66 registers again.
+    ctrl.restore_firmware_auto().unwrap();
+    transport.clear_journal();
+    ctrl.apply_curve(&curve).unwrap();
+    assert_eq!(transport.journal().len(), 66);
+
+    // Write failure invalidates cache so subsequent apply writes all 66 registers again.
+    curve.gpu[RAMFAN_POINTS - 1].duty_percent = 98;
+    transport.set_fail_writes(true);
+    assert!(ctrl.apply_curve(&curve).is_err());
+    transport.set_fail_writes(false);
+    transport.clear_journal();
+    ctrl.apply_curve(&curve).unwrap();
+    assert_eq!(transport.journal().len(), 66);
+}
+
+#[test]
+fn webcam_ttl_cache_and_bounded_sysfs_journal_and_d3cold_temp_guard() {
+    use std::time::Duration;
+    use ucc_hardware::ioctl::requests;
+    use ucc_hardware::sysfs::{SysfsWriteJournal, DEFAULT_MAX_JOURNAL_ENTRIES};
+    use ucc_hardware::uwcc::UsbWebcamController;
+
+    // 1. Webcam TTL cache skips redundant sysfs scans within TTL and rescans after invalidation.
+    let sysfs = Arc::new(MockSysfs::new());
+    sysfs.set_file("/sys/bus/usb/devices/1-6/authorized", "1");
+    sysfs.set_file("/sys/bus/usb/devices/1-6/idVendor", "04f2");
+    sysfs.set_file("/sys/bus/usb/devices/1-6/idProduct", "b751");
+    sysfs.set_file("/sys/bus/usb/devices/1-6:1.0/bInterfaceClass", "0e");
+
+    let webcam =
+        UsbWebcamController::new(Arc::clone(&sysfs) as _).with_cache_ttl(Duration::from_secs(60));
+    assert_eq!(webcam.discover_webcams().unwrap().len(), 1);
+
+    // Adding a second camera is not seen while within TTL, then seen after invalidation.
+    sysfs.set_file("/sys/bus/usb/devices/1-7/authorized", "1");
+    sysfs.set_file("/sys/bus/usb/devices/1-7/idVendor", "04f2");
+    sysfs.set_file("/sys/bus/usb/devices/1-7/idProduct", "b752");
+    sysfs.set_file("/sys/bus/usb/devices/1-7:1.0/bInterfaceClass", "0e");
+    assert_eq!(webcam.discover_webcams().unwrap().len(), 1);
+    webcam.invalidate_cache();
+    assert_eq!(webcam.discover_webcams().unwrap().len(), 2);
+
+    // 2. Bounded SysfsWriteJournal evicts oldest entries FIFO at cap.
+    let journal = SysfsWriteJournal::with_max_entries(4);
+    for i in 0..10 {
+        journal.record(format!("/sys/test/{i}"), format!("{i}"), true);
+    }
+    assert_eq!(journal.count(), 4);
+    let payloads: Vec<String> = journal.entries().into_iter().map(|e| e.payload).collect();
+    assert_eq!(payloads, vec!["6", "7", "8", "9"]);
+    assert_eq!(
+        SysfsWriteJournal::new().max_entries(),
+        DEFAULT_MAX_JOURNAL_ENTRIES
+    );
+
+    // 3. TuxedoIoBackend rejects D3cold/sentinel temperatures > 150 C.
+    let hw = MockHardwareIo::new();
+    hw.set_i32_read(requests::R_HWCHECK_UW, 1);
+    hw.set_i32_read(requests::R_UW_FAN_TEMP, 255);
+    let backend = TuxedoIoBackend::new(hw, None, None);
+    assert!(matches!(
+        backend.read_fan_temp(0),
+        Err(PlatformError::SensorUnavailable(0))
+    ));
+}

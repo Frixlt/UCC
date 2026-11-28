@@ -98,6 +98,92 @@ const MAX_PER_SENDER_READ_AUTH: usize = 8;
 const MAX_PER_SENDER_READ_QUEUED: usize = 64;
 const PER_SENDER_READ_WAIT_TIMEOUT: Duration = Duration::from_millis(100);
 const MAX_PER_SENDER_INTERACTIVE_AUTH: usize = 2;
+const UNIX_USER_LOOKUP_TIMEOUT: Duration = Duration::from_secs(4);
+const MAX_CACHED_PROXY_CONNS: usize = 32;
+
+fn proxy_cache_key(conn: &zbus::Connection) -> Option<String> {
+    let unique = conn.unique_name()?.as_str();
+    Some(format!("{}:{unique}", conn.server_guid()))
+}
+
+async fn invalidate_dbus_proxy(conn: &zbus::Connection) {
+    if let Some(key) = proxy_cache_key(conn) {
+        dbus_proxy_cache().lock().await.remove(&key);
+    }
+}
+
+async fn invalidate_polkit_proxy(conn: &zbus::Connection) {
+    if let Some(key) = proxy_cache_key(conn) {
+        polkit_proxy_cache().lock().await.remove(&key);
+    }
+}
+
+fn dbus_proxy_cache() -> &'static tokio::sync::Mutex<HashMap<String, DBusProxy<'static>>> {
+    static CACHE: OnceLock<tokio::sync::Mutex<HashMap<String, DBusProxy<'static>>>> =
+        OnceLock::new();
+    CACHE.get_or_init(|| tokio::sync::Mutex::new(HashMap::new()))
+}
+
+fn polkit_proxy_cache(
+) -> &'static tokio::sync::Mutex<HashMap<String, PolicyKitAuthorityProxy<'static>>> {
+    static CACHE: OnceLock<tokio::sync::Mutex<HashMap<String, PolicyKitAuthorityProxy<'static>>>> =
+        OnceLock::new();
+    CACHE.get_or_init(|| tokio::sync::Mutex::new(HashMap::new()))
+}
+
+async fn get_or_create_dbus_proxy(conn: &zbus::Connection) -> zbus::Result<DBusProxy<'static>> {
+    let key = proxy_cache_key(conn);
+    if let Some(ref k) = key {
+        let cache = dbus_proxy_cache().lock().await;
+        if let Some(proxy) = cache.get(k) {
+            if proxy.inner().connection().server_guid() == conn.server_guid()
+                && proxy.inner().connection().unique_name() == conn.unique_name()
+            {
+                return Ok(proxy.clone());
+            }
+        }
+    }
+    let proxy = DBusProxy::builder(conn)
+        .cache_properties(zbus::proxy::CacheProperties::No)
+        .build()
+        .await?;
+    if let Some(k) = key {
+        let mut cache = dbus_proxy_cache().lock().await;
+        if cache.len() >= MAX_CACHED_PROXY_CONNS && !cache.contains_key(&k) {
+            cache.clear();
+        }
+        cache.insert(k, proxy.clone());
+    }
+    Ok(proxy)
+}
+
+async fn get_or_create_polkit_proxy(
+    conn: &zbus::Connection,
+) -> zbus::Result<PolicyKitAuthorityProxy<'static>> {
+    let key = proxy_cache_key(conn);
+    if let Some(ref k) = key {
+        let cache = polkit_proxy_cache().lock().await;
+        if let Some(proxy) = cache.get(k) {
+            if proxy.inner().connection().server_guid() == conn.server_guid()
+                && proxy.inner().connection().unique_name() == conn.unique_name()
+            {
+                return Ok(proxy.clone());
+            }
+        }
+    }
+    let proxy = PolicyKitAuthorityProxy::builder(conn)
+        .cache_properties(zbus::proxy::CacheProperties::No)
+        .build()
+        .await?;
+    if let Some(k) = key {
+        let mut cache = polkit_proxy_cache().lock().await;
+        if cache.len() >= MAX_CACHED_PROXY_CONNS && !cache.contains_key(&k) {
+            cache.clear();
+        }
+        cache.insert(k, proxy.clone());
+    }
+    Ok(proxy)
+}
 
 fn control_polkit_semaphore() -> &'static Arc<Semaphore> {
     static SEM: OnceLock<Arc<Semaphore>> = OnceLock::new();
@@ -288,7 +374,7 @@ impl PolkitAuthorizer {
             }
         };
 
-        let dbus_proxy = match DBusProxy::new(conn).await {
+        let dbus_proxy = match get_or_create_dbus_proxy(conn).await {
             Ok(p) => p,
             Err(e) => {
                 tracing::warn!("Failed to connect to D-Bus daemon for auth: {e}");
@@ -296,10 +382,24 @@ impl PolkitAuthorizer {
             }
         };
 
-        let uid = match dbus_proxy.get_connection_unix_user(bus_name).await {
-            Ok(u) => u,
-            Err(e) => {
+        let uid = match tokio::time::timeout(
+            UNIX_USER_LOOKUP_TIMEOUT,
+            dbus_proxy.get_connection_unix_user(bus_name),
+        )
+        .await
+        {
+            Ok(Ok(u)) => u,
+            Ok(Err(e)) => {
+                invalidate_dbus_proxy(conn).await;
                 tracing::warn!("Failed to query Unix UID for sender '{sender}': {e}");
+                return false;
+            }
+            Err(_) => {
+                invalidate_dbus_proxy(conn).await;
+                tracing::warn!(
+                    "Timed out querying Unix UID for sender '{sender}' after {:?}",
+                    UNIX_USER_LOOKUP_TIMEOUT
+                );
                 return false;
             }
         };
@@ -329,7 +429,7 @@ impl PolkitAuthorizer {
             return false;
         };
 
-        let authority = match PolicyKitAuthorityProxy::new(conn).await {
+        let authority = match get_or_create_polkit_proxy(conn).await {
             Ok(a) => a,
             Err(e) => {
                 tracing::warn!("Failed to connect to PolicyKit1 authority: {e}");

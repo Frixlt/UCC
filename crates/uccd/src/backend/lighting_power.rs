@@ -732,19 +732,18 @@ impl LiveUccdBackend {
             return false;
         }
         let normalized_json = normalized_cfg.to_json();
-        let (cfg_res, actual_json) = {
+        let (cfg_res, actual_json, prev_cfg) = {
             let mut lb = self.lock_mutex(&self.lightbar_ctrl);
             let prev_cfg = lb.settings().clone();
             let res = lb.configure(&val);
             if let Err(ref err) = res {
                 if !matches!(err, ucc_lighting::LightingError::Unavailable) {
-                    lb.restore_config_preserving_error(prev_cfg);
+                    lb.restore_config_preserving_error(prev_cfg.clone());
                 }
             }
-            self.lightbar_animating
-                .store(lb.is_animating(), Ordering::SeqCst);
+            self.set_lightbar_animating(lb.is_animating());
             let json = lb.settings_json().to_string();
-            (res, json)
+            (res, json, prev_cfg)
         };
         if let Err(err) = cfg_res {
             if !matches!(err, ucc_lighting::LightingError::Unavailable) {
@@ -758,6 +757,13 @@ impl LiveUccdBackend {
             })
             .is_none()
         {
+            if !self.shutdown_wait_expired.load(Ordering::SeqCst) {
+                let persisted_json = self.read_rw(&self.settings).lightbar.clone();
+                let mut lb = self.lock_mutex(&self.lightbar_ctrl);
+                let rollback_json = persisted_json.unwrap_or_else(|| prev_cfg.to_json());
+                let _ = lb.configure(&rollback_json);
+                self.set_lightbar_animating(lb.is_animating());
+            }
             return false;
         }
         self.emit_signal(DbusSignalEvent::LightbarSettingsChanged { json: actual_json });

@@ -3,6 +3,7 @@
 
 #[cfg(unix)]
 use nix::libc;
+use std::collections::VecDeque;
 use std::fs::{self, OpenOptions};
 use std::io::{self, Read, Write};
 #[cfg(unix)]
@@ -60,22 +61,47 @@ pub struct SysfsJournalEntry {
     pub success: bool,
 }
 
-/// Thread-safe journal tracking all sysfs write operations for audit and verification.
-#[derive(Debug, Default, Clone)]
+/// Default maximum number of entries retained in [`SysfsWriteJournal`].
+pub const DEFAULT_MAX_JOURNAL_ENTRIES: usize = 1024;
+
+/// Thread-safe bounded journal tracking recent sysfs write operations for audit and verification.
+#[derive(Debug, Clone)]
 pub struct SysfsWriteJournal {
-    entries: Arc<Mutex<Vec<SysfsJournalEntry>>>,
+    entries: Arc<Mutex<VecDeque<SysfsJournalEntry>>>,
+    max_entries: usize,
+}
+
+impl Default for SysfsWriteJournal {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl SysfsWriteJournal {
     pub fn new() -> Self {
+        Self::with_max_entries(DEFAULT_MAX_JOURNAL_ENTRIES)
+    }
+
+    pub fn with_max_entries(max_entries: usize) -> Self {
         Self {
-            entries: Arc::new(Mutex::new(Vec::new())),
+            entries: Arc::new(Mutex::new(VecDeque::with_capacity(max_entries.min(64)))),
+            max_entries,
         }
     }
 
+    pub fn max_entries(&self) -> usize {
+        self.max_entries
+    }
+
     pub fn record(&self, path: impl Into<PathBuf>, payload: impl Into<String>, success: bool) {
-        let mut list = self.entries.lock().unwrap();
-        list.push(SysfsJournalEntry {
+        if self.max_entries == 0 {
+            return;
+        }
+        let mut list = self.entries.lock().unwrap_or_else(|e| e.into_inner());
+        while list.len() >= self.max_entries {
+            list.pop_front();
+        }
+        list.push_back(SysfsJournalEntry {
             timestamp: SystemTime::now(),
             path: path.into(),
             payload: payload.into(),
@@ -84,15 +110,23 @@ impl SysfsWriteJournal {
     }
 
     pub fn entries(&self) -> Vec<SysfsJournalEntry> {
-        self.entries.lock().unwrap().clone()
+        self.entries
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .iter()
+            .cloned()
+            .collect()
     }
 
     pub fn count(&self) -> usize {
-        self.entries.lock().unwrap().len()
+        self.entries.lock().unwrap_or_else(|e| e.into_inner()).len()
     }
 
     pub fn clear(&self) {
-        self.entries.lock().unwrap().clear();
+        self.entries
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .clear();
     }
 }
 

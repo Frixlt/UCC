@@ -22,11 +22,13 @@
 #include <QDBusPendingCallWatcher>
 #include <QDBusReply>
 #include <QDBusServiceWatcher>
+#include <QVariantList>
 #include <string>
 #include <memory>
 #include <optional>
 #include <functional>
 #include <vector>
+#include <array>
 #include <map>
 
 namespace ucc
@@ -62,7 +64,7 @@ public:
   std::optional< bool > isDeviceSupported();
   DeviceSupportStatus checkDeviceSupport( QString *errorDetail = nullptr );
   // One nonblocking read per source, shared by every metric in the GUI refresh.
-  void requestMonitoringSnapshot(bool includeControls, std::function<void(QVariantMap)> ready);
+  void requestMonitoringSnapshot(bool includeControls, std::function<void(QVariantMap)> ready, QObject *context = nullptr);
 
   // Profile Management
   std::optional< std::string > getDefaultProfilesJSON();
@@ -98,6 +100,50 @@ public:
     const std::string &profileJSON,
     QObject *context,
     std::function< void( bool, const QString & ) > callback );
+  QDBusPendingCallWatcher *callBoolAsync(
+    const QString &method,
+    const QVariantList &args,
+    QObject *context,
+    std::function< void( bool, const QString & ) > callback );
+  QDBusPendingCallWatcher *setKeyboardBacklightAsync(
+    const std::string &config,
+    QObject *context,
+    std::function< void( bool, const QString & ) > callback );
+  QDBusPendingCallWatcher *setLightbarSettingsJSONAsync(
+    const std::string &json,
+    QObject *context,
+    std::function< void( bool, const QString & ) > callback );
+  QDBusPendingCallWatcher *triggerLightbarAnimationAsync(
+    bool force,
+    QObject *context,
+    std::function< void( bool, const QString & ) > callback );
+  QDBusPendingCallWatcher *setPowerDeviceSettingsJSONAsync(
+    const std::string &json,
+    QObject *context,
+    std::function< void( bool, const QString & ) > callback );
+  QDBusPendingCallWatcher *scanPowerDevicesAsync(
+    QObject *context,
+    std::function< void( bool, const QString & ) > callback );
+  QDBusPendingCallWatcher *saveCustomProfileAsync(
+    const std::string &profileJSON,
+    QObject *context,
+    std::function< void( bool, const QString & ) > callback );
+  QDBusPendingCallWatcher *deleteCustomProfileAsync(
+    const std::string &profileId,
+    QObject *context,
+    std::function< void( bool, const QString & ) > callback );
+  QDBusPendingCallWatcher *setBatchStateMapAsync(
+    const std::map< std::string, std::string > &entries,
+    QObject *context,
+    std::function< void( bool, const QString & ) > callback );
+  QDBusPendingCallWatcher *setMuxBootModeAsync(
+    const std::string &mode,
+    QObject *context,
+    std::function< void( bool, const QString & ) > callback );
+  QDBusPendingCallWatcher *setManualPowerModeAsync(
+    const std::string &mode,
+    QObject *context,
+    std::function< void( bool, const QString & ) > callback );
   bool saveCustomProfile( const std::string &profileJSON );
   bool deleteCustomProfile( const std::string &profileId );
   std::optional< std::string > getFanProfile( const std::string &fanProfileId );
@@ -106,7 +152,7 @@ public:
 
   // Display Control
   bool setDisplayBrightness( int brightness );
-  void setDisplayBrightnessAsync(int brightness, std::function<void(bool)> ready);
+  void setDisplayBrightnessAsync(int brightness, std::function<void(bool)> ready, QObject *context = nullptr);
   std::optional< int > getDisplayBrightness();
   bool setYCbCr420Workaround( bool enabled );
   std::optional< bool > getYCbCr420Workaround();
@@ -279,6 +325,7 @@ private:
   std::unique_ptr< QDBusInterface > m_interface;
   QDBusServiceWatcher *m_serviceWatcher = nullptr;
   bool m_connected = false;
+  std::array< bool, 5 > m_dbusSignalsSubscribed = { false, false, false, false, false };
 
   static constexpr const char *DBUS_SERVICE = "com.uniwill.uccd";
   static constexpr const char *DBUS_PATH = "/com/uniwill/uccd";

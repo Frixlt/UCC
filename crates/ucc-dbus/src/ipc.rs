@@ -289,7 +289,7 @@ fn has_active_charging_value(v: &Value) -> bool {
     }
 }
 
-fn profile_requires_manage_hardware(profile_json: &str) -> bool {
+pub fn profile_requires_manage_hardware(profile_json: &str) -> bool {
     let Ok(val) = serde_json::from_str::<Value>(profile_json) else {
         return false;
     };
@@ -410,7 +410,8 @@ pub fn required_access_level(req: &IpcRequest) -> IpcAccessLevel {
         | "SetChargingProfile"
         | "SetChargingPriority"
         | "SetNVIDIAPowerOffset"
-        | "SetWaterCoolerPumpVoltage" => IpcAccessLevel::ManageHardware,
+        | "SetWaterCoolerPumpVoltage"
+        | "SetMuxBootMode" => IpcAccessLevel::ManageHardware,
 
         "ApplyProfile" | "AddCustomProfile" | "SaveCustomProfile" | "UpdateCustomProfile" => {
             if let Some(profile_json) = str_param(&req.params, "profileJson")
@@ -446,7 +447,6 @@ pub fn required_access_level(req: &IpcRequest) -> IpcAccessLevel {
         | "DeleteCustomKeyboardProfile"
         | "SetLightbarSettingsJSON"
         | "TriggerLightbarAnimation"
-        | "SetMuxBootMode"
         | "SetPowerDeviceSettingsJSON"
         | "ScanPowerDevices"
         | "RegisterPowerRequest"

@@ -2,6 +2,7 @@
 #include "LightbarTab.hpp"
 #include "FluentTheme.hpp"
 #include "PreviewMode.hpp"
+#include "AsyncRead.hpp"
 #include <QVBoxLayout>
 #include <QHBoxLayout>
 #include <QFormLayout>
@@ -57,8 +58,13 @@ LightbarTab::LightbarTab(UccdClient *client,QWidget *parent):QWidget(parent),m_c
   connect(reloadButton,&QPushButton::clicked,this,&LightbarTab::reload);
   connect(m_save,&QPushButton::clicked,this,&LightbarTab::save);
   connect(m_test,&QPushButton::clicked,this,[this] {
-    if(readOnlyPreview) return;
-    emit message(m_client->triggerLightbarAnimation(true) ? "Lightbar animation started" : "Animation did not start; check hardware, control enable and the current power mode");showStatus();
+    if(readOnlyPreview || !m_client) return;
+    m_test->setEnabled(false);
+    m_client->triggerLightbarAnimationAsync(true,this,[this](bool ok,const QString &) {
+      m_test->setEnabled(!readOnlyPreview);
+      emit message(ok ? "Lightbar animation started" : "Animation did not start; check hardware, control enable and the current power mode");
+      showStatus();
+    });
   });
   connect(m_client,&UccdClient::connectionStatusChanged,this,[this](bool connected){if(connected) reload(); else showStatus();});
   connect(m_client,&UccdClient::lightbarSettingsChanged,this,[this](const QString &){reload();});
@@ -98,33 +104,42 @@ QJsonObject LightbarTab::collect() const {
   return settings;
 }
 void LightbarTab::save() {
-  if(readOnlyPreview) return;
+  if(readOnlyPreview || !m_client) return;
   const auto payload=QJsonDocument(collect()).toJson(QJsonDocument::Compact).toStdString();
-  if(m_client->setLightbarSettingsJSON(payload)) {
-    const auto statusJson=m_client->getLightbarStatusJSON();
-    const auto status=statusJson ? QJsonDocument::fromJson(QByteArray::fromStdString(*statusJson)).object() : QJsonObject();
-    if(!status.isEmpty() && !status["ok"].toBool(true) && status["available"].toBool(true)) {
-      const QString err=status["error"].toString();
-      emit message(err.isEmpty() ? QStringLiteral("Lightbar settings could not be applied") : QStringLiteral("Lightbar error: %1").arg(err));
-    } else {
-      emit message("Lightbar settings saved and applied");
-    }
-    showStatus();
-  } else {
-    const auto statusJson=m_client->getLightbarStatusJSON();
-    const auto status=statusJson ? QJsonDocument::fromJson(QByteArray::fromStdString(*statusJson)).object() : QJsonObject();
-    const QString err=status["error"].toString();
-    emit message(err.isEmpty() ? QStringLiteral("Lightbar settings could not be saved") : QStringLiteral("Lightbar settings could not be applied: %1").arg(err));
-    showStatus();
-  }
+  m_save->setEnabled(false);
+  m_test->setEnabled(false);
+  m_status->setText("Saving lightbar settings...");
+  m_client->setLightbarSettingsJSONAsync(payload,this,[this](bool ok,const QString &errMsg) {
+    readUccdAsync(this,QStringLiteral("GetLightbarStatusJSON"),{},[this,ok,errMsg](std::optional<QVariant> val) {
+      m_save->setEnabled(!readOnlyPreview);
+      m_test->setEnabled(!readOnlyPreview);
+      const auto status=val ? QJsonDocument::fromJson(val->toString().toUtf8()).object() : QJsonObject();
+      if(ok) {
+        if(!status.isEmpty() && !status["ok"].toBool(true) && status["available"].toBool(true)) {
+          const QString err=status["error"].toString();
+          emit message(err.isEmpty() ? QStringLiteral("Lightbar settings could not be applied") : QStringLiteral("Lightbar error: %1").arg(err));
+        } else {
+          emit message("Lightbar settings saved and applied");
+        }
+      } else {
+        const QString err=status["error"].toString().isEmpty() ? errMsg : status["error"].toString();
+        emit message(err.isEmpty() ? QStringLiteral("Lightbar settings could not be saved") : QStringLiteral("Lightbar settings could not be applied: %1").arg(err));
+      }
+      if(status.isEmpty()) {m_status->setText("Lightbar status unavailable");return;}
+      if(!status["available"].toBool()) {m_status->setText("Lightbar hardware not detected. Settings can still be saved.");return;}
+      m_status->setText(QString("%1 zones · Hardware brightness 0–%2 · Mode: %3 · %4").arg(status["zones"].toInt()).arg(status["maxBrightness"].toInt()).arg(status["mode"].toString(),status["managed"].toBool() ? "UCC control enabled" : "UCC control disabled"));
+      if(!status["ok"].toBool(true)) m_status->setText(m_status->text()+" · "+status["error"].toString());
+    });
+  });
 }
 void LightbarTab::showStatus() {
-  const auto json=m_client->getLightbarStatusJSON();
-  const auto status=json ? QJsonDocument::fromJson(QByteArray::fromStdString(*json)).object() : QJsonObject();
-  if(status.isEmpty()) {m_save->setEnabled(false);m_test->setEnabled(false);m_managed->setEnabled(false);m_silent->setEnabled(false);m_welcome->setEnabled(false);m_status->setText("Lightbar status unavailable");return;}
-  if(!status["available"].toBool()) {m_status->setText("Lightbar hardware not detected. Settings can still be saved.");return;}
-  m_status->setText(QString("%1 zones · Hardware brightness 0–%2 · Mode: %3 · %4").arg(status["zones"].toInt()).arg(status["maxBrightness"].toInt()).arg(status["mode"].toString(),status["managed"].toBool() ? "UCC control enabled" : "UCC control disabled"));
-  if(!status["ok"].toBool(true)) m_status->setText(m_status->text()+" · "+status["error"].toString());
+  readUccdAsync(this,QStringLiteral("GetLightbarStatusJSON"),{},[this](std::optional<QVariant> val) {
+    const auto status=val ? QJsonDocument::fromJson(val->toString().toUtf8()).object() : QJsonObject();
+    if(status.isEmpty()) {m_save->setEnabled(false);m_test->setEnabled(false);m_managed->setEnabled(false);m_silent->setEnabled(false);m_welcome->setEnabled(false);m_status->setText("Lightbar status unavailable");return;}
+    if(!status["available"].toBool()) {m_status->setText("Lightbar hardware not detected. Settings can still be saved.");return;}
+    m_status->setText(QString("%1 zones · Hardware brightness 0–%2 · Mode: %3 · %4").arg(status["zones"].toInt()).arg(status["maxBrightness"].toInt()).arg(status["mode"].toString(),status["managed"].toBool() ? "UCC control enabled" : "UCC control disabled"));
+    if(!status["ok"].toBool(true)) m_status->setText(m_status->text()+" · "+status["error"].toString());
+  });
 }
 
 LogoTab::LogoTab(UccdClient *client,QWidget *parent):QWidget(parent),m_client(client) {
@@ -194,47 +209,69 @@ void LogoTab::reload() {
 }
 
 void LogoTab::save() {
-  if(readOnlyPreview || !m_hasLidLogo) return;
-  auto merged=m_settings;
-  if(const auto latestJson=m_client->getLightbarSettingsJSON()) {
-    const auto latestDoc=QJsonDocument::fromJson(QByteArray::fromStdString(*latestJson));
-    if(latestDoc.isObject() && latestDoc.object()["power_settings"].isObject()) merged=latestDoc.object();
-  }
+  if(readOnlyPreview || !m_hasLidLogo || !m_client) return;
   QJsonObject logo;
   logo["enabled"]=m_enabled->isChecked();
   logo["brightness"]=m_brightness->value();
   logo["color"]=QJsonArray{m_rgb.red(),m_rgb.green(),m_rgb.blue()};
-  merged["lid_logo"]=logo;
-  const auto payload=QJsonDocument(merged).toJson(QJsonDocument::Compact).toStdString();
-  if(m_client->setLightbarSettingsJSON(payload)) {
-    emit message("Lid logo settings saved and applied");
-    showStatus();
-  } else {
-    const auto statusJson=m_client->getLightbarStatusJSON();
-    const auto status=statusJson ? QJsonDocument::fromJson(QByteArray::fromStdString(*statusJson)).object() : QJsonObject();
-    const QString err=status["error"].toString();
-    emit message(err.isEmpty() ? QStringLiteral("Lid logo settings could not be applied") : QStringLiteral("Lid logo error: %1").arg(err));
-    showStatus();
-  }
+  m_save->setEnabled(false);
+  m_status->setText("Saving lid logo settings...");
+  readUccdAsync(this,QStringLiteral("GetLightbarSettingsJSON"),{},[this,logo](std::optional<QVariant> latestVal) {
+    auto merged=m_settings;
+    if(latestVal) {
+      const auto latestDoc=QJsonDocument::fromJson(latestVal->toString().toUtf8());
+      if(latestDoc.isObject() && latestDoc.object()["power_settings"].isObject()) merged=latestDoc.object();
+    }
+    merged["lid_logo"]=logo;
+    const auto payload=QJsonDocument(merged).toJson(QJsonDocument::Compact).toStdString();
+    m_client->setLightbarSettingsJSONAsync(payload,this,[this](bool ok,const QString &errMsg) {
+      readUccdAsync(this,QStringLiteral("GetLightbarStatusJSON"),{},[this,ok,errMsg](std::optional<QVariant> val) {
+        const auto status=val ? QJsonDocument::fromJson(val->toString().toUtf8()).object() : QJsonObject();
+        m_save->setEnabled(m_hasLidLogo && !readOnlyPreview);
+        if(ok) {
+          emit message("Lid logo settings saved and applied");
+        } else {
+          const QString err=status["error"].toString().isEmpty() ? errMsg : status["error"].toString();
+          emit message(err.isEmpty() ? QStringLiteral("Lid logo settings could not be applied") : QStringLiteral("Lid logo error: %1").arg(err));
+        }
+        if(status.isEmpty()) {
+          m_hasLidLogo=false;
+          m_enabled->setEnabled(false);m_brightness->setEnabled(false);m_colorButton->setEnabled(false);m_save->setEnabled(false);
+          m_status->setText("Lid logo status unavailable");
+          return;
+        }
+        m_hasLidLogo=status["hasLidLogo"].toBool();
+        const bool interactive=m_hasLidLogo && !readOnlyPreview;
+        m_enabled->setEnabled(interactive);m_brightness->setEnabled(interactive);m_colorButton->setEnabled(interactive);m_save->setEnabled(interactive);
+        if(!m_hasLidLogo) {
+          m_status->setText("Lid logo LED hardware not detected on this device.");
+          return;
+        }
+        m_status->setText(m_enabled->isChecked() ? "Lid logo LED detected · Enabled" : "Lid logo LED detected · Disabled");
+        if(!status["ok"].toBool(true)) m_status->setText(m_status->text()+" · "+status["error"].toString());
+      });
+    });
+  });
 }
 
 void LogoTab::showStatus() {
-  const auto json=m_client->getLightbarStatusJSON();
-  const auto status=json ? QJsonDocument::fromJson(QByteArray::fromStdString(*json)).object() : QJsonObject();
-  if(status.isEmpty()) {
-    m_hasLidLogo=false;
-    m_enabled->setEnabled(false);m_brightness->setEnabled(false);m_colorButton->setEnabled(false);m_save->setEnabled(false);
-    m_status->setText("Lid logo status unavailable");
-    return;
-  }
-  m_hasLidLogo=status["hasLidLogo"].toBool();
-  const bool interactive=m_hasLidLogo && !readOnlyPreview;
-  m_enabled->setEnabled(interactive);m_brightness->setEnabled(interactive);m_colorButton->setEnabled(interactive);m_save->setEnabled(interactive);
-  if(!m_hasLidLogo) {
-    m_status->setText("Lid logo LED hardware not detected on this device.");
-    return;
-  }
-  m_status->setText(m_enabled->isChecked() ? "Lid logo LED detected · Enabled" : "Lid logo LED detected · Disabled");
-  if(!status["ok"].toBool(true)) m_status->setText(m_status->text()+" · "+status["error"].toString());
+  readUccdAsync(this,QStringLiteral("GetLightbarStatusJSON"),{},[this](std::optional<QVariant> val) {
+    const auto status=val ? QJsonDocument::fromJson(val->toString().toUtf8()).object() : QJsonObject();
+    if(status.isEmpty()) {
+      m_hasLidLogo=false;
+      m_enabled->setEnabled(false);m_brightness->setEnabled(false);m_colorButton->setEnabled(false);m_save->setEnabled(false);
+      m_status->setText("Lid logo status unavailable");
+      return;
+    }
+    m_hasLidLogo=status["hasLidLogo"].toBool();
+    const bool interactive=m_hasLidLogo && !readOnlyPreview;
+    m_enabled->setEnabled(interactive);m_brightness->setEnabled(interactive);m_colorButton->setEnabled(interactive);m_save->setEnabled(interactive);
+    if(!m_hasLidLogo) {
+      m_status->setText("Lid logo LED hardware not detected on this device.");
+      return;
+    }
+    m_status->setText(m_enabled->isChecked() ? "Lid logo LED detected · Enabled" : "Lid logo LED detected · Disabled");
+    if(!status["ok"].toBool(true)) m_status->setText(m_status->text()+" · "+status["error"].toString());
+  });
 }
 }

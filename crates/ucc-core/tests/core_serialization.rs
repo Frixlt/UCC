@@ -27,7 +27,7 @@ fn legacy_profile_never_shifts_tdp_slot_by_filtering_entries() {
 
 #[test]
 fn legacy_profile_dto_clamping_and_roundtrip_boundaries() {
-    // 1. Out-of-range fan/pump/charging values follow the explicit clamping & None-mapping contract.
+    // 1. Out-of-range fan/charging values and negative pump sentinel follow the clamping & None-mapping contract.
     let dto = LegacyProfileDto {
         id: "clamp-boundaries".to_string(),
         name: "Clamp Boundaries".to_string(),
@@ -36,8 +36,8 @@ fn legacy_profile_dto_clamping_and_roundtrip_boundaries() {
             fan_profile: "fan-custom".to_string(),
             same_speed: false,
             auto_control_wc: false,
-            manual_fan_speed: 150,  // > 100 -> None
-            manual_pump_voltage: 1, // forbidden code 1 (V12) -> None
+            manual_fan_speed: 150,   // > 100 -> None
+            manual_pump_voltage: -1, // negative legacy sentinel -> None
             enable_water_cooler: true,
             table_cpu: vec![
                 LegacyFanPointDto {
@@ -194,4 +194,41 @@ fn legacy_profile_dto_clamping_and_roundtrip_boundaries() {
         bad_thresholds.into_profile(),
         Err(ValidationError::InvalidChargingThresholds { start: 80, end: 80 })
     );
+}
+
+#[test]
+fn legacy_profile_dto_rejects_forbidden_v12_and_invalid_pump_codes() {
+    for invalid_code in [1, 5, 99] {
+        let dto = LegacyProfileDto {
+            id: "forbidden-pump".to_string(),
+            name: "Forbidden Pump".to_string(),
+            fan: Some(LegacyFanDto {
+                use_control: true,
+                fan_profile: "fan-balanced".to_string(),
+                same_speed: true,
+                auto_control_wc: true,
+                manual_fan_speed: -1,
+                manual_pump_voltage: invalid_code,
+                enable_water_cooler: true,
+                table_cpu: Vec::new(),
+                table_gpu: Vec::new(),
+                table_pump: Vec::new(),
+                table_water_cooler_fan: Vec::new(),
+            }),
+            ..LegacyProfileDto::default()
+        };
+        assert_eq!(
+            dto.into_profile(),
+            Err(ValidationError::InvalidPumpVoltage(invalid_code)),
+            "LegacyProfileDto must not silently drop invalid pump voltage code {invalid_code}"
+        );
+    }
+
+    let raw_v12 = r#"{"id":"v12","name":"V12","fan":{"manualPumpVoltage":1}}"#;
+    assert!(matches!(
+        LegacyProfileDto::parse_json(raw_v12),
+        Err(ucc_core::CoreError::Validation(
+            ValidationError::InvalidPumpVoltage(1)
+        ))
+    ));
 }

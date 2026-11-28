@@ -388,97 +388,85 @@ impl UniwillHidTransport {
         }
     }
 
-    /// Returns `true` when a lid logo LED is supported (`048D:7000` zone 5 or `048D:7001` + EC).
-    pub fn has_lid_logo(&self) -> Result<bool, LightingError> {
-        Ok(self
-            .find_device(&ITE_LIGHTBAR_PRODUCT_IDS)?
-            .is_some_and(|d| {
-                d.product_id == ITE_LIGHTBAR_PRODUCT_ID_5ZONE
-                    || (d.product_id == ITE_LIGHTBAR_PRODUCT_ID_4ZONE
-                        && self.ec_lid_logo_hook.is_some())
-            }))
+    fn with_lightbar_retry<T, F>(&self, mut op: F) -> Result<T, LightingError>
+    where
+        F: FnMut(&HidDeviceInfo) -> Result<T, LightingError>,
+    {
+        let was_cached = self
+            .cached_lightbar_dev
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .is_some();
+        let Some(dev) = self.find_lightbar_cached()? else {
+            return Err(LightingError::Unavailable);
+        };
+        match op(&dev) {
+            Ok(val) => Ok(val),
+            Err(first_err) => {
+                if matches!(
+                    first_err,
+                    LightingError::InvalidConfig(_) | LightingError::Unavailable
+                ) {
+                    return Err(first_err);
+                }
+                self.invalidate_lightbar_cache();
+                if !was_cached {
+                    return Err(first_err);
+                }
+                let Some(fresh) = self.find_lightbar_cached()? else {
+                    return Err(first_err);
+                };
+                let retry_res = op(&fresh);
+                if retry_res.is_err() {
+                    self.invalidate_lightbar_cache();
+                }
+                retry_res
+            }
+        }
     }
 
-    /// Writes the lid logo LED (`048D:7001` HID Zone 3 + EC persistence, or `048D:7000` zone 5).
-    pub fn write_lid_logo(
+    fn with_keyboard_retry<T, F>(&self, mut op: F) -> Result<T, LightingError>
+    where
+        F: FnMut(&HidDeviceInfo) -> Result<T, LightingError>,
+    {
+        let was_cached = self
+            .cached_keyboard_dev
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .is_some();
+        let Some(dev) = self.find_keyboard_cached()? else {
+            return Err(LightingError::Unavailable);
+        };
+        match op(&dev) {
+            Ok(val) => Ok(val),
+            Err(first_err) => {
+                if matches!(
+                    first_err,
+                    LightingError::InvalidConfig(_) | LightingError::Unavailable
+                ) {
+                    return Err(first_err);
+                }
+                self.invalidate_keyboard_cache();
+                if !was_cached {
+                    return Err(first_err);
+                }
+                let Some(fresh) = self.find_keyboard_cached()? else {
+                    return Err(first_err);
+                };
+                let retry_res = op(&fresh);
+                if retry_res.is_err() {
+                    self.invalidate_keyboard_cache();
+                }
+                retry_res
+            }
+        }
+    }
+
+    fn send_lid_logo_color_for(
         &self,
-        enabled: bool,
+        dev: &HidDeviceInfo,
         rgb: RgbColor,
-        brightness: u8,
     ) -> Result<(), LightingError> {
-        let Some(dev) = self.find_device(&ITE_LIGHTBAR_PRODUCT_IDS)? else {
-            return Err(LightingError::Unavailable);
-        };
-        if dev.product_id == ITE_LIGHTBAR_PRODUCT_ID_5ZONE {
-            let color = if enabled && brightness > 0 {
-                let scale = |c: u8| ((u16::from(c) * u16::from(brightness) + 127) / 255) as u8;
-                RgbColor::new(scale(rgb.r), scale(rgb.g), scale(rgb.b))
-            } else {
-                RgbColor::BLACK
-            };
-            return self.write_lid_logo_color(color);
-        }
-        if self.ec_lid_logo_hook.is_none() {
-            return Err(LightingError::Unavailable);
-        }
-        if enabled && brightness > 0 {
-            let lb_level = (((u32::from(brightness) * 100) + 127) / 255).clamp(1, 100) as u8;
-            let pwr_on = [0x1A, 0x03, 0x01, 0x04, 0x00, 0x00, 0x00, 0x01];
-            let set_col = [0x14, 0x03, 0x01, rgb.r, rgb.g, rgb.b, 0x00, 0x00];
-            let apply = [0x08, 0x23, 0x01, 0x01, lb_level, 0x01, 0x00, 0x00];
-            self.hid.send_feature_report(&dev.path, &pwr_on)?;
-            self.hid.send_feature_report(&dev.path, &set_col)?;
-            self.hid.send_feature_report(&dev.path, &apply)?;
-            if let Some(ref hook) = self.ec_lid_logo_hook {
-                hook(true, rgb, brightness)?;
-            }
-        } else {
-            let reset = [0x12, 0x00, 0x03, 0x00, 0x00, 0x00, 0x00, 0x00];
-            let stop_fx = [0x08, 0x05, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00];
-            let clear_z3 = [0x08, 0x01, 0x03, 0x00, 0x00, 0x00, 0x00, 0x00];
-            let pwr_off = [0x1A, 0x03, 0x00, 0x00, 0x00, 0x00, 0x00, 0x01];
-            self.hid.send_feature_report(&dev.path, &reset)?;
-            self.hid.send_feature_report(&dev.path, &stop_fx)?;
-            self.hid.send_feature_report(&dev.path, &clear_z3)?;
-            self.hid.send_feature_report(&dev.path, &pwr_off)?;
-            if let Some(ref hook) = self.ec_lid_logo_hook {
-                hook(false, RgbColor::BLACK, 0)?;
-            }
-        }
-        Ok(())
-    }
-
-    /// Writes individual per-zone RGB colors to front Lightbar (`1..=4`) and optional lid logo (`5`).
-    pub fn write_lightbar_zones(&self, zone_colors: &[RgbColor]) -> Result<(), LightingError> {
-        let Some(dev) = self.find_device(&ITE_LIGHTBAR_PRODUCT_IDS)? else {
-            return Err(LightingError::Unavailable);
-        };
-        let max_zones = Self::lightbar_zone_count(dev.product_id);
-        if zone_colors.is_empty() || zone_colors.len() > max_zones {
-            return Err(LightingError::InvalidConfig(format!(
-                "Lightbar zone count {} out of range 1..={max_zones}",
-                zone_colors.len()
-            )));
-        }
-        if zone_colors.iter().any(|&c| c != RgbColor::BLACK) {
-            self.ensure_lightbar_ec_power_on()?;
-        }
-        for (idx, rgb) in zone_colors.iter().enumerate() {
-            let zone_id = (idx + 1) as u8;
-            let packet = [0x14, 0x00, zone_id, rgb.r, rgb.g, rgb.b, 0, 0];
-            self.hid.send_feature_report(&dev.path, &packet)?;
-        }
-        Ok(())
-    }
-
-    /// Writes the lid logo LED color (zone 5) on ITE `048D:7000` controllers.
-    ///
-    /// Returns [`LightingError::Unavailable`] if no Lightbar controller is present or if the
-    /// attached controller is a 4-zone `048D:7001` without a lid logo LED.
-    pub fn write_lid_logo_color(&self, rgb: RgbColor) -> Result<(), LightingError> {
-        let Some(dev) = self.find_device(&ITE_LIGHTBAR_PRODUCT_IDS)? else {
-            return Err(LightingError::Unavailable);
-        };
         if dev.product_id != ITE_LIGHTBAR_PRODUCT_ID_5ZONE {
             return Err(LightingError::Unavailable);
         }
@@ -496,6 +484,93 @@ impl UniwillHidTransport {
             0,
         ];
         self.hid.send_feature_report(&dev.path, &packet)
+    }
+
+    /// Returns `true` when a lid logo LED is supported (`048D:7000` zone 5 or `048D:7001` + EC).
+    pub fn has_lid_logo(&self) -> Result<bool, LightingError> {
+        Ok(self.find_lightbar_cached()?.is_some_and(|d| {
+            d.product_id == ITE_LIGHTBAR_PRODUCT_ID_5ZONE
+                || (d.product_id == ITE_LIGHTBAR_PRODUCT_ID_4ZONE
+                    && self.ec_lid_logo_hook.is_some())
+        }))
+    }
+
+    /// Writes the lid logo LED (`048D:7001` HID Zone 3 + EC persistence, or `048D:7000` zone 5).
+    pub fn write_lid_logo(
+        &self,
+        enabled: bool,
+        rgb: RgbColor,
+        brightness: u8,
+    ) -> Result<(), LightingError> {
+        self.with_lightbar_retry(|dev| {
+            if dev.product_id == ITE_LIGHTBAR_PRODUCT_ID_5ZONE {
+                let color = if enabled && brightness > 0 {
+                    let scale = |c: u8| ((u16::from(c) * u16::from(brightness) + 127) / 255) as u8;
+                    RgbColor::new(scale(rgb.r), scale(rgb.g), scale(rgb.b))
+                } else {
+                    RgbColor::BLACK
+                };
+                return self.send_lid_logo_color_for(dev, color);
+            }
+            if self.ec_lid_logo_hook.is_none() {
+                return Err(LightingError::Unavailable);
+            }
+            if enabled && brightness > 0 {
+                let lb_level = (((u32::from(brightness) * 100) + 127) / 255).clamp(1, 100) as u8;
+                let pwr_on = [0x1A, 0x03, 0x01, 0x04, 0x00, 0x00, 0x00, 0x01];
+                let set_col = [0x14, 0x03, 0x01, rgb.r, rgb.g, rgb.b, 0x00, 0x00];
+                let apply = [0x08, 0x23, 0x01, 0x01, lb_level, 0x01, 0x00, 0x00];
+                self.hid.send_feature_report(&dev.path, &pwr_on)?;
+                self.hid.send_feature_report(&dev.path, &set_col)?;
+                self.hid.send_feature_report(&dev.path, &apply)?;
+                if let Some(ref hook) = self.ec_lid_logo_hook {
+                    hook(true, rgb, brightness)?;
+                }
+            } else {
+                let reset = [0x12, 0x00, 0x03, 0x00, 0x00, 0x00, 0x00, 0x00];
+                let stop_fx = [0x08, 0x05, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00];
+                let clear_z3 = [0x08, 0x01, 0x03, 0x00, 0x00, 0x00, 0x00, 0x00];
+                let pwr_off = [0x1A, 0x03, 0x00, 0x00, 0x00, 0x00, 0x00, 0x01];
+                self.hid.send_feature_report(&dev.path, &reset)?;
+                self.hid.send_feature_report(&dev.path, &stop_fx)?;
+                self.hid.send_feature_report(&dev.path, &clear_z3)?;
+                self.hid.send_feature_report(&dev.path, &pwr_off)?;
+                if let Some(ref hook) = self.ec_lid_logo_hook {
+                    hook(false, RgbColor::BLACK, 0)?;
+                }
+            }
+            Ok(())
+        })
+    }
+
+    /// Writes individual per-zone RGB colors to front Lightbar (`1..=4`) and optional lid logo (`5`).
+    pub fn write_lightbar_zones(&self, zone_colors: &[RgbColor]) -> Result<(), LightingError> {
+        self.with_lightbar_retry(|dev| {
+            let max_zones = Self::lightbar_zone_count(dev.product_id);
+            if zone_colors.is_empty() || zone_colors.len() > max_zones {
+                return Err(LightingError::InvalidConfig(format!(
+                    "Lightbar zone count {} out of range 1..={max_zones}",
+                    zone_colors.len()
+                )));
+            }
+            if zone_colors.iter().any(|&c| c != RgbColor::BLACK) {
+                self.ensure_lightbar_ec_power_on()?;
+            }
+            for (idx, rgb) in zone_colors.iter().enumerate() {
+                let zone_id = (idx + 1) as u8;
+                let packet = [0x14, 0x00, zone_id, rgb.r, rgb.g, rgb.b, 0, 0];
+                self.hid.send_feature_report(&dev.path, &packet)?;
+            }
+            Ok(())
+        })
+    }
+
+    /// Writes the lid logo LED color (zone 5) on ITE `048D:7000` controllers.
+    ///
+    /// Returns [`LightingError::Unavailable`] if no Lightbar controller is present or if the
+    /// attached controller is a 4-zone `048D:7001` without a lid logo LED.
+    pub fn write_lid_logo_color(&self, rgb: RgbColor) -> Result<(), LightingError> {
+        self.with_lightbar_retry(|dev| self.send_lid_logo_color_for(dev, rgb))
     }
 }
 
@@ -538,9 +613,6 @@ impl LightingTransport for UniwillHidTransport {
     }
 
     fn write_keyboard_brightness(&self, brightness: u32) -> Result<(), LightingError> {
-        let Some(dev) = self.find_keyboard_cached()? else {
-            return Err(LightingError::Unavailable);
-        };
         // ITE 048D:600B (ITE 8291r3) hardware brightness register accepts 0..=50.
         // Use UserEffect (0x33) when enabled so per-key row colors remain active, and SetOffOp
         // (0x01) when brightness == 0.
@@ -550,10 +622,7 @@ impl LightingTransport for UniwillHidTransport {
         } else {
             [0x08, 0x02, 0x33, 0x00, level, 0x00, 0x00, 0x00]
         };
-        if let Err(err) = self.hid.send_feature_report(&dev.path, &packet) {
-            self.invalidate_keyboard_cache();
-            return Err(err);
-        }
+        self.with_keyboard_retry(|dev| self.hid.send_feature_report(&dev.path, &packet))?;
         *self
             .cached_keyboard_brightness
             .lock()
@@ -562,10 +631,10 @@ impl LightingTransport for UniwillHidTransport {
     }
 
     fn write_keyboard_zones(&self, colors: &[RgbColor]) -> Result<(), LightingError> {
-        let Some(dev) = self.find_keyboard_cached()? else {
-            return Err(LightingError::Unavailable);
-        };
         if colors.is_empty() {
+            if self.find_keyboard_cached()?.is_none() {
+                return Err(LightingError::Unavailable);
+            }
             *self.cached_colors.lock().unwrap_or_else(|e| e.into_inner()) = Vec::new();
             return Ok(());
         }
@@ -598,17 +667,6 @@ impl LightingTransport for UniwillHidTransport {
             rows[row][1 + ITE_KEYBOARD_COLS + col] = c.g;
             rows[row][1 + 2 * ITE_KEYBOARD_COLS + col] = c.r;
         }
-        for (row_idx, row_buf) in rows.iter().enumerate() {
-            let select_row = [0x16, 0x00, row_idx as u8, 0x00, 0x00, 0x00, 0x00, 0x00];
-            if let Err(err) = self.hid.send_feature_report(&dev.path, &select_row) {
-                self.invalidate_keyboard_cache();
-                return Err(err);
-            }
-            if let Err(err) = self.hid.send_output_report(&dev.path, row_buf) {
-                self.invalidate_keyboard_cache();
-                return Err(err);
-            }
-        }
         let cached_b = *self
             .cached_keyboard_brightness
             .lock()
@@ -617,13 +675,18 @@ impl LightingTransport for UniwillHidTransport {
             Some(b) => Self::scale_keyboard_brightness(b),
             None => ITE_KEYBOARD_MAX_HW_BRIGHTNESS,
         };
-        if level > 0 {
-            let commit_user = [0x08, 0x02, 0x33, 0x00, level, 0x00, 0x00, 0x00];
-            if let Err(err) = self.hid.send_feature_report(&dev.path, &commit_user) {
-                self.invalidate_keyboard_cache();
-                return Err(err);
+        self.with_keyboard_retry(|dev| {
+            for (row_idx, row_buf) in rows.iter().enumerate() {
+                let select_row = [0x16, 0x00, row_idx as u8, 0x00, 0x00, 0x00, 0x00, 0x00];
+                self.hid.send_feature_report(&dev.path, &select_row)?;
+                self.hid.send_output_report(&dev.path, row_buf)?;
             }
-        }
+            if level > 0 {
+                let commit_user = [0x08, 0x02, 0x33, 0x00, level, 0x00, 0x00, 0x00];
+                self.hid.send_feature_report(&dev.path, &commit_user)?;
+            }
+            Ok(())
+        })?;
         *self.cached_colors.lock().unwrap_or_else(|e| e.into_inner()) = merged;
         Ok(())
     }
@@ -654,43 +717,45 @@ impl LightingTransport for UniwillHidTransport {
     }
 
     fn write_lightbar_brightness(&self, brightness: u32) -> Result<(), LightingError> {
-        let Some(dev) = self.find_device(&ITE_LIGHTBAR_PRODUCT_IDS)? else {
-            return Err(LightingError::Unavailable);
-        };
         let level = Self::scale_keyboard_brightness(brightness);
-        if dev.product_id == ITE_LIGHTBAR_PRODUCT_ID_4ZONE {
-            let lb_level = if brightness == 0 {
-                0
-            } else {
-                (((brightness.min(255) * 100) + 127) / 255).clamp(1, 100) as u8
-            };
-            if lb_level > 0 {
+        self.with_lightbar_retry(|dev| {
+            if dev.product_id == ITE_LIGHTBAR_PRODUCT_ID_4ZONE {
+                let lb_level = if brightness == 0 {
+                    0
+                } else {
+                    (((brightness.min(255) * 100) + 127) / 255).clamp(1, 100) as u8
+                };
+                if lb_level > 0 {
+                    self.ensure_lightbar_ec_power_on()?;
+                    let on_packet = [0x08, 0x02, 0x01, 0x05, 50, 0x01, 0x00, 0x00];
+                    self.hid.send_feature_report(&dev.path, &on_packet)?;
+                    let br_packet = [0x09, 0x02, lb_level, 0x00, 0x00, 0x00, 0x00, 0x00];
+                    self.hid.send_feature_report(&dev.path, &br_packet)?;
+                } else {
+                    let br_packet = [0x09, 0x02, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00];
+                    self.hid.send_feature_report(&dev.path, &br_packet)?;
+                    let off_packet = [0x08, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00];
+                    self.hid.send_feature_report(&dev.path, &off_packet)?;
+                    self.set_lightbar_ec_power(false)?;
+                }
+            } else if level > 0 {
                 self.ensure_lightbar_ec_power_on()?;
-                let on_packet = [0x08, 0x02, 0x01, 0x05, 50, 0x01, 0x00, 0x00];
-                self.hid.send_feature_report(&dev.path, &on_packet)?;
-                let br_packet = [0x09, 0x02, lb_level, 0x00, 0x00, 0x00, 0x00, 0x00];
-                self.hid.send_feature_report(&dev.path, &br_packet)?;
+                let packet = [0x08, 0x02, 0x01, 0x05, level, 0x01, 0x00, 0x00];
+                self.hid.send_feature_report(&dev.path, &packet)?;
             } else {
-                let br_packet = [0x09, 0x02, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00];
-                self.hid.send_feature_report(&dev.path, &br_packet)?;
-                let off_packet = [0x08, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00];
-                self.hid.send_feature_report(&dev.path, &off_packet)?;
+                let packet = [0x08, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00];
+                self.hid.send_feature_report(&dev.path, &packet)?;
                 self.set_lightbar_ec_power(false)?;
             }
-        } else if level > 0 {
-            self.ensure_lightbar_ec_power_on()?;
-            let packet = [0x08, 0x02, 0x01, 0x05, level, 0x01, 0x00, 0x00];
-            self.hid.send_feature_report(&dev.path, &packet)?;
-        } else {
-            let packet = [0x08, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00];
-            self.hid.send_feature_report(&dev.path, &packet)?;
-            self.set_lightbar_ec_power(false)?;
-        }
-        Ok(())
+            Ok(())
+        })
     }
 
     fn write_lightbar_color(&self, rgb: RgbColor) -> Result<(), LightingError> {
-        let send_for = |dev: &HidDeviceInfo| -> Result<(), LightingError> {
+        self.with_lightbar_retry(|dev| {
+            if rgb != RgbColor::BLACK {
+                self.ensure_lightbar_ec_power_on()?;
+            }
             if dev.product_id == ITE_LIGHTBAR_PRODUCT_ID_4ZONE {
                 for slot in 0..=1u8 {
                     let packet = [0x14, 0x00, slot, rgb.r, rgb.g, rgb.b, 0x00, 0x00];
@@ -704,38 +769,7 @@ impl LightingTransport for UniwillHidTransport {
                 }
             }
             Ok(())
-        };
-        let was_cached = self
-            .cached_lightbar_dev
-            .lock()
-            .unwrap_or_else(|e| e.into_inner())
-            .is_some();
-        let Some(dev) = self.find_lightbar_cached()? else {
-            return Err(LightingError::Unavailable);
-        };
-        if rgb != RgbColor::BLACK {
-            self.ensure_lightbar_ec_power_on()?;
-        }
-        match send_for(&dev) {
-            Ok(()) => Ok(()),
-            Err(first_err) => {
-                self.invalidate_lightbar_cache();
-                if !was_cached {
-                    return Err(first_err);
-                }
-                let Some(fresh) = self.find_lightbar_cached()? else {
-                    return Err(first_err);
-                };
-                if rgb != RgbColor::BLACK {
-                    self.ensure_lightbar_ec_power_on()?;
-                }
-                let retry_res = send_for(&fresh);
-                if retry_res.is_err() {
-                    self.invalidate_lightbar_cache();
-                }
-                retry_res
-            }
-        }
+        })
     }
 
     fn write_lightbar_zones(&self, zones: &[RgbColor]) -> Result<(), LightingError> {

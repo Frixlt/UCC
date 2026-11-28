@@ -136,6 +136,7 @@ fn validate_curve_points(points: &[RamFanPoint; RAMFAN_POINTS]) -> Result<(), Pl
 struct RamFanState {
     custom_active: bool,
     fan_boost: bool,
+    applied_curve: Option<RamFanCurve>,
 }
 
 /// Stateful `RamFan 1.5` controller with drop-safe restoration to firmware auto mode.
@@ -168,6 +169,7 @@ impl RamFanController {
     }
 
     fn restore_firmware_auto_locked(&self, state: &mut RamFanState) -> Result<(), PlatformError> {
+        state.applied_curve = None;
         if !self.transport.is_available() {
             return Err(PlatformError::Unavailable);
         }
@@ -179,7 +181,15 @@ impl RamFanController {
     }
 
     /// Validates and uploads a 16-point CPU & GPU curve into EC RAM (`0x0F00..=0x0F5C`),
-    /// enabling `CUME | UFME`. On partial write failure, attempts fail-safe firmware auto restore.
+    /// enabling `CUME | UFME`. Uses a diff-write cache so only modified EC registers are written.
+    /// Invalidates the cached EC curve state (e.g. after suspend/resume or EC reset).
+    pub fn invalidate_cache(&self) {
+        let mut state = self.lock_state();
+        state.applied_curve = None;
+        state.custom_active = false;
+    }
+
+    /// On partial write failure, invalidates the cache and attempts fail-safe firmware auto restore.
     pub fn apply_curve(&self, curve: &RamFanCurve) -> Result<(), PlatformError> {
         curve.validate()?;
         let mut state = self.lock_state();
@@ -187,21 +197,48 @@ impl RamFanController {
             return Err(PlatformError::Unavailable);
         }
 
+        if state.custom_active || state.applied_curve.is_some() {
+            let live_custom_active = self
+                .transport
+                .ec_read(reg::CTRL)
+                .map(|ctrl| (ctrl & (flags::CUME | flags::UFME)) == (flags::CUME | flags::UFME))
+                .unwrap_or(false);
+            if !live_custom_active {
+                state.applied_curve = None;
+                state.custom_active = false;
+            }
+        }
+
+        if state.custom_active && state.applied_curve.as_ref() == Some(curve) {
+            return Ok(());
+        }
+
+        let prev_curve = state.applied_curve.as_ref();
         let write_result = (|| -> Result<(), PlatformError> {
             for i in 0..RAMFAN_POINTS {
                 let offset = i as u16;
-                self.transport
-                    .ec_write(reg::CPU_TEMP_BASE + offset, curve.cpu[i].temp_c)?;
-                self.transport.ec_write(
-                    reg::CPU_DUTY_BASE + offset,
-                    percent_to_ec_duty(curve.cpu[i].duty_percent),
-                )?;
-                self.transport
-                    .ec_write(reg::GPU_TEMP_BASE + offset, curve.gpu[i].temp_c)?;
-                self.transport.ec_write(
-                    reg::GPU_DUTY_BASE + offset,
-                    percent_to_ec_duty(curve.gpu[i].duty_percent),
-                )?;
+                let cpu_temp = curve.cpu[i].temp_c;
+                if prev_curve.is_none_or(|p| p.cpu[i].temp_c != cpu_temp) {
+                    self.transport
+                        .ec_write(reg::CPU_TEMP_BASE + offset, cpu_temp)?;
+                }
+                let cpu_duty = percent_to_ec_duty(curve.cpu[i].duty_percent);
+                if prev_curve.is_none_or(|p| percent_to_ec_duty(p.cpu[i].duty_percent) != cpu_duty)
+                {
+                    self.transport
+                        .ec_write(reg::CPU_DUTY_BASE + offset, cpu_duty)?;
+                }
+                let gpu_temp = curve.gpu[i].temp_c;
+                if prev_curve.is_none_or(|p| p.gpu[i].temp_c != gpu_temp) {
+                    self.transport
+                        .ec_write(reg::GPU_TEMP_BASE + offset, gpu_temp)?;
+                }
+                let gpu_duty = percent_to_ec_duty(curve.gpu[i].duty_percent);
+                if prev_curve.is_none_or(|p| percent_to_ec_duty(p.gpu[i].duty_percent) != gpu_duty)
+                {
+                    self.transport
+                        .ec_write(reg::GPU_DUTY_BASE + offset, gpu_duty)?;
+                }
             }
 
             let mut ctrl = flags::CUME | flags::UFME;
@@ -214,11 +251,13 @@ impl RamFanController {
         })();
 
         if let Err(err) = write_result {
+            state.applied_curve = None;
             let _ = self.restore_firmware_auto_locked(&mut state);
             return Err(err);
         }
 
         state.custom_active = true;
+        state.applied_curve = Some(curve.clone());
         Ok(())
     }
 
@@ -236,8 +275,14 @@ impl RamFanController {
         if enabled {
             ctrl |= flags::FAN_BOOST;
         }
-        self.transport.ec_write(reg::CTRL, ctrl)?;
-        self.transport.ec_write(reg::COMMIT, u8::from(ctrl != 0))?;
+        if let Err(err) = self
+            .transport
+            .ec_write(reg::CTRL, ctrl)
+            .and_then(|()| self.transport.ec_write(reg::COMMIT, u8::from(ctrl != 0)))
+        {
+            state.applied_curve = None;
+            return Err(err);
+        }
         state.fan_boost = enabled;
         Ok(())
     }

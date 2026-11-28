@@ -251,34 +251,92 @@ impl HidrawDeviceTransport {
     }
 
     #[cfg(target_os = "linux")]
+    fn evict_open_file_slot(&self, path: &str, slot: &Arc<Mutex<Option<fs::File>>>) {
+        let mut map = self.open_files.lock().unwrap_or_else(|e| e.into_inner());
+        if map
+            .get(path)
+            .is_some_and(|cur| Arc::ptr_eq(cur, slot) && cur.try_lock().is_ok_and(|g| g.is_none()))
+        {
+            map.remove(path);
+        }
+    }
+
+    #[cfg(target_os = "linux")]
     fn with_hidraw_file<T, F>(&self, path: &str, mut op: F) -> Result<T, LightingError>
     where
         F: FnMut(&mut fs::File) -> Result<T, LightingError>,
     {
+        const MAX_OPEN_HIDRAW_FILES: usize = 16;
+
         let slot = {
             let mut map = self.open_files.lock().unwrap_or_else(|e| e.into_inner());
-            Arc::clone(
-                map.entry(path.to_string())
-                    .or_insert_with(|| Arc::new(Mutex::new(None))),
-            )
+            if let Some(existing) = map.get(path) {
+                Arc::clone(existing)
+            } else {
+                if map.len() >= MAX_OPEN_HIDRAW_FILES {
+                    let empty_keys: Vec<String> = map
+                        .iter()
+                        .filter(|(_, v)| {
+                            Arc::strong_count(v) == 1 && v.try_lock().is_ok_and(|g| g.is_none())
+                        })
+                        .map(|(k, _)| k.clone())
+                        .collect();
+                    for k in empty_keys {
+                        map.remove(&k);
+                    }
+                    if map.len() >= MAX_OPEN_HIDRAW_FILES {
+                        if let Some(evict_key) = map
+                            .iter()
+                            .find(|(_, v)| Arc::strong_count(v) == 1)
+                            .or_else(|| map.iter().next())
+                            .map(|(k, _)| k.clone())
+                        {
+                            map.remove(&evict_key);
+                        }
+                    }
+                }
+                let entry = Arc::new(Mutex::new(None));
+                map.insert(path.to_string(), Arc::clone(&entry));
+                entry
+            }
         };
         let mut guard = slot.lock().unwrap_or_else(|e| e.into_inner());
         let had_cached = guard.is_some();
         if !had_cached {
-            *guard = Some(self.open_hidraw_file(path)?);
+            match self.open_hidraw_file(path) {
+                Ok(file) => *guard = Some(file),
+                Err(err) => {
+                    drop(guard);
+                    self.evict_open_file_slot(path, &slot);
+                    return Err(err);
+                }
+            }
         }
         let first_res = op(guard.as_mut().expect("cached hidraw handle"));
-        if first_res.is_ok() || !had_cached {
-            if first_res.is_err() {
-                *guard = None;
-            }
+        if first_res.is_ok() {
+            return first_res;
+        }
+        if !had_cached {
+            *guard = None;
+            drop(guard);
+            self.evict_open_file_slot(path, &slot);
             return first_res;
         }
         *guard = None;
-        let mut fresh = self.open_hidraw_file(path)?;
+        let mut fresh = match self.open_hidraw_file(path) {
+            Ok(file) => file,
+            Err(err) => {
+                drop(guard);
+                self.evict_open_file_slot(path, &slot);
+                return Err(err);
+            }
+        };
         let retry_res = op(&mut fresh);
         if retry_res.is_ok() {
             *guard = Some(fresh);
+        } else {
+            drop(guard);
+            self.evict_open_file_slot(path, &slot);
         }
         retry_res
     }
@@ -346,19 +404,20 @@ impl HidDeviceTransport for HidrawDeviceTransport {
         })?;
         let mut stack_buf = [0u8; 65];
         let mut heap_buf = if total_len > stack_buf.len() {
-            let mut v = Vec::with_capacity(total_len);
-            v.push(0x00);
-            v.extend_from_slice(report);
-            v
+            vec![0u8; total_len]
         } else {
-            stack_buf[0] = 0x00;
-            stack_buf[1..total_len].copy_from_slice(report);
             Vec::new()
         };
         self.with_hidraw_file(path, |file| {
+            // Re-initialize from `report` before each attempt because `HIDIOCSFEATURE`
+            // uses `_IOC_RDWR` and the kernel may mutate the buffer on a failed attempt.
             let ptr = if total_len > stack_buf.len() {
+                heap_buf[0] = 0x00;
+                heap_buf[1..total_len].copy_from_slice(report);
                 heap_buf.as_mut_ptr()
             } else {
+                stack_buf[0] = 0x00;
+                stack_buf[1..total_len].copy_from_slice(report);
                 stack_buf.as_mut_ptr()
             };
             // SAFETY: `file` is a validated `/dev/hidraw*` character device descriptor,

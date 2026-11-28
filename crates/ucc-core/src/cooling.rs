@@ -183,7 +183,7 @@ impl FanControlLogic {
         let min_speed = self.fans_min_speed_hw_limit;
         let half_min = min_speed / 2;
         if speed < min_speed {
-            if self.fans_off_available && speed < half_min {
+            if self.fans_off_available && (speed == 0 || speed < half_min) {
                 return 0;
             }
             return min_speed;
@@ -234,7 +234,13 @@ impl FanControlLogic {
         let curve_speed = self.apply_hw_fan_limitations(raw_curve_speed.clamp(0, 100));
         let mut speed = self.smooth_speed(curve_speed);
         speed = self.apply_hw_fan_limitations(speed.clamp(0, 100));
-        speed = Self::manage_critical_temperature(filtered_temp, speed);
+        let critical_speed = Self::manage_critical_temperature(effective_temp, speed);
+        if critical_speed > speed {
+            // Keep EWMA state aligned with thermal override so exiting the hysteresis band
+            // ramps down smoothly instead of whipsawing back to the un-overridden curve speed.
+            self.smoothed_speed = Some(critical_speed as f64);
+            speed = critical_speed;
+        }
         Some(speed.clamp(0, 100) as u8)
     }
 }

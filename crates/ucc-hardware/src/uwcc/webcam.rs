@@ -8,14 +8,25 @@
 
 use crate::platform::PlatformError;
 use crate::traits::Sysfs;
+use std::collections::HashSet;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
+use std::time::{Duration, Instant};
 
 /// Linux sysfs root directory for USB devices and interfaces.
 pub const USB_DEVICES_ROOT: &str = "/sys/bus/usb/devices";
 
 /// USB Video Class (`UVC`) interface class hex code (`0x0E`).
 pub const USB_CLASS_VIDEO: &str = "0e";
+
+/// Default TTL for caching `/sys/bus/usb/devices` webcam scan results.
+pub const DEFAULT_WEBCAM_CACHE_TTL: Duration = Duration::from_secs(5);
+
+#[derive(Debug, Default)]
+struct WebcamCache {
+    devices: Vec<UsbWebcamDevice>,
+    last_scan: Option<Instant>,
+}
 
 /// Discovered USB UVC webcam device node in sysfs.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -31,7 +42,8 @@ pub struct UsbWebcamController {
     sysfs: Arc<dyn Sysfs>,
     usb_root: PathBuf,
     vid_pid_filter: Option<(String, String)>,
-    cached_devices: Mutex<Vec<UsbWebcamDevice>>,
+    cache_ttl: Duration,
+    cached_devices: Mutex<WebcamCache>,
 }
 
 impl UsbWebcamController {
@@ -41,8 +53,25 @@ impl UsbWebcamController {
             sysfs,
             usb_root: PathBuf::from(USB_DEVICES_ROOT),
             vid_pid_filter: None,
-            cached_devices: Mutex::new(Vec::new()),
+            cache_ttl: DEFAULT_WEBCAM_CACHE_TTL,
+            cached_devices: Mutex::new(WebcamCache::default()),
         }
+    }
+
+    /// Overrides the scan cache TTL (defaults to 5 seconds).
+    pub fn with_cache_ttl(mut self, ttl: Duration) -> Self {
+        self.cache_ttl = ttl;
+        self
+    }
+
+    /// Invalidates the scan TTL timestamp so the next discovery rescans sysfs
+    /// while preserving previously discovered deauthorized parent devices.
+    pub fn invalidate_cache(&self) {
+        let mut cache = self
+            .cached_devices
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
+        cache.last_scan = None;
     }
 
     /// Restricts toggling to a specific USB `(idVendor, idProduct)` pair (case-insensitive hex).
@@ -61,12 +90,24 @@ impl UsbWebcamController {
     /// Discovers all parent USB devices under `/sys/bus/usb/devices` that expose at least one
     /// UVC video interface (`bInterfaceClass == "0e"`) and an `authorized` control attribute.
     pub fn discover_webcams(&self) -> Result<Vec<UsbWebcamDevice>, PlatformError> {
+        {
+            let cache = self
+                .cached_devices
+                .lock()
+                .unwrap_or_else(|e| e.into_inner());
+            if let Some(last_scan) = cache.last_scan {
+                if last_scan.elapsed() < self.cache_ttl {
+                    return Ok(cache.devices.clone());
+                }
+            }
+        }
+
         let entries = self.sysfs.read_dir(&self.usb_root).map_err(|_| {
             PlatformError::Unsupported("USB sysfs root unavailable for webcam control")
         })?;
 
         let mut parent_devices: Vec<PathBuf> = Vec::new();
-        let mut uvc_parent_names: Vec<String> = Vec::new();
+        let mut uvc_parent_names: HashSet<String> = HashSet::new();
 
         for entry in &entries {
             let Some(name) = entry.file_name().and_then(|n| n.to_str()) else {
@@ -77,12 +118,13 @@ impl UsbWebcamController {
                 continue;
             }
             if let Some((parent_name, _iface)) = name.split_once(':') {
+                if uvc_parent_names.contains(parent_name) {
+                    continue;
+                }
                 let class_path = entry.join("bInterfaceClass");
                 if let Ok(class_raw) = self.sysfs.read(&class_path) {
-                    if class_raw.trim().eq_ignore_ascii_case(USB_CLASS_VIDEO)
-                        && !uvc_parent_names.iter().any(|p| p == parent_name)
-                    {
-                        uvc_parent_names.push(parent_name.to_string());
+                    if class_raw.trim().eq_ignore_ascii_case(USB_CLASS_VIDEO) {
+                        uvc_parent_names.insert(parent_name.to_string());
                     }
                 }
             } else {
@@ -93,11 +135,12 @@ impl UsbWebcamController {
         parent_devices.sort();
 
         let mut webcams = Vec::new();
+        let mut seen_paths: HashSet<PathBuf> = HashSet::new();
         for dev_path in parent_devices {
             let Some(dev_name) = dev_path.file_name().and_then(|n| n.to_str()) else {
                 continue;
             };
-            if !uvc_parent_names.iter().any(|p| p == dev_name) {
+            if !uvc_parent_names.contains(dev_name) {
                 continue;
             }
             if !self.sysfs.exists(&dev_path.join("authorized")) {
@@ -130,6 +173,7 @@ impl UsbWebcamController {
                 .map(|s| s.trim().to_string())
                 .filter(|s| !s.is_empty());
 
+            seen_paths.insert(dev_path.clone());
             webcams.push(UsbWebcamDevice {
                 device_path: dev_path,
                 vendor_id,
@@ -145,8 +189,8 @@ impl UsbWebcamController {
             .cached_devices
             .lock()
             .unwrap_or_else(|e| e.into_inner());
-        for cached in cache.iter() {
-            if webcams.iter().any(|w| w.device_path == cached.device_path) {
+        for cached in &cache.devices {
+            if seen_paths.contains(&cached.device_path) {
                 continue;
             }
             if !self.sysfs.exists(&cached.device_path.join("authorized")) {
@@ -172,10 +216,12 @@ impl UsbWebcamController {
                     continue;
                 }
             }
+            seen_paths.insert(cached.device_path.clone());
             webcams.push(cached.clone());
         }
         webcams.sort_by(|a, b| a.device_path.cmp(&b.device_path));
-        *cache = webcams.clone();
+        cache.devices = webcams.clone();
+        cache.last_scan = Some(Instant::now());
 
         Ok(webcams)
     }

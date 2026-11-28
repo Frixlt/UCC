@@ -428,9 +428,13 @@ pub struct LightbarController {
     flash_off: bool,
     welcome_done: bool,
     last_written_color: Option<RgbColor>,
+    last_written_brightness: Option<u32>,
+    consecutive_anim_errors: u8,
     last_ok: bool,
     last_error: String,
 }
+
+const MAX_CONSECUTIVE_ANIM_ERRORS: u8 = 5;
 
 impl LightbarController {
     pub fn new(transport: Arc<dyn LightingTransport>) -> Self {
@@ -446,6 +450,8 @@ impl LightbarController {
             flash_off: false,
             welcome_done: false,
             last_written_color: None,
+            last_written_brightness: None,
+            consecutive_anim_errors: 0,
             last_ok: true,
             last_error: String::new(),
         };
@@ -487,6 +493,8 @@ impl LightbarController {
         self.anim_started = None;
         self.flash_off = false;
         self.last_written_color = None;
+        self.last_written_brightness = None;
+        self.consecutive_anim_errors = 0;
         self.config = normalized;
         self.discover();
 
@@ -535,6 +543,8 @@ impl LightbarController {
 
     /// Re-applies currently stored configuration (e.g. retry after transient hardware I/O error).
     pub fn apply_current(&mut self) -> Result<(), LightingError> {
+        self.last_written_brightness = None;
+        self.last_written_color = None;
         if self.config.managed {
             self.discover();
             self.apply_idle_result()
@@ -548,6 +558,8 @@ impl LightbarController {
         self.animating = false;
         self.anim_started = None;
         self.last_written_color = None;
+        self.last_written_brightness = None;
+        self.consecutive_anim_errors = 0;
         self.discover();
         if self.config.managed {
             self.apply_idle_result()
@@ -560,6 +572,8 @@ impl LightbarController {
         self.animating = false;
         self.anim_started = None;
         self.last_written_color = None;
+        self.last_written_brightness = None;
+        self.consecutive_anim_errors = 0;
         if self.config.managed {
             self.config.managed = false;
             if self.config.lid_logo.is_some() && self.transport.has_lid_logo().unwrap_or(false) {
@@ -616,6 +630,7 @@ impl LightbarController {
         self.animating = false;
         self.anim_started = None;
         self.flash_off = false;
+        self.consecutive_anim_errors = 0;
         self.power_mode = mode;
         if self.config.managed {
             self.apply_idle();
@@ -660,12 +675,16 @@ impl LightbarController {
         self.last_error.clear();
 
         self.last_written_color = None;
+        self.consecutive_anim_errors = 0;
         self.write_brightness_result(prof.brightness_val)?;
         self.animating = true;
         self.anim_started = Some(Instant::now());
         self.flash_off = false;
         self.advance(0);
         if !self.last_ok {
+            self.animating = false;
+            self.anim_started = None;
+            self.consecutive_anim_errors = 0;
             return Err(LightingError::WriteFailed(self.last_error.clone()));
         }
         Ok(true)
@@ -694,6 +713,7 @@ impl LightbarController {
         if elapsed_ms >= self.active_animation.duration_ms() {
             self.animating = false;
             self.anim_started = None;
+            self.consecutive_anim_errors = 0;
             self.flash_off = matches!(
                 self.active_animation,
                 LightbarAnimation::Flash | LightbarAnimation::PulseOff
@@ -726,8 +746,16 @@ impl LightbarController {
         if self.last_written_color == Some(frame_rgb) {
             return;
         }
-        if !self.write_color(frame_rgb) {
-            self.animating = false;
+        if self.write_color(frame_rgb) {
+            self.consecutive_anim_errors = 0;
+            self.last_ok = true;
+            self.last_error.clear();
+        } else {
+            self.consecutive_anim_errors = self.consecutive_anim_errors.saturating_add(1);
+            if self.consecutive_anim_errors >= MAX_CONSECUTIVE_ANIM_ERRORS {
+                self.animating = false;
+                self.anim_started = None;
+            }
         }
     }
 
@@ -801,6 +829,8 @@ impl LightbarController {
                     self.last_error = e.to_string();
                     return Err(e);
                 }
+                // 048D:7001 stop_fx extinguishes the front bar until brightness is re-sent.
+                self.last_written_brightness = None;
             }
         }
         // Clear Flash/PulseOff idle color before restoring front lightbar brightness.
@@ -858,9 +888,16 @@ impl LightbarController {
         };
         let scaled =
             ((brightness_val as f64) * (caps.max_brightness as f64) / 255.0).round() as u32;
+        if self.last_written_brightness == Some(scaled) {
+            return Ok(());
+        }
         match self.transport.write_lightbar_brightness(scaled) {
-            Ok(()) => Ok(()),
+            Ok(()) => {
+                self.last_written_brightness = Some(scaled);
+                Ok(())
+            }
             Err(e) => {
+                self.last_written_brightness = None;
                 self.last_ok = false;
                 self.last_error = e.to_string();
                 Err(e)

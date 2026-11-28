@@ -21,7 +21,7 @@ use cooling::{default_custom_fan_profiles, normalize_and_parse_custom_fan_profil
 use std::collections::{BTreeMap, HashMap, HashSet, VecDeque};
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, AtomicU32, AtomicU64, Ordering};
-use std::sync::{Arc, Condvar, Mutex, RwLock};
+use std::sync::{Arc, Condvar, Mutex, OnceLock, RwLock};
 use std::time::{Instant, SystemTime, UNIX_EPOCH};
 use tokio::sync::broadcast;
 use tracing::error;
@@ -336,6 +336,8 @@ pub struct LiveUccdBackend {
     pub(super) active_profile: RwLock<UccProfile>,
     pub(super) temp_profile_name: RwLock<Option<String>>,
     pub(super) custom_fan_profiles: RwLock<BTreeMap<String, FanProfile>>,
+    pub(super) custom_fan_profile_cache:
+        Mutex<HashMap<String, (String, serde_json::Value, FanProfile)>>,
 
     pub(super) history: Arc<MetricsHistoryStore>,
     pub(super) telemetry: Arc<Mutex<TelemetryCollector>>,
@@ -358,6 +360,7 @@ pub struct LiveUccdBackend {
     pub(super) keyboard_ctrl: Arc<Mutex<KeyboardBacklightController>>,
     pub(super) lightbar_ctrl: Arc<Mutex<LightbarController>>,
     pub(super) lightbar_animating: AtomicBool,
+    pub(super) lightbar_wake: Arc<(Mutex<u64>, Condvar)>,
     pub(super) lid_closed: AtomicBool,
     pub(super) lid_saved_keyboard_states: Mutex<Option<Vec<ucc_core::KeyboardBacklightState>>>,
     pub(super) lid_saved_wc_rgb: Mutex<Option<ucc_hardware::RgbTarget>>,
@@ -376,7 +379,8 @@ pub struct LiveUccdBackend {
     pub(super) hardware_activated: AtomicBool,
     pub(super) activation_wait: Arc<(Mutex<bool>, Condvar)>,
     pub(super) in_flight_ops_wait: Arc<(Mutex<usize>, Condvar)>,
-    pub(super) nvml: Option<Arc<NvmlWrapper>>,
+    pub(super) nvml: Arc<OnceLock<Option<Arc<NvmlWrapper>>>>,
+    pub(super) primed_read_only: AtomicBool,
     pub(super) nvidia_default_power_limit_w: Mutex<Option<(String, f64)>>,
     pub(super) nvidia_power_offset: Mutex<Option<i32>>,
     pub(super) mode_reapply_pending: AtomicBool,
@@ -385,6 +389,7 @@ pub struct LiveUccdBackend {
     pub(super) cached_real_topology: Mutex<Option<CpuTopology>>,
     pub(super) cached_mock_core_types: Mutex<HashMap<u32, String>>,
     pub(super) cached_system_info: Mutex<Option<SystemInfoStaticCache>>,
+    pub(super) prime_state_cache: Mutex<Option<(Instant, String)>>,
     pub(super) profile_commit_epoch: AtomicU64,
     pub(super) next_profile_tx_id: AtomicU64,
     pub(super) next_custom_profile_seq: AtomicU64,
@@ -416,17 +421,29 @@ pub struct LiveUccdBackend {
 impl LiveUccdBackend {
     /// Builds a backend from explicit dependencies (`MockPlatformBackend`, `MockSysfs`, temp config, etc.).
     pub fn new(deps: UccdDependencies) -> Self {
+        Self::new_with_preloaded_config(deps, None)
+    }
+
+    fn new_with_preloaded_config(
+        deps: UccdDependencies,
+        preloaded: Option<(UccSettings, bool, bool)>,
+    ) -> Self {
         let capabilities = deps.platform.capabilities();
-        let read_path = deps.config_manager.resolve_read_path();
-        let has_read_path = read_path.is_some();
-        let (mut settings, recovered) = match read_path {
-            Some(path) => match ConfigManager::load_with_recovery(&path) {
-                Ok((s, was_rec)) => (s, was_rec),
-                Err(_) => (create_default_settings(), true),
-            },
-            None => (create_default_settings(), false),
+        let (mut settings, recovered, has_persisted_config) = match preloaded {
+            Some(cfg) => cfg,
+            None => {
+                let read_path = deps.config_manager.resolve_read_path();
+                let has_read_path = read_path.is_some();
+                let (s, rec) = match read_path {
+                    Some(path) => match ConfigManager::load_with_recovery(&path) {
+                        Ok((s, was_rec)) => (s, was_rec),
+                        Err(_) => (create_default_settings(), true),
+                    },
+                    None => (create_default_settings(), false),
+                };
+                (s, rec, has_read_path && !rec)
+            }
         };
-        let has_persisted_config = has_read_path && !recovered;
 
         let mut custom_fan_map = default_custom_fan_profiles();
         if let Some(ref saved_fans) = settings.custom_fan_profiles {
@@ -476,7 +493,10 @@ impl LiveUccdBackend {
         )));
 
         let history = Arc::new(MetricsHistoryStore::new());
-        let nvml = deps.telemetry_config.nvml.clone();
+        let nvml = Arc::new(OnceLock::new());
+        if let Some(ref existing_nvml) = deps.telemetry_config.nvml {
+            let _ = nvml.set(Some(Arc::clone(existing_nvml)));
+        }
         let telemetry = Arc::new(Mutex::new(TelemetryCollector::new(
             Arc::clone(&deps.sysfs),
             deps.telemetry_config,
@@ -521,6 +541,7 @@ impl LiveUccdBackend {
             active_profile: RwLock::new(active_profile),
             temp_profile_name: RwLock::new(None),
             custom_fan_profiles: RwLock::new(custom_fan_map),
+            custom_fan_profile_cache: Mutex::new(HashMap::new()),
             history,
             telemetry,
             latest_telemetry: RwLock::new(None),
@@ -539,6 +560,7 @@ impl LiveUccdBackend {
             keyboard_ctrl: Arc::new(Mutex::new(keyboard_ctrl)),
             lightbar_ctrl: Arc::new(Mutex::new(lightbar_ctrl)),
             lightbar_animating: AtomicBool::new(false),
+            lightbar_wake: Arc::new((Mutex::new(0), Condvar::new())),
             lid_closed: AtomicBool::new(false),
             lid_saved_keyboard_states: Mutex::new(None),
             lid_saved_wc_rgb: Mutex::new(None),
@@ -557,6 +579,7 @@ impl LiveUccdBackend {
             activation_wait: Arc::new((Mutex::new(false), Condvar::new())),
             in_flight_ops_wait: Arc::new((Mutex::new(0), Condvar::new())),
             nvml,
+            primed_read_only: AtomicBool::new(false),
             nvidia_default_power_limit_w: Mutex::new(None),
             nvidia_power_offset: Mutex::new(None),
             mode_reapply_pending: AtomicBool::new(false),
@@ -565,6 +588,7 @@ impl LiveUccdBackend {
             cached_real_topology: Mutex::new(None),
             cached_mock_core_types: Mutex::new(HashMap::new()),
             cached_system_info: Mutex::new(None),
+            prime_state_cache: Mutex::new(None),
             profile_commit_epoch: AtomicU64::new(0),
             next_profile_tx_id: AtomicU64::new(0),
             next_custom_profile_seq: AtomicU64::new(0),
@@ -599,10 +623,17 @@ impl LiveUccdBackend {
         let sysfs: Arc<dyn Sysfs> = Arc::new(RealSysfs);
         let dmi = DmiInfo::read_from_sysfs(sysfs.as_ref());
         let config_manager = ConfigManager::new();
-        let settings_choice = config_manager
-            .resolve_read_path()
-            .and_then(|p| ConfigManager::load_with_recovery(&p).ok())
-            .and_then(|(s, _)| s.platform_backend);
+        let read_path = config_manager.resolve_read_path();
+        let has_read_path = read_path.is_some();
+        let (settings, recovered) = match read_path {
+            Some(path) => match ConfigManager::load_with_recovery(&path) {
+                Ok((s, was_rec)) => (s, was_rec),
+                Err(_) => (create_default_settings(), true),
+            },
+            None => (create_default_settings(), false),
+        };
+        let has_persisted_config = has_read_path && !recovered;
+        let settings_choice = settings.platform_backend.clone();
         let env_override = std::env::var(ENV_PLATFORM_BACKEND).ok();
         let platform = select_platform_backend(
             env_override.as_deref(),
@@ -617,28 +648,88 @@ impl LiveUccdBackend {
         let model =
             build_laptop_model(platform.capabilities().device.device_id, manufacturer, &dmi);
 
-        let nvml = NvmlWrapper::new(NvidiaPowerGuard::default())
-            .ok()
-            .map(Arc::new);
+        // Defer NVML initialization off the critical Type=dbus startup path so D3cold dGPU
+        // wake never stalls daemon startup.
         let telemetry_config = TelemetryConfig {
             sys_root: PathBuf::from("/"),
-            nvml,
+            nvml: None,
             ..Default::default()
         };
 
-        let backend = Self::new(UccdDependencies {
-            device_name: model,
-            platform,
-            sysfs: Arc::clone(&sysfs),
-            lighting_transport,
-            config_manager,
-            sys_root: PathBuf::from("/"),
-            telemetry_config,
-            power_devices: PowerDeviceController::default(),
-            lid_policy: LidPolicyConfig::default(),
-        });
+        let backend = Self::new_with_preloaded_config(
+            UccdDependencies {
+                device_name: model,
+                platform,
+                sysfs: Arc::clone(&sysfs),
+                lighting_transport,
+                config_manager,
+                sys_root: PathBuf::from("/"),
+                telemetry_config,
+                power_devices: PowerDeviceController::default(),
+                lid_policy: LidPolicyConfig::default(),
+            },
+            Some((settings, recovered, has_persisted_config)),
+        );
         backend.load_aquaris_saved_state_from(Path::new(cooling::AQUARIS_CONFIG_PATH));
+
+        // Initialize NVML on a detached background thread and attach it once ready.
+        let nvml_slot = Arc::clone(&backend.nvml);
+        let telemetry_arc = Arc::clone(&backend.telemetry);
+        let sysfs_bg = Arc::clone(&backend.sysfs);
+        let history_bg = Arc::clone(&backend.history);
+        let sys_root_bg = backend.sys_root.clone();
+        let _ = std::thread::Builder::new()
+            .name("uccd-nvml-init".to_string())
+            .spawn(move || {
+                let initialized = NvmlWrapper::new(NvidiaPowerGuard::default())
+                    .ok()
+                    .map(Arc::new);
+                let _ = nvml_slot.set(initialized.clone());
+                if let Some(nvml) = initialized {
+                    let mut tel = telemetry_arc.lock().unwrap_or_else(|e| e.into_inner());
+                    let d0 = tel.dgpu_d0_metrics();
+                    *tel = TelemetryCollector::new(
+                        sysfs_bg,
+                        TelemetryConfig {
+                            sys_root: sys_root_bg,
+                            nvml: Some(nvml),
+                            ..Default::default()
+                        },
+                        history_bg,
+                    );
+                    tel.set_dgpu_d0_metrics(d0);
+                }
+            });
+
         backend
+    }
+
+    /// Returns the initialized NVML wrapper if available (non-blocking).
+    pub(super) fn nvml_wrapper(&self) -> Option<Arc<NvmlWrapper>> {
+        self.nvml.get().and_then(|opt| opt.clone())
+    }
+
+    /// Updates the lightbar animation state and wakes the lightbar worker thread immediately.
+    pub(super) fn set_lightbar_animating(&self, animating: bool) {
+        self.lightbar_animating.store(animating, Ordering::SeqCst);
+        if animating {
+            let (lock, cvar) = &*self.lightbar_wake;
+            let mut seq = self.lock_mutex(lock);
+            *seq = seq.wrapping_add(1);
+            cvar.notify_all();
+        }
+    }
+
+    /// Waits on the lightbar wake condition variable until woken, shutting down, or `timeout` elapses.
+    pub(crate) fn wait_lightbar_idle(&self, timeout: std::time::Duration) {
+        let (lock, cvar) = &*self.lightbar_wake;
+        let seq = self.lock_mutex(lock);
+        if self.is_lightbar_animating() || self.shutting_down.load(Ordering::SeqCst) {
+            return;
+        }
+        let _ = cvar
+            .wait_timeout(seq, timeout)
+            .unwrap_or_else(|e| e.into_inner());
     }
 
     pub(super) fn is_vendor_unsupported(&self) -> bool {
@@ -738,9 +829,18 @@ impl LiveUccdBackend {
 
     /// Marks the backend as shutting down so periodic/late RPC hardware writes abort cleanly.
     pub fn begin_shutdown(&self) {
-        self.shutting_down.store(true, Ordering::SeqCst);
-        let (_, cvar) = &*self.activation_wait;
-        cvar.notify_all();
+        {
+            let (lock, cvar) = &*self.activation_wait;
+            let _guard = self.lock_mutex(lock);
+            self.shutting_down.store(true, Ordering::SeqCst);
+            cvar.notify_all();
+        }
+        {
+            let (lock, cvar) = &*self.lightbar_wake;
+            let mut seq = self.lock_mutex(lock);
+            *seq = seq.wrapping_add(1);
+            cvar.notify_all();
+        }
     }
 
     pub fn is_shutting_down(&self) -> bool {
@@ -947,14 +1047,6 @@ impl LiveUccdBackend {
         {
             let _ = self.poll_telemetry_once();
         }
-        if self.lock_mutex(&self.latest_committed_profile).is_none() {
-            *self.write_rw(&self.active_profile) = Self::build_unapplied_hardware_profile(
-                self.platform.as_ref(),
-                self.sysfs.as_ref(),
-                &self.sys_root,
-                &self.capabilities,
-            );
-        }
 
         if self.read_rw(&self.latest_fans).is_none() {
             let num_fans = self.capabilities.device.number_of_fans;
@@ -975,6 +1067,7 @@ impl LiveUccdBackend {
                 fallback_auto: !self.fan_control_enabled.load(Ordering::SeqCst),
             });
         }
+        self.primed_read_only.store(true, Ordering::SeqCst);
     }
 
     /// Applies saved lighting, initial profile, charging settings, wakeup policy, and fan control
@@ -999,7 +1092,10 @@ impl LiveUccdBackend {
         self.capture_initial_tdp_defaults();
 
         let prime_started = Instant::now();
-        if !self.is_prime_degraded() && !self.is_telemetry_poll_in_flight() {
+        if !self.is_prime_degraded()
+            && !self.is_telemetry_poll_in_flight()
+            && !self.primed_read_only.load(Ordering::SeqCst)
+        {
             self.prime_read_only();
         }
         let prime_ms = prime_started.elapsed().as_millis();
@@ -1038,8 +1134,7 @@ impl LiveUccdBackend {
         if let Some(ref lb_cfg) = lb_val {
             let mut lb = self.lock_mutex(&self.lightbar_ctrl);
             let _ = lb.configure(lb_cfg);
-            self.lightbar_animating
-                .store(lb.is_animating(), Ordering::SeqCst);
+            self.set_lightbar_animating(lb.is_animating());
         }
         let lightbar_ms = lightbar_started.elapsed().as_millis();
         if self.shutting_down.load(Ordering::SeqCst) {
@@ -1185,8 +1280,7 @@ impl LiveUccdBackend {
         {
             let mut lb = self.lock_mutex(&self.lightbar_ctrl);
             let _ = lb.on_resume();
-            self.lightbar_animating
-                .store(lb.is_animating(), Ordering::SeqCst);
+            self.set_lightbar_animating(lb.is_animating());
         }
         if !self.is_lid_closed() {
             self.restore_lid_lighting();

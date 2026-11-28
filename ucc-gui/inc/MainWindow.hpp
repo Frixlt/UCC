@@ -169,9 +169,9 @@ namespace ucc
     /** Parse a numeric value from a SystemMonitor formatted string (e.g. "65 degC" -> 65). */
     static std::optional< double > parseMonitorValue( const QString &str );
 
+    std::unique_ptr< UccdClient > m_UccdClient;
     std::unique_ptr< ProfileManager > m_profileManager;
     std::unique_ptr< SystemMonitor > m_systemMonitor;
-    std::unique_ptr< UccdClient > m_UccdClient;
 
     // Tab widget
     QTabWidget *m_tabs = nullptr;
@@ -302,6 +302,11 @@ namespace ucc
     bool m_hwpDynamicBoostSupported = false;
     int m_gpuDefaultPowerLimit = 0;  // Default GPU power limit in watts, queried from daemon
     int m_gpuMaxPowerLimit = 0;      // Max GPU power limit in watts, queried from daemon
+    bool m_cpuFreqLimitsLoaded = false;
+    bool m_lidDefaultsLoaded = false;
+    bool m_cachedDefaultLidOffKbd = true;
+    bool m_cachedDefaultLidOffWcLed = false;
+    quint64 m_profileLoadGen = 0;
 
     // Statusbar connection indicator
     QLabel *m_connectionLabel = nullptr;

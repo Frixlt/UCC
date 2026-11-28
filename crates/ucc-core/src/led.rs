@@ -38,6 +38,22 @@ impl LedSettings {
         "Disco",
     ];
 
+    /// Single source of truth for all valid LED modes (animations and static/strategy modes).
+    pub const VALID_MODES: [&'static str; 12] = [
+        "Pulse (stays on)",
+        "Pulse (stays off)",
+        "Flash (stays off)",
+        "Rainbow",
+        "Police Strobe",
+        "Disco",
+        "Static",
+        "Auto",
+        "Breathe",
+        "Colorful",
+        "BreatheColor",
+        "Temperature",
+    ];
+
     pub fn new(brightness: u8, red: u8, green: u8, blue: u8, mode: Option<String>) -> Self {
         Self {
             brightness,
@@ -50,12 +66,7 @@ impl LedSettings {
 
     pub fn validate(&self) -> Result<(), ValidationError> {
         if let Some(ref m) = self.mode {
-            let is_valid_anim = Self::VALID_ANIMATIONS.contains(&m.as_str());
-            let is_valid_static = matches!(
-                m.as_str(),
-                "Static" | "Auto" | "Breathe" | "Colorful" | "BreatheColor" | "Temperature"
-            );
-            if !is_valid_anim && !is_valid_static {
+            if !Self::VALID_MODES.contains(&m.as_str()) {
                 return Err(ValidationError::InvalidLedMode(m.clone()));
             }
         }

@@ -471,10 +471,21 @@ fn check_versions_cli_and_kernel_dkms_packaging_contracts() {
         kernel_pkgbuild.contains(&expected_pkgver),
         "kernel PKGBUILD must contain {expected_pkgver}"
     );
-    assert!(
-        kernel_pkgbuild.contains("conflicts=('tuxedo-drivers-dkms')"),
-        "kernel PKGBUILD must conflict with tuxedo-drivers-dkms"
-    );
+    let conflicts_line = kernel_pkgbuild
+        .lines()
+        .find(|line| line.trim_start().starts_with("conflicts=("))
+        .expect("kernel PKGBUILD must declare conflicts=(...)");
+    for conflict in [
+        "'tuxedo-drivers'",
+        "'tuxedo-drivers-dkms'",
+        "'tuxedo-drivers-mechrevo-dkms'",
+        "'tuxedo-drivers-mechrevo-cachyos'",
+    ] {
+        assert!(
+            conflicts_line.contains(conflict),
+            "kernel PKGBUILD conflicts=(...) must include {conflict}, got: {conflicts_line}"
+        );
+    }
     assert!(
         kernel_pkgbuild.contains("provides=('uwcc-driver')"),
         "kernel PKGBUILD must provide uwcc-driver"

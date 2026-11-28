@@ -783,7 +783,12 @@ fn uniwill_hid_empty_zones_and_partial_chunk_failure_preserves_cache() {
             *count += 1;
             drop(count);
 
-            if *self.fail_on_call.lock().unwrap_or_else(|e| e.into_inner()) == Some(current) {
+            if self
+                .fail_on_call
+                .lock()
+                .unwrap_or_else(|e| e.into_inner())
+                .is_some_and(|idx| current >= idx)
+            {
                 return Err(LightingError::WriteFailed(
                     "Simulated mid-chunk HID failure".into(),
                 ));
@@ -1288,5 +1293,205 @@ fn ite7000_five_zone_disabled_lid_logo_stays_off_after_configure_and_animation()
     assert_eq!(
         anim_zone5.last(),
         Some(&vec![0x14, 0x00, LIGHTBAR_LID_LOGO_ZONE_ID, 0, 0, 0, 0, 0])
+    );
+}
+
+#[test]
+fn lightbar_and_keyboard_cache_and_retry_once_after_usb_reenumeration() {
+    use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
+    use ucc_lighting::hid_transport::{
+        EcLidLogoHook, HidDeviceInfo, HidDeviceTransport, UniwillHidTransport,
+        ITE_KEYBOARD_PRODUCT_ID, ITE_LIGHTBAR_PRODUCT_ID_4ZONE, ITE_LIGHTBAR_PRODUCT_ID_5ZONE,
+        ITE_VENDOR_ID,
+    };
+    use ucc_lighting::{LightingError, LightingTransport, RgbColor};
+
+    struct ReenumHidTransport {
+        reenumerated: AtomicBool,
+        enum_calls: AtomicUsize,
+        lightbar_pid: u16,
+    }
+
+    impl ReenumHidTransport {
+        fn new(lightbar_pid: u16) -> Self {
+            Self {
+                reenumerated: AtomicBool::new(false),
+                enum_calls: AtomicUsize::new(0),
+                lightbar_pid,
+            }
+        }
+        fn active_kbd_path(&self) -> &'static str {
+            if self.reenumerated.load(Ordering::SeqCst) {
+                "/dev/hidraw12"
+            } else {
+                "/dev/hidraw2"
+            }
+        }
+        fn active_lb_path(&self) -> &'static str {
+            if self.reenumerated.load(Ordering::SeqCst) {
+                "/dev/hidraw13"
+            } else {
+                "/dev/hidraw3"
+            }
+        }
+    }
+
+    impl HidDeviceTransport for ReenumHidTransport {
+        fn enumerate_devices(&self) -> Result<Vec<HidDeviceInfo>, LightingError> {
+            self.enum_calls.fetch_add(1, Ordering::SeqCst);
+            Ok(vec![
+                HidDeviceInfo {
+                    vendor_id: ITE_VENDOR_ID,
+                    product_id: ITE_KEYBOARD_PRODUCT_ID,
+                    path: self.active_kbd_path().to_string(),
+                },
+                HidDeviceInfo {
+                    vendor_id: ITE_VENDOR_ID,
+                    product_id: self.lightbar_pid,
+                    path: self.active_lb_path().to_string(),
+                },
+            ])
+        }
+
+        fn send_feature_report(&self, path: &str, _report: &[u8]) -> Result<(), LightingError> {
+            if path == self.active_kbd_path() || path == self.active_lb_path() {
+                Ok(())
+            } else {
+                Err(LightingError::WriteFailed(format!("stale path {path}")))
+            }
+        }
+
+        fn send_output_report(&self, path: &str, _report: &[u8]) -> Result<(), LightingError> {
+            if path == self.active_kbd_path() {
+                Ok(())
+            } else {
+                Err(LightingError::WriteFailed(format!("stale path {path}")))
+            }
+        }
+
+        fn get_feature_report(&self, _path: &str, len: usize) -> Result<Vec<u8>, LightingError> {
+            Ok(vec![0u8; len])
+        }
+    }
+
+    // 5-zone lightbar + keyboard
+    let hid = Arc::new(ReenumHidTransport::new(ITE_LIGHTBAR_PRODUCT_ID_5ZONE));
+    let transport = UniwillHidTransport::new(Arc::clone(&hid) as _);
+    transport.detect_keyboard().expect("detect kbd");
+    transport.detect_lightbar().expect("detect lb");
+    let after_detect = hid.enum_calls.load(Ordering::SeqCst);
+
+    // Steady-state calls must hit caches with zero extra enumerations.
+    assert!(transport.has_lid_logo().expect("has_lid_logo"));
+    transport
+        .write_lightbar_brightness(128)
+        .expect("lb brightness");
+    transport
+        .write_lightbar_zones(&[RgbColor::new(1, 2, 3); 4])
+        .expect("lb zones");
+    transport
+        .write_lid_logo_color(RgbColor::new(10, 20, 30))
+        .expect("lid logo color");
+    transport
+        .write_lid_logo(true, RgbColor::new(10, 20, 30), 200)
+        .expect("lid logo");
+    assert_eq!(hid.enum_calls.load(Ordering::SeqCst), after_detect);
+
+    // Simulate post-resume USB re-enumeration: cached paths go stale, retry-once must succeed!
+    hid.reenumerated.store(true, Ordering::SeqCst);
+    transport
+        .write_keyboard_brightness(200)
+        .expect("kbd brightness retry-once");
+    transport
+        .write_keyboard_zones(&[RgbColor::new(10, 20, 30); 4])
+        .expect("kbd zones after re-cache");
+    transport
+        .write_lightbar_brightness(180)
+        .expect("lb brightness retry-once");
+
+    // 4-zone + EC lid logo hook also retries once after re-enumeration
+    let hid4 = Arc::new(ReenumHidTransport::new(ITE_LIGHTBAR_PRODUCT_ID_4ZONE));
+    let ec_logo: EcLidLogoHook = Arc::new(|_, _, _| Ok(()));
+    let transport4 =
+        UniwillHidTransport::new(Arc::clone(&hid4) as _).with_ec_lid_logo_hook(ec_logo);
+    transport4.detect_lightbar().expect("detect lb4");
+    hid4.reenumerated.store(true, Ordering::SeqCst);
+    transport4
+        .write_lid_logo(true, RgbColor::new(50, 60, 70), 255)
+        .expect("4-zone lid logo retry-once");
+}
+
+#[test]
+fn lightbar_glint_prevention_and_animation_error_resilience() {
+    use serde_json::json;
+    use ucc_lighting::{
+        LightbarCapabilities, LightbarController, LightingOp, MockLightingTransport,
+    };
+
+    let mock = Arc::new(MockLightingTransport::new());
+    mock.set_lightbar_caps(Some(LightbarCapabilities {
+        zones: 4,
+        max_brightness: 255,
+    }));
+    let mut lb = LightbarController::new(Arc::clone(&mock) as _);
+    lb.configure(&json!({
+        "managed": true,
+        "welcome_anim": false,
+        "power_settings": {
+            "ac": {
+                "enabled": true,
+                "brightness_val": 160,
+                "mode": "Pulse (stays on)",
+                "color_mode": [100, 150, 200]
+            }
+        }
+    }))
+    .expect("configure");
+
+    // Triggering Pulse with unchanged brightness must NOT rewrite brightness (glint fix).
+    mock.clear_ops();
+    assert!(lb.trigger(true));
+    assert!(
+        !mock
+            .ops()
+            .iter()
+            .any(|op| matches!(op, LightingOp::WriteLightbarBrightness(_))),
+        "trigger must skip redundant brightness write"
+    );
+
+    // 4 transient HID errors during animation must NOT kill Pulse.
+    mock.set_fail_on_lightbar_write(true);
+    for step in 1..=4 {
+        lb.advance(step * 150);
+        assert!(
+            lb.is_animating(),
+            "animation should survive transient error #{step}"
+        );
+    }
+
+    // A successful frame resets the consecutive error counter.
+    mock.set_fail_on_lightbar_write(false);
+    lb.advance(750);
+    assert!(lb.is_animating());
+
+    // 5 consecutive errors must cleanly stop the animation.
+    mock.set_fail_on_lightbar_write(true);
+    for step in 1..=5 {
+        lb.advance(750 + step * 120);
+    }
+    assert!(
+        !lb.is_animating(),
+        "animation should stop after 5 consecutive write failures"
+    );
+
+    // on_resume resets brightness cache so brightness IS written again on resume.
+    mock.set_fail_on_lightbar_write(false);
+    mock.clear_ops();
+    lb.on_resume().expect("on_resume");
+    assert!(
+        mock.ops()
+            .iter()
+            .any(|op| matches!(op, LightingOp::WriteLightbarBrightness(160))),
+        "on_resume must re-apply brightness"
     );
 }

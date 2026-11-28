@@ -39,6 +39,9 @@ namespace ucc
 
 static int methodTimeoutMs( const QString &method )
 {
+  // Polkit-gated Control and ManageHardware setters can wait up to 30 s for an
+  // interactive authentication dialog; give them a 35 s D-Bus timeout so they
+  // do not time out prematurely.
   if ( method == QLatin1String( "ApplyProfile" ) ||
        method == QLatin1String( "SaveCustomProfile" ) ||
        method == QLatin1String( "DeleteCustomProfile" ) ||
@@ -50,11 +53,37 @@ static int methodTimeoutMs( const QString &method )
        method == QLatin1String( "SetBatchStateMap" ) ||
        method == QLatin1String( "SetStateMap" ) ||
        method == QLatin1String( "SetActiveProfile" ) ||
+       method == QLatin1String( "SetTempProfile" ) ||
        method == QLatin1String( "ApplyFanProfiles" ) ||
+       method == QLatin1String( "SetFanProfile" ) ||
+       method == QLatin1String( "SetFanProfileCPU" ) ||
+       method == QLatin1String( "SetFanProfileDGPU" ) ||
        method == QLatin1String( "SetKeyboardBacklight" ) ||
        method == QLatin1String( "SetKeyboardBacklightStatesJSON" ) ||
        method == QLatin1String( "SetLightbarSettingsJSON" ) ||
-       method == QLatin1String( "SetPowerDeviceSettingsJSON" ) )
+       method == QLatin1String( "TriggerLightbarAnimation" ) ||
+       method == QLatin1String( "SetPowerDeviceSettingsJSON" ) ||
+       method == QLatin1String( "ScanPowerDevices" ) ||
+       method == QLatin1String( "SetMuxBootMode" ) ||
+       method == QLatin1String( "SetManualPowerMode" ) ||
+       method == QLatin1String( "RegisterPowerRequest" ) ||
+       method == QLatin1String( "UnregisterPowerRequest" ) ||
+       method == QLatin1String( "SetChargingProfile" ) ||
+       method == QLatin1String( "SetChargingPriority" ) ||
+       method == QLatin1String( "SetChargeStartThreshold" ) ||
+       method == QLatin1String( "SetChargeEndThreshold" ) ||
+       method == QLatin1String( "SetChargeType" ) ||
+       method == QLatin1String( "SetNVIDIAPowerOffset" ) ||
+       method == QLatin1String( "SetWaterCoolerPumpVoltage" ) ||
+       method == QLatin1String( "SetWaterCoolerAutoControl" ) ||
+       method == QLatin1String( "SetWaterCoolerFanSpeed" ) ||
+       method == QLatin1String( "SetWaterCoolerLEDColor" ) ||
+       method == QLatin1String( "TurnOffWaterCoolerLED" ) ||
+       method == QLatin1String( "EnableWaterCooler" ) ||
+       method == QLatin1String( "SetDisplayRefreshRate" ) ||
+       method == QLatin1String( "SetWebcam" ) ||
+       method == QLatin1String( "SetFnLockStatus" ) ||
+       method == QLatin1String( "SetMonitorHistoryHorizon" ) )
     return 35000;
   if ( method.startsWith( QLatin1String( "Set" ) ) ||
        method.startsWith( QLatin1String( "Enable" ) ) ||
@@ -68,7 +97,7 @@ static int methodTimeoutMs( const QString &method )
   return 1500;
 }
 
-void UccdClient::requestMonitoringSnapshot(bool includeControls, std::function<void(QVariantMap)> ready)
+void UccdClient::requestMonitoringSnapshot(bool includeControls, std::function<void(QVariantMap)> ready, QObject *context)
 {
   if (!m_connected) { ready({}); return; }
   QStringList methods = {"GetFanDataCPU", "GetFanDataGPU1", "GetFanDataGPU2",
@@ -76,14 +105,18 @@ void UccdClient::requestMonitoringSnapshot(bool includeControls, std::function<v
     "GetIGpuInfoValuesJSON", "GetWaterCoolerFanSpeed", "GetWaterCoolerPumpLevel", "GetDisplayBrightness"};
   if (includeControls)
     methods << "GetWebcamSWStatus" << "GetFnLockStatus";
-  readUccdBatch(this, methods, std::move(ready));
+  readUccdBatch(context ? context : this, methods, std::move(ready));
 }
 
-void UccdClient::setDisplayBrightnessAsync(int brightness, std::function<void(bool)> ready)
+void UccdClient::setDisplayBrightnessAsync(int brightness, std::function<void(bool)> ready, QObject *context)
 {
   if (!mayDispatchUccdMethod("SetDisplayBrightness") || !isConnected()) { ready(false); return; }
-  auto *watcher = new QDBusPendingCallWatcher(m_interface->asyncCall("SetDisplayBrightness", brightness), this);
-  connect(watcher, &QDBusPendingCallWatcher::finished, this, [watcher, ready = std::move(ready)] {
+  QObject *owner = context ? context : this;
+  QDBusMessage msg = QDBusMessage::createMethodCall(DBUS_SERVICE, DBUS_PATH, DBUS_INTERFACE, QStringLiteral("SetDisplayBrightness"));
+  msg.setArguments({ brightness });
+  auto *watcher = new QDBusPendingCallWatcher(
+    QDBusConnection::systemBus().asyncCall(msg, methodTimeoutMs(QStringLiteral("SetDisplayBrightness"))), owner);
+  connect(watcher, &QDBusPendingCallWatcher::finished, owner, [watcher, ready = std::move(ready)] {
     const QDBusPendingReply<bool> reply = *watcher;
     ready(!reply.isError() && reply.value());
     watcher->deleteLater();
@@ -93,10 +126,9 @@ void UccdClient::setDisplayBrightnessAsync(int brightness, std::function<void(bo
 UccdClient::UccdClient( QObject *parent )
   : QObject( parent )
 {
-  // Initial connection attempt (uccd may not be running yet - that's fine)
-  connectToDaemon();
-
-  // Watch for uccd appearing or disappearing on the system bus
+  // Watch for uccd appearing or disappearing on the system bus BEFORE checking
+  // isServiceRegistered() in connectToDaemon(), eliminating the startup TOCTOU
+  // window where a registration event could be missed.
   m_serviceWatcher = new QDBusServiceWatcher(
     QLatin1String( DBUS_SERVICE ),
     QDBusConnection::systemBus(),
@@ -108,6 +140,9 @@ UccdClient::UccdClient( QObject *parent )
   connect( m_serviceWatcher, &QDBusServiceWatcher::serviceUnregistered,
            this, &UccdClient::onServiceUnregistered );
 
+  // Initial connection attempt (uccd may not be running yet - that's fine)
+  connectToDaemon();
+
   emit connectionStatusChanged( m_connected );
 }
 
@@ -115,28 +150,29 @@ UccdClient::UccdClient( QObject *parent )
 
 void UccdClient::subscribeDbusSignals()
 {
-  auto policyBus = QDBusConnection::systemBus();
-  policyBus.disconnect(DBUS_SERVICE, DBUS_PATH, DBUS_INTERFACE, "LightbarSettingsChanged", this, SIGNAL(lightbarSettingsChanged(QString)));
-  policyBus.connect(DBUS_SERVICE, DBUS_PATH, DBUS_INTERFACE, "LightbarSettingsChanged", this, SIGNAL(lightbarSettingsChanged(QString)));
-  policyBus.disconnect(DBUS_SERVICE, DBUS_PATH, DBUS_INTERFACE, "PowerDeviceStatusChanged", this, SIGNAL(powerDeviceStatusChanged(QString)));
-  policyBus.connect(DBUS_SERVICE, DBUS_PATH, DBUS_INTERFACE, "PowerDeviceStatusChanged", this, SIGNAL(powerDeviceStatusChanged(QString)));
-  policyBus.disconnect(DBUS_SERVICE, DBUS_PATH, DBUS_INTERFACE, "PowerPolicyChanged", this, SIGNAL(powerPolicyChanged(QString)));
-  policyBus.connect(DBUS_SERVICE, DBUS_PATH, DBUS_INTERFACE, "PowerPolicyChanged", this, SIGNAL(powerPolicyChanged(QString)));
-  // Disconnect first so we never accumulate duplicate connections across
-  // multiple reconnect cycles.
-  QDBusConnection::systemBus().disconnect( DBUS_SERVICE, DBUS_PATH, DBUS_INTERFACE,
-                  "ProfileChanged", this,
-                  SLOT( onProfileChangedSignal( QString, QString, QString ) ) );
-  QDBusConnection::systemBus().disconnect( DBUS_SERVICE, DBUS_PATH, DBUS_INTERFACE,
-                  "PowerStateChanged", this,
-                  SLOT( onPowerStateChangedSignal( QString ) ) );
-
-  QDBusConnection::systemBus().connect( DBUS_SERVICE, DBUS_PATH, DBUS_INTERFACE,
-               "ProfileChanged", this,
-               SLOT( onProfileChangedSignal( QString, QString, QString ) ) );
-  QDBusConnection::systemBus().connect( DBUS_SERVICE, DBUS_PATH, DBUS_INTERFACE,
-               "PowerStateChanged", this,
-               SLOT( onPowerStateChangedSignal( QString ) ) );
+  // D-Bus match rules keyed by well-known service/path/interface persist across
+  // daemon restarts; track per-signal state to avoid duplicate connects on retry.
+  auto bus = QDBusConnection::systemBus();
+  if ( !m_dbusSignalsSubscribed[0] )
+    m_dbusSignalsSubscribed[0] = bus.connect( DBUS_SERVICE, DBUS_PATH, DBUS_INTERFACE,
+                                              "LightbarSettingsChanged", this,
+                                              SIGNAL( lightbarSettingsChanged( QString ) ) );
+  if ( !m_dbusSignalsSubscribed[1] )
+    m_dbusSignalsSubscribed[1] = bus.connect( DBUS_SERVICE, DBUS_PATH, DBUS_INTERFACE,
+                                              "PowerDeviceStatusChanged", this,
+                                              SIGNAL( powerDeviceStatusChanged( QString ) ) );
+  if ( !m_dbusSignalsSubscribed[2] )
+    m_dbusSignalsSubscribed[2] = bus.connect( DBUS_SERVICE, DBUS_PATH, DBUS_INTERFACE,
+                                              "PowerPolicyChanged", this,
+                                              SIGNAL( powerPolicyChanged( QString ) ) );
+  if ( !m_dbusSignalsSubscribed[3] )
+    m_dbusSignalsSubscribed[3] = bus.connect( DBUS_SERVICE, DBUS_PATH, DBUS_INTERFACE,
+                                              "ProfileChanged", this,
+                                              SLOT( onProfileChangedSignal( QString, QString, QString ) ) );
+  if ( !m_dbusSignalsSubscribed[4] )
+    m_dbusSignalsSubscribed[4] = bus.connect( DBUS_SERVICE, DBUS_PATH, DBUS_INTERFACE,
+                                              "PowerStateChanged", this,
+                                              SLOT( onPowerStateChangedSignal( QString ) ) );
 }
 
 void UccdClient::connectToDaemon()
@@ -343,7 +379,10 @@ DeviceSupportStatus UccdClient::checkDeviceSupport( QString *errorDetail )
   if ( !mayDispatchUccdMethod( QStringLiteral( "IsDeviceSupported" ) ) )
     return DeviceSupportStatus::DaemonUnavailable;
 
+  const int prevTimeout = m_interface->timeout();
+  m_interface->setTimeout( methodTimeoutMs( QStringLiteral( "IsDeviceSupported" ) ) );
   QDBusReply< bool > reply = m_interface->call( QStringLiteral( "IsDeviceSupported" ) );
+  m_interface->setTimeout( prevTimeout );
   if ( reply.isValid() )
   {
     if ( reply.value() )
@@ -618,6 +657,189 @@ QDBusPendingCallWatcher *UccdClient::applyProfileAsync(
     this,
     std::move( callback ),
     QStringLiteral( "Daemon rejected profile apply" ) );
+}
+
+QDBusPendingCallWatcher *UccdClient::callBoolAsync(
+  const QString &method,
+  const QVariantList &args,
+  QObject *context,
+  std::function< void( bool, const QString & ) > callback )
+{
+  if ( !mayDispatchUccdMethod( method ) )
+  {
+    if ( callback )
+      callback( false, QStringLiteral( "Blocked in read-only preview mode" ) );
+    return nullptr;
+  }
+  if ( !isConnected() )
+  {
+    connectToDaemon();
+  }
+  if ( !isConnected() || !m_interface )
+  {
+    if ( callback )
+      callback( false, QStringLiteral( "UCC daemon is unavailable" ) );
+    return nullptr;
+  }
+
+  auto message = QDBusMessage::createMethodCall(
+    m_interface->service(),
+    QLatin1String( DBUS_PATH ),
+    QLatin1String( DBUS_INTERFACE ),
+    method );
+  message.setArguments( args );
+  message.setAutoStartService( false );
+
+  QDBusPendingCall pending = QDBusConnection::systemBus().asyncCall( message, methodTimeoutMs( method ) );
+  QObject *owner = context ? context : this;
+  auto *watcher = new QDBusPendingCallWatcher( pending, owner );
+  QObject::connect(
+    watcher,
+    &QDBusPendingCallWatcher::finished,
+    owner,
+    [watcher, cb = std::move( callback ), method]( QDBusPendingCallWatcher *finished ) {
+      const QDBusMessage reply = finished->reply();
+      if ( finished == watcher )
+        watcher->deleteLater();
+      if ( !cb )
+        return;
+      if ( reply.type() == QDBusMessage::ErrorMessage )
+      {
+        cb( false, reply.errorMessage() );
+        return;
+      }
+      if ( reply.arguments().isEmpty() )
+      {
+        cb( true, QString() );
+        return;
+      }
+      const bool ok = reply.arguments().front().toBool();
+      cb( ok, ok ? QString() : QStringLiteral( "Daemon rejected %1" ).arg( method ) );
+    } );
+  return watcher;
+}
+
+QDBusPendingCallWatcher *UccdClient::setKeyboardBacklightAsync(
+  const std::string &config,
+  QObject *context,
+  std::function< void( bool, const QString & ) > callback )
+{
+  return callBoolAsync(
+    QStringLiteral( "SetKeyboardBacklightStatesJSON" ),
+    { QString::fromStdString( config ) },
+    context,
+    std::move( callback ) );
+}
+
+QDBusPendingCallWatcher *UccdClient::setLightbarSettingsJSONAsync(
+  const std::string &json,
+  QObject *context,
+  std::function< void( bool, const QString & ) > callback )
+{
+  return callBoolAsync(
+    QStringLiteral( "SetLightbarSettingsJSON" ),
+    { QString::fromStdString( json ) },
+    context,
+    std::move( callback ) );
+}
+
+QDBusPendingCallWatcher *UccdClient::triggerLightbarAnimationAsync(
+  bool force,
+  QObject *context,
+  std::function< void( bool, const QString & ) > callback )
+{
+  return callBoolAsync(
+    QStringLiteral( "TriggerLightbarAnimation" ),
+    { force },
+    context,
+    std::move( callback ) );
+}
+
+QDBusPendingCallWatcher *UccdClient::setPowerDeviceSettingsJSONAsync(
+  const std::string &json,
+  QObject *context,
+  std::function< void( bool, const QString & ) > callback )
+{
+  return callBoolAsync(
+    QStringLiteral( "SetPowerDeviceSettingsJSON" ),
+    { QString::fromStdString( json ) },
+    context,
+    std::move( callback ) );
+}
+
+QDBusPendingCallWatcher *UccdClient::scanPowerDevicesAsync(
+  QObject *context,
+  std::function< void( bool, const QString & ) > callback )
+{
+  return callBoolAsync(
+    QStringLiteral( "ScanPowerDevices" ),
+    {},
+    context,
+    std::move( callback ) );
+}
+
+QDBusPendingCallWatcher *UccdClient::saveCustomProfileAsync(
+  const std::string &profileJSON,
+  QObject *context,
+  std::function< void( bool, const QString & ) > callback )
+{
+  return callBoolAsync(
+    QStringLiteral( "SaveCustomProfile" ),
+    { QString::fromStdString( profileJSON ) },
+    context,
+    std::move( callback ) );
+}
+
+QDBusPendingCallWatcher *UccdClient::deleteCustomProfileAsync(
+  const std::string &profileId,
+  QObject *context,
+  std::function< void( bool, const QString & ) > callback )
+{
+  return callBoolAsync(
+    QStringLiteral( "DeleteCustomProfile" ),
+    { QString::fromStdString( profileId ) },
+    context,
+    std::move( callback ) );
+}
+
+QDBusPendingCallWatcher *UccdClient::setBatchStateMapAsync(
+  const std::map< std::string, std::string > &entries,
+  QObject *context,
+  std::function< void( bool, const QString & ) > callback )
+{
+  QJsonObject obj;
+  for ( const auto &[state, profileId] : entries )
+    obj[QString::fromStdString( state )] = QString::fromStdString( profileId );
+  const QString json = QJsonDocument( obj ).toJson( QJsonDocument::Compact );
+  return callBoolAsync(
+    QStringLiteral( "SetBatchStateMap" ),
+    { json },
+    context,
+    std::move( callback ) );
+}
+
+QDBusPendingCallWatcher *UccdClient::setMuxBootModeAsync(
+  const std::string &mode,
+  QObject *context,
+  std::function< void( bool, const QString & ) > callback )
+{
+  return callBoolAsync(
+    QStringLiteral( "SetMuxBootMode" ),
+    { QString::fromStdString( mode ) },
+    context,
+    std::move( callback ) );
+}
+
+QDBusPendingCallWatcher *UccdClient::setManualPowerModeAsync(
+  const std::string &mode,
+  QObject *context,
+  std::function< void( bool, const QString & ) > callback )
+{
+  return callBoolAsync(
+    QStringLiteral( "SetManualPowerMode" ),
+    { QString::fromStdString( mode ) },
+    context,
+    std::move( callback ) );
 }
 
 bool UccdClient::saveCustomProfile( [[maybe_unused]] [[maybe_unused]] const std::string &profileJSON )
@@ -1108,7 +1330,10 @@ std::optional< int > readFanDataValue( QDBusInterface *iface, const QString &met
     return std::nullopt;
   }
 
+  const int prevTimeout = iface->timeout();
+  iface->setTimeout( methodTimeoutMs( method ) );
   QDBusMessage reply = iface->call( method );
+  iface->setTimeout( prevTimeout );
   if ( reply.type() == QDBusMessage::ErrorMessage || reply.arguments().isEmpty() )
   {
     return std::nullopt;
@@ -1192,7 +1417,10 @@ std::optional< double > readJsonDouble( QDBusInterface *iface, const QString &me
     return std::nullopt;
   }
 
+  const int prevTimeout = iface->timeout();
+  iface->setTimeout( methodTimeoutMs( method ) );
   QDBusMessage reply = iface->call( method );
+  iface->setTimeout( prevTimeout );
   if ( reply.type() == QDBusMessage::ErrorMessage || reply.arguments().isEmpty() )
   {
     return std::nullopt;
@@ -1222,7 +1450,10 @@ std::optional< std::string > readJsonString( QDBusInterface *iface, const QStrin
     return std::nullopt;
   }
 
+  const int prevTimeout = iface->timeout();
+  iface->setTimeout( methodTimeoutMs( method ) );
   QDBusMessage reply = iface->call( method );
+  iface->setTimeout( prevTimeout );
   if ( reply.type() == QDBusMessage::ErrorMessage || reply.arguments().isEmpty() )
   {
     return std::nullopt;

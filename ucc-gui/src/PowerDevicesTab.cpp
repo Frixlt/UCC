@@ -286,16 +286,30 @@ QJsonObject PowerDevicesTab::collect() const {
 }
 
 void PowerDevicesTab::save() {
-  if(readOnlyPreview) return;
+  if(readOnlyPreview || !m_client) return;
   const auto json=QJsonDocument(collect()).toJson(QJsonDocument::Compact).toStdString();
-  if(m_client->setPowerDeviceSettingsJSON(json)) {emit message("Power policies saved; applying to the current mode");reload();}
-  else emit message("Power policies could not be saved; check values and daemon logs");
+  m_save->setEnabled(false);
+  m_scan->setEnabled(false);
+  m_status->setText("Saving power policies...");
+  m_client->setPowerDeviceSettingsJSONAsync(json,this,[this](bool ok,const QString &) {
+    m_save->setEnabled(!readOnlyPreview);
+    m_scan->setEnabled(!readOnlyPreview);
+    if(ok) {emit message("Power policies saved; applying to the current mode");reload();}
+    else {emit message("Power policies could not be saved; check values and daemon logs");m_status->setText("Failed to save power policies");}
+  });
 }
 
 void PowerDevicesTab::scan() {
-  if(readOnlyPreview) return;
-  if(m_client->scanPowerDevices()) {emit message("Hardware scan complete; existing per-mode settings preserved");reload();}
-  else emit message("Hardware scan failed");
+  if(readOnlyPreview || !m_client) return;
+  m_scan->setEnabled(false);
+  m_save->setEnabled(false);
+  m_status->setText("Scanning hardware...");
+  m_client->scanPowerDevicesAsync(this,[this](bool ok,const QString &) {
+    m_scan->setEnabled(!readOnlyPreview);
+    m_save->setEnabled(!readOnlyPreview);
+    if(ok) {emit message("Hardware scan complete; existing per-mode settings preserved");reload();}
+    else {emit message("Hardware scan failed");m_status->setText("Hardware scan failed");}
+  });
 }
 
 void PowerDevicesTab::filter() {

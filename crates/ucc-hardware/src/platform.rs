@@ -401,7 +401,7 @@ fn map_perf_profile_code_to_str(
     if let Some(choices_path) = path.parent().map(|p| p.join("platform_profile_choices")) {
         let raw_choices = match sysfs {
             Some(s) => s.read(&choices_path).ok(),
-            None => std::fs::read_to_string(&choices_path).ok(),
+            None => read_to_string_nofollow(&choices_path).ok(),
         };
         if let Some(raw) = raw_choices {
             let tokens: Vec<&str> = raw.split_whitespace().collect();
@@ -415,6 +415,34 @@ fn map_perf_profile_code_to_str(
         }
     }
     candidates.first().copied()
+}
+
+fn read_to_string_nofollow(path: &std::path::Path) -> std::io::Result<String> {
+    use std::io::Read;
+    let mut opts = std::fs::OpenOptions::new();
+    opts.read(true);
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::OpenOptionsExt;
+        opts.custom_flags(nix::libc::O_NOFOLLOW);
+    }
+    let mut file = opts.open(path)?;
+    let mut buf = String::new();
+    file.read_to_string(&mut buf)?;
+    Ok(buf)
+}
+
+fn write_nofollow(path: &std::path::Path, content: &str) -> std::io::Result<()> {
+    use std::io::Write;
+    let mut opts = std::fs::OpenOptions::new();
+    opts.write(true).truncate(true);
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::OpenOptionsExt;
+        opts.custom_flags(nix::libc::O_NOFOLLOW);
+    }
+    let mut file = opts.open(path)?;
+    file.write_all(content.as_bytes())
 }
 
 impl<H: HardwareIo> TuxedoIoBackend<H> {
@@ -510,7 +538,7 @@ impl<H: HardwareIo> PlatformBackend for TuxedoIoBackend<H> {
         match self.require_available()? {
             DeviceVendor::Uniwill => {
                 let temp = read_uniwill_fan_temp(&self.hw, fan_idx)?;
-                if temp <= 0 {
+                if temp <= 0 || temp > 150 {
                     return Err(PlatformError::SensorUnavailable(fan_idx));
                 }
                 Ok(temp)
@@ -614,7 +642,7 @@ impl<H: HardwareIo> PlatformBackend for TuxedoIoBackend<H> {
                 PlatformError::Unsupported("Unrecognized platform_profile sysfs value"),
             );
         }
-        if let Ok(raw) = std::fs::read_to_string(path) {
+        if let Ok(raw) = read_to_string_nofollow(path) {
             if let Some(code) = map_platform_profile_str_to_code(vendor, &raw) {
                 return Ok(code);
             }
@@ -646,7 +674,7 @@ impl<H: HardwareIo> PlatformBackend for TuxedoIoBackend<H> {
             let write_res = if let Some(ref sys) = self.sysfs {
                 sys.write(path, profile_str)
             } else {
-                std::fs::write(path, profile_str)
+                write_nofollow(path, profile_str)
             };
             if write_res.is_ok() {
                 *self

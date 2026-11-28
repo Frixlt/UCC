@@ -7,9 +7,55 @@
 use crate::error::ConfigError;
 use std::fs;
 use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicU64, Ordering};
 
 /// Environment variable indicating read-only preview mode.
 pub const ENV_READ_ONLY_PREVIEW: &str = "UCC_READ_ONLY_PREVIEW";
+
+/// Monotonic per-process sequence counter ensuring unique temporary file names
+/// across concurrent threads and rapid sequential writes.
+static TEMP_FILE_SEQ: AtomicU64 = AtomicU64::new(0);
+
+fn next_temp_id() -> (u32, u64, u128) {
+    let nanos = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_nanos())
+        .unwrap_or(0);
+    (
+        std::process::id(),
+        TEMP_FILE_SEQ.fetch_add(1, Ordering::Relaxed),
+        nanos,
+    )
+}
+
+/// RAII guard that removes a temporary file on drop unless disarmed after a successful rename.
+struct TempFileGuard {
+    path: Option<PathBuf>,
+}
+
+impl TempFileGuard {
+    fn new(path: PathBuf) -> Self {
+        Self { path: Some(path) }
+    }
+
+    fn path(&self) -> &Path {
+        self.path
+            .as_deref()
+            .expect("TempFileGuard accessed after disarm")
+    }
+
+    fn disarm(&mut self) {
+        self.path = None;
+    }
+}
+
+impl Drop for TempFileGuard {
+    fn drop(&mut self) {
+        if let Some(ref p) = self.path {
+            let _ = fs::remove_file(p);
+        }
+    }
+}
 
 /// Checks if read-only preview mode is active in the environment.
 pub fn is_read_only_preview() -> bool {
@@ -22,17 +68,49 @@ pub fn is_read_only_preview() -> bool {
     }
 }
 
+/// Checks whether a directory is writable by the effective UID/GID on Unix via `faccessat(..., AT_EACCESS)`.
+#[cfg(unix)]
+fn check_dir_writable(dir: &Path) -> Result<(), ConfigError> {
+    use std::ffi::CString;
+    use std::os::unix::ffi::OsStrExt;
+
+    if let Ok(c_path) = CString::new(dir.as_os_str().as_bytes()) {
+        let rc = unsafe {
+            libc::faccessat(
+                libc::AT_FDCWD,
+                c_path.as_ptr(),
+                libc::W_OK | libc::X_OK,
+                libc::AT_EACCESS,
+            )
+        };
+        if rc != 0 {
+            let err = std::io::Error::last_os_error();
+            if err.kind() == std::io::ErrorKind::PermissionDenied {
+                return Err(ConfigError::PermissionDenied(format!(
+                    "Directory {} is not writable: {}",
+                    dir.display(),
+                    err
+                )));
+            }
+            return Err(ConfigError::Io(err));
+        }
+    }
+    Ok(())
+}
+
 /// Atomically writes content to `target_path`.
 ///
 /// Workflow:
 /// 1. Validates `UCC_READ_ONLY_PREVIEW` - returns `ConfigError::ReadOnlyPreview` if active.
 /// 2. Ensures parent directory exists and is writable.
 /// 3. Validates target file write permissions if it already exists.
-/// 4. Writes content to a hidden temporary file in the same parent directory.
-/// 5. Flushes and calls `sync_all()` to ensure physical persistence on disk.
-/// 6. If `target_path` already exists, creates a `.bak` backup copy.
-/// 7. Atomically replaces `target_path` using `fs::rename`.
-/// 8. Cleans up temporary file in case of any failure.
+/// 4. Writes content to a uniquely-named hidden temporary file in the same parent directory,
+///    applies FD-based permissions (`fchmod`), flushes, and calls `sync_all()`.
+/// 5. If `target_path` already exists, atomically rotates `.bak` and `.backup` copies using
+///    unique temporary names without extra redundant `fsync` barriers.
+/// 6. Atomically replaces `target_path` using `fs::rename`.
+/// 7. Syncs the parent directory once for directory-entry durability.
+/// 8. Automatically unlinks any temporary files via RAII guards on any error path.
 pub fn write_atomic(target_path: impl AsRef<Path>, content: &[u8]) -> Result<(), ConfigError> {
     // 1. Guard against writes during read-only preview mode
     if is_read_only_preview() {
@@ -94,20 +172,9 @@ pub fn write_atomic(target_path: impl AsRef<Path>, content: &[u8]) -> Result<(),
         })?;
     }
 
-    // 3. Permission verification: check if parent directory is writable
+    // 3. Permission verification: check effective UID/GID writability on parent directory
     #[cfg(unix)]
-    {
-        use std::os::unix::fs::PermissionsExt;
-        let parent_meta = fs::metadata(parent)?;
-        // Check write permission bits (user, group, other)
-        if parent_meta.permissions().mode() & 0o222 == 0 {
-            return Err(ConfigError::PermissionDenied(format!(
-                "Directory {} is read-only (mode: {:o})",
-                parent.display(),
-                parent_meta.permissions().mode()
-            )));
-        }
-    }
+    check_dir_writable(parent)?;
 
     #[cfg(unix)]
     let is_root = {
@@ -137,19 +204,16 @@ pub fn write_atomic(target_path: impl AsRef<Path>, content: &[u8]) -> Result<(),
             .unwrap_or(0o644)
     };
 
-    // 4. Create temporary file in the same directory (guarantees same filesystem)
+    // 4. Create uniquely-named temporary file in the same directory (guarantees same filesystem)
     let file_name = target_path
         .file_name()
         .and_then(|s| s.to_str())
         .unwrap_or("settings.json");
-    let timestamp = std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .map(|d| d.as_nanos())
-        .unwrap_or(0);
-    let temp_name = format!(".{}.tmp.{}.{}", file_name, std::process::id(), timestamp);
-    let temp_path = parent.join(temp_name);
+    let (pid, seq, nanos) = next_temp_id();
+    let temp_path = parent.join(format!(".{file_name}.tmp.{pid}.{seq}.{nanos}"));
+    let mut temp_guard: Option<TempFileGuard> = None;
 
-    // Write content and synchronize to disk
+    // Write content and synchronize temp file to disk
     let write_res = (|| -> Result<(), std::io::Error> {
         use std::io::Write;
         let mut opts = fs::OpenOptions::new();
@@ -162,11 +226,12 @@ pub fn write_atomic(target_path: impl AsRef<Path>, content: &[u8]) -> Result<(),
             opts.custom_flags(libc::O_NOFOLLOW);
         }
         let mut temp_file = opts.open(&temp_path)?;
+        temp_guard = Some(TempFileGuard::new(temp_path.clone()));
 
         #[cfg(unix)]
         {
             use std::os::unix::fs::PermissionsExt;
-            fs::set_permissions(&temp_path, fs::Permissions::from_mode(target_mode))?;
+            temp_file.set_permissions(fs::Permissions::from_mode(target_mode))?;
         }
 
         temp_file.write_all(content)?;
@@ -176,7 +241,6 @@ pub fn write_atomic(target_path: impl AsRef<Path>, content: &[u8]) -> Result<(),
     })();
 
     if let Err(e) = write_res {
-        let _ = fs::remove_file(&temp_path);
         return if e.kind() == std::io::ErrorKind::PermissionDenied {
             Err(ConfigError::PermissionDenied(format!(
                 "Permission denied writing temp file {}: {}",
@@ -187,25 +251,23 @@ pub fn write_atomic(target_path: impl AsRef<Path>, content: &[u8]) -> Result<(),
             Err(ConfigError::Io(e))
         };
     }
+    let mut temp_guard = temp_guard.expect("temp file created above");
 
-    // Helper for safe atomic backup rotation: writes to a temporary file and renames it over the destination,
-    // which replaces existing files/symlinks without traversing symlinks.
+    // Helper for safe atomic backup rotation: writes to a uniquely-named temporary file
+    // with FD-based permissions and RAII cleanup, then renames it over the destination
+    // (replacing existing files/symlinks without traversing symlinks).
+    // Syncs backup data before renaming so an existing valid backup cannot be truncated on crash.
     let rotate_backup =
         |src_content: &[u8], dest_path: &Path, mode: u32| -> Result<(), std::io::Error> {
             #[cfg(not(unix))]
             let _ = mode;
-            let parent = dest_path.parent().unwrap_or_else(|| Path::new("."));
-            let bak_temp = parent.join(format!(
-                ".{}.bak.tmp.{}",
+            let bak_parent = dest_path.parent().unwrap_or_else(|| Path::new("."));
+            let (b_pid, b_seq, b_nanos) = next_temp_id();
+            let bak_tmp_path = bak_parent.join(format!(
+                ".{}.bak.tmp.{b_pid}.{b_seq}.{b_nanos}",
                 dest_path.file_name().unwrap_or_default().to_string_lossy(),
-                std::process::id()
             ));
-            if let Ok(meta) = fs::symlink_metadata(&bak_temp) {
-                if meta.file_type().is_symlink() || meta.is_file() {
-                    let _ = fs::remove_file(&bak_temp);
-                }
-            }
-            {
+            let mut bak_guard = {
                 use std::io::Write;
                 let mut opts = fs::OpenOptions::new();
                 opts.write(true).create_new(true);
@@ -216,17 +278,19 @@ pub fn write_atomic(target_path: impl AsRef<Path>, content: &[u8]) -> Result<(),
                     // Refuse to follow symlinks via target-specific O_NOFOLLOW
                     opts.custom_flags(libc::O_NOFOLLOW);
                 }
-                let mut f = opts.open(&bak_temp)?;
+                let mut f = opts.open(&bak_tmp_path)?;
+                let guard = TempFileGuard::new(bak_tmp_path.clone());
                 #[cfg(unix)]
                 {
                     use std::os::unix::fs::PermissionsExt;
-                    fs::set_permissions(&bak_temp, fs::Permissions::from_mode(mode))?;
+                    f.set_permissions(fs::Permissions::from_mode(mode))?;
                 }
                 f.write_all(src_content)?;
-                f.flush()?;
                 f.sync_all()?;
-            }
-            fs::rename(&bak_temp, dest_path)?;
+                guard
+            };
+            fs::rename(bak_guard.path(), dest_path)?;
+            bak_guard.disarm();
             Ok(())
         };
 
@@ -245,10 +309,7 @@ pub fn write_atomic(target_path: impl AsRef<Path>, content: &[u8]) -> Result<(),
         let backup_path = PathBuf::from(format!("{}.backup", target_path.display()));
 
         if target_is_valid {
-            if let Err(e) = rotate_backup(&target_bytes, &bak_path, mode) {
-                let _ = fs::remove_file(&temp_path);
-                return Err(ConfigError::Io(e));
-            }
+            rotate_backup(&target_bytes, &bak_path, mode)?;
             let _ = rotate_backup(&target_bytes, &backup_path, mode);
         } else {
             // Target is corrupted or domain-invalid! Do NOT overwrite valid existing backup files with a broken file!
@@ -265,12 +326,10 @@ pub fn write_atomic(target_path: impl AsRef<Path>, content: &[u8]) -> Result<(),
     }
 
     // 6. Atomically rename temporary file to target path
-    if let Err(e) = fs::rename(&temp_path, target_path) {
-        let _ = fs::remove_file(&temp_path);
-        return Err(ConfigError::Io(e));
-    }
+    fs::rename(temp_guard.path(), target_path)?;
+    temp_guard.disarm();
 
-    // 7. Ensure directory durability
+    // 7. Ensure directory durability once (barrier 2 of 2)
     #[cfg(unix)]
     {
         if let Ok(dir_f) = fs::File::open(parent) {

@@ -233,6 +233,44 @@ fn is_valid_tuxedo_read_str(request: u64) -> bool {
     )
 }
 
+/// Retries a Unix syscall returning `c_int` (such as `libc::ioctl`) while it fails with `EINTR`.
+#[cfg(unix)]
+pub(crate) fn retry_eintr<F>(mut f: F) -> Result<libc::c_int, nix::Error>
+where
+    F: FnMut() -> libc::c_int,
+{
+    loop {
+        let ret = f();
+        if ret < 0 {
+            let err = nix::Error::last();
+            if err == nix::errno::Errno::EINTR {
+                continue;
+            }
+            return Err(err);
+        }
+        return Ok(ret);
+    }
+}
+
+/// Retries a Unix syscall returning `ssize_t` (such as `libc::read`) while it fails with `EINTR`.
+#[cfg(unix)]
+pub(crate) fn retry_eintr_ssize<F>(mut f: F) -> Result<libc::ssize_t, nix::Error>
+where
+    F: FnMut() -> libc::ssize_t,
+{
+    loop {
+        let ret = f();
+        if ret < 0 {
+            let err = nix::Error::last();
+            if err == nix::errno::Errno::EINTR {
+                continue;
+            }
+            return Err(err);
+        }
+        return Ok(ret);
+    }
+}
+
 /// Typed wrapper around a character device like `/dev/tuxedo_io`.
 pub struct TuxedoIoDevice {
     file: File,
@@ -249,7 +287,7 @@ impl TuxedoIoDevice {
         let file = OpenOptions::new()
             .read(true)
             .write(true)
-            .custom_flags(libc::O_NONBLOCK)
+            .custom_flags(libc::O_NONBLOCK | libc::O_NOFOLLOW)
             .open(&path_buf)
             .map_err(|e| IoctlError::OpenDevice {
                 path: path_buf.clone(),
@@ -285,13 +323,8 @@ impl TuxedoIoDevice {
         }
 
         let mut val: i32 = 0;
-        let ret = libc::ioctl(self.file.as_raw_fd(), request, &mut val);
-        if ret < 0 {
-            return Err(IoctlError::IoctlFailed {
-                request,
-                source: nix::Error::last(),
-            });
-        }
+        retry_eintr(|| libc::ioctl(self.file.as_raw_fd(), request, &mut val))
+            .map_err(|source| IoctlError::IoctlFailed { request, source })?;
         Ok(val)
     }
 
@@ -312,13 +345,8 @@ impl TuxedoIoDevice {
                 "Cannot invoke write_i32 with non-write or unsupported ioctl request",
             ));
         }
-        let ret = libc::ioctl(self.file.as_raw_fd(), request, &mut val);
-        if ret < 0 {
-            return Err(IoctlError::IoctlFailed {
-                request,
-                source: nix::Error::last(),
-            });
-        }
+        retry_eintr(|| libc::ioctl(self.file.as_raw_fd(), request, &mut val))
+            .map_err(|source| IoctlError::IoctlFailed { request, source })?;
         Ok(())
     }
 
@@ -338,13 +366,8 @@ impl TuxedoIoDevice {
                 "Cannot invoke call_none with argument-bearing or unsupported ioctl request",
             ));
         }
-        let ret = libc::ioctl(self.file.as_raw_fd(), request);
-        if ret < 0 {
-            return Err(IoctlError::IoctlFailed {
-                request,
-                source: nix::Error::last(),
-            });
-        }
+        retry_eintr(|| libc::ioctl(self.file.as_raw_fd(), request))
+            .map_err(|source| IoctlError::IoctlFailed { request, source })?;
         Ok(())
     }
 
@@ -397,13 +420,8 @@ impl TuxedoIoDevice {
         }
 
         let mut buffer = vec![0u8; max_len.max(1)];
-        let ret = libc::ioctl(self.file.as_raw_fd(), request, buffer.as_mut_ptr());
-        if ret < 0 {
-            return Err(IoctlError::IoctlFailed {
-                request,
-                source: nix::Error::last(),
-            });
-        }
+        retry_eintr(|| libc::ioctl(self.file.as_raw_fd(), request, buffer.as_mut_ptr()))
+            .map_err(|source| IoctlError::IoctlFailed { request, source })?;
         let c_str = CStr::from_bytes_until_nul(&buffer).map_err(|_| {
             IoctlError::PreconditionFailed("String from ioctl is missing NUL terminator")
         })?;
@@ -426,14 +444,8 @@ impl TuxedoIoDevice {
         request: u64,
         arg: *mut libc::c_void,
     ) -> Result<i32, IoctlError> {
-        let ret = libc::ioctl(self.file.as_raw_fd(), request, arg);
-        if ret < 0 {
-            return Err(IoctlError::IoctlFailed {
-                request,
-                source: nix::Error::last(),
-            });
-        }
-        Ok(ret)
+        retry_eintr(|| libc::ioctl(self.file.as_raw_fd(), request, arg))
+            .map_err(|source| IoctlError::IoctlFailed { request, source })
     }
 
     /// Checks if this device instance is open and valid.

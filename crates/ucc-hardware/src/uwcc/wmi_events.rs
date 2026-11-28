@@ -238,15 +238,14 @@ impl LinuxUinputEmitter {
         let fd = file.as_raw_fd();
         let ioctl_int = |req: u64, val: libc::c_int| -> Result<(), PlatformError> {
             // SAFETY: Standard Linux uinput `_IOW('U', nr, int)` ioctl taking an integer argument.
-            let ret = unsafe { libc::ioctl(fd, req as _, val) };
-            if ret < 0 {
-                return Err(PlatformError::Ioctl(
-                    crate::ioctl::IoctlError::IoctlFailed {
+            crate::ioctl::retry_eintr(|| unsafe { libc::ioctl(fd, req as _, val) }).map_err(
+                |source| {
+                    PlatformError::Ioctl(crate::ioctl::IoctlError::IoctlFailed {
                         request: req,
-                        source: nix::Error::last(),
-                    },
-                ));
-            }
+                        source,
+                    })
+                },
+            )?;
             Ok(())
         };
 
@@ -290,82 +289,117 @@ impl LinuxUinputEmitter {
         };
 
         // SAFETY: `UI_DEV_SETUP` expects a valid pointer to `UinputSetup`.
-        let setup_ret = unsafe {
+        crate::ioctl::retry_eintr(|| unsafe {
             libc::ioctl(
                 fd,
                 linux_uinput_abi::UI_DEV_SETUP as _,
                 &setup as *const linux_uinput_abi::UinputSetup,
             )
-        };
-        if setup_ret < 0 {
-            return Err(PlatformError::Ioctl(
-                crate::ioctl::IoctlError::IoctlFailed {
-                    request: linux_uinput_abi::UI_DEV_SETUP,
-                    source: nix::Error::last(),
-                },
-            ));
-        }
+        })
+        .map_err(|source| {
+            PlatformError::Ioctl(crate::ioctl::IoctlError::IoctlFailed {
+                request: linux_uinput_abi::UI_DEV_SETUP,
+                source,
+            })
+        })?;
 
         // SAFETY: `UI_DEV_CREATE` takes no arguments.
-        let create_ret = unsafe { libc::ioctl(fd, linux_uinput_abi::UI_DEV_CREATE as _) };
-        if create_ret < 0 {
-            return Err(PlatformError::Ioctl(
-                crate::ioctl::IoctlError::IoctlFailed {
-                    request: linux_uinput_abi::UI_DEV_CREATE,
-                    source: nix::Error::last(),
-                },
-            ));
-        }
+        crate::ioctl::retry_eintr(|| unsafe {
+            libc::ioctl(fd, linux_uinput_abi::UI_DEV_CREATE as _)
+        })
+        .map_err(|source| {
+            PlatformError::Ioctl(crate::ioctl::IoctlError::IoctlFailed {
+                request: linux_uinput_abi::UI_DEV_CREATE,
+                source,
+            })
+        })?;
 
         Ok(Self {
             file: Mutex::new(file),
         })
     }
 
-    fn write_event(
-        file: &mut File,
-        type_: u16,
-        code: u16,
-        value: i32,
-    ) -> Result<(), PlatformError> {
-        let ev = linux_uinput_abi::InputEvent {
-            tv_sec: 0,
-            tv_usec: 0,
-            type_,
-            code,
-            value,
-        };
-        // SAFETY: `InputEvent` is a plain `#[repr(C)]` POD struct; viewing its bytes is sound.
-        let bytes = unsafe {
-            std::slice::from_raw_parts(
-                (&ev as *const linux_uinput_abi::InputEvent).cast::<u8>(),
-                std::mem::size_of::<linux_uinput_abi::InputEvent>(),
-            )
-        };
-        file.write_all(bytes)
-            .map_err(|_| PlatformError::Unavailable)
+    fn build_key_click_batch(keycode: u16) -> [linux_uinput_abi::InputEvent; 4] {
+        [
+            linux_uinput_abi::InputEvent {
+                tv_sec: 0,
+                tv_usec: 0,
+                type_: linux_uinput_abi::EV_KEY,
+                code: keycode,
+                value: 1,
+            },
+            linux_uinput_abi::InputEvent {
+                tv_sec: 0,
+                tv_usec: 0,
+                type_: linux_uinput_abi::EV_SYN,
+                code: linux_uinput_abi::SYN_REPORT,
+                value: 0,
+            },
+            linux_uinput_abi::InputEvent {
+                tv_sec: 0,
+                tv_usec: 0,
+                type_: linux_uinput_abi::EV_KEY,
+                code: keycode,
+                value: 0,
+            },
+            linux_uinput_abi::InputEvent {
+                tv_sec: 0,
+                tv_usec: 0,
+                type_: linux_uinput_abi::EV_SYN,
+                code: linux_uinput_abi::SYN_REPORT,
+                value: 0,
+            },
+        ]
+    }
+
+    fn write_batch_all(writer: &mut impl Write, mut buf: &[u8]) -> Result<(), PlatformError> {
+        const MAX_EAGAIN_RETRIES: u8 = 5;
+        const MAX_EINTR_RETRIES: u8 = 16;
+        let event_size = std::mem::size_of::<linux_uinput_abi::InputEvent>();
+        let mut eagain_retries = 0u8;
+        let mut eintr_retries = 0u8;
+        while !buf.is_empty() {
+            match writer.write(buf) {
+                Ok(0) => return Err(PlatformError::Unavailable),
+                Ok(n) => {
+                    if n % event_size != 0 {
+                        return Err(PlatformError::Unavailable);
+                    }
+                    buf = &buf[n..];
+                    eagain_retries = 0;
+                    eintr_retries = 0;
+                }
+                Err(err) if err.kind() == std::io::ErrorKind::Interrupted => {
+                    eintr_retries += 1;
+                    if eintr_retries > MAX_EINTR_RETRIES {
+                        return Err(PlatformError::Unavailable);
+                    }
+                    continue;
+                }
+                Err(err) if err.kind() == std::io::ErrorKind::WouldBlock => {
+                    eagain_retries += 1;
+                    if eagain_retries > MAX_EAGAIN_RETRIES {
+                        return Err(PlatformError::Unavailable);
+                    }
+                    std::thread::sleep(std::time::Duration::from_millis(1));
+                }
+                Err(_) => return Err(PlatformError::Unavailable),
+            }
+        }
+        Ok(())
     }
 }
 
 #[cfg(unix)]
 impl UinputEmitter for LinuxUinputEmitter {
     fn emit_key_click(&self, keycode: u16) -> Result<(), PlatformError> {
+        let events = Self::build_key_click_batch(keycode);
+        // SAFETY: `[InputEvent; 4]` is a contiguous array of plain `#[repr(C)]` POD structs.
+        let bytes = unsafe {
+            std::slice::from_raw_parts(events.as_ptr().cast::<u8>(), std::mem::size_of_val(&events))
+        };
         let mut guard = self.file.lock().unwrap_or_else(|e| e.into_inner());
-        Self::write_event(&mut guard, linux_uinput_abi::EV_KEY, keycode, 1)?;
-        Self::write_event(
-            &mut guard,
-            linux_uinput_abi::EV_SYN,
-            linux_uinput_abi::SYN_REPORT,
-            0,
-        )?;
-        Self::write_event(&mut guard, linux_uinput_abi::EV_KEY, keycode, 0)?;
-        Self::write_event(
-            &mut guard,
-            linux_uinput_abi::EV_SYN,
-            linux_uinput_abi::SYN_REPORT,
-            0,
-        )?;
-        Ok(())
+        Self::write_batch_all(&mut *guard, bytes)
     }
 }
 
@@ -374,8 +408,8 @@ impl Drop for LinuxUinputEmitter {
     fn drop(&mut self) {
         let guard = self.file.lock().unwrap_or_else(|e| e.into_inner());
         // SAFETY: `UI_DEV_DESTROY` takes no arguments on an open uinput fd.
-        unsafe {
-            let _ = libc::ioctl(guard.as_raw_fd(), linux_uinput_abi::UI_DEV_DESTROY as _);
-        }
+        let _ = crate::ioctl::retry_eintr(|| unsafe {
+            libc::ioctl(guard.as_raw_fd(), linux_uinput_abi::UI_DEV_DESTROY as _)
+        });
     }
 }

@@ -21,14 +21,17 @@
 #include <asm/byteorder.h>
 #include <linux/acpi.h>
 #include <linux/capability.h>
+#include <linux/delay.h>
 #include <linux/device.h>
 #include <linux/err.h>
 #include <linux/errno.h>
 #include <linux/minmax.h>
 #include <linux/fs.h>
 #include <linux/hwmon.h>
+#include <linux/jiffies.h>
 #include <linux/ktime.h>
 #include <linux/miscdevice.h>
+#include <linux/mod_devicetable.h>
 #include <linux/module.h>
 #include <linux/mutex.h>
 #include <linux/poll.h>
@@ -36,6 +39,12 @@
 #include <linux/spinlock.h>
 #include <linux/string.h>
 #include <linux/uaccess.h>
+#include <linux/version.h>
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 12, 0)
+#include <linux/unaligned.h>
+#else
+#include <asm/unaligned.h>
+#endif
 #include <linux/wait.h>
 #if IS_ENABLED(CONFIG_ACPI_WMI)
 #include <linux/wmi.h>
@@ -71,9 +80,32 @@
 #define UWCC_EC_REG_PWM2         0x075CU
 #define UWCC_EC_PWM_MAX_RAW      200U
 
+#define UWCC_EC_MAX_RETRIES     3U
+#define UWCC_HWMON_CACHE_TTL_MS 350U
+
+enum uwcc_hwmon_cache_slot {
+	UWCC_CACHE_TEMP0 = 0,
+	UWCC_CACHE_TEMP1,
+	UWCC_CACHE_FAN0,
+	UWCC_CACHE_FAN1,
+	UWCC_CACHE_PWM0,
+	UWCC_CACHE_PWM1,
+	UWCC_CACHE_COUNT,
+};
+
+struct uwcc_hwmon_cache_entry {
+	long value;
+	unsigned long last_jiffies;
+	bool valid;
+};
+
 static DEFINE_MUTEX(uwcc_ec_lock);
 static DEFINE_SPINLOCK(uwcc_state_lock);
 static DECLARE_WAIT_QUEUE_HEAD(uwcc_wmi_wq);
+
+/* Protected by uwcc_ec_lock */
+static u8 uwcc_smrw_req_buf[64];
+static struct uwcc_hwmon_cache_entry uwcc_hwmon_cache[UWCC_CACHE_COUNT];
 
 static acpi_handle uwcc_acpi_handle;
 static bool uwcc_has_ecrr;
@@ -94,11 +126,19 @@ static struct device *uwcc_hwmon_dev;
  * Internal ACPI helpers (caller must hold uwcc_ec_lock)
  * -------------------------------------------------------------------------- */
 
+static bool uwcc_acpi_is_transient_error(acpi_status status)
+{
+	return status == AE_TIME ||
+	       status == AE_ERROR ||
+	       status == AE_NO_HARDWARE_RESPONSE;
+}
+
 static int uwcc_ec_read_locked(u16 addr, u8 *out_val)
 {
 	union acpi_object arg;
 	struct acpi_object_list params;
 	unsigned long long result = 0;
+	unsigned int attempt;
 	acpi_status status;
 
 	if (!uwcc_acpi_handle || !uwcc_has_ecrr)
@@ -110,12 +150,19 @@ static int uwcc_ec_read_locked(u16 addr, u8 *out_val)
 	params.count = 1;
 	params.pointer = &arg;
 
-	status = acpi_evaluate_integer(uwcc_acpi_handle, "ECRR", &params, &result);
-	if (ACPI_FAILURE(status))
-		return -EIO;
+	for (attempt = 0; attempt < UWCC_EC_MAX_RETRIES; attempt++) {
+		status = acpi_evaluate_integer(uwcc_acpi_handle, "ECRR", &params, &result);
+		if (ACPI_SUCCESS(status)) {
+			*out_val = (u8)(result & 0xFFU);
+			return 0;
+		}
+		if (!uwcc_acpi_is_transient_error(status) ||
+		    attempt + 1 >= UWCC_EC_MAX_RETRIES)
+			break;
+		usleep_range(1000, 2000);
+	}
 
-	*out_val = (u8)(result & 0xFFU);
-	return 0;
+	return -EIO;
 }
 
 static int uwcc_ec_write_locked(u16 addr, u8 val)
@@ -123,6 +170,7 @@ static int uwcc_ec_write_locked(u16 addr, u8 val)
 	union acpi_object args[2];
 	struct acpi_object_list params;
 	unsigned long long result = 0;
+	unsigned int attempt;
 	acpi_status status;
 
 	if (!uwcc_acpi_handle || !uwcc_has_ecrw)
@@ -136,11 +184,19 @@ static int uwcc_ec_write_locked(u16 addr, u8 val)
 	params.count = 2;
 	params.pointer = args;
 
-	status = acpi_evaluate_integer(uwcc_acpi_handle, "ECRW", &params, &result);
-	if (ACPI_FAILURE(status))
-		return -EIO;
+	for (attempt = 0; attempt < UWCC_EC_MAX_RETRIES; attempt++) {
+		status = acpi_evaluate_integer(uwcc_acpi_handle, "ECRW", &params, &result);
+		if (ACPI_SUCCESS(status)) {
+			memset(uwcc_hwmon_cache, 0, sizeof(uwcc_hwmon_cache));
+			return 0;
+		}
+		if (!uwcc_acpi_is_transient_error(status) ||
+		    attempt + 1 >= UWCC_EC_MAX_RETRIES)
+			break;
+		usleep_range(1000, 2000);
+	}
 
-	return 0;
+	return -EIO;
 }
 
 /* --------------------------------------------------------------------------
@@ -154,7 +210,8 @@ int uwcc_acpi_ec_read(u16 addr, u8 *out_val)
 	if (!out_val)
 		return -EINVAL;
 
-	mutex_lock(&uwcc_ec_lock);
+	if (mutex_lock_interruptible(&uwcc_ec_lock))
+		return -ERESTARTSYS;
 	ret = uwcc_ec_read_locked(addr, out_val);
 	mutex_unlock(&uwcc_ec_lock);
 
@@ -165,7 +222,8 @@ int uwcc_acpi_ec_write(u16 addr, u8 val)
 {
 	int ret;
 
-	mutex_lock(&uwcc_ec_lock);
+	if (mutex_lock_interruptible(&uwcc_ec_lock))
+		return -ERESTARTSYS;
 	ret = uwcc_ec_write_locked(addr, val);
 	mutex_unlock(&uwcc_ec_lock);
 
@@ -182,7 +240,8 @@ int uwcc_acpi_smrw(u16 offset, u16 len, u8 *out_buf)
 	if ((u32)offset + (u32)len > UWCC_SMRW_TABLE_LIMIT)
 		return -ERANGE;
 
-	mutex_lock(&uwcc_ec_lock);
+	if (mutex_lock_interruptible(&uwcc_ec_lock))
+		return -ERESTARTSYS;
 
 	if (!uwcc_acpi_handle || !uwcc_has_smrw) {
 		mutex_unlock(&uwcc_ec_lock);
@@ -199,8 +258,7 @@ int uwcc_acpi_smrw(u16 offset, u16 len, u8 *out_buf)
 	 * and returns a 32-bit integer (or buffer on alternate firmware).
 	 */
 	for (pos = 0; pos < len; pos += 4U) {
-		/* 64-byte zero-padded input buffer prevents AE_AML_BUFFER_LIMIT in DSDT CreateField */
-		u8 req_buf[64];
+		/* 64-byte zero-padded input buffer (protected by uwcc_ec_lock) prevents AE_AML_BUFFER_LIMIT */
 		union acpi_object arg;
 		struct acpi_object_list params;
 		struct acpi_buffer output = { ACPI_ALLOCATE_BUFFER, NULL };
@@ -208,13 +266,13 @@ int uwcc_acpi_smrw(u16 offset, u16 len, u8 *out_buf)
 		acpi_status status;
 		u16 cur_off = offset + pos;
 
-		memset(req_buf, 0, sizeof(req_buf));
-		req_buf[0] = 0xBB;
-		req_buf[1] = (u8)cur_off;
+		memset(uwcc_smrw_req_buf, 0, sizeof(uwcc_smrw_req_buf));
+		uwcc_smrw_req_buf[0] = 0xBB;
+		uwcc_smrw_req_buf[1] = (u8)cur_off;
 
 		arg.type = ACPI_TYPE_BUFFER;
-		arg.buffer.length = sizeof(req_buf);
-		arg.buffer.pointer = req_buf;
+		arg.buffer.length = sizeof(uwcc_smrw_req_buf);
+		arg.buffer.pointer = uwcc_smrw_req_buf;
 
 		params.count = 1;
 		params.pointer = &arg;
@@ -266,7 +324,8 @@ int uwcc_acpi_pwup(u32 enable, u32 level)
 	if (enable == 0U && level != 0U)
 		return -EINVAL;
 
-	mutex_lock(&uwcc_ec_lock);
+	if (mutex_lock_interruptible(&uwcc_ec_lock))
+		return -ERESTARTSYS;
 
 	if (!uwcc_acpi_handle || !uwcc_has_pwup) {
 		mutex_unlock(&uwcc_ec_lock);
@@ -296,7 +355,8 @@ int uwcc_acpi_gpu_power(u32 op, u32 value)
 	acpi_status status;
 	int ret = 0;
 
-	mutex_lock(&uwcc_ec_lock);
+	if (mutex_lock_interruptible(&uwcc_ec_lock))
+		return -ERESTARTSYS;
 
 	if (!uwcc_acpi_handle) {
 		mutex_unlock(&uwcc_ec_lock);
@@ -344,7 +404,8 @@ int uwcc_acpi_mux_get(u32 *out_active_gpu, u32 *out_boot_mode)
 	if (!out_active_gpu || !out_boot_mode)
 		return -EINVAL;
 
-	mutex_lock(&uwcc_ec_lock);
+	if (mutex_lock_interruptible(&uwcc_ec_lock))
+		return -ERESTARTSYS;
 
 	if (!uwcc_mux_handle || !uwcc_has_mux) {
 		mutex_unlock(&uwcc_ec_lock);
@@ -385,7 +446,8 @@ int uwcc_acpi_mux_set(u32 boot_mode)
 	if (boot_mode < UWCC_MUX_MODE_DYNAMIC || boot_mode > UWCC_MUX_MODE_MSHYBRID)
 		return -EINVAL;
 
-	mutex_lock(&uwcc_ec_lock);
+	if (mutex_lock_interruptible(&uwcc_ec_lock))
+		return -ERESTARTSYS;
 
 	if (!uwcc_mux_handle || !uwcc_has_mux) {
 		mutex_unlock(&uwcc_ec_lock);
@@ -431,9 +493,9 @@ static void uwcc_wmi_notify(struct wmi_device *wdev, union acpi_object *obj)
 		payload = (u32)((obj->integer.value >> 32) & 0xFFFFFFFFULL);
 	} else if (obj->type == ACPI_TYPE_BUFFER &&
 		   obj->buffer.pointer && obj->buffer.length >= 4) {
-		memcpy(&code, obj->buffer.pointer, sizeof(code));
+		code = get_unaligned_le32(obj->buffer.pointer);
 		if (obj->buffer.length >= 8)
-			memcpy(&payload, obj->buffer.pointer + 4, sizeof(payload));
+			payload = get_unaligned_le32(obj->buffer.pointer + 4);
 	} else {
 		return;
 	}
@@ -445,6 +507,7 @@ static const struct wmi_device_id uwcc_wmi_id_table[] = {
 	{ UWCC_WMI_EVENT_GUID, NULL },
 	{ }
 };
+MODULE_DEVICE_TABLE(wmi, uwcc_wmi_id_table);
 
 static struct wmi_driver uwcc_wmi_driver = {
 	.driver = {
@@ -503,9 +566,11 @@ static long uwcc_dev_ioctl(struct file *filp, unsigned int cmd, unsigned long ar
 	case UWCC_IOC_EC_WRITE: {
 		struct uwcc_ec_reg reg;
 
+		if (!writable || !capable(CAP_SYS_ADMIN))
+			return -EPERM;
 		if (copy_from_user(&reg, argp, sizeof(reg)))
 			return -EFAULT;
-		return uwcc_rs_ioctl_ec_write(&reg, writable, capable(CAP_SYS_ADMIN));
+		return uwcc_rs_ioctl_ec_write(&reg, true, true);
 	}
 
 	case UWCC_IOC_SMRW: {
@@ -524,17 +589,21 @@ static long uwcc_dev_ioctl(struct file *filp, unsigned int cmd, unsigned long ar
 	case UWCC_IOC_PWUP: {
 		struct uwcc_pwup pwup;
 
+		if (!writable || !capable(CAP_SYS_ADMIN))
+			return -EPERM;
 		if (copy_from_user(&pwup, argp, sizeof(pwup)))
 			return -EFAULT;
-		return uwcc_rs_ioctl_pwup(&pwup, writable, capable(CAP_SYS_ADMIN));
+		return uwcc_rs_ioctl_pwup(&pwup, true, true);
 	}
 
 	case UWCC_IOC_GPU_POWER: {
 		struct uwcc_gpu_power req;
 
+		if (!writable || !capable(CAP_SYS_ADMIN))
+			return -EPERM;
 		if (copy_from_user(&req, argp, sizeof(req)))
 			return -EFAULT;
-		return uwcc_rs_ioctl_gpu_power(&req, writable, capable(CAP_SYS_ADMIN));
+		return uwcc_rs_ioctl_gpu_power(&req, true, true);
 	}
 
 	case UWCC_IOC_MUX_GET: {
@@ -552,9 +621,11 @@ static long uwcc_dev_ioctl(struct file *filp, unsigned int cmd, unsigned long ar
 	case UWCC_IOC_MUX_SET: {
 		struct uwcc_mux_state req;
 
+		if (!writable || !capable(CAP_SYS_ADMIN))
+			return -EPERM;
 		if (copy_from_user(&req, argp, sizeof(req)))
 			return -EFAULT;
-		return uwcc_rs_ioctl_mux_set(&req, writable, capable(CAP_SYS_ADMIN));
+		return uwcc_rs_ioctl_mux_set(&req, true, true);
 	}
 
 	default:
@@ -687,8 +758,11 @@ static umode_t uwcc_hwmon_is_visible(const void *drvdata,
 static int uwcc_hwmon_read(struct device *dev, enum hwmon_sensor_types type,
 			   u32 attr, int channel, long *val)
 {
-	u8 hi = 0, lo = 0, raw = 0;
+	struct uwcc_hwmon_cache_entry *entry;
+	enum uwcc_hwmon_cache_slot slot;
+	u8 hi = 0, lo = 0, hi2 = 0, raw = 0;
 	u16 rpm;
+	long computed = 0;
 	int ret;
 
 	(void)dev;
@@ -701,67 +775,119 @@ static int uwcc_hwmon_read(struct device *dev, enum hwmon_sensor_types type,
 		if (attr != hwmon_temp_input)
 			return -EOPNOTSUPP;
 		if (channel == 0)
-			ret = uwcc_acpi_ec_read(UWCC_EC_REG_CPU_TEMP, &raw);
+			slot = UWCC_CACHE_TEMP0;
 		else if (channel == 1)
-			ret = uwcc_acpi_ec_read(UWCC_EC_REG_GPU_TEMP, &raw);
+			slot = UWCC_CACHE_TEMP1;
 		else
 			return -EINVAL;
-
-		if (ret)
-			return ret;
-		if (raw == 0 || raw > UWCC_EC_TEMP_MAX_VALID_C)
-			return -ENODATA;
-		*val = (long)raw * 1000L;
-		return 0;
+		break;
 
 	case hwmon_fan:
 		if (attr != hwmon_fan_input)
 			return -EOPNOTSUPP;
-
-		mutex_lock(&uwcc_ec_lock);
-		if (channel == 0) {
-			ret = uwcc_ec_read_locked(UWCC_EC_REG_FAN1_RPM_HI, &hi);
-			if (!ret)
-				ret = uwcc_ec_read_locked(UWCC_EC_REG_FAN1_RPM_LO, &lo);
-		} else if (channel == 1) {
-			ret = uwcc_ec_read_locked(UWCC_EC_REG_FAN2_RPM_HI, &hi);
-			if (!ret)
-				ret = uwcc_ec_read_locked(UWCC_EC_REG_FAN2_RPM_LO, &lo);
-		} else {
-			ret = -EINVAL;
-		}
-		mutex_unlock(&uwcc_ec_lock);
-
-		if (ret)
-			return ret;
-
-		rpm = ((u16)hi << 8) | (u16)lo;
-		if (rpm == 0xFFFFU)
-			return -ENODATA;
-		*val = (long)rpm;
-		return 0;
+		if (channel == 0)
+			slot = UWCC_CACHE_FAN0;
+		else if (channel == 1)
+			slot = UWCC_CACHE_FAN1;
+		else
+			return -EINVAL;
+		break;
 
 	case hwmon_pwm:
 		if (attr != hwmon_pwm_input)
 			return -EOPNOTSUPP;
 		if (channel == 0)
-			ret = uwcc_acpi_ec_read(UWCC_EC_REG_PWM1, &raw);
+			slot = UWCC_CACHE_PWM0;
 		else if (channel == 1)
-			ret = uwcc_acpi_ec_read(UWCC_EC_REG_PWM2, &raw);
+			slot = UWCC_CACHE_PWM1;
 		else
 			return -EINVAL;
-
-		if (ret)
-			return ret;
-		if (raw > UWCC_EC_PWM_MAX_RAW)
-			raw = UWCC_EC_PWM_MAX_RAW;
-		/* Scale Uniwill 0..=200 duty cycle to standard Linux hwmon 0..=255 */
-		*val = ((long)raw * 255L + 100L) / (long)UWCC_EC_PWM_MAX_RAW;
-		return 0;
+		break;
 
 	default:
 		return -EOPNOTSUPP;
 	}
+
+	if (mutex_lock_interruptible(&uwcc_ec_lock))
+		return -ERESTARTSYS;
+
+	entry = &uwcc_hwmon_cache[slot];
+	if (entry->valid &&
+	    time_before(jiffies, entry->last_jiffies + msecs_to_jiffies(UWCC_HWMON_CACHE_TTL_MS))) {
+		*val = entry->value;
+		mutex_unlock(&uwcc_ec_lock);
+		return 0;
+	}
+
+	switch (type) {
+	case hwmon_temp:
+		ret = uwcc_ec_read_locked(channel == 0 ? UWCC_EC_REG_CPU_TEMP : UWCC_EC_REG_GPU_TEMP,
+					  &raw);
+		if (!ret) {
+			if (raw == 0 || raw > UWCC_EC_TEMP_MAX_VALID_C)
+				ret = -ENODATA;
+			else
+				computed = (long)raw * 1000L;
+		}
+		break;
+
+	case hwmon_fan: {
+		u16 reg_hi = (channel == 0) ? UWCC_EC_REG_FAN1_RPM_HI : UWCC_EC_REG_FAN2_RPM_HI;
+		u16 reg_lo = (channel == 0) ? UWCC_EC_REG_FAN1_RPM_LO : UWCC_EC_REG_FAN2_RPM_LO;
+		unsigned int tries;
+
+		ret = -EAGAIN;
+		for (tries = 0; tries < 3; tries++) {
+			ret = uwcc_ec_read_locked(reg_hi, &hi);
+			if (ret)
+				break;
+			ret = uwcc_ec_read_locked(reg_lo, &lo);
+			if (ret)
+				break;
+			ret = uwcc_ec_read_locked(reg_hi, &hi2);
+			if (ret)
+				break;
+			if (hi == hi2)
+				break;
+			ret = -EAGAIN;
+		}
+		if (!ret) {
+			rpm = ((u16)hi << 8) | (u16)lo;
+			if (rpm == 0xFFFFU)
+				ret = -ENODATA;
+			else
+				computed = (long)rpm;
+		}
+		break;
+	}
+
+	case hwmon_pwm:
+		ret = uwcc_ec_read_locked(channel == 0 ? UWCC_EC_REG_PWM1 : UWCC_EC_REG_PWM2,
+					  &raw);
+		if (!ret) {
+			if (raw > UWCC_EC_PWM_MAX_RAW)
+				raw = UWCC_EC_PWM_MAX_RAW;
+			/* Scale Uniwill 0..=200 duty cycle to standard Linux hwmon 0..=255 */
+			computed = ((long)raw * 255L + 100L) / (long)UWCC_EC_PWM_MAX_RAW;
+		}
+		break;
+
+	default:
+		ret = -EOPNOTSUPP;
+		break;
+	}
+
+	if (!ret) {
+		entry->value = computed;
+		entry->last_jiffies = jiffies;
+		entry->valid = true;
+		*val = computed;
+	} else {
+		entry->valid = false;
+	}
+
+	mutex_unlock(&uwcc_ec_lock);
+	return ret;
 }
 
 static int uwcc_hwmon_read_string(struct device *dev,
@@ -814,17 +940,24 @@ static const struct hwmon_chip_info uwcc_hwmon_chip_info = {
 
 int uwcc_hwmon_register(void)
 {
-	struct device *dev = uwcc_miscdev.this_device;
+	struct acpi_device *adev;
+	struct device *parent = NULL;
 	struct device *hdev;
 
 	if (uwcc_hwmon_dev)
 		return 0;
 
-	if (!dev)
+	if (!uwcc_acpi_handle || !uwcc_has_ecrr)
 		return -ENODEV;
 
-	hdev = hwmon_device_register_with_info(dev, "uwcc", NULL,
+	adev = acpi_get_acpi_dev(uwcc_acpi_handle);
+	if (adev)
+		parent = &adev->dev;
+
+	hdev = hwmon_device_register_with_info(parent, "uwcc", NULL,
 					       &uwcc_hwmon_chip_info, NULL);
+	if (adev)
+		acpi_dev_put(adev);
 	if (IS_ERR(hdev))
 		return PTR_ERR(hdev);
 
@@ -843,6 +976,12 @@ void uwcc_hwmon_unregister(void)
 /* --------------------------------------------------------------------------
  * ACPI INOU0000 discovery and lifecycle
  * -------------------------------------------------------------------------- */
+
+static const struct acpi_device_id uwcc_acpi_ids[] = {
+	{ UWCC_ACPI_HID, 0 },
+	{ }
+};
+MODULE_DEVICE_TABLE(acpi, uwcc_acpi_ids);
 
 static acpi_status uwcc_find_acpi_cb(acpi_handle handle, u32 level,
 				     void *context, void **return_value)
@@ -884,6 +1023,7 @@ int uwcc_acpi_init(struct uwcc_acpi_caps *out_caps)
 		return -ENODEV;
 
 	mutex_lock(&uwcc_ec_lock);
+	memset(uwcc_hwmon_cache, 0, sizeof(uwcc_hwmon_cache));
 	uwcc_acpi_handle = found;
 	uwcc_has_ecrr = acpi_has_method(found, "ECRR");
 	uwcc_has_ecrw = acpi_has_method(found, "ECRW");
@@ -958,6 +1098,7 @@ void uwcc_acpi_exit(void)
 #endif
 
 	mutex_lock(&uwcc_ec_lock);
+	memset(uwcc_hwmon_cache, 0, sizeof(uwcc_hwmon_cache));
 	uwcc_acpi_handle = NULL;
 	uwcc_has_ecrr = false;
 	uwcc_has_ecrw = false;

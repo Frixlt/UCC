@@ -268,8 +268,7 @@ impl UccdBackend for LiveUccdBackend {
         };
         let mut lb = self.lock_mutex(&self.lightbar_ctrl);
         let started = lb.trigger(force);
-        self.lightbar_animating
-            .store(lb.is_animating(), Ordering::SeqCst);
+        self.set_lightbar_animating(lb.is_animating());
         started
     }
 

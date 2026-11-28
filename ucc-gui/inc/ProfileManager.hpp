@@ -46,7 +46,7 @@ class ProfileManager : public QObject
   Q_PROPERTY( bool connected READ isConnected NOTIFY connectedChanged )
 
 public:
-  explicit ProfileManager( QObject *parent = nullptr );
+  explicit ProfileManager( UccdClient *client = nullptr, QObject *parent = nullptr );
   ~ProfileManager() override = default;
 
   // Name lists for display (parallel to ID lists)
@@ -62,7 +62,7 @@ public:
   QString powerState() const { return m_powerState; }
   int activeProfileIndex() const { return m_activeProfileIndex; }
   bool isConnected() const { return m_connected; }
-  UccdClient* getClient() const { return m_client.get(); }
+  UccdClient* getClient() const { return m_client; }
 
   // Data accessors for combos (id + name)
   const QJsonArray& defaultProfilesData() const { return m_defaultProfilesData; }
@@ -137,7 +137,8 @@ private:
   void loadCustomKeyboardProfilesFromSettings();
   void saveCustomKeyboardProfilesToSettings();
 
-  std::unique_ptr< UccdClient > m_client;
+  std::unique_ptr< UccdClient > m_ownedClient;
+  UccdClient *m_client = nullptr;
 
   // Profile names (for display) and parallel ID lists
   QStringList m_defaultProfiles;

@@ -1,7 +1,7 @@
 use crate::charging::{ChargeType, ChargingPolicy};
 use crate::cpu::ProfileCpu;
 use crate::error::{CoreError, ValidationError};
-use crate::fan::{FanPoint, PumpPoint, PumpVoltage};
+use crate::fan::{FanPoint, PumpPoint};
 use crate::power::PolicyDecision;
 use crate::profile::{
     ProfileDisplay, ProfileFanControl, ProfileKeyboard, ProfileWebcam, UccProfile,
@@ -195,6 +195,245 @@ pub struct LegacyProfileDto {
     pub charge_end_threshold: Option<i32>,
 }
 
+fn is_empty_fan_points(s: &&[FanPoint]) -> bool {
+    s.is_empty()
+}
+
+fn is_empty_pump_points(s: &&[PumpPoint]) -> bool {
+    s.is_empty()
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct LegacyDisplayDtoRef {
+    brightness: i32,
+    use_brightness: bool,
+    refresh_rate: i32,
+    use_ref_rate: bool,
+    x_resolution: i32,
+    y_resolution: i32,
+    use_resolution: bool,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct LegacyCpuDtoRef<'a> {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    online_cores: Option<i32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    enabled_cores: Option<&'a [u32]>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    scaling_min_frequency: Option<i32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    scaling_max_frequency: Option<i32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    governor: Option<&'a str>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    energy_performance_preference: Option<&'a str>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    no_turbo: Option<bool>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    hwp_dynamic_boost: Option<bool>,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct LegacyWebcamDtoRef {
+    status: bool,
+    use_status: bool,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct LegacyFanDtoRef<'a> {
+    use_control: bool,
+    fan_profile: &'a str,
+    same_speed: bool,
+    #[serde(rename = "autoControlWC")]
+    auto_control_wc: bool,
+    manual_fan_speed: i32,
+    manual_pump_voltage: i32,
+    enable_water_cooler: bool,
+    #[serde(rename = "tableCPU", skip_serializing_if = "is_empty_fan_points")]
+    table_cpu: &'a [FanPoint],
+    #[serde(rename = "tableGPU", skip_serializing_if = "is_empty_fan_points")]
+    table_gpu: &'a [FanPoint],
+    #[serde(rename = "tablePump", skip_serializing_if = "is_empty_pump_points")]
+    table_pump: &'a [PumpPoint],
+    #[serde(
+        rename = "tableWaterCoolerFan",
+        skip_serializing_if = "is_empty_fan_points"
+    )]
+    table_water_cooler_fan: &'a [FanPoint],
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct LegacyKeyboardDtoRef<'a> {
+    keyboard_profile_data: Option<&'a str>,
+    keyboard_profile_name: Option<&'a str>,
+}
+
+#[derive(Serialize)]
+struct LegacyOdmProfileDtoRef<'a> {
+    name: Option<&'a str>,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct LegacyOdmPowerLimitsDtoRef<'a> {
+    tdp_values: &'a [u32],
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct LegacyProfileDtoRef<'a> {
+    id: &'a str,
+    name: &'a str,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    description: Option<&'a str>,
+    display: LegacyDisplayDtoRef,
+    cpu: LegacyCpuDtoRef<'a>,
+    webcam: LegacyWebcamDtoRef,
+    fan: LegacyFanDtoRef<'a>,
+    #[serde(rename = "odmProfile", skip_serializing_if = "Option::is_none")]
+    odm_profile: Option<LegacyOdmProfileDtoRef<'a>>,
+    #[serde(rename = "odmPowerLimits", skip_serializing_if = "Option::is_none")]
+    odm_power_limits: Option<LegacyOdmPowerLimitsDtoRef<'a>>,
+    keyboard: LegacyKeyboardDtoRef<'a>,
+    #[serde(
+        rename = "selectedKeyboardProfile",
+        skip_serializing_if = "Option::is_none"
+    )]
+    selected_keyboard_profile: Option<&'a str>,
+    #[serde(rename = "nvidiaCTGPOffset", skip_serializing_if = "Option::is_none")]
+    nvidia_ctgp_offset: Option<i32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    charging_profile: Option<&'a str>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    charging_priority: Option<&'a str>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    charge_type: Option<&'static str>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    charge_start_threshold: Option<i32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    charge_end_threshold: Option<i32>,
+}
+
+impl<'a> LegacyProfileDtoRef<'a> {
+    fn from_profile(profile: &'a UccProfile) -> Self {
+        let display = LegacyDisplayDtoRef {
+            brightness: profile.display.brightness,
+            use_brightness: profile.display.use_brightness,
+            refresh_rate: profile.display.refresh_rate,
+            use_ref_rate: profile.display.use_ref_rate,
+            x_resolution: profile.display.x_resolution,
+            y_resolution: profile.display.y_resolution,
+            use_resolution: profile.display.use_resolution,
+        };
+
+        let cpu = LegacyCpuDtoRef {
+            online_cores: profile.cpu.online_cores.map(|v| v as i32),
+            enabled_cores: profile.cpu.enabled_cores.as_deref(),
+            scaling_min_frequency: profile
+                .cpu
+                .min_freq_khz
+                .map(|v| v as i32)
+                .or(profile.cpu.min_freq_sentinel),
+            scaling_max_frequency: profile
+                .cpu
+                .max_freq_khz
+                .map(|v| v as i32)
+                .or(profile.cpu.max_freq_sentinel),
+            governor: if profile.cpu.governor.is_empty() {
+                None
+            } else {
+                Some(&profile.cpu.governor)
+            },
+            energy_performance_preference: if profile.cpu.energy_performance_preference.is_empty() {
+                None
+            } else {
+                Some(&profile.cpu.energy_performance_preference)
+            },
+            no_turbo: Some(profile.cpu.no_turbo),
+            hwp_dynamic_boost: Some(profile.cpu.hwp_dynamic_boost),
+        };
+
+        let webcam = LegacyWebcamDtoRef {
+            status: profile.webcam.status,
+            use_status: profile.webcam.use_status,
+        };
+
+        let fan = LegacyFanDtoRef {
+            use_control: profile.fan.use_control,
+            fan_profile: &profile.fan.fan_profile,
+            same_speed: profile.fan.same_speed,
+            auto_control_wc: profile.fan.auto_control_wc,
+            manual_fan_speed: profile.fan.manual_fan_speed.map(|s| s as i32).unwrap_or(-1),
+            manual_pump_voltage: profile.fan.manual_pump_voltage.unwrap_or(-1),
+            enable_water_cooler: profile.fan.enable_water_cooler,
+            table_cpu: &profile.fan.table_cpu,
+            table_gpu: &profile.fan.table_gpu,
+            table_pump: &profile.fan.table_pump,
+            table_water_cooler_fan: &profile.fan.table_water_cooler_fan,
+        };
+
+        let keyboard = LegacyKeyboardDtoRef {
+            keyboard_profile_data: if profile.keyboard.keyboard_profile_data.is_empty() {
+                None
+            } else {
+                Some(&profile.keyboard.keyboard_profile_data)
+            },
+            keyboard_profile_name: if profile.keyboard.keyboard_profile_name.is_empty() {
+                None
+            } else {
+                Some(&profile.keyboard.keyboard_profile_name)
+            },
+        };
+
+        let odm_profile = profile
+            .odm_profile_name
+            .as_deref()
+            .map(|name| LegacyOdmProfileDtoRef { name: Some(name) });
+
+        let odm_power_limits = if profile.odm_power_limits.is_empty() {
+            None
+        } else {
+            Some(LegacyOdmPowerLimitsDtoRef {
+                tdp_values: &profile.odm_power_limits,
+            })
+        };
+
+        Self {
+            id: &profile.id,
+            name: &profile.name,
+            description: if profile.description.is_empty() {
+                None
+            } else {
+                Some(&profile.description)
+            },
+            display,
+            cpu,
+            webcam,
+            fan,
+            odm_profile,
+            odm_power_limits,
+            keyboard,
+            selected_keyboard_profile: if profile.keyboard.keyboard_profile_id.is_empty() {
+                profile.selected_keyboard_profile.as_deref()
+            } else {
+                Some(&profile.keyboard.keyboard_profile_id)
+            },
+            nvidia_ctgp_offset: profile.nvidia_ctgp_offset,
+            charging_profile: profile.charging.charging_profile.as_deref(),
+            charging_priority: profile.charging.charging_priority.as_deref(),
+            charge_type: profile.charging.charge_type.map(ChargeType::as_str),
+            charge_start_threshold: profile.charging.start_threshold.map(|v| v as i32),
+            charge_end_threshold: profile.charging.end_threshold.map(|v| v as i32),
+        }
+    }
+}
+
 impl LegacyProfileDto {
     /// Converts legacy DTO into the internal strongly-typed `UccProfile`.
     pub fn into_profile(self) -> Result<UccProfile, ValidationError> {
@@ -269,10 +508,13 @@ impl LegacyProfileDto {
                 None
             };
 
-            let manual_pump_voltage = if PumpVoltage::is_valid_manual_code(f.manual_pump_voltage) {
-                Some(f.manual_pump_voltage)
-            } else {
+            // Negative values (e.g. -1 legacy sentinel) represent unset/auto.
+            // Preserve all non-negative codes (including forbidden code 1 / V12)
+            // so `profile.validate()` explicitly rejects invalid pump voltage codes.
+            let manual_pump_voltage = if f.manual_pump_voltage < 0 {
                 None
+            } else {
+                Some(f.manual_pump_voltage)
             };
 
             let table_cpu = f
@@ -540,9 +782,9 @@ impl LegacyProfileDto {
         Ok(profile)
     }
 
-    /// Serializes typed `UccProfile` into legacy wire JSON.
+    /// Serializes typed `UccProfile` into legacy wire JSON without cloning strings or curves.
     pub fn to_json(profile: &UccProfile) -> Result<String, CoreError> {
-        let dto = Self::from_profile(profile);
+        let dto = LegacyProfileDtoRef::from_profile(profile);
         let s = serde_json::to_string(&dto)?;
         Ok(s)
     }

@@ -870,18 +870,23 @@ fn prepare_deployment_uses_offline_manifest_and_rust_import_check_fallback() {
         import_call.0
     );
 
-    let cargo_call = calls
+    assert!(
+        calls.iter().all(|(prog, _, _)| prog != "cargo"),
+        "prepare_deployment must not invoke nested `cargo run -p xtask`: {calls:?}"
+    );
+    let runtime_call = calls
         .iter()
-        .find(|(prog, _, _)| prog == "cargo")
-        .expect("cargo run call recorded");
-    assert!(
-        cargo_call.1.contains(&"--manifest-path".to_string()),
-        "cargo run must pass --manifest-path: {:?}",
-        cargo_call.1
+        .find(|(_, args, _)| args.first().map(String::as_str) == Some("install-runtime"))
+        .expect("direct install-runtime call via current_exe recorded");
+    assert_eq!(
+        runtime_call.0,
+        std::env::current_exe().unwrap().display().to_string()
     );
-    assert!(
-        cargo_call.1.contains(&"--offline".to_string()),
-        "cargo run must pass --offline: {:?}",
-        cargo_call.1
-    );
+    assert_eq!(runtime_call.1.len(), 3);
+
+    let pkginfo = fs::read_to_string(args.output_dir.join("stage/.PKGINFO"))
+        .expect("stage/.PKGINFO must be written");
+    assert!(pkginfo.contains("depend = qt6-charts"));
+    assert!(pkginfo.contains("depend = libxcb"));
+    assert!(!pkginfo.contains("depend = qt6-connectivity"));
 }

@@ -446,6 +446,30 @@ impl LiveUccdBackend {
         cpu_rollback: Vec<(std::path::PathBuf, String)>,
         start_epoch: Option<u64>,
     ) -> bool {
+        self.rollback_hardware_with_ctgp(
+            hw_odm_prev,
+            wrote_odm,
+            prev_tdps,
+            tdps_to_restore,
+            cpu_rollback,
+            None,
+            false,
+            start_epoch,
+        )
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    pub(super) fn rollback_hardware_with_ctgp(
+        &self,
+        hw_odm_prev: Option<i32>,
+        wrote_odm: bool,
+        prev_tdps: &[Option<i32>],
+        tdps_to_restore: usize,
+        cpu_rollback: Vec<(std::path::PathBuf, String)>,
+        prev_ctgp: Option<i32>,
+        wrote_ctgp: bool,
+        start_epoch: Option<u64>,
+    ) -> bool {
         let tdp_count = if wrote_odm {
             prev_tdps.len()
         } else {
@@ -462,6 +486,8 @@ impl LiveUccdBackend {
                 tdps_written: tdp_count,
                 cpu_rollback: cpu_rb.take().unwrap_or_default(),
                 charging_rb: None,
+                prev_ctgp,
+                wrote_ctgp,
                 ..Default::default()
             });
             false
@@ -1707,15 +1733,21 @@ impl LiveUccdBackend {
                 && self.has_ctgp_controller()
             {
                 let Some(base) = prev_ctgp else {
-                    if !self.shutting_down.load(Ordering::SeqCst)
-                        && self.profile_commit_epoch.load(Ordering::SeqCst) == start_epoch
-                    {
-                        warn!(
-                            profile_id = %profile.id,
-                            offset,
-                            "Profile apply failed: cTGP baseline unavailable"
+                    if self.shutting_down.load(Ordering::SeqCst) {
+                        let _ = self.restore_charging_rollback(&charging_rb, None);
+                        return self.abort_apply_on_shutdown(
+                            prev_brightness,
+                            wrote_brightness,
+                            prev_webcam,
+                            wrote_webcam,
+                            hw_odm_prev,
+                            wrote_odm,
+                            &prev_tdps,
+                            tdps_written,
+                            cpu_res.rollback,
                         );
-                        let _ = self.restore_charging_rollback(&charging_rb, Some(start_epoch));
+                    }
+                    if self.profile_commit_epoch.load(Ordering::SeqCst) != start_epoch {
                         self.restore_device_writes(
                             prev_brightness,
                             wrote_brightness,
@@ -1723,15 +1755,37 @@ impl LiveUccdBackend {
                             wrote_webcam,
                             Some(start_epoch),
                         );
-                        let _ = self.rollback_hardware(
+                        return self.reconcile_to_latest_committed(SupersededUndo {
                             hw_odm_prev,
                             wrote_odm,
-                            &prev_tdps,
+                            prev_tdps: &prev_tdps,
                             tdps_written,
-                            cpu_res.rollback,
-                            Some(start_epoch),
-                        );
+                            cpu_rollback: cpu_res.rollback,
+                            charging_rb: Some(&charging_rb),
+                            ..Default::default()
+                        });
                     }
+                    warn!(
+                        profile_id = %profile.id,
+                        offset,
+                        "Profile apply failed: cTGP baseline unavailable"
+                    );
+                    let _ = self.restore_charging_rollback(&charging_rb, Some(start_epoch));
+                    self.restore_device_writes(
+                        prev_brightness,
+                        wrote_brightness,
+                        prev_webcam,
+                        wrote_webcam,
+                        Some(start_epoch),
+                    );
+                    let _ = self.rollback_hardware(
+                        hw_odm_prev,
+                        wrote_odm,
+                        &prev_tdps,
+                        tdps_written,
+                        cpu_res.rollback,
+                        Some(start_epoch),
+                    );
                     return ApplyOutcome::Failed;
                 };
                 self.record_in_flight_ctgp_baseline(tx_id, base);
@@ -1752,13 +1806,31 @@ impl LiveUccdBackend {
                             cpu_res.rollback,
                         );
                     }
-                    if self.profile_commit_epoch.load(Ordering::SeqCst) == start_epoch {
-                        warn!(
-                            profile_id = %profile.id,
-                            offset,
-                            "Profile apply failed: cTGP offset write failed"
+                    if self.profile_commit_epoch.load(Ordering::SeqCst) != start_epoch {
+                        self.restore_device_writes(
+                            prev_brightness,
+                            wrote_brightness,
+                            prev_webcam,
+                            wrote_webcam,
+                            Some(start_epoch),
                         );
+                        return self.reconcile_to_latest_committed(SupersededUndo {
+                            hw_odm_prev,
+                            wrote_odm,
+                            prev_tdps: &prev_tdps,
+                            tdps_written,
+                            cpu_rollback: cpu_res.rollback,
+                            charging_rb: Some(&charging_rb),
+                            prev_ctgp,
+                            wrote_ctgp: prev_ctgp.is_some(),
+                            ..Default::default()
+                        });
                     }
+                    warn!(
+                        profile_id = %profile.id,
+                        offset,
+                        "Profile apply failed: cTGP offset write failed"
+                    );
                     let _ = self.restore_ctgp_baseline(prev_ctgp, Some(start_epoch));
                     let _ = self.restore_charging_rollback(&charging_rb, Some(start_epoch));
                     self.restore_device_writes(
@@ -1768,12 +1840,14 @@ impl LiveUccdBackend {
                         wrote_webcam,
                         Some(start_epoch),
                     );
-                    let _ = self.rollback_hardware(
+                    let _ = self.rollback_hardware_with_ctgp(
                         hw_odm_prev,
                         wrote_odm,
                         &prev_tdps,
                         tdps_written,
                         cpu_res.rollback,
+                        prev_ctgp,
+                        prev_ctgp.is_some(),
                         Some(start_epoch),
                     );
                     return ApplyOutcome::Failed;
@@ -1850,12 +1924,14 @@ impl LiveUccdBackend {
                         wrote_webcam,
                         Some(start_epoch),
                     );
-                    let _ = self.rollback_hardware(
+                    let _ = self.rollback_hardware_with_ctgp(
                         hw_odm_prev,
                         wrote_odm,
                         &prev_tdps,
                         tdps_written,
                         cpu_res.rollback,
+                        prev_ctgp,
+                        wrote_ctgp,
                         Some(start_epoch),
                     );
                     return ApplyOutcome::Failed;
@@ -1981,12 +2057,14 @@ impl LiveUccdBackend {
                             wrote_webcam,
                             Some(start_epoch),
                         );
-                        let _ = self.rollback_hardware(
+                        let _ = self.rollback_hardware_with_ctgp(
                             hw_odm_prev,
                             wrote_odm,
                             &prev_tdps,
                             tdps_written,
                             cpu_res.rollback,
+                            prev_ctgp,
+                            wrote_ctgp,
                             Some(start_epoch),
                         );
                         return ApplyOutcome::Failed;
@@ -2014,12 +2092,14 @@ impl LiveUccdBackend {
                             wrote_webcam,
                             Some(start_epoch),
                         );
-                        let _ = self.rollback_hardware(
+                        let _ = self.rollback_hardware_with_ctgp(
                             hw_odm_prev,
                             wrote_odm,
                             &prev_tdps,
                             tdps_written,
                             cpu_res.rollback,
+                            prev_ctgp,
+                            wrote_ctgp,
                             Some(start_epoch),
                         );
                         return ApplyOutcome::Failed;
@@ -2047,12 +2127,14 @@ impl LiveUccdBackend {
                     wrote_webcam,
                     Some(start_epoch),
                 );
-                let _ = self.rollback_hardware(
+                let _ = self.rollback_hardware_with_ctgp(
                     hw_odm_prev,
                     wrote_odm,
                     &prev_tdps,
                     tdps_written,
                     cpu_res.rollback,
+                    prev_ctgp,
+                    wrote_ctgp,
                     Some(start_epoch),
                 );
                 return ApplyOutcome::Failed;
@@ -2162,12 +2244,14 @@ impl LiveUccdBackend {
                         wrote_webcam,
                         Some(start_epoch),
                     );
-                    let _ = self.rollback_hardware(
+                    let _ = self.rollback_hardware_with_ctgp(
                         hw_odm_prev,
                         wrote_odm,
                         &prev_tdps,
                         tdps_written,
                         cpu_res.rollback,
+                        prev_ctgp,
+                        wrote_ctgp,
                         Some(start_epoch),
                     );
                     return if stale_err {

@@ -439,16 +439,26 @@ impl DaemonRuntime {
         let abort_startup = |conn: zbus::Connection,
                              name: String,
                              backend: Arc<LiveUccdBackend>,
-                             release_name: bool| async move {
+                             release_name: bool,
+                             hw_cleanup_needed: bool| async move {
+            let deadline = tokio::time::Instant::now() + Duration::from_secs(5);
             backend.begin_shutdown();
             backend.set_activation_pending(false);
+            if !hw_cleanup_needed && !backend.was_hardware_activated() {
+                if release_name {
+                    let cap = (tokio::time::Instant::now() + Duration::from_secs(2)).min(deadline);
+                    let _ = tokio::time::timeout_at(cap, unregister_uccd_paths(&conn)).await;
+                    let cap = (tokio::time::Instant::now() + Duration::from_secs(2)).min(deadline);
+                    let _ = tokio::time::timeout_at(cap, conn.release_name(name.as_str())).await;
+                }
+                return;
+            }
             let handoff_guard = register_in_flight_shutdown(&name);
             if release_name {
-                let _ = tokio::time::timeout(Duration::from_secs(2), unregister_uccd_paths(&conn))
-                    .await;
-                let _ =
-                    tokio::time::timeout(Duration::from_secs(2), conn.release_name(name.as_str()))
-                        .await;
+                let cap = (tokio::time::Instant::now() + Duration::from_secs(2)).min(deadline);
+                let _ = tokio::time::timeout_at(cap, unregister_uccd_paths(&conn)).await;
+                let cap = (tokio::time::Instant::now() + Duration::from_secs(2)).min(deadline);
+                let _ = tokio::time::timeout_at(cap, conn.release_name(name.as_str())).await;
             }
             let (done_tx, done_rx) = tokio::sync::oneshot::channel();
             let backend_timeout = Arc::clone(&backend);
@@ -472,10 +482,7 @@ impl DaemonRuntime {
                     let _ = done_tx.send(());
                 }) {
                 Ok(_) => {
-                    if tokio::time::timeout(Duration::from_secs(5), done_rx)
-                        .await
-                        .is_err()
-                    {
+                    if tokio::time::timeout_at(deadline, done_rx).await.is_err() {
                         backend_timeout.mark_shutdown_wait_expired();
                         error!(
                             "Timed out waiting for hardware cleanup after startup signal; continuing exit"
@@ -498,7 +505,7 @@ impl DaemonRuntime {
         tokio::select! {
             biased;
             _ = &mut shutdown_fut => {
-                abort_startup(connection, bus_name, backend, false).await;
+                abort_startup(connection, bus_name, backend, false, false).await;
                 return Ok(None);
             }
             res = tokio::time::timeout(
@@ -517,7 +524,7 @@ impl DaemonRuntime {
         tokio::select! {
             biased;
             _ = &mut shutdown_fut => {
-                abort_startup(connection, bus_name, backend, false).await;
+                abort_startup(connection, bus_name, backend, false, false).await;
                 return Ok(None);
             }
             prime_res = tokio::time::timeout(
@@ -566,7 +573,7 @@ impl DaemonRuntime {
             biased;
             _ = &mut shutdown_fut => {
                 unregister_uccd_paths(&connection).await;
-                abort_startup(connection, bus_name, backend, false).await;
+                abort_startup(connection, bus_name, backend, false, false).await;
                 return Ok(None);
             }
             req_res = connection.request_name_with_flags(bus_name.as_str(), flags) => {
@@ -593,7 +600,7 @@ impl DaemonRuntime {
         let inherited_cpu_defaults = tokio::select! {
             biased;
             _ = &mut shutdown_fut => {
-                abort_startup(connection, bus_name, backend, true).await;
+                abort_startup(connection, bus_name, backend, true, false).await;
                 return Ok(None);
             }
             pred_res = wait_for_predecessor_shutdown(&bus_name) => {
@@ -616,7 +623,7 @@ impl DaemonRuntime {
         tokio::select! {
             biased;
             _ = &mut shutdown_fut => {
-                abort_startup(connection, bus_name, backend, true).await;
+                abort_startup(connection, bus_name, backend, true, true).await;
                 return Ok(None);
             }
             act_res = tokio::time::timeout(
@@ -679,6 +686,36 @@ impl DaemonRuntime {
         // and offload any resulting hardware reconciliation away from Tokio (`M8-RECHECK-10`, `M8-LIFE-01`).
         if let Ok(dbus_proxy) = zbus::fdo::DBusProxy::new(&connection).await {
             if let Ok(noc_stream) = dbus_proxy.receive_name_owner_changed().await {
+                let disconnect_notify = Arc::new(tokio::sync::Notify::new());
+                let disconnect_dirty = Arc::new(std::sync::atomic::AtomicBool::new(false));
+
+                let b_disc = Arc::clone(&backend);
+                let notify_rx = Arc::clone(&disconnect_notify);
+                let dirty_rx = Arc::clone(&disconnect_dirty);
+                let mut rx_disc_stop = stop_rx.clone();
+                tasks.push(tokio::spawn(async move {
+                    loop {
+                        tokio::select! {
+                            biased;
+                            _ = rx_disc_stop.changed() => break,
+                            _ = notify_rx.notified() => {
+                                while dirty_rx.swap(false, std::sync::atomic::Ordering::SeqCst) {
+                                    if *rx_disc_stop.borrow() {
+                                        return;
+                                    }
+                                    let b_run = Arc::clone(&b_disc);
+                                    let _ = tokio::task::spawn_blocking(move || {
+                                        if let Some(_g) = b_run.enter_worker_hw_op() {
+                                            b_run.reconcile_power_state(false);
+                                        }
+                                    })
+                                    .await;
+                                }
+                            }
+                        }
+                    }
+                }));
+
                 let b_noc = Arc::clone(&backend);
                 let mut rx_noc_stop = stop_rx.clone();
                 tasks.push(tokio::spawn(async move {
@@ -698,14 +735,8 @@ impl DaemonRuntime {
                                         && new_owner.is_empty()
                                         && b_noc.record_dbus_client_disconnected(old_owner)
                                     {
-                                        let b_reconcile = Arc::clone(&b_noc);
-                                        let _ = std::thread::Builder::new()
-                                            .name("uccd-disconnect".to_string())
-                                            .spawn(move || {
-                                                if let Some(_g) = b_reconcile.enter_worker_hw_op() {
-                                                    b_reconcile.reconcile_power_state(false);
-                                                }
-                                            });
+                                        disconnect_dirty.store(true, std::sync::atomic::Ordering::SeqCst);
+                                        disconnect_notify.notify_one();
                                     }
                                 }
                             }
@@ -761,14 +792,19 @@ impl DaemonRuntime {
                         let mut anim_started: Option<Instant> = None;
                         let mut next_tick = Instant::now();
                         loop {
+                            if *stop.0.lock().unwrap_or_else(|e| e.into_inner())
+                                || lb_backend.is_shutting_down()
+                            {
+                                break;
+                            }
                             let animating = lb_backend.is_lightbar_animating();
-                            let wait_dur = if animating {
-                                next_tick.saturating_duration_since(Instant::now())
-                            } else {
+                            if !animating {
                                 anim_started = None;
+                                lb_backend.wait_lightbar_idle(Duration::from_secs(5));
                                 next_tick = Instant::now();
-                                Duration::from_millis(50)
-                            };
+                                continue;
+                            }
+                            let wait_dur = next_tick.saturating_duration_since(Instant::now());
                             if !wait_dur.is_zero() {
                                 let stopped = stop.0.lock().unwrap_or_else(|e| e.into_inner());
                                 if *stopped {
@@ -893,16 +929,32 @@ impl DaemonRuntime {
         let _ = self.stop_tx.send(true);
 
         let mut handles = self.tasks;
-        for handle in &handles {
-            handle.abort();
-        }
-        let abort_deadline = (tokio::time::Instant::now() + Duration::from_millis(5)).min(deadline);
-        let _ = tokio::time::timeout_at(abort_deadline, async {
+        let graceful_budget = (timeout / 2).min(Duration::from_secs(2));
+        let graceful_deadline = (tokio::time::Instant::now() + graceful_budget).min(deadline);
+        let _ = tokio::time::timeout_at(graceful_deadline, async {
             for handle in &mut handles {
                 let _ = handle.await;
             }
         })
         .await;
+
+        let mut remaining = Vec::new();
+        for handle in handles {
+            if !handle.is_finished() {
+                handle.abort();
+                remaining.push(handle);
+            }
+        }
+        if !remaining.is_empty() {
+            let abort_deadline =
+                (tokio::time::Instant::now() + Duration::from_millis(50)).min(deadline);
+            let _ = tokio::time::timeout_at(abort_deadline, async {
+                for handle in &mut remaining {
+                    let _ = handle.await;
+                }
+            })
+            .await;
+        }
 
         // Register predecessor handoff token BEFORE unexporting or releasing bus_name so a
         // replacement racing to acquire bus_name immediately sees the in-flight cleanup (`M8-HANDOFF-02`).
@@ -993,6 +1045,29 @@ fn extract_lid_closed_change(
     }
     let val = changed.get(expected_prop)?;
     bool::try_from(val).ok()
+}
+
+async fn acquire_sleep_delay_inhibitor(
+    login_proxy: &zbus::Proxy<'_>,
+) -> Option<zbus::zvariant::OwnedFd> {
+    match login_proxy
+        .call::<_, _, zbus::zvariant::OwnedFd>(
+            "Inhibit",
+            &(
+                "sleep",
+                "uccd",
+                "Saving hardware state before system suspend",
+                "delay",
+            ),
+        )
+        .await
+    {
+        Ok(fd) => Some(fd),
+        Err(err) => {
+            warn!("Failed to acquire logind sleep delay inhibitor: {err}");
+            None
+        }
+    }
 }
 
 async fn sync_lid_inhibitor(
@@ -1101,6 +1176,7 @@ async fn run_logind_monitor_loop(
         drop(inhibitor_fd);
         return;
     };
+    let mut sleep_inhibitor_fd = acquire_sleep_delay_inhibitor(&login_proxy).await;
     let mut sleep_stream = std::pin::pin!(sleep_stream);
 
     let mut login_props_stream = match zbus::Proxy::new(
@@ -1148,14 +1224,22 @@ async fn run_logind_monitor_loop(
                             if let Some(_g) = b.enter_worker_hw_op() {
                                 b.on_system_suspend();
                             }
-                        }).await;
+                        })
+                        .await;
+                        // Release delay inhibitor only after suspend prep completes.
+                        sleep_inhibitor_fd = None;
                     } else {
                         let _ = tokio::task::spawn_blocking(move || {
                             if let Some(_g) = b.enter_worker_hw_op() {
                                 b.on_system_resume();
                                 b.reconcile_power_state(true);
                             }
-                        }).await;
+                        })
+                        .await;
+                        if sleep_inhibitor_fd.is_none() {
+                            sleep_inhibitor_fd =
+                                acquire_sleep_delay_inhibitor(&login_proxy).await;
+                        }
                     }
                 }
             }
@@ -1194,5 +1278,6 @@ async fn run_logind_monitor_loop(
             }
         }
     }
+    drop(sleep_inhibitor_fd);
     drop(inhibitor_fd);
 }

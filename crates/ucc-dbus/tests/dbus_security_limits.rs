@@ -318,8 +318,8 @@ async fn t_sec_07_auth_action_matrix_for_privileged_and_wc_methods() {
     );
     assert_eq!(
         recorded[0].1,
-        AuthAction::Control,
-        "SetWaterCoolerPumpVoltage should use AuthAction::Control"
+        AuthAction::ManageHardware,
+        "SetWaterCoolerPumpVoltage should use AuthAction::ManageHardware"
     );
     assert_eq!(
         recorded[1].1,
@@ -333,8 +333,8 @@ async fn t_sec_07_auth_action_matrix_for_privileged_and_wc_methods() {
     );
     assert_eq!(
         recorded[3].1,
-        AuthAction::Control,
-        "SetNVIDIAPowerOffset should use AuthAction::Control"
+        AuthAction::ManageHardware,
+        "SetNVIDIAPowerOffset should use AuthAction::ManageHardware"
     );
     assert_eq!(
         recorded[4].1,

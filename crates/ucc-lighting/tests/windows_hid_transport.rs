@@ -339,7 +339,7 @@ fn windows_hid_126_key_calibration_lid_logo_zone5_and_ec_hook() {
 
     assert_eq!(
         *ec_events.lock().unwrap_or_else(|e| e.into_inner()),
-        vec![true, true, false, true]
+        vec![true, false, true]
     );
 
     let all_reports = sys.sent_reports();

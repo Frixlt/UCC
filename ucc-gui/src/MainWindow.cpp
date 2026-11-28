@@ -42,6 +42,7 @@
 #include "FanCurveEditorWidget.hpp"
 #include "PumpCurveEditorWidget.hpp"
 #include "../libucc-dbus/UccdClient.hpp"
+#include "AsyncRead.hpp"
 
 
 #include <QtWidgets/QTableWidget>
@@ -139,10 +140,10 @@ namespace ucc
 
 MainWindow::MainWindow( QWidget *parent )
   : QMainWindow( parent )
-  , m_profileManager( std::make_unique< ProfileManager >( this ) )
-  , m_systemMonitor( std::make_unique< SystemMonitor >( this ) )
+  , m_UccdClient( std::make_unique< UccdClient >( this ) )
+  , m_profileManager( std::make_unique< ProfileManager >( m_UccdClient.get(), this ) )
+  , m_systemMonitor( std::make_unique< SystemMonitor >( m_UccdClient.get(), this ) )
 {
-  m_UccdClient = std::make_unique< UccdClient >( this );
 
   // Defer D-Bus capability queries asynchronously so MainWindow construction never blocks the UI thread (`N12`).
   m_waterCoolerSupported = ( m_UccdClient && m_UccdClient->isConnected() );
@@ -341,10 +342,17 @@ void MainWindow::setupUI()
     });
   connect(powerMode, QOverload<int>::of(&QComboBox::activated), this,
     [this,powerMode,refreshPowerPolicy](int index) {
-      if (!m_UccdClient->setManualPowerMode(powerMode->itemData(index).toString().toStdString())) {
-        statusBar()->showMessage("Could not change power mode");
-        refreshPowerPolicy();
-      }
+      if (!m_UccdClient) return;
+      powerMode->setEnabled(false);
+      m_UccdClient->setManualPowerModeAsync(powerMode->itemData(index).toString().toStdString(), this,
+        [this,powerMode,refreshPowerPolicy](bool ok, const QString &) {
+          if (m_closing) return;
+          powerMode->setEnabled(m_UccdClient && m_UccdClient->isConnected() && !readOnlyPreview);
+          if (!ok) {
+            statusBar()->showMessage("Could not change power mode");
+            refreshPowerPolicy();
+          }
+        });
     });
   refreshPowerPolicy();
   headerRow->addWidget(powerMode);
@@ -1767,18 +1775,30 @@ void MainWindow::applyMuxBootMode()
   const QString mode = m_muxBootModeCombo->currentData().toString();
   if ( mode.isEmpty() )
     return;
-  if ( m_UccdClient->setMuxBootMode( mode.toStdString() ) )
-  {
-    statusBar()->showMessage( "Display MUX boot mode updated — reboot to apply", 5000 );
-    if ( m_muxStatusLabel )
-      m_muxStatusLabel->setText( QString( "Saved BIOS boot mode: %1 (reboot required)" ).arg( m_muxBootModeCombo->currentText() ) );
-  }
-  else
-  {
-    statusBar()->showMessage( "Failed to update Display MUX boot mode", 5000 );
-    if ( m_muxStatusLabel )
-      m_muxStatusLabel->setText( "Failed to write Display MUX boot mode via uwcc." );
-  }
+  const QString labelText = m_muxBootModeCombo->currentText();
+  if ( m_muxApplyButton )
+    m_muxApplyButton->setEnabled( false );
+  if ( m_muxStatusLabel )
+    m_muxStatusLabel->setText( "Saving Display MUX boot mode..." );
+  m_UccdClient->setMuxBootModeAsync( mode.toStdString(), this,
+    [this, labelText]( bool ok, const QString & ) {
+      if ( m_closing )
+        return;
+      if ( m_muxApplyButton )
+        m_muxApplyButton->setEnabled( m_experimentalRisksAccepted && !readOnlyPreview && m_muxAvailable );
+      if ( ok )
+      {
+        statusBar()->showMessage( "Display MUX boot mode updated — reboot to apply", 5000 );
+        if ( m_muxStatusLabel )
+          m_muxStatusLabel->setText( QString( "Saved BIOS boot mode: %1 (reboot required)" ).arg( labelText ) );
+      }
+      else
+      {
+        statusBar()->showMessage( "Failed to update Display MUX boot mode", 5000 );
+        if ( m_muxStatusLabel )
+          m_muxStatusLabel->setText( "Failed to write Display MUX boot mode via uwcc." );
+      }
+    } );
 }
 
 void MainWindow::refreshKeyboardLightingState()
@@ -2162,6 +2182,9 @@ void MainWindow::onCtgpSliderChanged( int value )
 
 void MainWindow::loadProfileDetails( const QString &profileId )
 {
+  // Increment generation counter so stale async replies from earlier clicks are discarded
+  const quint64 loadGen = ++m_profileLoadGen;
+
   // Reset change flag when loading a new profile
   m_profileChanged = false;
   m_currentLoadedProfile = profileId;
@@ -2190,13 +2213,25 @@ void MainWindow::loadProfileDetails( const QString &profileId )
   }
 
   QJsonObject obj = doc.object();
-  if (profileId == m_profileManager->activeProfileId()) {
-    if (auto runtime = m_UccdClient->getActiveProfileJSON()) {
-      const auto runtimeFan = QJsonDocument::fromJson(QByteArray::fromStdString(*runtime)).object()["fan"].toObject();
-      if (runtimeFan.contains("autoControlWC")) {
-        auto fan = obj["fan"].toObject();fan["autoControlWC"] = runtimeFan["autoControlWC"];obj["fan"] = fan;
-      }
-    }
+  if ( profileId == m_profileManager->activeProfileId() && m_UccdClient && m_UccdClient->isConnected() )
+  {
+    readUccdAsync( this, QStringLiteral( "GetActiveProfileJSON" ), {},
+      [this, loadGen]( std::optional< QVariant > value ) {
+        if ( m_closing || loadGen != m_profileLoadGen || !value )
+          return;
+        const auto runtimeFan = QJsonDocument::fromJson( value->toString().toUtf8() ).object()["fan"].toObject();
+        if ( runtimeFan.contains( "autoControlWC" ) )
+        {
+          const bool autoControl = runtimeFan["autoControlWC"].toBool( true );
+          if ( m_autoWaterControlCheckBox )
+          {
+            const QSignalBlocker blocked( m_autoWaterControlCheckBox );
+            m_autoWaterControlCheckBox->setChecked( autoControl );
+          }
+          if ( m_fanControlTab )
+            m_fanControlTab->setWaterCoolerAutoControl( autoControl );
+        }
+      } );
   }
   // Block signals while updating to avoid triggering slot updates
   m_brightnessSlider->blockSignals( true );
@@ -2316,11 +2351,23 @@ void MainWindow::loadProfileDetails( const QString &profileId )
         m_fanControlTab->setWaterCoolerAutoControl( true );
     }
 
-    // Query the daemon directly for the runtime water-cooler enable state
-    bool wcEnable = m_UccdClient->isWaterCoolerEnabled().value_or(
-        fanObj["enableWaterCooler"].toBool( true ) );
-    m_fanControlTab->setWaterCoolerEnabled( wcEnable );
-    m_dashboardTab->setWaterCoolerEnabled( wcEnable );
+    // Apply profile value immediately, then refresh runtime water-cooler enable state asynchronously
+    const bool profileWcEnable = fanObj["enableWaterCooler"].toBool( true );
+    m_fanControlTab->setWaterCoolerEnabled( profileWcEnable );
+    m_dashboardTab->setWaterCoolerEnabled( profileWcEnable );
+    if ( m_UccdClient && m_UccdClient->isConnected() )
+    {
+      readUccdAsync( this, QStringLiteral( "IsWaterCoolerEnabled" ), {},
+        [this, loadGen]( std::optional< QVariant > value ) {
+          if ( m_closing || loadGen != m_profileLoadGen || !value )
+            return;
+          const bool wcEnable = value->toBool();
+          if ( m_fanControlTab )
+            m_fanControlTab->setWaterCoolerEnabled( wcEnable );
+          if ( m_dashboardTab )
+            m_dashboardTab->setWaterCoolerEnabled( wcEnable );
+        } );
+    }
   }
 
   // Load CPU settings (nested in cpu object)
@@ -2351,23 +2398,43 @@ void MainWindow::loadProfileDetails( const QString &profileId )
         m_eppCombo->setCurrentIndex( 0 );
     }
 
-    // Get hardware frequency limits and set slider ranges
-    if ( auto limitsJson = m_UccdClient->getCpuFrequencyLimitsJSON() )
+    // Apply cached hardware frequency limits immediately (fetched asynchronously on startup)
+    m_minFrequencySlider->setMinimum( m_cpuMinFreqKHz );
+    m_minFrequencySlider->setMaximum( m_cpuMaxFreqKHz );
+    m_maxFrequencySlider->setMinimum( m_cpuMinFreqKHz );
+    m_maxFrequencySlider->setMaximum( m_cpuMaxFreqKHz );
+    if ( !m_cpuFreqLimitsLoaded && m_UccdClient && m_UccdClient->isConnected() )
     {
-      QJsonDocument doc = QJsonDocument::fromJson( limitsJson->c_str() );
-      if ( doc.isObject() )
-      {
-        QJsonObject limitsObj = doc.object();
-        int minFreqKHz = limitsObj["min"].toInt( 400000 );   // hardware min frequency in kHz
-        int maxFreqKHz = limitsObj["max"].toInt( 6000000 );  // hardware max frequency in kHz
-
-        m_cpuMinFreqKHz = minFreqKHz;
-        m_cpuMaxFreqKHz = maxFreqKHz;
-        m_minFrequencySlider->setMinimum( minFreqKHz );
-        m_minFrequencySlider->setMaximum( maxFreqKHz );
-        m_maxFrequencySlider->setMinimum( minFreqKHz );
-        m_maxFrequencySlider->setMaximum( maxFreqKHz );
-      }
+      const int reqMinKHz = cpuObj.contains( "scalingMinFrequency" ) ? cpuObj["scalingMinFrequency"].toInt( -1 ) : -1;
+      const int reqMaxKHz = cpuObj.contains( "scalingMaxFrequency" ) ? cpuObj["scalingMaxFrequency"].toInt( -1 ) : -1;
+      readUccdAsync( this, QStringLiteral( "GetCpuFrequencyLimitsJSON" ), {},
+        [this, loadGen, reqMinKHz, reqMaxKHz]( std::optional< QVariant > value ) {
+          if ( m_closing || !value )
+            return;
+          const QJsonDocument limDoc = QJsonDocument::fromJson( value->toString().toUtf8() );
+          if ( !limDoc.isObject() )
+            return;
+          const QJsonObject limitsObj = limDoc.object();
+          m_cpuMinFreqKHz = limitsObj["min"].toInt( 400000 );
+          m_cpuMaxFreqKHz = limitsObj["max"].toInt( 6000000 );
+          m_cpuFreqLimitsLoaded = true;
+          if ( loadGen != m_profileLoadGen )
+            return;
+          const QSignalBlocker bMin( m_minFrequencySlider );
+          const QSignalBlocker bMax( m_maxFrequencySlider );
+          m_minFrequencySlider->setMinimum( m_cpuMinFreqKHz );
+          m_minFrequencySlider->setMaximum( m_cpuMaxFreqKHz );
+          m_maxFrequencySlider->setMinimum( m_cpuMinFreqKHz );
+          m_maxFrequencySlider->setMaximum( m_cpuMaxFreqKHz );
+          if ( reqMinKHz >= 0 )
+            m_minFrequencySlider->setValue( reqMinKHz );
+          if ( reqMaxKHz >= 0 )
+            m_maxFrequencySlider->setValue( reqMaxKHz );
+          if ( m_minFrequencyValue )
+            m_minFrequencyValue->setText( QString( "%1 GHz" ).arg( m_minFrequencySlider->value() / 1000000.0, 0, 'f', 2 ) );
+          if ( m_maxFrequencyValue )
+            m_maxFrequencyValue->setText( QString( "%1 GHz" ).arg( m_maxFrequencySlider->value() / 1000000.0, 0, 'f', 2 ) );
+        } );
     }
 
     // Load frequency values in MHz (convert from kHz stored in profile)
@@ -2388,21 +2455,11 @@ void MainWindow::loadProfileDetails( const QString &profileId )
   }
   else
   {
-    // Profile loading failed, still try to set slider limits from hardware
-    if ( auto limitsJson = m_UccdClient->getCpuFrequencyLimitsJSON() )
-    {
-      QJsonDocument doc = QJsonDocument::fromJson( limitsJson->c_str() );
-      if ( doc.isObject() )
-      {
-        QJsonObject limitsObj = doc.object();
-        int minFreqKHz = limitsObj["min"].toInt( 400000 );
-        int maxFreqKHz = limitsObj["max"].toInt( 6000000 );
-        m_minFrequencySlider->setMinimum( minFreqKHz );
-        m_minFrequencySlider->setMaximum( maxFreqKHz );
-        m_maxFrequencySlider->setMinimum( minFreqKHz );
-        m_maxFrequencySlider->setMaximum( maxFreqKHz );
-      }
-    }
+    // Apply cached hardware frequency limits without blocking D-Bus
+    m_minFrequencySlider->setMinimum( m_cpuMinFreqKHz );
+    m_minFrequencySlider->setMaximum( m_cpuMaxFreqKHz );
+    m_maxFrequencySlider->setMinimum( m_cpuMinFreqKHz );
+    m_maxFrequencySlider->setMaximum( m_cpuMaxFreqKHz );
   }
 
   // Load ODM Power Limits (TDP) settings (nested in odmPowerLimits object)
@@ -2457,8 +2514,7 @@ void MainWindow::loadProfileDetails( const QString &profileId )
       }
     }
   }
-  // Load GPU Power (cTGP) setting
-  refreshCtgpCapabilities();
+  // Load GPU Power (cTGP) setting using cached startup capabilities (no sync D-Bus calls)
   updateCtgpVisibility();
   int defaultPower = 0;
   int maxPower = 0;
@@ -2506,27 +2562,45 @@ void MainWindow::loadProfileDetails( const QString &profileId )
   // "keyboard" object in profiles is ignored to avoid overriding
   // the hardware brightness with stale saved values.
 
-  // Load per-profile lid lighting toggles with fallback to global powerDevices.lid defaults
-  bool defaultLidOffKbd = true;
-  bool defaultLidOffWcLed = false;
-  if ( auto pdJson = m_UccdClient->getPowerDeviceSettingsJSON() )
-  {
-    const auto pdDoc = QJsonDocument::fromJson( QByteArray::fromStdString( *pdJson ) );
-    const auto pdLid = pdDoc.object().value( "lid" ).toObject();
-    if ( pdLid.contains( "turnOffKeyboardBacklightOnLidClose" ) )
-      defaultLidOffKbd = pdLid.value( "turnOffKeyboardBacklightOnLidClose" ).toBool( true );
-    if ( pdLid.contains( "turnOffWaterCoolerLedOnLidClose" ) )
-      defaultLidOffWcLed = pdLid.value( "turnOffWaterCoolerLedOnLidClose" ).toBool( false );
-  }
+  // Load per-profile lid lighting toggles with cached global powerDevices.lid defaults
   const auto lidObj = obj.value( "lid" ).toObject();
+  const bool hasKbdOverride = lidObj.contains( "turnOffKeyboardBacklightOnLidClose" );
+  const bool hasWcOverride = lidObj.contains( "turnOffWaterCoolerLedOnLidClose" );
   if ( m_profileLidOffKbd )
-    m_profileLidOffKbd->setChecked( lidObj.contains( "turnOffKeyboardBacklightOnLidClose" )
-                                     ? lidObj.value( "turnOffKeyboardBacklightOnLidClose" ).toBool( defaultLidOffKbd )
-                                     : defaultLidOffKbd );
+    m_profileLidOffKbd->setChecked( hasKbdOverride
+                                     ? lidObj.value( "turnOffKeyboardBacklightOnLidClose" ).toBool( m_cachedDefaultLidOffKbd )
+                                     : m_cachedDefaultLidOffKbd );
   if ( m_profileLidOffWcLed )
-    m_profileLidOffWcLed->setChecked( lidObj.contains( "turnOffWaterCoolerLedOnLidClose" )
-                                       ? lidObj.value( "turnOffWaterCoolerLedOnLidClose" ).toBool( defaultLidOffWcLed )
-                                       : defaultLidOffWcLed );
+    m_profileLidOffWcLed->setChecked( hasWcOverride
+                                       ? lidObj.value( "turnOffWaterCoolerLedOnLidClose" ).toBool( m_cachedDefaultLidOffWcLed )
+                                       : m_cachedDefaultLidOffWcLed );
+  if ( !m_lidDefaultsLoaded && ( !hasKbdOverride || !hasWcOverride ) && m_UccdClient && m_UccdClient->isConnected() )
+  {
+    readUccdAsync( this, QStringLiteral( "GetPowerDeviceSettingsJSON" ), {},
+      [this, loadGen, hasKbdOverride, hasWcOverride]( std::optional< QVariant > value ) {
+        if ( m_closing || !value )
+          return;
+        const auto pdDoc = QJsonDocument::fromJson( value->toString().toUtf8() );
+        const auto pdLid = pdDoc.object().value( "lid" ).toObject();
+        if ( pdLid.contains( "turnOffKeyboardBacklightOnLidClose" ) )
+          m_cachedDefaultLidOffKbd = pdLid.value( "turnOffKeyboardBacklightOnLidClose" ).toBool( true );
+        if ( pdLid.contains( "turnOffWaterCoolerLedOnLidClose" ) )
+          m_cachedDefaultLidOffWcLed = pdLid.value( "turnOffWaterCoolerLedOnLidClose" ).toBool( false );
+        m_lidDefaultsLoaded = true;
+        if ( loadGen != m_profileLoadGen )
+          return;
+        if ( m_profileLidOffKbd && !hasKbdOverride )
+        {
+          const QSignalBlocker b( m_profileLidOffKbd );
+          m_profileLidOffKbd->setChecked( m_cachedDefaultLidOffKbd );
+        }
+        if ( m_profileLidOffWcLed && !hasWcOverride )
+        {
+          const QSignalBlocker b( m_profileLidOffWcLed );
+          m_profileLidOffWcLed->setChecked( m_cachedDefaultLidOffWcLed );
+        }
+      } );
+  }
 
   // Load power state activation settings
   if ( QString settingsJson = m_profileManager->getSettingsJSON(); !settingsJson.isEmpty() )
@@ -2736,118 +2810,142 @@ void MainWindow::fetchStartupCapabilities()
     return;
   }
 
-  QString destination = QStringLiteral( "com.uniwill.uccd" );
-  if ( readOnlyPreview )
-  {
-    auto *busIface = QDBusConnection::systemBus().interface();
-    destination = busIface ? busIface->serviceOwner( destination ).value() : QString();
-    if ( destination.isEmpty() )
-      return;
-  }
-
-  auto asyncCapabilityCall = [this, destination]( const QString &method, auto onDone ) {
-    auto msg = QDBusMessage::createMethodCall(
-      destination,
-      QStringLiteral( "/com/uniwill/uccd" ),
-      QStringLiteral( "com.uniwill.uccd" ),
-      method );
-    msg.setAutoStartService( false );
-    auto *watcher = new QDBusPendingCallWatcher(
-      QDBusConnection::systemBus().asyncCall( msg, 1500 ),
-      this );
-    connect( watcher, &QDBusPendingCallWatcher::finished, this,
-      [this, onDone = std::move( onDone )]( QDBusPendingCallWatcher *done ) {
-        const QDBusMessage reply = done->reply();
-        done->deleteLater();
-        if ( m_closing )
-          return;
-        onDone( reply );
-      } );
+  // Route all startup capability queries through readUccdBatch (kMaxBatchInFlight = 4)
+  // so startup never fires an unthrottled D-Bus burst against uccd's per-sender Polkit cap.
+  const QStringList capabilityMethods = {
+    QStringLiteral( "GetWaterCoolerSupported" ),
+    QStringLiteral( "GetHwpDynamicBoostSupported" ),
+    QStringLiteral( "GetCTGPAdjustmentSupported" ),
+    QStringLiteral( "GetNVIDIAPowerCTRLAvailable" ),
+    QStringLiteral( "GetNVIDIAPowerCTRLDefaultPowerLimit" ),
+    QStringLiteral( "GetNVIDIAPowerCTRLMaxPowerLimit" ),
+    QStringLiteral( "GetDisplayModesJSON" ),
+    QStringLiteral( "GetCpuFrequencyLimitsJSON" ),
+    QStringLiteral( "GetPowerDeviceSettingsJSON" )
   };
 
-  asyncCapabilityCall( QStringLiteral( "GetWaterCoolerSupported" ), [this]( const QDBusMessage &reply ) {
-    if ( reply.type() != QDBusMessage::ErrorMessage && !reply.arguments().isEmpty() )
-      applyWaterCoolerSupported( reply.arguments().front().toBool() );
-  } );
-  asyncCapabilityCall( QStringLiteral( "GetHwpDynamicBoostSupported" ), [this]( const QDBusMessage &reply ) {
-    if ( reply.type() != QDBusMessage::ErrorMessage && !reply.arguments().isEmpty() )
-      applyHwpDynamicBoostSupported( reply.arguments().front().toBool() );
-  } );
-  asyncCapabilityCall( QStringLiteral( "GetCTGPAdjustmentSupported" ), [this]( const QDBusMessage &reply ) {
-    if ( reply.type() != QDBusMessage::ErrorMessage && !reply.arguments().isEmpty() )
-    {
-      m_cTGPAdjustmentSupported = reply.arguments().front().toBool();
-      updateCtgpVisibility();
-    }
-  } );
-  asyncCapabilityCall( QStringLiteral( "GetNVIDIAPowerCTRLAvailable" ), [this]( const QDBusMessage &reply ) {
-    if ( reply.type() != QDBusMessage::ErrorMessage && !reply.arguments().isEmpty() )
-    {
-      m_nvidiaPowerCtrlAvailable = reply.arguments().front().toBool();
-      updateCtgpVisibility();
-    }
-  } );
-  asyncCapabilityCall( QStringLiteral( "GetNVIDIAPowerCTRLDefaultPowerLimit" ), [this]( const QDBusMessage &reply ) {
-    if ( reply.type() != QDBusMessage::ErrorMessage && !reply.arguments().isEmpty() )
-    {
-      m_gpuDefaultPowerLimit = reply.arguments().front().toInt();
-      updateCtgpVisibility();
-    }
-  } );
-  asyncCapabilityCall( QStringLiteral( "GetNVIDIAPowerCTRLMaxPowerLimit" ), [this]( const QDBusMessage &reply ) {
-    if ( reply.type() != QDBusMessage::ErrorMessage && !reply.arguments().isEmpty() )
-    {
-      m_gpuMaxPowerLimit = reply.arguments().front().toInt();
-      updateCtgpVisibility();
-    }
-  } );
-  asyncCapabilityCall( QStringLiteral( "GetDisplayModesJSON" ), [this]( const QDBusMessage &reply ) {
-    if ( reply.type() == QDBusMessage::ErrorMessage || reply.arguments().isEmpty() )
+  readUccdBatch( this, capabilityMethods, [this]( const QVariantMap &values ) {
+    if ( m_closing )
       return;
-    const QJsonDocument doc = QJsonDocument::fromJson( reply.arguments().front().toString().toUtf8() );
-    if ( !doc.isObject() )
-      return;
-    const QJsonObject root = doc.object();
-    const QJsonObject activeMode = root.value( QStringLiteral( "activeMode" ) ).toObject();
-    const int activeX = activeMode.value( QStringLiteral( "xResolution" ) ).toInt( 0 );
-    const int activeY = activeMode.value( QStringLiteral( "yResolution" ) ).toInt( 0 );
-    const QJsonArray displayModes = root.value( QStringLiteral( "displayModes" ) ).toArray();
-    std::set< int > uniqueRates;
-    auto collectRates = [&uniqueRates]( const QJsonArray &arr ) {
-      for ( const auto &v : arr )
-      {
-        const int hz = qRound( v.toDouble() );
-        if ( hz > 0 )
-          uniqueRates.insert( hz );
-      }
-    };
-    collectRates( activeMode.value( QStringLiteral( "refreshRates" ) ).toArray() );
-    bool matchedActiveRes = false;
-    if ( activeX > 0 && activeY > 0 )
+
+    if ( values.contains( QStringLiteral( "GetWaterCoolerSupported" ) ) )
+      applyWaterCoolerSupported( values.value( QStringLiteral( "GetWaterCoolerSupported" ) ).toBool() );
+
+    if ( values.contains( QStringLiteral( "GetHwpDynamicBoostSupported" ) ) )
+      applyHwpDynamicBoostSupported( values.value( QStringLiteral( "GetHwpDynamicBoostSupported" ) ).toBool() );
+
+    if ( values.contains( QStringLiteral( "GetCTGPAdjustmentSupported" ) ) )
+      m_cTGPAdjustmentSupported = values.value( QStringLiteral( "GetCTGPAdjustmentSupported" ) ).toBool();
+    if ( values.contains( QStringLiteral( "GetNVIDIAPowerCTRLAvailable" ) ) )
+      m_nvidiaPowerCtrlAvailable = values.value( QStringLiteral( "GetNVIDIAPowerCTRLAvailable" ) ).toBool();
+    if ( values.contains( QStringLiteral( "GetNVIDIAPowerCTRLDefaultPowerLimit" ) ) )
+      m_gpuDefaultPowerLimit = values.value( QStringLiteral( "GetNVIDIAPowerCTRLDefaultPowerLimit" ) ).toInt();
+    if ( values.contains( QStringLiteral( "GetNVIDIAPowerCTRLMaxPowerLimit" ) ) )
+      m_gpuMaxPowerLimit = values.value( QStringLiteral( "GetNVIDIAPowerCTRLMaxPowerLimit" ) ).toInt();
+    updateCtgpVisibility();
+
+    int defaultPower = 0;
+    int maxPower = 0;
+    if ( m_ctgpSlider && hasValidCtgpRange( defaultPower, maxPower ) && !m_currentLoadedProfile.isEmpty() )
     {
-      for ( const auto &modeVal : displayModes )
+      const QString profileJson = m_profileManager ? m_profileManager->getProfileDetails( m_currentLoadedProfile ) : QString();
+      const QJsonDocument profDoc = QJsonDocument::fromJson( profileJson.toUtf8() );
+      const int ctgpOffset = profDoc.isObject() ? profDoc.object().value( "nvidiaCTGPOffset" ).toInt( 0 ) : 0;
+      const QSignalBlocker blocked( m_ctgpSlider );
+      m_ctgpSlider->setMinimum( defaultPower );
+      m_ctgpSlider->setMaximum( maxPower );
+      m_ctgpSlider->setValue( std::clamp( defaultPower + ctgpOffset, defaultPower, maxPower ) );
+      if ( m_ctgpValueLabel )
+        m_ctgpValueLabel->setText( QString::number( m_ctgpSlider->value() ) + " W" );
+    }
+
+    if ( values.contains( QStringLiteral( "GetCpuFrequencyLimitsJSON" ) ) )
+    {
+      const QJsonDocument limDoc = QJsonDocument::fromJson(
+        values.value( QStringLiteral( "GetCpuFrequencyLimitsJSON" ) ).toString().toUtf8() );
+      if ( limDoc.isObject() )
       {
-        const QJsonObject modeObj = modeVal.toObject();
-        if ( modeObj.value( QStringLiteral( "xResolution" ) ).toInt( 0 ) == activeX &&
-             modeObj.value( QStringLiteral( "yResolution" ) ).toInt( 0 ) == activeY )
+        const QJsonObject limitsObj = limDoc.object();
+        m_cpuMinFreqKHz = limitsObj["min"].toInt( 400000 );
+        m_cpuMaxFreqKHz = limitsObj["max"].toInt( 6000000 );
+        m_cpuFreqLimitsLoaded = true;
+        if ( m_minFrequencySlider && m_maxFrequencySlider )
         {
-          collectRates( modeObj.value( QStringLiteral( "refreshRates" ) ).toArray() );
-          matchedActiveRes = true;
+          const QSignalBlocker bMin( m_minFrequencySlider );
+          const QSignalBlocker bMax( m_maxFrequencySlider );
+          m_minFrequencySlider->setMinimum( m_cpuMinFreqKHz );
+          m_minFrequencySlider->setMaximum( m_cpuMaxFreqKHz );
+          m_maxFrequencySlider->setMinimum( m_cpuMinFreqKHz );
+          m_maxFrequencySlider->setMaximum( m_cpuMaxFreqKHz );
+          if ( m_minFrequencyValue )
+            m_minFrequencyValue->setText( QString( "%1 GHz" ).arg( m_minFrequencySlider->value() / 1000000.0, 0, 'f', 2 ) );
+          if ( m_maxFrequencyValue )
+            m_maxFrequencyValue->setText( QString( "%1 GHz" ).arg( m_maxFrequencySlider->value() / 1000000.0, 0, 'f', 2 ) );
         }
       }
     }
-    if ( !matchedActiveRes )
+
+    if ( values.contains( QStringLiteral( "GetPowerDeviceSettingsJSON" ) ) )
     {
-      for ( const auto &modeVal : displayModes )
-        collectRates( modeVal.toObject().value( QStringLiteral( "refreshRates" ) ).toArray() );
+      const QJsonDocument pdDoc = QJsonDocument::fromJson(
+        values.value( QStringLiteral( "GetPowerDeviceSettingsJSON" ) ).toString().toUtf8() );
+      const QJsonObject pdLid = pdDoc.object().value( "lid" ).toObject();
+      if ( pdLid.contains( "turnOffKeyboardBacklightOnLidClose" ) )
+        m_cachedDefaultLidOffKbd = pdLid.value( "turnOffKeyboardBacklightOnLidClose" ).toBool( true );
+      if ( pdLid.contains( "turnOffWaterCoolerLedOnLidClose" ) )
+        m_cachedDefaultLidOffWcLed = pdLid.value( "turnOffWaterCoolerLedOnLidClose" ).toBool( false );
+      m_lidDefaultsLoaded = true;
     }
-    if ( !uniqueRates.empty() )
+
+    if ( values.contains( QStringLiteral( "GetDisplayModesJSON" ) ) )
     {
-      m_supportedRefreshRates.clear();
-      for ( int hz : uniqueRates )
-        m_supportedRefreshRates.push_back( hz );
-      const int currentHz = m_profileRefreshRate ? m_profileRefreshRate->currentData().toInt() : 0;
-      rebuildRefreshRateCombo( currentHz );
+      const QJsonDocument doc = QJsonDocument::fromJson(
+        values.value( QStringLiteral( "GetDisplayModesJSON" ) ).toString().toUtf8() );
+      if ( doc.isObject() )
+      {
+        const QJsonObject root = doc.object();
+        const QJsonObject activeMode = root.value( QStringLiteral( "activeMode" ) ).toObject();
+        const int activeX = activeMode.value( QStringLiteral( "xResolution" ) ).toInt( 0 );
+        const int activeY = activeMode.value( QStringLiteral( "yResolution" ) ).toInt( 0 );
+        const QJsonArray displayModes = root.value( QStringLiteral( "displayModes" ) ).toArray();
+        std::set< int > uniqueRates;
+        auto collectRates = [&uniqueRates]( const QJsonArray &arr ) {
+          for ( const auto &v : arr )
+          {
+            const int hz = qRound( v.toDouble() );
+            if ( hz > 0 )
+              uniqueRates.insert( hz );
+          }
+        };
+        collectRates( activeMode.value( QStringLiteral( "refreshRates" ) ).toArray() );
+        bool matchedActiveRes = false;
+        if ( activeX > 0 && activeY > 0 )
+        {
+          for ( const auto &modeVal : displayModes )
+          {
+            const QJsonObject modeObj = modeVal.toObject();
+            if ( modeObj.value( QStringLiteral( "xResolution" ) ).toInt( 0 ) == activeX &&
+                 modeObj.value( QStringLiteral( "yResolution" ) ).toInt( 0 ) == activeY )
+            {
+              collectRates( modeObj.value( QStringLiteral( "refreshRates" ) ).toArray() );
+              matchedActiveRes = true;
+            }
+          }
+        }
+        if ( !matchedActiveRes )
+        {
+          for ( const auto &modeVal : displayModes )
+            collectRates( modeVal.toObject().value( QStringLiteral( "refreshRates" ) ).toArray() );
+        }
+        if ( !uniqueRates.empty() )
+        {
+          m_supportedRefreshRates.clear();
+          for ( int hz : uniqueRates )
+            m_supportedRefreshRates.push_back( hz );
+          const int currentHz = m_profileRefreshRate ? m_profileRefreshRate->currentData().toInt() : 0;
+          rebuildRefreshRateCombo( currentHz );
+        }
+      }
     }
   } );
 }
@@ -2872,21 +2970,30 @@ void MainWindow::rebuildRefreshRateCombo( int selectedHz )
 
 void MainWindow::refreshCtgpCapabilities()
 {
-  m_cTGPAdjustmentSupported = false;
-  m_nvidiaPowerCtrlAvailable = false;
-  m_gpuDefaultPowerLimit = 0;
-  m_gpuMaxPowerLimit = 0;
-  if ( !m_UccdClient )
+  if ( !m_UccdClient || !m_UccdClient->isConnected() )
+  {
+    m_cTGPAdjustmentSupported = false;
+    m_nvidiaPowerCtrlAvailable = false;
+    m_gpuDefaultPowerLimit = 0;
+    m_gpuMaxPowerLimit = 0;
+    updateCtgpVisibility();
     return;
+  }
 
-  if ( auto ctgp = m_UccdClient->getCTGPAdjustmentSupported() )
-    m_cTGPAdjustmentSupported = *ctgp;
-  if ( auto avail = m_UccdClient->getNVIDIAPowerCTRLAvailable() )
-    m_nvidiaPowerCtrlAvailable = *avail;
-  if ( auto gpuDefault = m_UccdClient->getNVIDIAPowerCTRLDefaultPowerLimit() )
-    m_gpuDefaultPowerLimit = *gpuDefault;
-  if ( auto gpuMax = m_UccdClient->getNVIDIAPowerCTRLMaxPowerLimit() )
-    m_gpuMaxPowerLimit = *gpuMax;
+  readUccdBatch( this, {
+    QStringLiteral( "GetCTGPAdjustmentSupported" ),
+    QStringLiteral( "GetNVIDIAPowerCTRLAvailable" ),
+    QStringLiteral( "GetNVIDIAPowerCTRLDefaultPowerLimit" ),
+    QStringLiteral( "GetNVIDIAPowerCTRLMaxPowerLimit" )
+  }, [this]( const QVariantMap &values ) {
+    if ( m_closing )
+      return;
+    m_cTGPAdjustmentSupported = values.value( QStringLiteral( "GetCTGPAdjustmentSupported" ) ).toBool();
+    m_nvidiaPowerCtrlAvailable = values.value( QStringLiteral( "GetNVIDIAPowerCTRLAvailable" ) ).toBool();
+    m_gpuDefaultPowerLimit = values.value( QStringLiteral( "GetNVIDIAPowerCTRLDefaultPowerLimit" ) ).toInt();
+    m_gpuMaxPowerLimit = values.value( QStringLiteral( "GetNVIDIAPowerCTRLMaxPowerLimit" ) ).toInt();
+    updateCtgpVisibility();
+  } );
 }
 
 bool MainWindow::hasValidCtgpRange( int &defaultPower, int &maxPower ) const
@@ -3744,34 +3851,46 @@ void MainWindow::onApplyFanProfilesClicked()
   QJsonDocument doc( root );
   QString json = QString::fromUtf8( doc.toJson( QJsonDocument::Compact ) );
 
-  if ( m_UccdClient->applyFanProfiles( json.toStdString() ) )
-  {
-    statusBar()->showMessage( "Temporary fan profiles applied" );
+  if ( m_fanControlTab && m_fanControlTab->applyButton() )
+    m_fanControlTab->applyButton()->setEnabled( false );
+  statusBar()->showMessage( "Applying fan profiles..." );
 
-    // Keep an internal copy so UI actions like revert have the current values
-    m_cpuFanPoints.clear();
-    for ( const auto &p : m_fanControlTab->cpuEditor()->points() )
-      m_cpuFanPoints.append( { static_cast< int >( p.temp ), static_cast< int >( p.duty ) } );
+  m_UccdClient->callBoolAsync( QStringLiteral( "ApplyFanProfiles" ), { json }, this,
+    [this]( bool ok, const QString & ) {
+      if ( m_closing )
+        return;
+      if ( m_fanControlTab && m_fanControlTab->applyButton() )
+        m_fanControlTab->applyButton()->setEnabled( m_UccdClient && m_UccdClient->isConnected() && !readOnlyPreview );
+      if ( ok )
+      {
+        statusBar()->showMessage( "Temporary fan profiles applied" );
 
-    m_gpuFanPoints.clear();
-    for ( const auto &p : m_fanControlTab->gpuEditor()->points() )
-      m_gpuFanPoints.append( { static_cast< int >( p.temp ), static_cast< int >( p.duty ) } );
+        // Keep an internal copy so UI actions like revert have the current values
+        m_cpuFanPoints.clear();
+        for ( const auto &p : m_fanControlTab->cpuEditor()->points() )
+          m_cpuFanPoints.append( { static_cast< int >( p.temp ), static_cast< int >( p.duty ) } );
 
-    m_waterCoolerFanPoints.clear();
-    if ( m_fanControlTab->wcFanEditor() )
-      for ( const auto &p : m_fanControlTab->wcFanEditor()->points() )
-        m_waterCoolerFanPoints.append( { static_cast< int >( p.temp ), static_cast< int >( p.duty ) } );
+        m_gpuFanPoints.clear();
+        for ( const auto &p : m_fanControlTab->gpuEditor()->points() )
+          m_gpuFanPoints.append( { static_cast< int >( p.temp ), static_cast< int >( p.duty ) } );
 
-    // Re-send the current water cooler enable state to the daemon so that
-    // the profile apply (which may set enableWaterCooler from profile data)
-    // doesn't override the user's current checkbox state.
-    if ( m_fanControlTab )
-      m_fanControlTab->sendWaterCoolerEnable( m_fanControlTab->isWaterCoolerEnabled() );
-  }
-  else
-  {
-    QMessageBox::warning( this, "Apply Failed", "Failed to apply fan profiles. Check service logs or connection." );
-  }
+        m_waterCoolerFanPoints.clear();
+        if ( m_fanControlTab->wcFanEditor() )
+          for ( const auto &p : m_fanControlTab->wcFanEditor()->points() )
+            m_waterCoolerFanPoints.append( { static_cast< int >( p.temp ), static_cast< int >( p.duty ) } );
+
+        // Re-send the current water cooler enable state to the daemon so that
+        // the profile apply (which may set enableWaterCooler from profile data)
+        // doesn't override the user's current checkbox state.
+        if ( m_fanControlTab )
+          m_fanControlTab->sendWaterCoolerEnable( m_fanControlTab->isWaterCoolerEnabled() );
+      }
+      else
+      {
+        statusBar()->showMessage( "Failed to apply fan profiles", 4000 );
+        QMessageBox::warning( this, "Apply Failed", "Failed to apply fan profiles. Check service logs or connection." );
+      }
+    } );
 }
 
 void MainWindow::onRevertFanProfilesClicked()

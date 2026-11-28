@@ -234,8 +234,8 @@ fn stop_daemon(pid_path: &Path) -> i32 {
         libc::kill(pid, libc::SIGTERM);
     }
 
-    // Wait up to 5 seconds
-    for _ in 0..50 {
+    // Wait up to 8 seconds (giving the daemon's 5s graceful shutdown budget headroom)
+    for _ in 0..80 {
         if unsafe { libc::kill(pid, 0) } != 0 {
             println!("uccd daemon stopped.");
             let _ = fs::remove_file(pid_path);
@@ -245,7 +245,7 @@ fn stop_daemon(pid_path: &Path) -> i32 {
     }
 
     // Force kill if still running
-    eprintln!("Daemon did not exit gracefully within 5s. Sending SIGKILL...");
+    eprintln!("Daemon did not exit gracefully within 8s. Sending SIGKILL...");
     unsafe {
         libc::kill(pid, libc::SIGKILL);
     }

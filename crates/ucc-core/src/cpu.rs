@@ -152,28 +152,16 @@ pub struct ProfileCpu {
     pub hwp_dynamic_boost: bool,
 }
 
-#[derive(Serialize, Deserialize)]
+#[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct ProfileCpuWire {
-    #[serde(
-        default,
-        with = "cpu_sentinel_serde",
-        skip_serializing_if = "Option::is_none"
-    )]
+    #[serde(default, with = "cpu_sentinel_serde")]
     online_cores: Option<u32>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(default)]
     enabled_cores: Option<Vec<u32>>,
-    #[serde(
-        rename = "scalingMinFrequency",
-        default,
-        skip_serializing_if = "Option::is_none"
-    )]
+    #[serde(rename = "scalingMinFrequency", default)]
     scaling_min_frequency: Option<i64>,
-    #[serde(
-        rename = "scalingMaxFrequency",
-        default,
-        skip_serializing_if = "Option::is_none"
-    )]
+    #[serde(rename = "scalingMaxFrequency", default)]
     scaling_max_frequency: Option<i64>,
     #[serde(default)]
     governor: String,
@@ -182,6 +170,34 @@ struct ProfileCpuWire {
     #[serde(rename = "noTurbo", default)]
     no_turbo: bool,
     #[serde(rename = "hwpDynamicBoost", default)]
+    hwp_dynamic_boost: bool,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct ProfileCpuWireRef<'a> {
+    #[serde(
+        serialize_with = "cpu_sentinel_serde::serialize",
+        skip_serializing_if = "Option::is_none"
+    )]
+    online_cores: Option<u32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    enabled_cores: Option<&'a [u32]>,
+    #[serde(
+        rename = "scalingMinFrequency",
+        skip_serializing_if = "Option::is_none"
+    )]
+    scaling_min_frequency: Option<i64>,
+    #[serde(
+        rename = "scalingMaxFrequency",
+        skip_serializing_if = "Option::is_none"
+    )]
+    scaling_max_frequency: Option<i64>,
+    governor: &'a str,
+    energy_performance_preference: &'a str,
+    #[serde(rename = "noTurbo")]
+    no_turbo: bool,
+    #[serde(rename = "hwpDynamicBoost")]
     hwp_dynamic_boost: bool,
 }
 
@@ -229,9 +245,9 @@ impl Serialize for ProfileCpu {
     where
         S: serde::Serializer,
     {
-        let wire = ProfileCpuWire {
+        let wire = ProfileCpuWireRef {
             online_cores: self.online_cores,
-            enabled_cores: self.enabled_cores.clone(),
+            enabled_cores: self.enabled_cores.as_deref(),
             scaling_min_frequency: self
                 .min_freq_khz
                 .map(i64::from)
@@ -240,8 +256,8 @@ impl Serialize for ProfileCpu {
                 .max_freq_khz
                 .map(i64::from)
                 .or_else(|| self.max_freq_sentinel.map(i64::from)),
-            governor: self.governor.clone(),
-            energy_performance_preference: self.energy_performance_preference.clone(),
+            governor: &self.governor,
+            energy_performance_preference: &self.energy_performance_preference,
             no_turbo: self.no_turbo,
             hwp_dynamic_boost: self.hwp_dynamic_boost,
         };

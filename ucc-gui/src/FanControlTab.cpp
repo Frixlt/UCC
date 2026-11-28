@@ -46,20 +46,9 @@ FanControlTab::FanControlTab( UccdClient *client,
   , m_profileManager( profileManager )
   , m_waterCoolerSupported( waterCoolerSupported )
 {
-  // DBus interface for water cooler hardware controls (only if water cooler supported)
+  // Water cooler polling timer (uses shared UccdClient / AsyncRead instead of a standalone QDBusInterface)
   if ( m_waterCoolerSupported )
   {
-    QString destination = QStringLiteral("com.uniwill.uccd");
-    if (readOnlyPreview) {
-      auto *bus = QDBusConnection::systemBus().interface();
-      destination = bus ? bus->serviceOwner(destination).value() : QString();
-    }
-    if (!destination.isEmpty()) m_waterCoolerDbus = new QDBusInterface(
-      destination,
-      QStringLiteral( "/com/uniwill/uccd" ),
-      QStringLiteral( "com.uniwill.uccd" ),
-      QDBusConnection::systemBus(), this );
-
     m_waterCoolerPollTimer = new QTimer( this );
     connect(m_waterCoolerPollTimer, &QTimer::timeout, this, &FanControlTab::pollWaterCoolerStatus);
     // Don't start timer immediately - wait for water cooler to be enabled
@@ -564,9 +553,8 @@ void FanControlTab::setWaterCoolerEnabled( bool enabled )
 
 void FanControlTab::sendWaterCoolerEnable( bool enabled )
 {
-  if (readOnlyPreview) return;
-  if ( m_waterCoolerDbus )
-    m_waterCoolerDbus->call( QStringLiteral( "EnableWaterCooler" ), enabled );
+  if (readOnlyPreview || !m_uccdClient) return;
+  m_uccdClient->callBoolAsync( QStringLiteral( "EnableWaterCooler" ), { enabled }, this, nullptr );
 }
 
 bool FanControlTab::isWaterCoolerEnabled() const
@@ -579,8 +567,8 @@ bool FanControlTab::isWaterCoolerEnabled() const
 void FanControlTab::onWaterCoolerEnableToggled( bool enabled )
 {
   if (readOnlyPreview) return;
-  if ( m_waterCoolerDbus )
-    m_waterCoolerDbus->call( QStringLiteral( "EnableWaterCooler" ), enabled );
+  if ( m_uccdClient )
+    m_uccdClient->callBoolAsync( QStringLiteral( "EnableWaterCooler" ), { enabled }, this, nullptr );
 
   // Update polling state based on new enable state
   updateWaterCoolerPolling();
@@ -631,49 +619,53 @@ void FanControlTab::onDisconnected()
 
 void FanControlTab::onPumpVoltageChanged( int index )
 {
-  if (readOnlyPreview) return;
-  if ( !m_waterCoolerDbus ) return;
+  if (readOnlyPreview || !m_uccdClient) return;
   if (index < 0) return;
   const int voltage = m_pumpVoltageCombo->itemData(index).toInt();
-  QDBusReply<bool> reply = m_waterCoolerDbus->call(QStringLiteral("SetWaterCoolerPumpVoltage"),voltage);
-  if (reply.isValid() && reply.value())
-    emit waterCoolerManualChanged(false,"Water cooler pump set to "+m_pumpVoltageCombo->itemText(index));
+  const QString label = m_pumpVoltageCombo->itemText(index);
+  m_uccdClient->callBoolAsync( QStringLiteral( "SetWaterCoolerPumpVoltage" ), { voltage }, this,
+    [this, label]( bool ok, const QString & ) {
+      if ( ok )
+        emit waterCoolerManualChanged( false, "Water cooler pump set to " + label );
+    } );
 }
 
 void FanControlTab::onFanSpeedChanged( int speed )
 {
-  if (readOnlyPreview) return;
-  if ( !m_waterCoolerDbus ) return;
-  QDBusReply<bool> reply = m_waterCoolerDbus->call(QStringLiteral("SetWaterCoolerFanSpeed"),speed);
-  if (reply.isValid() && reply.value())
-    emit waterCoolerManualChanged(false,QString("Water cooler fan set to %1%").arg(speed));
+  if (readOnlyPreview || !m_uccdClient) return;
+  m_uccdClient->callBoolAsync( QStringLiteral( "SetWaterCoolerFanSpeed" ), { speed }, this,
+    [this, speed]( bool ok, const QString & ) {
+      if ( ok )
+        emit waterCoolerManualChanged( false, QString( "Water cooler fan set to %1%" ).arg( speed ) );
+    } );
 }
 
 void FanControlTab::onLEDOnOffChanged( bool enabled )
 {
-  if (readOnlyPreview) return;
-  if ( !m_waterCoolerDbus ) return;
+  if (readOnlyPreview || !m_uccdClient) return;
   updateColorButtonState();
   if ( enabled )
   {
     RGBState mode = static_cast< RGBState >( m_ledModeCombo->currentData().toInt() );
-    m_waterCoolerDbus->call( QStringLiteral( "SetWaterCoolerLEDColor" ),
-                             m_currentRed, m_currentGreen, m_currentBlue, static_cast< int >( mode ) );
+    m_uccdClient->callBoolAsync( QStringLiteral( "SetWaterCoolerLEDColor" ),
+      { m_currentRed, m_currentGreen, m_currentBlue, static_cast< int >( mode ) }, this, nullptr );
   }
   else
-    m_waterCoolerDbus->call( QStringLiteral( "TurnOffWaterCoolerLED" ) );
+  {
+    m_uccdClient->callBoolAsync( QStringLiteral( "TurnOffWaterCoolerLED" ), {}, this, nullptr );
+  }
 }
 
 void FanControlTab::onLEDModeChanged( int /*index*/ )
 {
   if (readOnlyPreview) return;
   updateColorButtonState();
-  if ( !m_waterCoolerDbus ) return;
+  if ( !m_uccdClient ) return;
   if ( m_ledOnOffCheckBox->isChecked() )
   {
     RGBState mode = static_cast< RGBState >( m_ledModeCombo->currentData().toInt() );
-    m_waterCoolerDbus->call( QStringLiteral( "SetWaterCoolerLEDColor" ),
-                             m_currentRed, m_currentGreen, m_currentBlue, static_cast< int >( mode ) );
+    m_uccdClient->callBoolAsync( QStringLiteral( "SetWaterCoolerLEDColor" ),
+      { m_currentRed, m_currentGreen, m_currentBlue, static_cast< int >( mode ) }, this, nullptr );
   }
 }
 
@@ -687,12 +679,16 @@ void FanControlTab::onColorPickerClicked()
   m_currentGreen = color.green();
   m_currentBlue = color.blue();
   RGBState mode = static_cast< RGBState >( m_ledModeCombo->currentData().toInt() );
-  if ( m_ledOnOffCheckBox->isChecked() && m_waterCoolerDbus )
+  if ( m_ledOnOffCheckBox->isChecked() && m_uccdClient )
   {
-    if ( QDBusReply< bool > conn = m_waterCoolerDbus->call( QStringLiteral( "GetWaterCoolerConnected" ) );
-         conn.isValid() && conn.value() )
-      m_waterCoolerDbus->call( QStringLiteral( "SetWaterCoolerLEDColor" ),
-                               m_currentRed, m_currentGreen, m_currentBlue, static_cast< int >( mode ) );
+    const int r = m_currentRed, g = m_currentGreen, b = m_currentBlue;
+    const int modeInt = static_cast< int >( mode );
+    readUccdAsync( this, QStringLiteral( "GetWaterCoolerConnected" ), {},
+      [this, r, g, b, modeInt]( std::optional< QVariant > connected ) {
+        if ( connected && connected->toBool() && m_uccdClient )
+          m_uccdClient->callBoolAsync( QStringLiteral( "SetWaterCoolerLEDColor" ),
+            { r, g, b, modeInt }, this, nullptr );
+      } );
   }
   m_colorPickerButton->setStyleSheet(
     QString( "QPushButton { border-left: 4px solid rgb(%1, %2, %3); }" ).arg( m_currentRed ).arg( m_currentGreen ).arg( m_currentBlue ) );

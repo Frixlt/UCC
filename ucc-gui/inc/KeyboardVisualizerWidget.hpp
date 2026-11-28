@@ -18,6 +18,7 @@
 #include <QWidget>
 #include <QGridLayout>
 #include <QPushButton>
+#include <QPointer>
 #include <QColor>
 #include <QColorDialog>
 #include <QLabel>
@@ -27,6 +28,8 @@
 #include <QJsonDocument>
 #include <QSet>
 #include <QMap>
+#include <QHash>
+#include <QVector>
 #include <QThread>
 #include <vector>
 #include <map>
@@ -130,6 +133,8 @@ private:
   // Selected key tracking
   QSet<int> m_selectedZoneIds;
   QSet<QPushButton*> m_selectedButtons;
+  QVector<QPushButton*> m_keyButtons;
+  QHash<int, QPushButton*> m_zoneToButton;
 
   // Color picker dialog
   QColorDialog *m_colorDialog = nullptr;
@@ -138,7 +143,7 @@ private:
   QMap<int, QString> m_zoneMappings;
 
   // Background keyboard layout detection thread
-  QThread *m_layoutThread = nullptr;
+  QPointer<QThread> m_layoutThread;
 };
 
 } // namespace ucc

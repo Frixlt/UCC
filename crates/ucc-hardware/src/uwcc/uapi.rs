@@ -354,21 +354,19 @@ impl UwccTransport for UwccDevice {
     fn get_info(&self) -> Result<UwccInfo, PlatformError> {
         let mut info = UwccInfo::default();
         // SAFETY: `UWCC_IOC_GET_INFO` expects a valid `*mut UwccInfo` per `uapi/uwcc.h`.
-        let ret = unsafe {
+        crate::ioctl::retry_eintr(|| unsafe {
             libc::ioctl(
                 self.file.as_raw_fd(),
                 UWCC_IOC_GET_INFO as _,
                 &mut info as *mut UwccInfo,
             )
-        };
-        if ret < 0 {
-            return Err(PlatformError::Ioctl(
-                crate::ioctl::IoctlError::IoctlFailed {
-                    request: UWCC_IOC_GET_INFO,
-                    source: nix::Error::last(),
-                },
-            ));
-        }
+        })
+        .map_err(|source| {
+            PlatformError::Ioctl(crate::ioctl::IoctlError::IoctlFailed {
+                request: UWCC_IOC_GET_INFO,
+                source,
+            })
+        })?;
         Ok(info)
     }
 
@@ -379,42 +377,38 @@ impl UwccTransport for UwccDevice {
             _pad: 0,
         };
         // SAFETY: `UWCC_IOC_EC_READ` expects a valid `*mut UwccEcReg`.
-        let ret = unsafe {
+        crate::ioctl::retry_eintr(|| unsafe {
             libc::ioctl(
                 self.file.as_raw_fd(),
                 UWCC_IOC_EC_READ as _,
                 &mut reg as *mut UwccEcReg,
             )
-        };
-        if ret < 0 {
-            return Err(PlatformError::Ioctl(
-                crate::ioctl::IoctlError::IoctlFailed {
-                    request: UWCC_IOC_EC_READ,
-                    source: nix::Error::last(),
-                },
-            ));
-        }
+        })
+        .map_err(|source| {
+            PlatformError::Ioctl(crate::ioctl::IoctlError::IoctlFailed {
+                request: UWCC_IOC_EC_READ,
+                source,
+            })
+        })?;
         Ok(reg.val)
     }
 
     fn ec_write(&self, addr: u16, val: u8) -> Result<(), PlatformError> {
         let mut reg = UwccEcReg { addr, val, _pad: 0 };
         // SAFETY: `UWCC_IOC_EC_WRITE` expects a valid `*mut UwccEcReg`.
-        let ret = unsafe {
+        crate::ioctl::retry_eintr(|| unsafe {
             libc::ioctl(
                 self.file.as_raw_fd(),
                 UWCC_IOC_EC_WRITE as _,
                 &mut reg as *mut UwccEcReg,
             )
-        };
-        if ret < 0 {
-            return Err(PlatformError::Ioctl(
-                crate::ioctl::IoctlError::IoctlFailed {
-                    request: UWCC_IOC_EC_WRITE,
-                    source: nix::Error::last(),
-                },
-            ));
-        }
+        })
+        .map_err(|source| {
+            PlatformError::Ioctl(crate::ioctl::IoctlError::IoctlFailed {
+                request: UWCC_IOC_EC_WRITE,
+                source,
+            })
+        })?;
         Ok(())
     }
 
@@ -425,21 +419,19 @@ impl UwccTransport for UwccDevice {
             ));
         }
         // SAFETY: `UWCC_IOC_SMRW` expects a valid `*mut UwccSmrw`.
-        let ret = unsafe {
+        crate::ioctl::retry_eintr(|| unsafe {
             libc::ioctl(
                 self.file.as_raw_fd(),
                 UWCC_IOC_SMRW as _,
                 &mut req as *mut UwccSmrw,
             )
-        };
-        if ret < 0 {
-            return Err(PlatformError::Ioctl(
-                crate::ioctl::IoctlError::IoctlFailed {
-                    request: UWCC_IOC_SMRW,
-                    source: nix::Error::last(),
-                },
-            ));
-        }
+        })
+        .map_err(|source| {
+            PlatformError::Ioctl(crate::ioctl::IoctlError::IoctlFailed {
+                request: UWCC_IOC_SMRW,
+                source,
+            })
+        })?;
         Ok(req)
     }
 
@@ -454,21 +446,19 @@ impl UwccTransport for UwccDevice {
             level,
         };
         // SAFETY: `UWCC_IOC_PWUP` expects a valid `*mut UwccPwup`.
-        let ret = unsafe {
+        crate::ioctl::retry_eintr(|| unsafe {
             libc::ioctl(
                 self.file.as_raw_fd(),
                 UWCC_IOC_PWUP as _,
                 &mut payload as *mut UwccPwup,
             )
-        };
-        if ret < 0 {
-            return Err(PlatformError::Ioctl(
-                crate::ioctl::IoctlError::IoctlFailed {
-                    request: UWCC_IOC_PWUP,
-                    source: nix::Error::last(),
-                },
-            ));
-        }
+        })
+        .map_err(|source| {
+            PlatformError::Ioctl(crate::ioctl::IoctlError::IoctlFailed {
+                request: UWCC_IOC_PWUP,
+                source,
+            })
+        })?;
         Ok(())
     }
 
@@ -484,42 +474,38 @@ impl UwccTransport for UwccDevice {
         }
         let mut req = UwccGpuPower { op, value };
         // SAFETY: `UWCC_IOC_GPU_POWER` expects a valid `*mut UwccGpuPower`.
-        let ret = unsafe {
+        crate::ioctl::retry_eintr(|| unsafe {
             libc::ioctl(
                 self.file.as_raw_fd(),
                 UWCC_IOC_GPU_POWER as _,
                 &mut req as *mut UwccGpuPower,
             )
-        };
-        if ret < 0 {
-            return Err(PlatformError::Ioctl(
-                crate::ioctl::IoctlError::IoctlFailed {
-                    request: UWCC_IOC_GPU_POWER,
-                    source: nix::Error::last(),
-                },
-            ));
-        }
+        })
+        .map_err(|source| {
+            PlatformError::Ioctl(crate::ioctl::IoctlError::IoctlFailed {
+                request: UWCC_IOC_GPU_POWER,
+                source,
+            })
+        })?;
         Ok(())
     }
 
     fn mux_get(&self) -> Result<UwccMuxState, PlatformError> {
         let mut state = UwccMuxState::default();
         // SAFETY: `UWCC_IOC_MUX_GET` expects a valid `*mut UwccMuxState`.
-        let ret = unsafe {
+        crate::ioctl::retry_eintr(|| unsafe {
             libc::ioctl(
                 self.file.as_raw_fd(),
                 UWCC_IOC_MUX_GET as _,
                 &mut state as *mut UwccMuxState,
             )
-        };
-        if ret < 0 {
-            return Err(PlatformError::Ioctl(
-                crate::ioctl::IoctlError::IoctlFailed {
-                    request: UWCC_IOC_MUX_GET,
-                    source: nix::Error::last(),
-                },
-            ));
-        }
+        })
+        .map_err(|source| {
+            PlatformError::Ioctl(crate::ioctl::IoctlError::IoctlFailed {
+                request: UWCC_IOC_MUX_GET,
+                source,
+            })
+        })?;
         Ok(state)
     }
 
@@ -534,21 +520,19 @@ impl UwccTransport for UwccDevice {
             boot_mode,
         };
         // SAFETY: `UWCC_IOC_MUX_SET` expects a valid `*mut UwccMuxState`.
-        let ret = unsafe {
+        crate::ioctl::retry_eintr(|| unsafe {
             libc::ioctl(
                 self.file.as_raw_fd(),
                 UWCC_IOC_MUX_SET as _,
                 &mut req as *mut UwccMuxState,
             )
-        };
-        if ret < 0 {
-            return Err(PlatformError::Ioctl(
-                crate::ioctl::IoctlError::IoctlFailed {
-                    request: UWCC_IOC_MUX_SET,
-                    source: nix::Error::last(),
-                },
-            ));
-        }
+        })
+        .map_err(|source| {
+            PlatformError::Ioctl(crate::ioctl::IoctlError::IoctlFailed {
+                request: UWCC_IOC_MUX_SET,
+                source,
+            })
+        })?;
         Ok(())
     }
 
@@ -556,25 +540,25 @@ impl UwccTransport for UwccDevice {
         let mut evt = UwccWmiEvent::default();
         let size = std::mem::size_of::<UwccWmiEvent>();
         // SAFETY: `evt` is a valid writable `#[repr(C)]` struct of `size` bytes.
-        let n = unsafe {
+        let n = match crate::ioctl::retry_eintr_ssize(|| unsafe {
             libc::read(
                 self.file.as_raw_fd(),
                 (&mut evt as *mut UwccWmiEvent).cast::<libc::c_void>(),
                 size,
             )
-        };
-        if n < 0 {
-            let err = nix::Error::last();
-            if err == nix::errno::Errno::EAGAIN {
+        }) {
+            Ok(n) => n,
+            Err(err)
+                if err == nix::errno::Errno::EAGAIN || err == nix::errno::Errno::EWOULDBLOCK =>
+            {
                 return Ok(None);
             }
-            return Err(PlatformError::Ioctl(
-                crate::ioctl::IoctlError::IoctlFailed {
-                    request: 0,
-                    source: err,
-                },
-            ));
-        }
+            Err(source) => {
+                return Err(PlatformError::Ioctl(
+                    crate::ioctl::IoctlError::IoctlFailed { request: 0, source },
+                ));
+            }
+        };
         if (n as usize) < size {
             return Ok(None);
         }

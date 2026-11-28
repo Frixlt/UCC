@@ -284,7 +284,11 @@ void MainWindow::onKeyboardBrightnessChanged( int value )
     if ( !statesArray.empty() )
     {
       QJsonDocument doc( statesArray );
-      m_UccdClient->setKeyboardBacklight( doc.toJson( QJsonDocument::Compact ).toStdString() );
+      m_UccdClient->setKeyboardBacklightAsync( doc.toJson( QJsonDocument::Compact ).toStdString(), this,
+        [this]( bool ok, const QString & ) {
+          if ( !ok && !m_closing )
+            statusBar()->showMessage( "Failed to set keyboard backlight", 3000 );
+        } );
     }
   }
   else
@@ -301,8 +305,11 @@ void MainWindow::onKeyboardBrightnessChanged( int value )
     statesArray.append( state );
 
     QJsonDocument doc( statesArray );
-    if ( !m_UccdClient->setKeyboardBacklight( doc.toJson( QJsonDocument::Compact ).toStdString() ) )
-      statusBar()->showMessage( "Failed to set keyboard backlight", 3000 );
+    m_UccdClient->setKeyboardBacklightAsync( doc.toJson( QJsonDocument::Compact ).toStdString(), this,
+      [this]( bool ok, const QString & ) {
+        if ( !ok && !m_closing )
+          statusBar()->showMessage( "Failed to set keyboard backlight", 3000 );
+      } );
   }
 }
 
@@ -333,10 +340,11 @@ void MainWindow::onKeyboardColorClicked()
       QJsonDocument doc( statesArray );
       QString json = doc.toJson( QJsonDocument::Compact );
 
-      if ( not m_UccdClient->setKeyboardBacklight( json.toStdString() ) )
-      {
-        statusBar()->showMessage( "Failed to set keyboard backlight", 3000 );
-      }
+      m_UccdClient->setKeyboardBacklightAsync( json.toStdString(), this,
+        [this]( bool ok, const QString & ) {
+          if ( !ok && !m_closing )
+            statusBar()->showMessage( "Failed to set keyboard backlight", 3000 );
+        } );
     }
   }
 }
@@ -358,10 +366,11 @@ void MainWindow::onKeyboardVisualizerColorsChanged()
   QJsonDocument doc( statesArray );
   QString json = doc.toJson( QJsonDocument::Compact );
 
-  if ( not m_UccdClient->setKeyboardBacklight( json.toStdString() ) )
-  {
-    statusBar()->showMessage( "Failed to set keyboard backlight", 3000 );
-  }
+  m_UccdClient->setKeyboardBacklightAsync( json.toStdString(), this,
+    [this]( bool ok, const QString & ) {
+      if ( !ok && !m_closing )
+        statusBar()->showMessage( "Failed to set keyboard backlight", 3000 );
+    } );
 }
 
 void MainWindow::onKeyboardProfileChanged(const QString& profileId)
@@ -445,10 +454,11 @@ void MainWindow::onKeyboardProfileChanged(const QString& profileId)
       wrapper[ "brightness" ] = brightness;
     wrapper[ "states" ] = statesArray;
     QJsonDocument wrapperDoc( wrapper );
-    if ( not m_UccdClient->setKeyboardBacklight( wrapperDoc.toJson( QJsonDocument::Compact ).toStdString() ) )
-    {
-      statusBar()->showMessage( "Failed to apply keyboard profile", 3000 );
-    }
+    m_UccdClient->setKeyboardBacklightAsync( wrapperDoc.toJson( QJsonDocument::Compact ).toStdString(), this,
+      [this]( bool ok, const QString & ) {
+        if ( !ok && !m_closing )
+          statusBar()->showMessage( "Failed to apply keyboard profile", 3000 );
+      } );
   }
 
   // Update brightness slider and visualizer

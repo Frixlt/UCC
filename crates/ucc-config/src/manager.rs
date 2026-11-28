@@ -26,47 +26,54 @@ pub fn system_config_path() -> PathBuf {
     PathBuf::from(SYSTEM_CONFIG_PATH)
 }
 
+fn resolve_user_config_in_base(base: &Path) -> PathBuf {
+    let path = base.join(USER_CONFIG_REL_PATH);
+    if path.exists() {
+        return path;
+    }
+    let json_path = base.join(USER_CONFIG_JSON_REL_PATH);
+    if json_path.exists() {
+        return json_path;
+    }
+    if ConfigManager::backup_paths(&path)
+        .iter()
+        .any(|b| b.exists())
+    {
+        return path;
+    }
+    if ConfigManager::backup_paths(&json_path)
+        .iter()
+        .any(|b| b.exists())
+    {
+        return json_path;
+    }
+    path
+}
+
 /// Returns the current user's configuration path (`~/.config/ucc/settings` or `$XDG_CONFIG_HOME/ucc/settings`).
+/// Also checks `settings.json` and `.bak`/`.backup` recovery candidates when primary files are missing.
 pub fn user_config_path() -> Option<PathBuf> {
     if let Ok(xdg) = std::env::var("XDG_CONFIG_HOME") {
         if !xdg.trim().is_empty() {
-            let path = PathBuf::from(&xdg).join(USER_CONFIG_REL_PATH);
-            if path.exists() {
-                return Some(path);
-            }
-            let json_path = PathBuf::from(xdg).join(USER_CONFIG_JSON_REL_PATH);
-            if json_path.exists() {
-                return Some(json_path);
-            }
-            return Some(path);
+            return Some(resolve_user_config_in_base(Path::new(&xdg)));
         }
     }
 
     if let Ok(home) = std::env::var("HOME") {
         if !home.trim().is_empty() {
-            let path = PathBuf::from(&home)
-                .join(".config")
-                .join(USER_CONFIG_REL_PATH);
-            if path.exists() {
-                return Some(path);
-            }
-            let json_path = PathBuf::from(home)
-                .join(".config")
-                .join(USER_CONFIG_JSON_REL_PATH);
-            if json_path.exists() {
-                return Some(json_path);
-            }
-            return Some(path);
+            let base = PathBuf::from(home).join(".config");
+            return Some(resolve_user_config_in_base(&base));
         }
     }
 
     None
 }
 
-/// Checks whether raw JSON content represents valid settings whose profiles pass domain validation.
+/// Checks whether raw JSON content represents valid loadable settings under the same
+/// global + profile validation/quarantine rules as `ConfigManager::load_from_path`.
 pub fn is_valid_settings_content(content: &str) -> bool {
     match UccSettings::from_json(content) {
-        Ok(settings) => ConfigManager::validate_settings(&settings).is_ok(),
+        Ok(mut settings) => ConfigManager::validate_or_quarantine_settings(&mut settings).is_ok(),
         Err(_) => false,
     }
 }
@@ -98,10 +105,30 @@ impl ConfigManager {
         ]
     }
 
+    /// Resolves the active system-wide write path given the canonical extensionless path
+    /// (`/etc/ucc/settings`) and the `.json` path (`/etc/ucc/settings.json`), preventing
+    /// root read/write path splits when `/etc/ucc/settings.json` is the active file on disk.
+    pub(crate) fn resolve_system_write_path(sys_path: &Path, sys_json: &Path) -> PathBuf {
+        if sys_path.exists() {
+            return sys_path.to_path_buf();
+        }
+        if sys_json.exists() {
+            return sys_json.to_path_buf();
+        }
+        if Self::backup_paths(sys_path).iter().any(|b| b.exists()) {
+            return sys_path.to_path_buf();
+        }
+        if Self::backup_paths(sys_json).iter().any(|b| b.exists()) {
+            return sys_json.to_path_buf();
+        }
+        sys_path.to_path_buf()
+    }
+
     /// Determines the active file path to read from:
     /// 1. Custom override path if set.
-    /// 2. User config path (`~/.config/ucc/settings.json`) if it exists on disk.
-    /// 3. System config path (`/etc/ucc/settings.json`) if it exists on disk.
+    /// 2. User config path (`~/.config/ucc/settings` or `settings.json`, including `.bak`/`.backup` recovery)
+    ///    when not running as root.
+    /// 3. System config path (`/etc/ucc/settings`, falling back to `/etc/ucc/settings.json`).
     /// 4. None (indicating default settings should be generated).
     pub fn resolve_read_path(&self) -> Option<PathBuf> {
         if let Some(ref p) = self.custom_path {
@@ -130,12 +157,17 @@ impl ConfigManager {
         }
 
         let sys_path = system_config_path();
-        if sys_path.exists() || Self::backup_paths(&sys_path).iter().any(|b| b.exists()) {
+        let sys_json = PathBuf::from(SYSTEM_CONFIG_JSON_PATH);
+        if sys_path.exists() {
             return Some(sys_path);
         }
-
-        let sys_json = PathBuf::from(SYSTEM_CONFIG_JSON_PATH);
-        if sys_json.exists() || Self::backup_paths(&sys_json).iter().any(|b| b.exists()) {
+        if sys_json.exists() {
+            return Some(sys_json);
+        }
+        if Self::backup_paths(&sys_path).iter().any(|b| b.exists()) {
+            return Some(sys_path);
+        }
+        if Self::backup_paths(&sys_json).iter().any(|b| b.exists()) {
             return Some(sys_json);
         }
 
@@ -144,13 +176,17 @@ impl ConfigManager {
 
     /// Determines the active target path to write to:
     /// 1. Custom override path if set.
-    /// 2. System config path if executing as root (UID 0).
+    /// 2. Active system config path if executing as root (UID 0), matching whichever of
+    ///    `/etc/ucc/settings` or `/etc/ucc/settings.json` is present on disk.
     /// 3. User config path if available.
-    /// 4. Fallback to system config path.
+    /// 4. Fallback to active system config path.
     pub fn resolve_write_path(&self) -> PathBuf {
         if let Some(ref p) = self.custom_path {
             return p.clone();
         }
+
+        let sys_path = system_config_path();
+        let sys_json = Path::new(SYSTEM_CONFIG_JSON_PATH);
 
         #[cfg(unix)]
         {
@@ -158,11 +194,11 @@ impl ConfigManager {
                 fn geteuid() -> u32;
             }
             if unsafe { geteuid() == 0 } {
-                return system_config_path();
+                return Self::resolve_system_write_path(&sys_path, sys_json);
             }
         }
 
-        user_config_path().unwrap_or_else(system_config_path)
+        user_config_path().unwrap_or_else(|| Self::resolve_system_write_path(&sys_path, sys_json))
     }
 
     /// Loads settings from disk or returns defaults if no configuration file exists.
@@ -182,6 +218,36 @@ impl ConfigManager {
         Self::validate_global_settings(settings)?;
         for profile in settings.profiles.values() {
             profile.validate()?;
+        }
+        Ok(())
+    }
+
+    /// Validates global settings and quarantines unreferenced invalid legacy profiles
+    /// as long as at least one healthy profile remains in the catalog (`ISSUE-26`).
+    pub(crate) fn validate_or_quarantine_settings(
+        settings: &mut UccSettings,
+    ) -> Result<(), ConfigError> {
+        Self::validate_global_settings(settings)?;
+
+        let referenced: std::collections::HashSet<String> =
+            settings.state_map.values().cloned().collect();
+        let total_profiles = settings.profiles.len();
+        let mut invalid_unreferenced = Vec::new();
+        for (key, profile) in &settings.profiles {
+            if let Err(err) = profile.validate() {
+                if referenced.contains(key) || referenced.contains(&profile.id) {
+                    return Err(err.into());
+                }
+                invalid_unreferenced.push((key.clone(), err));
+            }
+        }
+        // Only quarantine unreferenced quirky profiles when at least one healthy profile
+        // remains in the catalog; otherwise fail so backup recovery / schema checks trigger.
+        if !invalid_unreferenced.is_empty() && invalid_unreferenced.len() == total_profiles {
+            return Err(invalid_unreferenced.into_iter().next().unwrap().1.into());
+        }
+        for (key, _err) in invalid_unreferenced {
+            settings.profiles.remove(&key);
         }
         Ok(())
     }
@@ -249,28 +315,7 @@ impl ConfigManager {
             ConfigError::Io(std::io::Error::new(std::io::ErrorKind::InvalidData, e))
         })?;
         let mut settings = UccSettings::from_json(&content)?;
-        Self::validate_global_settings(&settings)?;
-
-        let referenced: std::collections::HashSet<String> =
-            settings.state_map.values().cloned().collect();
-        let total_profiles = settings.profiles.len();
-        let mut invalid_unreferenced = Vec::new();
-        for (key, profile) in &settings.profiles {
-            if let Err(err) = profile.validate() {
-                if referenced.contains(key) || referenced.contains(&profile.id) {
-                    return Err(err.into());
-                }
-                invalid_unreferenced.push((key.clone(), err));
-            }
-        }
-        // Only quarantine unreferenced quirky profiles when at least one healthy profile
-        // remains in the catalog; otherwise fail so backup recovery / schema checks trigger.
-        if !invalid_unreferenced.is_empty() && invalid_unreferenced.len() == total_profiles {
-            return Err(invalid_unreferenced.into_iter().next().unwrap().1.into());
-        }
-        for (key, _err) in invalid_unreferenced {
-            settings.profiles.remove(&key);
-        }
+        Self::validate_or_quarantine_settings(&mut settings)?;
         Ok(settings)
     }
 
@@ -413,5 +458,46 @@ impl ConfigManager {
 
         let json = settings.to_json_pretty()?;
         write_atomic(path, json.as_bytes())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn resolve_system_write_path_avoids_settings_json_split() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let sys_path = dir.path().join("settings");
+        let sys_json = dir.path().join("settings.json");
+
+        // Neither exists -> defaults to extensionless /etc/ucc/settings.
+        assert_eq!(
+            ConfigManager::resolve_system_write_path(&sys_path, &sys_json),
+            sys_path
+        );
+
+        // Only settings.json exists -> writes back to settings.json (no split).
+        fs::write(&sys_json, "{}").unwrap();
+        assert_eq!(
+            ConfigManager::resolve_system_write_path(&sys_path, &sys_json),
+            sys_json
+        );
+
+        // Legacy settings exists -> prefers legacy settings (matching resolve_read_path).
+        fs::write(&sys_path, "{}").unwrap();
+        assert_eq!(
+            ConfigManager::resolve_system_write_path(&sys_path, &sys_json),
+            sys_path
+        );
+
+        // Only settings.json.bak exists -> resolves to settings.json for recovery/write consistency.
+        fs::remove_file(&sys_path).unwrap();
+        fs::remove_file(&sys_json).unwrap();
+        fs::write(dir.path().join("settings.json.bak"), "{}").unwrap();
+        assert_eq!(
+            ConfigManager::resolve_system_write_path(&sys_path, &sys_json),
+            sys_json
+        );
     }
 }

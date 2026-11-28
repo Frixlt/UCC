@@ -26,9 +26,10 @@ namespace ucc
 
 // Construction
 
-ProfileManager::ProfileManager( QObject *parent )
+ProfileManager::ProfileManager( UccdClient *client, QObject *parent )
   : QObject( parent )
-  , m_client( std::make_unique< UccdClient >( this ) )
+  , m_ownedClient( client ? nullptr : std::make_unique< UccdClient >( this ) )
+  , m_client( client ? client : m_ownedClient.get() )
 {
   m_connected = m_client->isConnected();
 
@@ -40,7 +41,7 @@ ProfileManager::ProfileManager( QObject *parent )
 
   // Always wire daemon signals - they won't fire while disconnected but will
   // start arriving as soon as uccd appears (see connectionStatusChanged below).
-  connect( m_client.get(), &UccdClient::profileChanged,
+  connect( m_client, &UccdClient::profileChanged,
            this, [this]( const QString &profileId,
                          const QString &keyboardProfileId,
                          const QString &fanProfileId ) {
@@ -48,13 +49,13 @@ ProfileManager::ProfileManager( QObject *parent )
                       keyboardProfileId.toStdString(),
                       fanProfileId.toStdString() );
   } );
-  connect( m_client.get(), &UccdClient::powerStateChanged,
+  connect( m_client, &UccdClient::powerStateChanged,
            this, [this]( const QString &state ) {
     onPowerStateChanged( state );
   } );
 
   // Re-init when uccd appears or disappears
-  connect( m_client.get(), &UccdClient::connectionStatusChanged,
+  connect( m_client, &UccdClient::connectionStatusChanged,
            this, [this]( bool connected ) {
     const bool wasConnected = m_connected;
     m_connected = connected;

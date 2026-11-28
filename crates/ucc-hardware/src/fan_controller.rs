@@ -350,7 +350,10 @@ impl FanWorkerHandle {
     }
 
     pub fn latest_snapshot(&self) -> Option<FanTickSnapshot> {
-        self.latest_snapshot.lock().unwrap().clone()
+        self.latest_snapshot
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .clone()
     }
 
     /// Gracefully stops the worker loop and awaits firmware-auto restoration.
@@ -407,6 +410,7 @@ pub fn spawn_fan_worker(
         }
         let mut current_cfg = initial;
         let mut ticker = tokio::time::interval(interval.max(Duration::from_millis(10)));
+        ticker.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
 
         loop {
             tokio::select! {
@@ -431,17 +435,23 @@ pub fn spawn_fan_worker(
                         current_cfg.fan_control_enabled,
                         current_epoch_ms(),
                     );
-                    *snapshot_ref.lock().unwrap() = Some(snap);
+                    *snapshot_ref.lock().unwrap_or_else(|e| e.into_inner()) = Some(snap);
                 }
             }
         }
 
-        // Bounded restoration attempts on exit
+        // Bounded restoration attempts with exponential backoff on exit
         let mut last_err = None;
-        for _ in 0..3 {
+        for attempt in 0..3u32 {
             match controller.restore_auto(backend.as_ref()) {
                 Ok(()) => return Ok(()),
-                Err(e) => last_err = Some(e),
+                Err(e) => {
+                    last_err = Some(e);
+                    if attempt < 2 {
+                        let backoff = Duration::from_millis(25 * (1u64 << attempt));
+                        tokio::time::sleep(backoff).await;
+                    }
+                }
             }
         }
         Err(last_err.unwrap_or(PlatformError::Unavailable))
