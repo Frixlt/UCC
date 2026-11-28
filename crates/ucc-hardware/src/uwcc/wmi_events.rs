@@ -24,8 +24,13 @@ pub const UINPUT_DEVICE_PATH: &str = "/dev/uinput";
 
 /// Uniwill WMI hotkey event codes emitted by `/dev/uwcc`.
 pub mod wmi_code {
-    pub const TOUCHPAD_TOGGLE: u32 = 0x00B0;
-    pub const PERF_MODE_CYCLE: u32 = 0x00B1;
+    /// Upstream `uniwill-acpi.c`: `UNIWILL_OSD_TOUCHPAD_TOGGLE_OFF` (`0x002E`).
+    pub const TOUCHPAD_TOGGLE: u32 = 0x002E;
+    /// Upstream `uniwill-acpi.c`: `UNIWILL_OSD_TOUCHPAD_TOGGLE_ON` (`0x002F`).
+    pub const TOUCHPAD_TOGGLE_ON: u32 = 0x002F;
+    /// Upstream `uniwill-acpi.c`: `UNIWILL_OSD_PERFORMANCE_MODE_TOGGLE` (`0x00B0`),
+    /// emitted when `0x0741 BIT(0)` (`AP_EXIST`) is set and the physical mode button is pressed.
+    pub const PERF_MODE_CYCLE: u32 = 0x00B0;
     pub const KBD_BRIGHTNESS_UP: u32 = 0x00B2;
     pub const KBD_BRIGHTNESS_DOWN: u32 = 0x00B3;
     pub const WEBCAM_TOGGLE: u32 = 0x00B4;
@@ -65,7 +70,7 @@ pub fn translate_wmi_event(event: UwccWmiEvent) -> UwccHotkeyEvent {
     match event.code {
         wmi_code::FN_LOCK_TOGGLE => UwccHotkeyEvent::FnLockToggle,
         wmi_code::WIN_LOCK_TOGGLE => UwccHotkeyEvent::WinLockToggle,
-        wmi_code::TOUCHPAD_TOGGLE => UwccHotkeyEvent::TouchpadToggle,
+        wmi_code::TOUCHPAD_TOGGLE | wmi_code::TOUCHPAD_TOGGLE_ON => UwccHotkeyEvent::TouchpadToggle,
         wmi_code::PERF_MODE_CYCLE => UwccHotkeyEvent::PerformanceModeCycle,
         wmi_code::KBD_BRIGHTNESS_UP => UwccHotkeyEvent::KeyboardBrightnessUp,
         wmi_code::KBD_BRIGHTNESS_DOWN => UwccHotkeyEvent::KeyboardBrightnessDown,

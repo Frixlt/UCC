@@ -1621,3 +1621,104 @@ fn set_tdp_latches_ap_oem_manual_ctrl_preserving_upper_bits() {
     );
     assert_eq!(transport.get_reg(uwcc_ec_reg::PL1_WATTS), Some(120));
 }
+
+#[test]
+fn wmi_0x00b0_is_performance_mode_not_touchpad_toggle() {
+    assert_eq!(wmi_code::PERF_MODE_CYCLE, 0x00B0);
+    assert_eq!(wmi_code::TOUCHPAD_TOGGLE, 0x002E);
+    assert_eq!(
+        translate_wmi_event(UwccWmiEvent {
+            timestamp_ns: 1,
+            code: 0x00B0,
+            payload: 0,
+        }),
+        UwccHotkeyEvent::PerformanceModeCycle
+    );
+    assert_ne!(
+        ucc_hardware::uwcc::hotkey_to_linux_keycode(UwccHotkeyEvent::PerformanceModeCycle),
+        Some(linux_key::KEY_TOUCHPAD_TOGGLE)
+    );
+    assert_eq!(
+        translate_wmi_event(UwccWmiEvent {
+            timestamp_ns: 2,
+            code: 0x002E,
+            payload: 0,
+        }),
+        UwccHotkeyEvent::TouchpadToggle
+    );
+    assert_eq!(
+        translate_wmi_event(UwccWmiEvent {
+            timestamp_ns: 3,
+            code: 0x002F,
+            payload: 0,
+        }),
+        UwccHotkeyEvent::TouchpadToggle
+    );
+}
+
+#[test]
+fn chassis_0x1a_custom_mode_tdp_profiles_mode_enable_and_drop_cleanup() {
+    let transport = Arc::new(MockUwccTransport::chassis_0x1a_default());
+    // Seed realistic X6AR55xY registers including PL4D (BIT(7) = 0x80) on 0x0727
+    // and non-zero 0x0753 (CPU VRM current limit) that MUST NOT be clobbered.
+    transport.set_reg(uwcc_ec_reg::AP_OEM, 0x80);
+    transport.set_reg(uwcc_ec_reg::CUSTOM_MODE_CTRL, 0x48);
+    transport.set_reg(uwcc_ec_reg::CUSTOM_MODE_ENABLE, 0x80); // PL4D = 1
+    transport.set_reg(uwcc_ec_reg::AP_OEM_6, 0x00);
+    transport.set_reg(uwcc_ec_reg::FAN_MANUAL_MODE, 0x10); // Turbo
+    transport.set_reg(uwcc_ec_reg::MODE_ENABLE, 0x55);
+
+    {
+        let backend = UwccBackend::new(Arc::clone(&transport) as _, None, None);
+
+        // 1. set_tdp activates Custom mode on 0x1A while preserving PL4D (BIT(7) on 0x0727).
+        backend.set_tdp(0, 120).unwrap();
+        assert_eq!(transport.get_reg(uwcc_ec_reg::AP_OEM), Some(0x81));
+        assert_eq!(transport.get_reg(uwcc_ec_reg::CUSTOM_MODE_CTRL), Some(0xC8));
+        assert_eq!(
+            transport.get_reg(uwcc_ec_reg::CUSTOM_MODE_ENABLE),
+            Some(0xC0),
+            "CUME BIT(6) must be set while strictly preserving PL4D BIT(7)"
+        );
+        assert_eq!(transport.get_reg(uwcc_ec_reg::AP_OEM_6), Some(0x04));
+        assert_eq!(transport.get_reg(uwcc_ec_reg::FAN_MANUAL_MODE), Some(0x80));
+        assert_eq!(transport.get_reg(uwcc_ec_reg::PL1_WATTS), Some(120));
+        assert_eq!(backend.read_perf_profile().unwrap(), 3);
+
+        // 2. Switching to Office (1) and Gaming (2) clears CUME while keeping PL4D untouched.
+        backend.set_perf_profile(1).unwrap();
+        assert_eq!(
+            transport.get_reg(uwcc_ec_reg::CUSTOM_MODE_ENABLE),
+            Some(0x80)
+        );
+        assert_eq!(transport.get_reg(uwcc_ec_reg::CUSTOM_MODE_CTRL), Some(0x48));
+        assert_eq!(transport.get_reg(uwcc_ec_reg::FAN_MANUAL_MODE), Some(0xA0));
+        assert_eq!(backend.read_perf_profile().unwrap(), 1);
+
+        backend.set_perf_profile(2).unwrap();
+        assert_eq!(
+            transport.get_reg(uwcc_ec_reg::CUSTOM_MODE_ENABLE),
+            Some(0x80)
+        );
+        assert_eq!(transport.get_reg(uwcc_ec_reg::FAN_MANUAL_MODE), Some(0x00));
+        assert_eq!(backend.read_perf_profile().unwrap(), 2);
+
+        backend.set_perf_profile(3).unwrap();
+        assert_eq!(
+            transport.get_reg(uwcc_ec_reg::CUSTOM_MODE_ENABLE),
+            Some(0xC0)
+        );
+        assert_eq!(backend.read_perf_profile().unwrap(), 3);
+
+        // 3. set_mode_enable toggles 0x0741 BIT(0) on 0x1A and NEVER touches 0x0753.
+        backend.set_mode_enable(false).unwrap();
+        assert_eq!(transport.get_reg(uwcc_ec_reg::AP_OEM), Some(0x80));
+        assert_eq!(transport.get_reg(uwcc_ec_reg::MODE_ENABLE), Some(0x55));
+        backend.set_mode_enable(true).unwrap();
+        assert_eq!(transport.get_reg(uwcc_ec_reg::AP_OEM), Some(0x81));
+        assert_eq!(transport.get_reg(uwcc_ec_reg::MODE_ENABLE), Some(0x55));
+    }
+
+    // 4. Dropping UwccBackend releases 0x0741 BIT(0) (preserving 0x80) so EC regains mode button.
+    assert_eq!(transport.get_reg(uwcc_ec_reg::AP_OEM), Some(0x80));
+}

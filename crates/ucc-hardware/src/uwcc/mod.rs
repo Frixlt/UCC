@@ -162,21 +162,41 @@ pub mod uwcc_ec_reg {
     pub const CPU_FAN_DUTY_READ: u16 = 0x075B;
     pub const GPU_FAN_DUTY_READ: u16 = 0x075C;
 
-    /// Manual fan control register (`0x0751` `EC_ADDR_MANUAL_FAN_CTRL`, `BIT(7)` = `FAN_MODE_USER`).
+    /// Uniwill `0x1A` Custom power mode control register (`0x0726`, `BIT(7)` = Custom power loop).
+    /// Always modify via RMW to preserve protection bits (`BIT(3..6)`).
+    pub const CUSTOM_MODE_CTRL: u16 = 0x0726;
+    pub const CUSTOM_MODE_CTRL_BIT: u8 = 1 << 7;
+
+    /// Uniwill `0x1A` Custom mode enable register (`0x0727`, `BIT(6)` = `CUME`, white LED).
+    /// WARNING: `BIT(7)` is `PL4D` (PL4 disable) — NEVER modify `BIT(7)`!
+    pub const CUSTOM_MODE_ENABLE: u16 = 0x0727;
+    pub const CUSTOM_MODE_CUME_BIT: u8 = 1 << 6;
+
+    /// Manual fan control register (`0x0751` `EC_ADDR_MANUAL_FAN_CTRL`).
+    /// On `0x1A`: `BIT(4)` = `TBME` (Turbo), `BIT(5)` = `HIGH`, `BIT(6)` = `BOOST`,
+    /// `BIT(7)` = `UFME` (Office 45 W unless `CUME` is also active).
     pub const FAN_MANUAL_MODE: u16 = 0x0751;
+    pub const FAN_MODE_TURBO_BIT: u8 = 1 << 4;
+    pub const FAN_MODE_HIGH_BIT: u8 = 1 << 5;
+    pub const FAN_MODE_BOOST_BIT: u8 = 1 << 6;
     pub const FAN_MODE_USER_BIT: u8 = 1 << 7;
     pub const CPU_FAN_DUTY_WRITE: u16 = 0x1804;
     pub const GPU_FAN_DUTY_WRITE: u16 = 0x1809;
 
-    /// Performance mode & software override registers.
+    /// Legacy performance mode & software override registers (non-`0x1A` Uniwill chassis).
+    /// On `0x1A`, `0x0752` is NOT a `1..=3` profile index and `0x0753` is CPU VRM current limit.
     pub const PERF_MODE: u16 = 0x0752;
     pub const MODE_ENABLE: u16 = 0x0753;
 
     /// Read-only chassis project identifier (`0x1A` on MECHREVO X6AR55xY).
     pub const PROJECT_ID: u16 = 0x0740;
-    /// `0x0741` (`EC_ADDR_AP_OEM`): `BIT(0)` (`ENABLE_MANUAL_CTRL`) latches manual TDP writes (`0x0783..=0x0785`).
+    /// `0x0741` (`EC_ADDR_AP_OEM`): `BIT(0)` (`ENABLE_MANUAL_CTRL` / `AP_EXIST`) latches manual
+    /// TDP writes (`0x0783..=0x0785`) and routes physical mode button presses to WMI `0x00B0`.
     pub const AP_OEM: u16 = 0x0741;
     pub const AP_OEM_ENABLE_MANUAL_CTRL_BIT: u8 = 1 << 0;
+    /// `0x07C6` (`EC_ADDR_AP_OEM_6`): `BIT(2)` (`ENABLE_UNIVERSAL_FAN_CTRL`) latches Custom mode.
+    pub const AP_OEM_6: u16 = 0x07C6;
+    pub const AP_OEM_6_UNIVERSAL_FAN_BIT: u8 = 1 << 2;
 
     /// Power and thermal limit registers (aligned with upstream Linux `uniwill-acpi.c`).
     pub const PL1_WATTS: u16 = 0x0783;
@@ -649,6 +669,91 @@ impl UwccBackend {
             )),
         }
     }
+
+    fn is_chassis_0x1a(&self) -> bool {
+        self.info.project_id == CHASSIS_PROJECT_0X1A
+    }
+
+    /// Sets or clears `mask` in EC register `reg` via read-modify-write, skipping the write
+    /// if the register already has the desired bit state.
+    fn rmw_ec_bits(&self, reg: u16, set_mask: u8, clear_mask: u8) -> Result<(), PlatformError> {
+        let prev = self.transport.ec_read(reg)?;
+        let next = (prev & !clear_mask) | set_mask;
+        if next != prev {
+            self.transport.ec_write(reg, next)?;
+        }
+        Ok(())
+    }
+
+    /// Activates real Uniwill `0x1A` Custom mode (white LED on mode button) so the EC applies
+    /// `0x0783..=0x0785` TDP limits and custom fan control instead of throttling to Office 45 W.
+    ///
+    /// Strictly uses RMW on every register and NEVER modifies `0x0727 BIT(7)` (`PL4D`).
+    fn enable_custom_mode_0x1a(&self) -> Result<(), PlatformError> {
+        // 1. Latch AP_EXIST / ENABLE_MANUAL_CTRL (0x0741 BIT(0)) so EC keeps 0x0783..=0x0785.
+        self.rmw_ec_bits(
+            uwcc_ec_reg::AP_OEM,
+            uwcc_ec_reg::AP_OEM_ENABLE_MANUAL_CTRL_BIT,
+            0,
+        )?;
+        // 2. Enable Custom power loop (0x0726 BIT(7)) and CUME (0x0727 BIT(6), preserving BIT(7) PL4D).
+        self.rmw_ec_bits(
+            uwcc_ec_reg::CUSTOM_MODE_CTRL,
+            uwcc_ec_reg::CUSTOM_MODE_CTRL_BIT,
+            0,
+        )?;
+        self.rmw_ec_bits(
+            uwcc_ec_reg::CUSTOM_MODE_ENABLE,
+            uwcc_ec_reg::CUSTOM_MODE_CUME_BIT,
+            0,
+        )?;
+        // 3. Latch universal fan/custom control (0x07C6 BIT(2)).
+        self.rmw_ec_bits(
+            uwcc_ec_reg::AP_OEM_6,
+            uwcc_ec_reg::AP_OEM_6_UNIVERSAL_FAN_BIT,
+            0,
+        )?;
+        // 4. Set UFME (0x0751 BIT(7)) and clear TBME/HIGH so PMSC stays cleanly in Custom.
+        self.rmw_ec_bits(
+            uwcc_ec_reg::FAN_MANUAL_MODE,
+            uwcc_ec_reg::FAN_MODE_USER_BIT,
+            uwcc_ec_reg::FAN_MODE_TURBO_BIT | uwcc_ec_reg::FAN_MODE_HIGH_BIT,
+        )?;
+        Ok(())
+    }
+
+    /// Disables Uniwill `0x1A` Custom mode flags (`0x0727 BIT(6)` `CUME` and `0x0726 BIT(7)`),
+    /// strictly preserving `0x0727 BIT(7)` (`PL4D`) and all unrelated bits.
+    fn disable_custom_mode_0x1a(&self) -> Result<(), PlatformError> {
+        self.rmw_ec_bits(
+            uwcc_ec_reg::CUSTOM_MODE_ENABLE,
+            0,
+            uwcc_ec_reg::CUSTOM_MODE_CUME_BIT,
+        )?;
+        self.rmw_ec_bits(
+            uwcc_ec_reg::CUSTOM_MODE_CTRL,
+            0,
+            uwcc_ec_reg::CUSTOM_MODE_CTRL_BIT,
+        )?;
+        Ok(())
+    }
+}
+
+impl Drop for UwccBackend {
+    fn drop(&mut self) {
+        // Release AP_EXIST (0x0741 BIT(0)) on clean shutdown so the physical mode button
+        // returns to autonomous EC firmware cycling when uccd is stopped.
+        if self.is_chassis_0x1a()
+            && self.transport.is_available()
+            && (self.info.flags & UWCC_FLAG_HAS_EC) != 0
+        {
+            let _ = self.rmw_ec_bits(
+                uwcc_ec_reg::AP_OEM,
+                0,
+                uwcc_ec_reg::AP_OEM_ENABLE_MANUAL_CTRL_BIT,
+            );
+        }
+    }
 }
 
 fn probe_smrw_limits(transport: &dyn UwccTransport, flags: u32) -> SmrwPowerLimits {
@@ -788,6 +893,25 @@ impl PlatformBackend for UwccBackend {
             }
         };
         let duty = percent_to_ec_duty(percent);
+        // On Uniwill 0x1A, setting UFME (0x0751 BIT(7)) without CUME (0x0727 BIT(6)) forces
+        // Office mode (45 W CPU cap). Latch Custom mode bits before enabling manual fan duty.
+        if self.is_chassis_0x1a() {
+            let _ = self.rmw_ec_bits(
+                uwcc_ec_reg::CUSTOM_MODE_CTRL,
+                uwcc_ec_reg::CUSTOM_MODE_CTRL_BIT,
+                0,
+            );
+            let _ = self.rmw_ec_bits(
+                uwcc_ec_reg::CUSTOM_MODE_ENABLE,
+                uwcc_ec_reg::CUSTOM_MODE_CUME_BIT,
+                0,
+            );
+            let _ = self.rmw_ec_bits(
+                uwcc_ec_reg::AP_OEM_6,
+                uwcc_ec_reg::AP_OEM_6_UNIVERSAL_FAN_BIT,
+                0,
+            );
+        }
         let prev = self.transport.ec_read(uwcc_ec_reg::FAN_MANUAL_MODE)?;
         let enabled_manual = (prev & uwcc_ec_reg::FAN_MODE_USER_BIT) == 0;
         if enabled_manual {
@@ -846,9 +970,12 @@ impl PlatformBackend for UwccBackend {
         let reg = Self::tdp_reg(index)?;
         let raw = u8::try_from(watts)
             .map_err(|_| PlatformError::InvalidArgument("Power limit out of byte range"))?;
-        // Latch EC_ADDR_AP_OEM BIT(0) (ENABLE_MANUAL_CTRL) via RMW so the EC does not
-        // reset 0x0783..=0x0785 back to 0 within 1s on Uniwill 0x1A firmware.
-        if let Ok(prev_oem) = self.transport.ec_read(uwcc_ec_reg::AP_OEM) {
+        if self.is_chassis_0x1a() {
+            // On Uniwill 0x1A, custom PL1/PL2/PL4 only take effect in Custom mode (CUME + 0x0726
+            // BIT(7) + AP_OEM BIT(0) + UFME + 0x07C6 BIT(2)); otherwise EC caps CPU at 45 W or
+            // zeroes 0x0783..=0x0785 within 1s.
+            self.enable_custom_mode_0x1a()?;
+        } else if let Ok(prev_oem) = self.transport.ec_read(uwcc_ec_reg::AP_OEM) {
             if (prev_oem & uwcc_ec_reg::AP_OEM_ENABLE_MANUAL_CTRL_BIT) == 0 {
                 self.transport.ec_write(
                     uwcc_ec_reg::AP_OEM,
@@ -861,6 +988,27 @@ impl PlatformBackend for UwccBackend {
 
     fn read_perf_profile(&self) -> Result<i32, PlatformError> {
         self.require_ec()?;
+        if self.is_chassis_0x1a() {
+            // Follow DSDT PMSC priority on 0x1A:
+            // CUME (0x0727 BIT(6)) -> Custom (3); TBME (0x0751 BIT(4)) -> Turbo (3);
+            // UFME (0x0751 BIT(7)) -> Office (1); else -> Gaming (2).
+            let cume = self
+                .transport
+                .ec_read(uwcc_ec_reg::CUSTOM_MODE_ENABLE)
+                .map(|v| (v & uwcc_ec_reg::CUSTOM_MODE_CUME_BIT) != 0)
+                .unwrap_or(false);
+            if cume {
+                return Ok(3);
+            }
+            let fan_ctrl = self.transport.ec_read(uwcc_ec_reg::FAN_MANUAL_MODE)?;
+            if (fan_ctrl & uwcc_ec_reg::FAN_MODE_TURBO_BIT) != 0 {
+                return Ok(3);
+            }
+            if (fan_ctrl & uwcc_ec_reg::FAN_MODE_USER_BIT) != 0 {
+                return Ok(1);
+            }
+            return Ok(2);
+        }
         let code = i32::from(self.transport.ec_read(uwcc_ec_reg::PERF_MODE)?);
         if !(1..=3).contains(&code) {
             return Err(PlatformError::Unavailable);
@@ -875,12 +1023,56 @@ impl PlatformBackend for UwccBackend {
                 "Uniwill performance profile code must be 1..=3",
             ));
         }
+        if self.is_chassis_0x1a() {
+            return match profile_code {
+                // 1 = Silent / Office (green LED, 0x0751 = UFME | HIGH, CUME cleared)
+                1 => {
+                    self.disable_custom_mode_0x1a()?;
+                    self.rmw_ec_bits(
+                        uwcc_ec_reg::FAN_MANUAL_MODE,
+                        uwcc_ec_reg::FAN_MODE_USER_BIT | uwcc_ec_reg::FAN_MODE_HIGH_BIT,
+                        uwcc_ec_reg::FAN_MODE_TURBO_BIT,
+                    )
+                }
+                // 2 = Balanced / Gaming (CUME cleared, UFME/TBME/HIGH cleared)
+                2 => {
+                    self.disable_custom_mode_0x1a()?;
+                    self.rmw_ec_bits(
+                        uwcc_ec_reg::FAN_MANUAL_MODE,
+                        0,
+                        uwcc_ec_reg::FAN_MODE_USER_BIT
+                            | uwcc_ec_reg::FAN_MODE_TURBO_BIT
+                            | uwcc_ec_reg::FAN_MODE_HIGH_BIT,
+                    )
+                }
+                // 3 = Enthusiast / Custom (white LED, full user TDP & fan control)
+                3 => self.enable_custom_mode_0x1a(),
+                _ => unreachable!(),
+            };
+        }
         self.transport
             .ec_write(uwcc_ec_reg::PERF_MODE, profile_code as u8)
     }
 
     fn set_mode_enable(&self, enable: bool) -> Result<(), PlatformError> {
         self.require_ec()?;
+        if self.is_chassis_0x1a() {
+            // On 0x1A, 0x0753 is CPU VRM current limit (NOT MODE_ENABLE).
+            // Software manual control enable is EC_ADDR_AP_OEM BIT(0) (0x0741).
+            return if enable {
+                self.rmw_ec_bits(
+                    uwcc_ec_reg::AP_OEM,
+                    uwcc_ec_reg::AP_OEM_ENABLE_MANUAL_CTRL_BIT,
+                    0,
+                )
+            } else {
+                self.rmw_ec_bits(
+                    uwcc_ec_reg::AP_OEM,
+                    0,
+                    uwcc_ec_reg::AP_OEM_ENABLE_MANUAL_CTRL_BIT,
+                )
+            };
+        }
         self.transport
             .ec_write(uwcc_ec_reg::MODE_ENABLE, u8::from(enable))
     }
