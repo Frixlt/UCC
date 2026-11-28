@@ -1166,7 +1166,16 @@ impl LiveUccdBackend {
                     let _ = self.reconcile_to_latest_committed(undo);
                     return ApplyOutcome::Failed;
                 }
-                if !set_ok || !matches!(self.platform.read_tdp(idx), Ok(actual) if actual == w) {
+                let readback = set_ok.then(|| self.platform.read_tdp(idx));
+                if !matches!(readback, Some(Ok(actual)) if actual == w) {
+                    warn!(
+                        profile_id = %profile.id,
+                        channel = idx,
+                        target_w = w,
+                        set_ok,
+                        readback = ?readback,
+                        "Profile apply failed: pre-ODM TDP write or readback mismatch"
+                    );
                     let _ = self.rollback_hardware(
                         None,
                         false,
@@ -1235,6 +1244,11 @@ impl LiveUccdBackend {
                     return ApplyOutcome::Failed;
                 }
                 if !odm_ok {
+                    warn!(
+                        profile_id = %profile.id,
+                        code,
+                        "Profile apply failed: ODM profile write mismatch (no prior ODM)"
+                    );
                     let _ = self.rollback_hardware(
                         None,
                         true,
@@ -1295,8 +1309,16 @@ impl LiveUccdBackend {
                         let _ = self.reconcile_to_latest_committed(undo);
                         return ApplyOutcome::Failed;
                     }
-                    if !set_ok || !matches!(self.platform.read_tdp(idx), Ok(actual) if actual == w)
-                    {
+                    let readback = set_ok.then(|| self.platform.read_tdp(idx));
+                    if !matches!(readback, Some(Ok(actual)) if actual == w) {
+                        warn!(
+                            profile_id = %profile.id,
+                            channel = idx,
+                            target_w = w,
+                            set_ok,
+                            readback = ?readback,
+                            "Profile apply failed: post-ODM TDP write or readback mismatch"
+                        );
                         let _ = self.rollback_hardware(
                             None,
                             true,

@@ -2,10 +2,10 @@
 
 use std::sync::Arc;
 use ucc_lighting::{
-    frame_windows_feature_report, frame_windows_output_report, unframe_windows_feature_report, HidDeviceTransport,
-    LightingError, LightingTransport, MockWinHidSysApi, RgbColor, UniwillHidTransport,
-    WinHidDeviceRecord, WindowsHidTransport, ITE_KEYBOARD_PRODUCT_ID, ITE_VENDOR_ID,
-    VENDOR_USAGE_PAGE_MIN,
+    frame_windows_feature_report, frame_windows_output_report, unframe_windows_feature_report,
+    HidDeviceTransport, LightingError, LightingTransport, MockWinHidSysApi, RgbColor,
+    UniwillHidTransport, WinHidDeviceRecord, WindowsHidTransport, ITE_KEYBOARD_PRODUCT_ID,
+    ITE_VENDOR_ID, VENDOR_USAGE_PAGE_MIN,
 };
 
 const WIN_KBD_BOOT_PATH: &str = r"\\?\hid#vid_048d&pid_600b&mi_00#7&1a2b3c4d&0&0000#{4d1e55b2}";
@@ -14,25 +14,27 @@ const WIN_LIGHTBAR_PATH: &str = r"\\?\hid#vid_048d&pid_7000&mi_01#7&5e6f7a8b&0&0
 
 fn sample_ite_windows_devices() -> Vec<WinHidDeviceRecord> {
     vec![
-        // Boot keyboard interface (UsagePage 0x0001) must be skipped by UniwillHidTransport.
+        // Boot keyboard interface (Generic Desktop / Keyboard) — must be skipped.
         WinHidDeviceRecord {
             path: WIN_KBD_BOOT_PATH.to_string(),
             vendor_id: ITE_VENDOR_ID,
             product_id: ITE_KEYBOARD_PRODUCT_ID,
             usage_page: 0x0001,
             usage: 0x0006,
-            feature_report_byte_length: 0,
+            feature_report_byte_length: 9,
+            output_report_byte_length: 0,
         },
-        // Vendor lighting interface (UsagePage 0xFF89 >= 0xFF00) for ITE 048D:600B.
+        // Keyboard vendor lighting interface (UsagePage 0xFF89, 8B feature + 64B row output).
         WinHidDeviceRecord {
             path: WIN_KBD_VENDOR_PATH.to_string(),
             vendor_id: ITE_VENDOR_ID,
             product_id: ITE_KEYBOARD_PRODUCT_ID,
             usage_page: 0xFF89,
             usage: 0x00CC,
-            feature_report_byte_length: 65,
+            feature_report_byte_length: 9,
+            output_report_byte_length: 65,
         },
-        // Vendor lighting interface for ITE 048D:7000 (4 front lightbar zones + lid logo LED).
+        // Lightbar + lid logo vendor interface (048D:7000, UsagePage 0xFF00).
         WinHidDeviceRecord {
             path: WIN_LIGHTBAR_PATH.to_string(),
             vendor_id: ITE_VENDOR_ID,
@@ -40,7 +42,7 @@ fn sample_ite_windows_devices() -> Vec<WinHidDeviceRecord> {
             usage_page: VENDOR_USAGE_PAGE_MIN,
             usage: 0x0001,
             feature_report_byte_length: 9,
-            output_report_byte_length: 65,
+            output_report_byte_length: 0,
         },
     ]
 }
@@ -270,20 +272,12 @@ fn windows_hid_126_key_calibration_lid_logo_zone5_and_ec_hook() {
 
     // LCtrl = LED 0 -> row 0, col 0 (buf[0]=0x00 report id, buf[1]=0x00 pad, B=2, G=23, R=44).
     assert_eq!(
-        (
-            kbd_reports[2].1[44],
-            kbd_reports[2].1[23],
-            kbd_reports[2].1[2],
-        ),
+        (kbd_reports[2].1[44], kbd_reports[2].1[23], kbd_reports[2].1[2]),
         (11, 22, 33)
     );
     // LShift = LED 21 -> row 1, col 0.
     assert_eq!(
-        (
-            kbd_reports[4].1[44],
-            kbd_reports[4].1[23],
-            kbd_reports[4].1[2],
-        ),
+        (kbd_reports[4].1[44], kbd_reports[4].1[23], kbd_reports[4].1[2]),
         (44, 55, 66)
     );
     // Enter = LED 56 -> row 2, col 14.
@@ -348,10 +342,18 @@ fn windows_hid_126_key_calibration_lid_logo_zone5_and_ec_hook() {
         assert_eq!(buf.len(), 9);
         assert_eq!(buf[0], 0x00);
     }
-    assert_eq!(
-        all_reports[21].1,
-        vec![0x00, 0x14, 0x00, LIGHTBAR_LID_LOGO_ZONE_ID, 12, 34, 56, 0, 0]
-    );
+    let expected_logo = vec![
+        0x00,
+        0x14,
+        0x00,
+        LIGHTBAR_LID_LOGO_ZONE_ID,
+        12,
+        34,
+        56,
+        0,
+        0,
+    ];
+    assert_eq!(all_reports[21].1, expected_logo);
     assert_eq!(
         all_reports[26].1,
         vec![0x00, 0x14, 0x00, 5, 200, 100, 50, 0, 0]
@@ -463,5 +465,18 @@ fn windows_output_report_framing_preserves_leading_zero_pad_and_validates_bounds
     assert!(matches!(
         frame_windows_output_report(&row, 64),
         Err(LightingError::InvalidConfig(_))
+    ));
+
+    // Device with OutputReportByteLength == 0 rejects output reports; simulated write errors propagate.
+    let sys = Arc::new(MockWinHidSysApi::new(sample_ite_windows_devices()));
+    let win_hid = WindowsHidTransport::new(Arc::clone(&sys) as _);
+    assert!(matches!(
+        win_hid.send_output_report(WIN_KBD_BOOT_PATH, &row),
+        Err(LightingError::InvalidConfig(_))
+    ));
+    sys.set_fail_writes(true);
+    assert!(matches!(
+        win_hid.send_output_report(WIN_KBD_VENDOR_PATH, &row),
+        Err(LightingError::WriteFailed(_))
     ));
 }
