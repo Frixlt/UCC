@@ -28,6 +28,7 @@
 #include <QDBusReply>
 #include <QDBusArgument>
 #include <QThread>
+#include <QVector>
 #include <algorithm>
 #include <memory>
 #include "DetectLayout.hpp"
@@ -428,7 +429,8 @@ void ucc::KeyboardVisualizerWidget::updateKeyAppearance( QPushButton *button, co
     button->setToolTip(QString("LED #%1 — %2 · %3").arg(button->property("ledId").toInt())
       .arg(button->property("physicalLabel").toString(), adjustedColor.name()));
   else button->setToolTip(QString("%1 · %2").arg(button->text(),adjustedColor.name()));
-  button->setStyleSheet( style );
+  if ( button->styleSheet() != style )
+    button->setStyleSheet( style );
 }
 
 QColor ucc::KeyboardVisualizerWidget::applyBrightness( const QColor &color, int brightness ) const
@@ -545,27 +547,34 @@ void ucc::KeyboardVisualizerWidget::setGlobalBrightness( int brightness )
 
 void ucc::KeyboardVisualizerWidget::setGlobalColor( const QColor &color )
 {
+  bool anyChanged = false;
   for ( auto &key : m_keys )
   {
-    key.color = color;
-  }
-
-  // Update all button appearances
-  for ( int i = 0; i < m_layout->count(); ++i )
-  {
-    QLayoutItem *item = m_layout->itemAt( i );
-    if ( item && item->widget() )
+    if ( key.color != color )
     {
-      QPushButton *button = qobject_cast< QPushButton * >( item->widget() );
-      if ( button )
+      key.color = color;
+      anyChanged = true;
+    }
+  }
+  if ( anyChanged )
+  {
+    setUpdatesEnabled( false );
+    for ( int i = 0; i < m_layout->count(); ++i )
+    {
+      QLayoutItem *item = m_layout->itemAt( i );
+      if ( item && item->widget() )
       {
-        int zoneId = button->property( "zoneId" ).toInt();
-        if ( zoneId >= 0 && zoneId < static_cast< int >( m_keys.size() ) )
+        if ( QPushButton *button = qobject_cast< QPushButton * >( item->widget() ) )
         {
-          updateKeyAppearance( button, color, m_keys[zoneId].brightness );
+          const int zoneId = button->property( "zoneId" ).toInt();
+          if ( zoneId >= 0 && zoneId < static_cast< int >( m_keys.size() ) )
+          {
+            updateKeyAppearance( button, color, m_keys[zoneId].brightness );
+          }
         }
       }
     }
+    setUpdatesEnabled( true );
   }
 
   emit colorsChanged();

@@ -1494,13 +1494,7 @@ void MainWindow::connectSignals()
   // Populate EPP combo
   populateEppCombo();
 
-  // Live crosshair tracking on fan curve editors
-  connect( m_systemMonitor.get(), &SystemMonitor::cpuTempChanged,              this, &MainWindow::updateFanCrosshairs );
-  connect( m_systemMonitor.get(), &SystemMonitor::fanSpeedChanged,             this, &MainWindow::updateFanCrosshairs );
-  connect( m_systemMonitor.get(), &SystemMonitor::gpuTempChanged,              this, &MainWindow::updateFanCrosshairs );
-  connect( m_systemMonitor.get(), &SystemMonitor::gpuFanSpeedChanged,          this, &MainWindow::updateFanCrosshairs );
-  connect( m_systemMonitor.get(), &SystemMonitor::waterCoolerFanSpeedChanged,  this, &MainWindow::updateFanCrosshairs );
-  connect( m_systemMonitor.get(), &SystemMonitor::waterCoolerPumpLevelChanged,  this, &MainWindow::updateFanCrosshairs );
+  // Live crosshair tracking on fan curve editors (once per telemetry tick)
   connect( m_systemMonitor.get(), &SystemMonitor::metricsUpdated,              this, &MainWindow::updateFanCrosshairs );
 }
 
@@ -1646,7 +1640,12 @@ void MainWindow::onTabChanged( int index )
     updateExperimentalLockState();
     if ( !m_experimentalRisksAccepted && !m_experimentalPromptOpen )
     {
-      QTimer::singleShot( 0, this, &MainWindow::promptExperimentalRisks );
+      m_experimentalPromptOpen = true;
+      QTimer::singleShot( 0, this, [this]() {
+        m_experimentalPromptOpen = false;
+        if ( m_tabs && m_tabs->currentWidget() == m_experimentalPage )
+          promptExperimentalRisks();
+      } );
     }
   }
 }
@@ -1671,58 +1670,60 @@ void MainWindow::promptExperimentalRisks()
     return;
   m_experimentalPromptOpen = true;
 
-  QDialog dlg( this );
-  dlg.setWindowTitle( "Experimental Features Warning" );
-  dlg.setModal( true );
-  dlg.setMinimumWidth( 440 );
+  auto *dlg = new QDialog( this );
+  dlg->setAttribute( Qt::WA_DeleteOnClose );
+  dlg->setWindowTitle( "Experimental Features Warning" );
+  dlg->setModal( true );
+  dlg->setMinimumWidth( 440 );
 
-  auto *layout = new QVBoxLayout( &dlg );
+  auto *layout = new QVBoxLayout( dlg );
   layout->setContentsMargins( 20, 18, 20, 18 );
   layout->setSpacing( 14 );
 
-  auto *heading = new QLabel( "Experimental & Unstable Features" );
+  auto *heading = new QLabel( "Experimental & Unstable Features", dlg );
   heading->setObjectName( "cardTitle" );
   layout->addWidget( heading );
 
   auto *body = new QLabel(
       "The settings in the Experimental tab are experimental and unstable. "
       "Changing firmware-level options such as the Display MUX Switch may cause display issues, "
-      "unexpected behavior, or require resetting BIOS settings.
-
-"
-      "No Experimental setting will work until you explicitly accept these risks." );
+      "unexpected behavior, or require resetting BIOS settings.\n\n"
+      "No Experimental setting will work until you explicitly accept these risks.",
+      dlg );
   body->setWordWrap( true );
   layout->addWidget( body );
 
-  auto *dontShowAgain = new QCheckBox( "Don't show again" );
+  auto *dontShowAgain = new QCheckBox( "Don't show again", dlg );
   dontShowAgain->setObjectName( "experimentalDontShowAgain" );
   layout->addWidget( dontShowAgain );
 
   auto *buttons = new QHBoxLayout();
   buttons->addStretch( 1 );
-  auto *cancelBtn = new QPushButton( "Cancel" );
-  auto *acceptBtn = new QPushButton( "I accept the risks" );
+  auto *cancelBtn = new QPushButton( "Cancel", dlg );
+  auto *acceptBtn = new QPushButton( "I accept the risks", dlg );
   acceptBtn->setObjectName( "experimentalAcceptRisks" );
   acceptBtn->setProperty( "primary", true );
   buttons->addWidget( cancelBtn );
   buttons->addWidget( acceptBtn );
   layout->addLayout( buttons );
 
-  connect( cancelBtn, &QPushButton::clicked, &dlg, &QDialog::reject );
-  connect( acceptBtn, &QPushButton::clicked, &dlg, &QDialog::accept );
-
-  const int result = dlg.exec();
-  m_experimentalPromptOpen = false;
-  if ( result == QDialog::Accepted )
-  {
-    m_experimentalRisksAccepted = true;
-    if ( dontShowAgain->isChecked() && !readOnlyPreview )
+  connect( cancelBtn, &QPushButton::clicked, dlg, &QDialog::reject );
+  connect( acceptBtn, &QPushButton::clicked, dlg, &QDialog::accept );
+  connect( dlg, &QDialog::finished, this, [this, dontShowAgain]( int result ) {
+    m_experimentalPromptOpen = false;
+    if ( result == QDialog::Accepted )
     {
-      QSettings( "UniwillControlCenter", "desktop" )
-          .setValue( "experimentalRisksAcceptedPermanently", true );
+      m_experimentalRisksAccepted = true;
+      if ( dontShowAgain->isChecked() && !readOnlyPreview )
+      {
+        QSettings( "UniwillControlCenter", "desktop" )
+            .setValue( "experimentalRisksAcceptedPermanently", true );
+      }
     }
-  }
-  updateExperimentalLockState();
+    updateExperimentalLockState();
+  } );
+
+  dlg->open();
 }
 
 void MainWindow::refreshMuxState()

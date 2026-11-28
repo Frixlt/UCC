@@ -148,7 +148,7 @@ void DashboardTab::setWaterCoolerSupported( bool supported )
 
 void DashboardTab::refreshDriverHealth()
 {
-  if(m_driverHealthPending) return;
+  if(m_driverHealthPending || !isVisible() || (window() && window()->isMinimized())) return;
   m_driverHealthPending=true;
   readUccdAsync(this,"GetDriverHealthJSON",{},[this](std::optional<QVariant> value){
     m_driverHealthPending=false;

@@ -60,7 +60,7 @@ LightbarTab::LightbarTab(UccdClient *client,QWidget *parent):QWidget(parent),m_c
     if(readOnlyPreview) return;
     emit message(m_client->triggerLightbarAnimation(true) ? "Lightbar animation started" : "Animation did not start; check hardware, control enable and the current power mode");showStatus();
   });
-  connect(m_client,&UccdClient::connectionStatusChanged,this,[this](bool){reload();});
+  connect(m_client,&UccdClient::connectionStatusChanged,this,[this](bool connected){if(connected) reload(); else showStatus();});
   connect(m_client,&UccdClient::lightbarSettingsChanged,this,[this](const QString &){reload();});
   connect(m_client,&UccdClient::powerPolicyChanged,this,[this](const QString &){if(isVisible()) showStatus();});
   reload();
@@ -109,7 +109,7 @@ void LightbarTab::save() {
     } else {
       emit message("Lightbar settings saved and applied");
     }
-    reload();
+    showStatus();
   } else {
     const auto statusJson=m_client->getLightbarStatusJSON();
     const auto status=statusJson ? QJsonDocument::fromJson(QByteArray::fromStdString(*statusJson)).object() : QJsonObject();
@@ -161,7 +161,7 @@ LogoTab::LogoTab(UccdClient *client,QWidget *parent):QWidget(parent),m_client(cl
 
   connect(reloadButton,&QPushButton::clicked,this,&LogoTab::reload);
   connect(m_save,&QPushButton::clicked,this,&LogoTab::save);
-  connect(m_client,&UccdClient::connectionStatusChanged,this,[this](bool){reload();});
+  connect(m_client,&UccdClient::connectionStatusChanged,this,[this](bool connected){if(connected) reload(); else showStatus();});
   connect(m_client,&UccdClient::lightbarSettingsChanged,this,[this](const QString &){reload();});
   reload();
 }
@@ -208,7 +208,7 @@ void LogoTab::save() {
   const auto payload=QJsonDocument(merged).toJson(QJsonDocument::Compact).toStdString();
   if(m_client->setLightbarSettingsJSON(payload)) {
     emit message("Lid logo settings saved and applied");
-    reload();
+    showStatus();
   } else {
     const auto statusJson=m_client->getLightbarStatusJSON();
     const auto status=statusJson ? QJsonDocument::fromJson(QByteArray::fromStdString(*statusJson)).object() : QJsonObject();
