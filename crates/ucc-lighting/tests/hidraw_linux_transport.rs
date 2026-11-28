@@ -984,7 +984,10 @@ fn ite8291_zero_and_dim_brightness_partial_zones_and_8233_16slot_lightbar() {
     transport.write_lightbar_brightness(255).expect("8233 br");
     let br_reports = mock_hid.recorded_reports();
     assert_eq!(br_reports.len(), 2);
-    assert_eq!(br_reports[0].1, vec![0x08, 0x02, 0x01, 0x05, 50, 0x01, 0, 0]);
+    assert_eq!(
+        br_reports[0].1,
+        vec![0x08, 0x02, 0x01, 0x05, 50, 0x01, 0, 0]
+    );
     assert_eq!(br_reports[1].1, vec![0x09, 0x02, 100, 0, 0, 0, 0, 0]);
 }
 
@@ -1190,7 +1193,10 @@ fn ite8233_zero_brightness_and_managed_false_teardown() {
     assert_eq!(off_br.len(), 2);
     assert_eq!(off_br[0].1, vec![0x09, 0x02, 0, 0, 0, 0, 0, 0]);
     assert_eq!(off_br[1].1, vec![0x08, 0x01, 0, 0, 0, 0, 0, 0]);
-    assert_eq!(*ec_power.lock().unwrap_or_else(|e| e.into_inner()), vec![false]);
+    assert_eq!(
+        *ec_power.lock().unwrap_or_else(|e| e.into_inner()),
+        vec![false]
+    );
 
     // 2. managed: true -> false tears down both lid logo and front lightbar.
     let mut lb = LightbarController::new(Arc::clone(&transport) as _);

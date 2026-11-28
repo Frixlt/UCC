@@ -1802,10 +1802,11 @@ impl LiveUccdBackend {
                 return;
             }
             let seq = self.charging_op_seq.load(Ordering::SeqCst);
-            let target = self
+            let committed = self
                 .lock_mutex(&self.charging_commit_state)
                 .charging_profile
-                .clone()
+                .clone();
+            let target = committed
                 .or_else(|| self.read_rw(&self.settings).charging_profile.clone())
                 .unwrap_or_else(|| fallback.to_string());
             self.charging_write_seq.fetch_add(1, Ordering::SeqCst);
@@ -1817,14 +1818,32 @@ impl LiveUccdBackend {
         }
     }
 
+    fn restore_platform_charging_or_reconcile(&self, my_seq: u64, prev_hw: &str) {
+        if self.charging_op_seq.load(Ordering::SeqCst) == my_seq {
+            if !self.shutdown_wait_expired.load(Ordering::SeqCst) {
+                self.charging_write_seq.fetch_add(1, Ordering::SeqCst);
+                let _ = self.platform.set_charging_profile(prev_hw);
+                self.charging_write_seq.fetch_add(1, Ordering::SeqCst);
+            }
+            if self.charging_op_seq.load(Ordering::SeqCst) != my_seq {
+                self.reconcile_platform_charging_profile(prev_hw);
+            }
+        } else {
+            self.reconcile_platform_charging_profile(prev_hw);
+        }
+    }
+
     pub(super) fn commit_platform_charging_profile(&self, desc: &str, prev_hw: &str) -> bool {
         let my_seq = self.charging_op_seq.fetch_add(1, Ordering::SeqCst) + 1;
+        if self.write_aborted_by_shutdown() {
+            return false;
+        }
         self.charging_write_seq.fetch_add(1, Ordering::SeqCst);
         let write_ok = self.platform.set_charging_profile(desc).is_ok()
             && self.platform.read_charging_profile().ok().as_deref() == Some(desc);
         self.charging_write_seq.fetch_add(1, Ordering::SeqCst);
         if !write_ok || self.charging_op_seq.load(Ordering::SeqCst) != my_seq {
-            self.reconcile_platform_charging_profile(prev_hw);
+            self.restore_platform_charging_or_reconcile(my_seq, prev_hw);
             return false;
         }
         let persisted = self
@@ -1837,7 +1856,7 @@ impl LiveUccdBackend {
             })
             .is_some();
         if !persisted {
-            self.reconcile_platform_charging_profile(prev_hw);
+            self.restore_platform_charging_or_reconcile(my_seq, prev_hw);
             return false;
         }
         let committed = {
@@ -1909,7 +1928,11 @@ impl LiveUccdBackend {
                         return true;
                     }
                     if let Some(pw) = prev_w {
-                        let _ = self.platform.set_ctgp_watts(pw);
+                        if !self.shutdown_wait_expired.load(Ordering::SeqCst) {
+                            self.ctgp_write_seq.fetch_add(1, Ordering::SeqCst);
+                            let _ = self.platform.set_ctgp_watts(pw);
+                            self.ctgp_write_seq.fetch_add(1, Ordering::SeqCst);
+                        }
                     }
                 }
                 tracing::warn!(
