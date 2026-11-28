@@ -158,7 +158,7 @@ pub struct HidrawDeviceTransport {
     sysfs_hidraw_root: PathBuf,
     dev_root: PathBuf,
     #[cfg(target_os = "linux")]
-    open_files: Arc<Mutex<BTreeMap<String, fs::File>>>,
+    open_files: Arc<Mutex<BTreeMap<String, Arc<Mutex<Option<fs::File>>>>>>,
 }
 
 impl Default for HidrawDeviceTransport {
@@ -255,27 +255,30 @@ impl HidrawDeviceTransport {
     where
         F: FnMut(&mut fs::File) -> Result<T, LightingError>,
     {
-        let mut cache = self.open_files.lock().unwrap_or_else(|e| e.into_inner());
-        let had_cached = cache.contains_key(path);
-        if !had_cached {
-            let file = self.open_hidraw_file(path)?;
-            cache.insert(path.to_string(), file);
-        }
-        let first_res = {
-            let file = cache.get_mut(path).expect("cached hidraw handle");
-            op(file)
+        let slot = {
+            let mut map = self.open_files.lock().unwrap_or_else(|e| e.into_inner());
+            Arc::clone(
+                map.entry(path.to_string())
+                    .or_insert_with(|| Arc::new(Mutex::new(None))),
+            )
         };
+        let mut guard = slot.lock().unwrap_or_else(|e| e.into_inner());
+        let had_cached = guard.is_some();
+        if !had_cached {
+            *guard = Some(self.open_hidraw_file(path)?);
+        }
+        let first_res = op(guard.as_mut().expect("cached hidraw handle"));
         if first_res.is_ok() || !had_cached {
             if first_res.is_err() {
-                cache.remove(path);
+                *guard = None;
             }
             return first_res;
         }
-        cache.remove(path);
+        *guard = None;
         let mut fresh = self.open_hidraw_file(path)?;
         let retry_res = op(&mut fresh);
         if retry_res.is_ok() {
-            cache.insert(path.to_string(), fresh);
+            *guard = Some(fresh);
         }
         retry_res
     }
@@ -341,14 +344,26 @@ impl HidDeviceTransport for HidrawDeviceTransport {
                 report.len()
             ))
         })?;
+        let mut stack_buf = [0u8; 65];
+        let mut heap_buf = if total_len > stack_buf.len() {
+            let mut v = Vec::with_capacity(total_len);
+            v.push(0x00);
+            v.extend_from_slice(report);
+            v
+        } else {
+            stack_buf[0] = 0x00;
+            stack_buf[1..total_len].copy_from_slice(report);
+            Vec::new()
+        };
         self.with_hidraw_file(path, |file| {
-            let mut buf = Vec::with_capacity(total_len);
-            buf.push(0x00);
-            buf.extend_from_slice(report);
+            let ptr = if total_len > stack_buf.len() {
+                heap_buf.as_mut_ptr()
+            } else {
+                stack_buf.as_mut_ptr()
+            };
             // SAFETY: `file` is a validated `/dev/hidraw*` character device descriptor,
-            // `req` is `HIDIOCSFEATURE(buf.len())`, and `buf` is a valid mutable byte buffer.
-            let ret =
-                unsafe { libc::ioctl(file.as_raw_fd(), req as libc::Ioctl, buf.as_mut_ptr()) };
+            // `req` is `HIDIOCSFEATURE(total_len)`, and `ptr` points to `total_len` valid bytes.
+            let ret = unsafe { libc::ioctl(file.as_raw_fd(), req as libc::Ioctl, ptr) };
             if ret < 0 {
                 return Err(LightingError::Io(std::io::Error::last_os_error()));
             }
@@ -373,10 +388,13 @@ impl HidDeviceTransport for HidrawDeviceTransport {
         }
         // Linux `hidraw` `write()` treats `buf[0]` as the HID Report ID (`0x00` for unnumbered
         // ITE 8291r3 64-byte per-key row output reports).
-        let mut buf = Vec::with_capacity(report.len() + 1);
-        buf.push(0x00);
-        buf.extend_from_slice(report);
-        self.with_hidraw_file(path, |file| file.write_all(&buf).map_err(LightingError::Io))
+        let mut buf = [0u8; 65];
+        buf[0] = 0x00;
+        buf[1..=report.len()].copy_from_slice(report);
+        let slice = &buf[..=report.len()];
+        self.with_hidraw_file(path, |file| {
+            file.write_all(slice).map_err(LightingError::Io)
+        })
     }
 
     #[cfg(not(target_os = "linux"))]

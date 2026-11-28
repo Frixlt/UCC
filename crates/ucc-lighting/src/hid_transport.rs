@@ -328,6 +328,30 @@ impl UniwillHidTransport {
         }))
     }
 
+    fn find_keyboard_cached(&self) -> Result<Option<HidDeviceInfo>, LightingError> {
+        if let Some(dev) = self
+            .cached_keyboard_dev
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .clone()
+        {
+            return Ok(Some(dev));
+        }
+        let dev = self.find_device(&[ITE_KEYBOARD_PRODUCT_ID])?;
+        *self
+            .cached_keyboard_dev
+            .lock()
+            .unwrap_or_else(|e| e.into_inner()) = dev.clone();
+        Ok(dev)
+    }
+
+    fn invalidate_keyboard_cache(&self) {
+        *self
+            .cached_keyboard_dev
+            .lock()
+            .unwrap_or_else(|e| e.into_inner()) = None;
+    }
+
     fn find_lightbar_cached(&self) -> Result<Option<HidDeviceInfo>, LightingError> {
         if let Some(dev) = self
             .cached_lightbar_dev
@@ -348,6 +372,10 @@ impl UniwillHidTransport {
     fn invalidate_lightbar_cache(&self) {
         *self
             .cached_lightbar_dev
+            .lock()
+            .unwrap_or_else(|e| e.into_inner()) = None;
+        *self
+            .last_ec_lightbar_power
             .lock()
             .unwrap_or_else(|e| e.into_inner()) = None;
     }
@@ -471,6 +499,7 @@ impl UniwillHidTransport {
 
 impl LightingTransport for UniwillHidTransport {
     fn detect_keyboard(&self) -> Result<Option<KeyboardCapabilities>, LightingError> {
+        self.invalidate_keyboard_cache();
         let dev = self.find_device(&[ITE_KEYBOARD_PRODUCT_ID])?;
         *self
             .cached_keyboard_dev
@@ -493,7 +522,7 @@ impl LightingTransport for UniwillHidTransport {
         // Sysfs `buffer_input` is only needed to batch per-LED sysfs writes in `ite_8291.ko`.
         // Direct HID already uploads all 6 rows atomically in `write_keyboard_zones`; sending
         // command `0x09` (`SET_BRIGHTNESS`) here would overwrite hardware brightness to 0/1.
-        let Some(_dev) = self.find_device(&[ITE_KEYBOARD_PRODUCT_ID])? else {
+        let Some(_dev) = self.find_keyboard_cached()? else {
             return Err(LightingError::Unavailable);
         };
         Ok(())
@@ -507,7 +536,7 @@ impl LightingTransport for UniwillHidTransport {
     }
 
     fn write_keyboard_brightness(&self, brightness: u32) -> Result<(), LightingError> {
-        let Some(dev) = self.find_device(&[ITE_KEYBOARD_PRODUCT_ID])? else {
+        let Some(dev) = self.find_keyboard_cached()? else {
             return Err(LightingError::Unavailable);
         };
         // ITE 048D:600B (ITE 8291r3) hardware brightness register accepts 0..=50.
@@ -519,7 +548,10 @@ impl LightingTransport for UniwillHidTransport {
         } else {
             [0x08, 0x02, 0x33, 0x00, level, 0x00, 0x00, 0x00]
         };
-        self.hid.send_feature_report(&dev.path, &packet)?;
+        if let Err(err) = self.hid.send_feature_report(&dev.path, &packet) {
+            self.invalidate_keyboard_cache();
+            return Err(err);
+        }
         *self
             .cached_keyboard_brightness
             .lock()
@@ -528,7 +560,7 @@ impl LightingTransport for UniwillHidTransport {
     }
 
     fn write_keyboard_zones(&self, colors: &[RgbColor]) -> Result<(), LightingError> {
-        let Some(dev) = self.find_device(&[ITE_KEYBOARD_PRODUCT_ID])? else {
+        let Some(dev) = self.find_keyboard_cached()? else {
             return Err(LightingError::Unavailable);
         };
         if colors.is_empty() {
@@ -594,6 +626,7 @@ impl LightingTransport for UniwillHidTransport {
     }
 
     fn detect_lightbar(&self) -> Result<Option<LightbarCapabilities>, LightingError> {
+        self.invalidate_lightbar_cache();
         let dev = self.find_device(&ITE_LIGHTBAR_PRODUCT_IDS)?;
         *self
             .cached_lightbar_dev
@@ -621,7 +654,7 @@ impl LightingTransport for UniwillHidTransport {
                 (((brightness.min(255) * 100) + 127) / 255).clamp(1, 100) as u8
             };
             if lb_level > 0 {
-                self.set_lightbar_ec_power(true)?;
+                self.ensure_lightbar_ec_power_on()?;
                 let on_packet = [0x08, 0x02, 0x01, 0x05, 50, 0x01, 0x00, 0x00];
                 self.hid.send_feature_report(&dev.path, &on_packet)?;
                 let br_packet = [0x09, 0x02, lb_level, 0x00, 0x00, 0x00, 0x00, 0x00];
@@ -634,7 +667,7 @@ impl LightingTransport for UniwillHidTransport {
                 self.set_lightbar_ec_power(false)?;
             }
         } else if level > 0 {
-            self.set_lightbar_ec_power(true)?;
+            self.ensure_lightbar_ec_power_on()?;
             let packet = [0x08, 0x02, 0x01, 0x05, level, 0x01, 0x00, 0x00];
             self.hid.send_feature_report(&dev.path, &packet)?;
         } else {
@@ -646,38 +679,48 @@ impl LightingTransport for UniwillHidTransport {
     }
 
     fn write_lightbar_color(&self, rgb: RgbColor) -> Result<(), LightingError> {
+        let send_for = |dev: &HidDeviceInfo| -> Result<(), LightingError> {
+            if dev.product_id == ITE_LIGHTBAR_PRODUCT_ID_4ZONE {
+                for slot in 0..=1u8 {
+                    let packet = [0x14, 0x00, slot, rgb.r, rgb.g, rgb.b, 0x00, 0x00];
+                    self.hid.send_feature_report(&dev.path, &packet)?;
+                }
+            } else {
+                let zones = Self::lightbar_zone_count(dev.product_id) as u8;
+                for zone in 1..=zones {
+                    let packet = [0x14, 0x00, zone, rgb.r, rgb.g, rgb.b, 0x00, 0x00];
+                    self.hid.send_feature_report(&dev.path, &packet)?;
+                }
+            }
+            Ok(())
+        };
+        let was_cached = self
+            .cached_lightbar_dev
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .is_some();
         let Some(dev) = self.find_lightbar_cached()? else {
             return Err(LightingError::Unavailable);
         };
         if rgb != RgbColor::BLACK {
             self.ensure_lightbar_ec_power_on()?;
         }
-        let res: Result<(), LightingError> = if dev.product_id == ITE_LIGHTBAR_PRODUCT_ID_4ZONE {
-            let mut out = Ok(());
-            for slot in 0..=1u8 {
-                let packet = [0x14, 0x00, slot, rgb.r, rgb.g, rgb.b, 0x00, 0x00];
-                if let Err(err) = self.hid.send_feature_report(&dev.path, &packet) {
-                    out = Err(err);
-                    break;
+        match send_for(&dev) {
+            Ok(()) => Ok(()),
+            Err(first_err) => {
+                self.invalidate_lightbar_cache();
+                if !was_cached {
+                    return Err(first_err);
                 }
-            }
-            out
-        } else {
-            let zones = Self::lightbar_zone_count(dev.product_id) as u8;
-            let mut out = Ok(());
-            for zone in 1..=zones {
-                let packet = [0x14, 0x00, zone, rgb.r, rgb.g, rgb.b, 0x00, 0x00];
-                if let Err(err) = self.hid.send_feature_report(&dev.path, &packet) {
-                    out = Err(err);
-                    break;
+                let Some(fresh) = self.find_lightbar_cached()? else {
+                    return Err(first_err);
+                };
+                if rgb != RgbColor::BLACK {
+                    self.ensure_lightbar_ec_power_on()?;
                 }
+                send_for(&fresh)
             }
-            out
-        };
-        if res.is_err() {
-            self.invalidate_lightbar_cache();
         }
-        res
     }
 
     fn write_lightbar_zones(&self, zones: &[RgbColor]) -> Result<(), LightingError> {

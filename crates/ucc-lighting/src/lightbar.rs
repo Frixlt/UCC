@@ -499,6 +499,8 @@ impl LightbarController {
                 }
             }
         } else {
+            self.last_ok = true;
+            self.last_error.clear();
             let has_logo = self.transport.has_lid_logo().unwrap_or(false);
             if was_managed {
                 if self.config.lid_logo.is_none() && had_lid_logo && has_logo {
@@ -506,19 +508,28 @@ impl LightbarController {
                 }
                 self.write_color_result(RgbColor::BLACK)?;
             }
-            if let Some(logo) = self.config.lid_logo {
-                if has_logo {
-                    let on = logo.enabled && logo.brightness > 0;
-                    let rgb = if on { logo.color } else { RgbColor::BLACK };
-                    let br = if on { logo.brightness } else { 0 };
-                    if let Err(e) = self.transport.write_lid_logo(on, rgb, br) {
-                        self.last_ok = false;
-                        self.last_error = e.to_string();
-                        return Err(e);
-                    }
-                }
-            }
+            self.apply_unmanaged_lid_logo_result()?;
         }
+        Ok(())
+    }
+
+    fn apply_unmanaged_lid_logo_result(&mut self) -> Result<(), LightingError> {
+        let Some(logo) = self.config.lid_logo else {
+            return Ok(());
+        };
+        if !self.transport.has_lid_logo().unwrap_or(false) {
+            return Ok(());
+        }
+        let on = logo.enabled && logo.brightness > 0;
+        let rgb = if on { logo.color } else { RgbColor::BLACK };
+        let br = if on { logo.brightness } else { 0 };
+        if let Err(e) = self.transport.write_lid_logo(on, rgb, br) {
+            self.last_ok = false;
+            self.last_error = e.to_string();
+            return Err(e);
+        }
+        self.last_ok = true;
+        self.last_error.clear();
         Ok(())
     }
 
@@ -528,7 +539,7 @@ impl LightbarController {
             self.discover();
             self.apply_idle_result()
         } else {
-            Ok(())
+            self.apply_unmanaged_lid_logo_result()
         }
     }
 
@@ -536,11 +547,12 @@ impl LightbarController {
     pub fn on_resume(&mut self) -> Result<(), LightingError> {
         self.animating = false;
         self.anim_started = None;
+        self.last_written_color = None;
         self.discover();
         if self.config.managed {
             self.apply_idle_result()
         } else {
-            Ok(())
+            self.apply_unmanaged_lid_logo_result()
         }
     }
 
@@ -633,7 +645,9 @@ impl LightbarController {
         {
             return Ok(false);
         }
-        self.discover();
+        if self.caps.is_none() {
+            self.discover();
+        }
         if self.caps.is_none() {
             self.last_ok = false;
             self.last_error = "Lightbar hardware unavailable".into();

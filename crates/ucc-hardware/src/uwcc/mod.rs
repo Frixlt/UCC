@@ -545,6 +545,9 @@ impl UwccBackend {
     /// Sets GPU Dynamic Boost wattage after enforcing `SMRW` bounds.
     pub fn set_dynamic_boost(&self, watts: i32) -> Result<(), PlatformError> {
         self.require_available()?;
+        if (self.info.flags & UWCC_FLAG_HAS_EC) == 0 {
+            return Err(PlatformError::Unsupported("EC Dynamic Boost unsupported"));
+        }
         if !(self.smrw_limits.dynamic_boost_min_w..=self.smrw_limits.dynamic_boost_max_w)
             .contains(&watts)
         {
@@ -554,11 +557,21 @@ impl UwccBackend {
         }
         let raw = u8::try_from(watts)
             .map_err(|_| PlatformError::InvalidArgument("Power limit out of byte range"))?;
+        let prev_raw = self.transport.ec_read(uwcc_ec_reg::DYNAMIC_BOOST_WATTS).ok();
         self.transport
             .ec_write(uwcc_ec_reg::DYNAMIC_BOOST_WATTS, raw)?;
         if (self.info.flags & UWCC_FLAG_HAS_PWDB) != 0 {
-            self.transport
-                .set_gpu_power(UWCC_GPU_POWER_OP_DYNAMIC_BOOST, u32::from(raw))?;
+            if let Err(err) = self
+                .transport
+                .set_gpu_power(UWCC_GPU_POWER_OP_DYNAMIC_BOOST, u32::from(raw))
+            {
+                if let Some(prev) = prev_raw {
+                    let _ = self
+                        .transport
+                        .ec_write(uwcc_ec_reg::DYNAMIC_BOOST_WATTS, prev);
+                }
+                return Err(err);
+            }
         }
         Ok(())
     }
@@ -663,7 +676,7 @@ impl PlatformBackend for UwccBackend {
             }
         };
         let temp = i32::from(self.transport.ec_read(reg)?);
-        if temp == 0 {
+        if temp == 0 || temp > 150 {
             return Err(PlatformError::SensorUnavailable(fan_idx));
         }
         Ok(temp)
@@ -718,11 +731,20 @@ impl PlatformBackend for UwccBackend {
         };
         let duty = percent_to_ec_duty(percent);
         let prev = self.transport.ec_read(uwcc_ec_reg::FAN_MANUAL_MODE)?;
-        self.transport.ec_write(
-            uwcc_ec_reg::FAN_MANUAL_MODE,
-            prev | uwcc_ec_reg::FAN_MODE_USER_BIT,
-        )?;
-        self.transport.ec_write(reg, duty)
+        let enabled_manual = (prev & uwcc_ec_reg::FAN_MODE_USER_BIT) == 0;
+        if enabled_manual {
+            self.transport.ec_write(
+                uwcc_ec_reg::FAN_MANUAL_MODE,
+                prev | uwcc_ec_reg::FAN_MODE_USER_BIT,
+            )?;
+        }
+        if let Err(err) = self.transport.ec_write(reg, duty) {
+            if enabled_manual {
+                let _ = self.transport.ec_write(uwcc_ec_reg::FAN_MANUAL_MODE, prev);
+            }
+            return Err(err);
+        }
+        Ok(())
     }
 
     fn set_fans_auto(&self) -> Result<(), PlatformError> {
