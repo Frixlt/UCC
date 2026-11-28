@@ -483,7 +483,10 @@ impl LiveUccdBackend {
         )));
 
         let keyboard_ctrl = KeyboardBacklightController::new(Arc::clone(&deps.lighting_transport));
-        let lightbar_ctrl = LightbarController::new(Arc::clone(&deps.lighting_transport));
+        let mut lightbar_ctrl = LightbarController::new(Arc::clone(&deps.lighting_transport));
+        if let Some(ref lb_val) = settings.lightbar {
+            lightbar_ctrl.seed_settings(lb_val);
+        }
 
         if let Some(ref pd_val) = settings.power_devices {
             if PowerDeviceController::validate(pd_val).is_ok() {

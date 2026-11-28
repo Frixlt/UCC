@@ -234,6 +234,8 @@ pub struct UniwillHidTransport {
     hid: Arc<dyn HidDeviceTransport>,
     cached_colors: Mutex<Vec<RgbColor>>,
     cached_keyboard_brightness: Mutex<Option<u32>>,
+    cached_keyboard_dev: Mutex<Option<HidDeviceInfo>>,
+    cached_lightbar_dev: Mutex<Option<HidDeviceInfo>>,
     ec_lightbar_power_hook: Option<EcLightbarPowerHook>,
     ec_lid_logo_hook: Option<EcLidLogoHook>,
     last_ec_lightbar_power: Mutex<Option<bool>>,
@@ -245,6 +247,8 @@ impl UniwillHidTransport {
             hid,
             cached_colors: Mutex::new(Vec::new()),
             cached_keyboard_brightness: Mutex::new(None),
+            cached_keyboard_dev: Mutex::new(None),
+            cached_lightbar_dev: Mutex::new(None),
             ec_lightbar_power_hook: None,
             ec_lid_logo_hook: None,
             last_ec_lightbar_power: Mutex::new(None),
@@ -322,6 +326,30 @@ impl UniwillHidTransport {
                 && product_ids.contains(&d.product_id)
                 && self.is_vendor_lighting_interface(d)
         }))
+    }
+
+    fn find_lightbar_cached(&self) -> Result<Option<HidDeviceInfo>, LightingError> {
+        if let Some(dev) = self
+            .cached_lightbar_dev
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .clone()
+        {
+            return Ok(Some(dev));
+        }
+        let dev = self.find_device(&ITE_LIGHTBAR_PRODUCT_IDS)?;
+        *self
+            .cached_lightbar_dev
+            .lock()
+            .unwrap_or_else(|e| e.into_inner()) = dev.clone();
+        Ok(dev)
+    }
+
+    fn invalidate_lightbar_cache(&self) {
+        *self
+            .cached_lightbar_dev
+            .lock()
+            .unwrap_or_else(|e| e.into_inner()) = None;
     }
 
     fn lightbar_zone_count(product_id: u16) -> usize {
@@ -443,7 +471,12 @@ impl UniwillHidTransport {
 
 impl LightingTransport for UniwillHidTransport {
     fn detect_keyboard(&self) -> Result<Option<KeyboardCapabilities>, LightingError> {
-        let Some(_dev) = self.find_device(&[ITE_KEYBOARD_PRODUCT_ID])? else {
+        let dev = self.find_device(&[ITE_KEYBOARD_PRODUCT_ID])?;
+        *self
+            .cached_keyboard_dev
+            .lock()
+            .unwrap_or_else(|e| e.into_inner()) = dev.clone();
+        let Some(_dev) = dev else {
             return Ok(None);
         };
         Ok(Some(KeyboardCapabilities {
@@ -561,7 +594,12 @@ impl LightingTransport for UniwillHidTransport {
     }
 
     fn detect_lightbar(&self) -> Result<Option<LightbarCapabilities>, LightingError> {
-        let Some(dev) = self.find_device(&ITE_LIGHTBAR_PRODUCT_IDS)? else {
+        let dev = self.find_device(&ITE_LIGHTBAR_PRODUCT_IDS)?;
+        *self
+            .cached_lightbar_dev
+            .lock()
+            .unwrap_or_else(|e| e.into_inner()) = dev.clone();
+        let Some(dev) = dev else {
             return Ok(None);
         };
         let zones = Self::lightbar_zone_count(dev.product_id);
@@ -608,25 +646,38 @@ impl LightingTransport for UniwillHidTransport {
     }
 
     fn write_lightbar_color(&self, rgb: RgbColor) -> Result<(), LightingError> {
-        let Some(dev) = self.find_device(&ITE_LIGHTBAR_PRODUCT_IDS)? else {
+        let Some(dev) = self.find_lightbar_cached()? else {
             return Err(LightingError::Unavailable);
         };
         if rgb != RgbColor::BLACK {
             self.ensure_lightbar_ec_power_on()?;
         }
-        if dev.product_id == ITE_LIGHTBAR_PRODUCT_ID_4ZONE {
+        let res: Result<(), LightingError> = if dev.product_id == ITE_LIGHTBAR_PRODUCT_ID_4ZONE {
+            let mut out = Ok(());
             for slot in 0..=1u8 {
                 let packet = [0x14, 0x00, slot, rgb.r, rgb.g, rgb.b, 0x00, 0x00];
-                self.hid.send_feature_report(&dev.path, &packet)?;
+                if let Err(err) = self.hid.send_feature_report(&dev.path, &packet) {
+                    out = Err(err);
+                    break;
+                }
             }
+            out
         } else {
             let zones = Self::lightbar_zone_count(dev.product_id) as u8;
+            let mut out = Ok(());
             for zone in 1..=zones {
                 let packet = [0x14, 0x00, zone, rgb.r, rgb.g, rgb.b, 0x00, 0x00];
-                self.hid.send_feature_report(&dev.path, &packet)?;
+                if let Err(err) = self.hid.send_feature_report(&dev.path, &packet) {
+                    out = Err(err);
+                    break;
+                }
             }
+            out
+        };
+        if res.is_err() {
+            self.invalidate_lightbar_cache();
         }
-        Ok(())
+        res
     }
 
     fn write_lightbar_zones(&self, zones: &[RgbColor]) -> Result<(), LightingError> {

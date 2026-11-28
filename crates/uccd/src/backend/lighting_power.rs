@@ -762,6 +762,12 @@ impl LiveUccdBackend {
         true
     }
 
+    pub fn is_lightbar_animating(&self) -> bool {
+        !self.shutting_down.load(Ordering::SeqCst)
+            && !ucc_config::is_read_only_preview()
+            && self.lock_mutex(&self.lightbar_ctrl).is_animating()
+    }
+
     /// Advances an active lightbar animation deterministically on periodic daemon ticks (`M8-REVIEW-18`).
     pub fn tick_lightbar_animation(&self, started_at: &mut Option<std::time::Instant>) {
         if self.shutting_down.load(Ordering::SeqCst) || ucc_config::is_read_only_preview() {

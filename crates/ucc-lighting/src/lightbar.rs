@@ -8,8 +8,8 @@ use std::collections::BTreeMap;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
-/// Animation scheduler tick interval matching C++ `LightbarController` (`20 ms` / 50 Hz).
-pub const LIGHTBAR_FRAME_INTERVAL: Duration = Duration::from_millis(20);
+/// Animation scheduler tick interval (`16 ms` / ~62.5 Hz) for smooth LED fades.
+pub const LIGHTBAR_FRAME_INTERVAL: Duration = Duration::from_millis(16);
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum LightbarAnimation {
@@ -94,9 +94,9 @@ impl LightbarAnimation {
                 }
                 .clamp(0.0, 1.0);
                 RgbColor::new(
-                    (base.r as f64 * factor) as u8,
-                    (base.g as f64 * factor) as u8,
-                    (base.b as f64 * factor) as u8,
+                    (base.r as f64 * factor).round() as u8,
+                    (base.g as f64 * factor).round() as u8,
+                    (base.b as f64 * factor).round() as u8,
                 )
             }
         }
@@ -427,6 +427,7 @@ pub struct LightbarController {
     anim_started: Option<Instant>,
     flash_off: bool,
     welcome_done: bool,
+    last_written_color: Option<RgbColor>,
     last_ok: bool,
     last_error: String,
 }
@@ -444,6 +445,7 @@ impl LightbarController {
             anim_started: None,
             flash_off: false,
             welcome_done: false,
+            last_written_color: None,
             last_ok: true,
             last_error: String::new(),
         };
@@ -470,6 +472,13 @@ impl LightbarController {
         self.config = prev;
     }
 
+    /// Seeds persisted settings in memory without performing hardware I/O (used during daemon startup).
+    pub fn seed_settings(&mut self, input: &Value) {
+        if let Ok(normalized) = LightbarSettings::normalize_json(input) {
+            self.config = normalized;
+        }
+    }
+
     pub fn configure(&mut self, input: &Value) -> Result<(), LightingError> {
         let normalized = LightbarSettings::normalize_json(input)?;
         let was_managed = self.config.managed;
@@ -477,6 +486,7 @@ impl LightbarController {
         self.animating = false;
         self.anim_started = None;
         self.flash_off = false;
+        self.last_written_color = None;
         self.config = normalized;
         self.discover();
 
@@ -488,13 +498,26 @@ impl LightbarController {
                     self.trigger_result(true)?;
                 }
             }
-        } else if was_managed {
-            if (had_lid_logo || self.config.lid_logo.is_some())
-                && self.transport.has_lid_logo().unwrap_or(false)
-            {
-                let _ = self.transport.write_lid_logo(false, RgbColor::BLACK, 0);
+        } else {
+            let has_logo = self.transport.has_lid_logo().unwrap_or(false);
+            if was_managed {
+                if self.config.lid_logo.is_none() && had_lid_logo && has_logo {
+                    let _ = self.transport.write_lid_logo(false, RgbColor::BLACK, 0);
+                }
+                self.write_color_result(RgbColor::BLACK)?;
             }
-            self.write_color_result(RgbColor::BLACK)?;
+            if let Some(logo) = self.config.lid_logo {
+                if has_logo {
+                    let on = logo.enabled && logo.brightness > 0;
+                    let rgb = if on { logo.color } else { RgbColor::BLACK };
+                    let br = if on { logo.brightness } else { 0 };
+                    if let Err(e) = self.transport.write_lid_logo(on, rgb, br) {
+                        self.last_ok = false;
+                        self.last_error = e.to_string();
+                        return Err(e);
+                    }
+                }
+            }
         }
         Ok(())
     }
@@ -524,6 +547,7 @@ impl LightbarController {
     pub fn shutdown(&mut self) -> Result<(), LightingError> {
         self.animating = false;
         self.anim_started = None;
+        self.last_written_color = None;
         if self.config.managed {
             self.config.managed = false;
             if self.config.lid_logo.is_some() && self.transport.has_lid_logo().unwrap_or(false) {
@@ -621,6 +645,7 @@ impl LightbarController {
         self.last_ok = true;
         self.last_error.clear();
 
+        self.last_written_color = None;
         self.write_brightness_result(prof.brightness_val)?;
         self.animating = true;
         self.anim_started = Some(Instant::now());
@@ -684,6 +709,9 @@ impl LightbarController {
         }
 
         let frame_rgb = self.active_animation.frame(elapsed_ms, self.base_color);
+        if self.last_written_color == Some(frame_rgb) {
+            return;
+        }
         if !self.write_color(frame_rgb) {
             self.animating = false;
         }
@@ -795,8 +823,12 @@ impl LightbarController {
 
     fn write_color_result(&mut self, rgb: RgbColor) -> Result<(), LightingError> {
         match self.transport.write_lightbar_color(rgb) {
-            Ok(()) => Ok(()),
+            Ok(()) => {
+                self.last_written_color = Some(rgb);
+                Ok(())
+            }
             Err(e) => {
+                self.last_written_color = None;
                 self.last_ok = false;
                 self.last_error = e.to_string();
                 Err(e)

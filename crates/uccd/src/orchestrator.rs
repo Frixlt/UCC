@@ -752,16 +752,36 @@ impl DaemonRuntime {
                     b.validate_and_reapply_cpu_once();
                 },
             );
-            let mut anim_started: Option<Instant> = None;
-            spawn_periodic_worker(
-                "uccd-worker-lightbar",
-                ucc_lighting::LIGHTBAR_FRAME_INTERVAL,
-                Arc::clone(&worker_stop),
-                Arc::clone(&backend),
-                move |b| {
-                    b.tick_lightbar_animation(&mut anim_started);
-                },
-            );
+            {
+                let stop = Arc::clone(&worker_stop);
+                let lb_backend = Arc::clone(&backend);
+                tokio::spawn(async move {
+                    let mut anim_started: Option<Instant> = None;
+                    let mut ticker = tokio::time::interval(ucc_lighting::LIGHTBAR_FRAME_INTERVAL);
+                    ticker.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
+                    while !stop.load(Ordering::SeqCst) {
+                        ticker.tick().await;
+                        if stop.load(Ordering::SeqCst) {
+                            break;
+                        }
+                        if !lb_backend.is_lightbar_animating() {
+                            anim_started = None;
+                            continue;
+                        }
+                        let b = Arc::clone(&lb_backend);
+                        let started = anim_started;
+                        if let Ok(next_started) = tokio::task::spawn_blocking(move || {
+                            let mut st = started;
+                            b.tick_lightbar_animation(&mut st);
+                            st
+                        })
+                        .await
+                        {
+                            anim_started = next_started;
+                        }
+                    }
+                });
+            }
 
             if backend.platform_backend_name() == "uwcc" {
                 #[cfg(target_os = "linux")]

@@ -9,8 +9,12 @@
 
 use crate::hid_transport::{read_sysfs_hidraw_interface_number, HidDeviceInfo, HidDeviceTransport};
 use crate::transport::LightingError;
+#[cfg(target_os = "linux")]
+use std::collections::BTreeMap;
 use std::fs;
 use std::path::{Path, PathBuf};
+#[cfg(target_os = "linux")]
+use std::sync::{Arc, Mutex};
 
 /// Default Linux sysfs root for `hidraw` class devices.
 pub const DEFAULT_SYSFS_HIDRAW_ROOT: &str = "/sys/class/hidraw";
@@ -153,6 +157,8 @@ fn hidraw_numeric_index(name: &str) -> u32 {
 pub struct HidrawDeviceTransport {
     sysfs_hidraw_root: PathBuf,
     dev_root: PathBuf,
+    #[cfg(target_os = "linux")]
+    open_files: Arc<Mutex<BTreeMap<String, fs::File>>>,
 }
 
 impl Default for HidrawDeviceTransport {
@@ -160,6 +166,8 @@ impl Default for HidrawDeviceTransport {
         Self {
             sysfs_hidraw_root: PathBuf::from(DEFAULT_SYSFS_HIDRAW_ROOT),
             dev_root: PathBuf::from(DEFAULT_DEV_ROOT),
+            #[cfg(target_os = "linux")]
+            open_files: Arc::new(Mutex::new(BTreeMap::new())),
         }
     }
 }
@@ -175,6 +183,8 @@ impl HidrawDeviceTransport {
         Self {
             sysfs_hidraw_root: sysfs_hidraw_root.into(),
             dev_root: PathBuf::from(DEFAULT_DEV_ROOT),
+            #[cfg(target_os = "linux")]
+            open_files: Arc::new(Mutex::new(BTreeMap::new())),
         }
     }
 
@@ -183,6 +193,8 @@ impl HidrawDeviceTransport {
         Self {
             sysfs_hidraw_root: sysfs_hidraw_root.into(),
             dev_root: dev_root.into(),
+            #[cfg(target_os = "linux")]
+            open_files: Arc::new(Mutex::new(BTreeMap::new())),
         }
     }
 
@@ -236,6 +248,36 @@ impl HidrawDeviceTransport {
             )));
         }
         Ok(file)
+    }
+
+    #[cfg(target_os = "linux")]
+    fn with_hidraw_file<T, F>(&self, path: &str, mut op: F) -> Result<T, LightingError>
+    where
+        F: FnMut(&mut fs::File) -> Result<T, LightingError>,
+    {
+        let mut cache = self.open_files.lock().unwrap_or_else(|e| e.into_inner());
+        let had_cached = cache.contains_key(path);
+        if !had_cached {
+            let file = self.open_hidraw_file(path)?;
+            cache.insert(path.to_string(), file);
+        }
+        let first_res = {
+            let file = cache.get_mut(path).expect("cached hidraw handle");
+            op(file)
+        };
+        if first_res.is_ok() || !had_cached {
+            if first_res.is_err() {
+                cache.remove(path);
+            }
+            return first_res;
+        }
+        cache.remove(path);
+        let mut fresh = self.open_hidraw_file(path)?;
+        let retry_res = op(&mut fresh);
+        if retry_res.is_ok() {
+            cache.insert(path.to_string(), fresh);
+        }
+        retry_res
     }
 }
 
@@ -299,17 +341,19 @@ impl HidDeviceTransport for HidrawDeviceTransport {
                 report.len()
             ))
         })?;
-        let file = self.open_hidraw_file(path)?;
-        let mut buf = Vec::with_capacity(total_len);
-        buf.push(0x00);
-        buf.extend_from_slice(report);
-        // SAFETY: `file` is a validated `/dev/hidraw*` character device descriptor,
-        // `req` is `HIDIOCSFEATURE(buf.len())`, and `buf` is a valid mutable byte buffer.
-        let ret = unsafe { libc::ioctl(file.as_raw_fd(), req as libc::Ioctl, buf.as_mut_ptr()) };
-        if ret < 0 {
-            return Err(LightingError::Io(std::io::Error::last_os_error()));
-        }
-        Ok(())
+        self.with_hidraw_file(path, |file| {
+            let mut buf = Vec::with_capacity(total_len);
+            buf.push(0x00);
+            buf.extend_from_slice(report);
+            // SAFETY: `file` is a validated `/dev/hidraw*` character device descriptor,
+            // `req` is `HIDIOCSFEATURE(buf.len())`, and `buf` is a valid mutable byte buffer.
+            let ret =
+                unsafe { libc::ioctl(file.as_raw_fd(), req as libc::Ioctl, buf.as_mut_ptr()) };
+            if ret < 0 {
+                return Err(LightingError::Io(std::io::Error::last_os_error()));
+            }
+            Ok(())
+        })
     }
 
     #[cfg(not(target_os = "linux"))]
@@ -329,11 +373,10 @@ impl HidDeviceTransport for HidrawDeviceTransport {
         }
         // Linux `hidraw` `write()` treats `buf[0]` as the HID Report ID (`0x00` for unnumbered
         // ITE 8291r3 64-byte per-key row output reports).
-        let mut file = self.open_hidraw_file(path)?;
         let mut buf = Vec::with_capacity(report.len() + 1);
         buf.push(0x00);
         buf.extend_from_slice(report);
-        file.write_all(&buf).map_err(LightingError::Io)
+        self.with_hidraw_file(path, |file| file.write_all(&buf).map_err(LightingError::Io))
     }
 
     #[cfg(not(target_os = "linux"))]
@@ -348,16 +391,18 @@ impl HidDeviceTransport for HidrawDeviceTransport {
         let req = hidiocgfeature_request(len).ok_or_else(|| {
             LightingError::InvalidConfig(format!("Invalid HID feature report length: {len}"))
         })?;
-        let file = self.open_hidraw_file(path)?;
-        let mut buf = vec![0u8; len];
-        // SAFETY: `file` is a validated `/dev/hidraw*` character device descriptor,
-        // `req` is `HIDIOCGFEATURE(len)`, and `buf` is a valid mutable byte buffer.
-        let ret = unsafe { libc::ioctl(file.as_raw_fd(), req as libc::Ioctl, buf.as_mut_ptr()) };
-        if ret < 0 {
-            return Err(LightingError::Io(std::io::Error::last_os_error()));
-        }
-        buf.truncate((ret as usize).min(len));
-        Ok(buf)
+        self.with_hidraw_file(path, |file| {
+            let mut buf = vec![0u8; len];
+            // SAFETY: `file` is a validated `/dev/hidraw*` character device descriptor,
+            // `req` is `HIDIOCGFEATURE(len)`, and `buf` is a valid mutable byte buffer.
+            let ret =
+                unsafe { libc::ioctl(file.as_raw_fd(), req as libc::Ioctl, buf.as_mut_ptr()) };
+            if ret < 0 {
+                return Err(LightingError::Io(std::io::Error::last_os_error()));
+            }
+            buf.truncate((ret as usize).min(len));
+            Ok(buf)
+        })
     }
 
     #[cfg(not(target_os = "linux"))]
