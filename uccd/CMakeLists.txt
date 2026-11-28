@@ -5,19 +5,19 @@ project(uccd VERSION ${CMAKE_PROJECT_VERSION})
 install(FILES uccd.service uccd-sleep.service
   DESTINATION lib/systemd/system
 )
-install(CODE "
-  file(MAKE_DIRECTORY \"\$ENV{DESTDIR}\${CMAKE_INSTALL_PREFIX}/lib/systemd/system\")
-  file(REMOVE \"\$ENV{DESTDIR}\${CMAKE_INSTALL_PREFIX}/lib/systemd/system/uccd-pre-sleep.service\")
+install(CODE [==[
+  file(MAKE_DIRECTORY "$ENV{DESTDIR}${CMAKE_INSTALL_PREFIX}/lib/systemd/system")
+  file(REMOVE "$ENV{DESTDIR}${CMAKE_INSTALL_PREFIX}/lib/systemd/system/uccd-pre-sleep.service")
   execute_process(
-    COMMAND \"\${CMAKE_COMMAND}\" -E create_symlink
+    COMMAND "${CMAKE_COMMAND}" -E create_symlink
       uccd-sleep.service
-      \"\$ENV{DESTDIR}\${CMAKE_INSTALL_PREFIX}/lib/systemd/system/uccd-pre-sleep.service\"
+      "$ENV{DESTDIR}${CMAKE_INSTALL_PREFIX}/lib/systemd/system/uccd-pre-sleep.service"
     RESULT_VARIABLE _ucc_symlink_res
   )
   if(NOT _ucc_symlink_res EQUAL 0)
-    message(FATAL_ERROR "Failed to create uccd-pre-sleep.service symlink (exit \${_ucc_symlink_res})")
+    message(FATAL_ERROR "Failed to create uccd-pre-sleep.service symlink (exit ${_ucc_symlink_res})")
   endif()
-")
+]==])
 
 # Install DBus system service file for activation
 install(FILES com.uniwill.uccd.service
