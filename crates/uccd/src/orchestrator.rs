@@ -763,6 +763,52 @@ impl DaemonRuntime {
                 },
             );
 
+            if backend.platform_backend_name() == "uwcc" {
+                #[cfg(target_os = "linux")]
+                {
+                    let mut emitter: Option<ucc_hardware::LinuxUinputEmitter> = None;
+                    let mut open_attempted = false;
+                    spawn_periodic_worker(
+                        "uccd-worker-wmi-uinput",
+                        Duration::from_millis(50),
+                        Arc::clone(&worker_stop),
+                        Arc::clone(&backend),
+                        move |b| {
+                            if !open_attempted {
+                                open_attempted = true;
+                                match ucc_hardware::LinuxUinputEmitter::open_default() {
+                                    Ok(e) => emitter = Some(e),
+                                    Err(err) => {
+                                        tracing::warn!(
+                                            "WMI->uinput relay unavailable (/dev/uinput): {}",
+                                            err
+                                        );
+                                    }
+                                }
+                            }
+                            let Some(em) = emitter.as_ref() else {
+                                return;
+                            };
+                            use ucc_hardware::UinputEmitter as _;
+                            for _ in 0..16 {
+                                match b.poll_uwcc_wmi_event() {
+                                    Ok(Some(evt)) => {
+                                        if let Err(err) = em.handle_wmi_event(evt) {
+                                            tracing::debug!(
+                                                "Failed emitting WMI uinput event 0x{:04x}: {}",
+                                                evt.code,
+                                                err
+                                            );
+                                        }
+                                    }
+                                    Ok(None) | Err(_) => break,
+                                }
+                            }
+                        },
+                    );
+                }
+            }
+
             if backend.get_water_cooler_supported() {
                 let ble_conn = connection.clone();
                 let ble_backend = Arc::clone(&backend);

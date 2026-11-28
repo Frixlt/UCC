@@ -168,24 +168,34 @@ pub mod uwcc_ec_reg {
     pub const PERF_MODE: u16 = 0x0752;
     pub const MODE_ENABLE: u16 = 0x0753;
 
-    /// Power and thermal limit registers.
-    pub const PL1_WATTS: u16 = 0x0740;
-    pub const PL2_WATTS: u16 = 0x0741;
-    pub const PL4_WATTS: u16 = 0x0742;
+    /// Read-only chassis project identifier (`0x1A` on MECHREVO X6AR55xY).
+    pub const PROJECT_ID: u16 = 0x0740;
+
+    /// Power and thermal limit registers (aligned with upstream Linux `uniwill-acpi.c`).
+    pub const PL1_WATTS: u16 = 0x0783;
+    pub const PL2_WATTS: u16 = 0x0784;
+    pub const PL4_WATTS: u16 = 0x0785;
     pub const TCC_OFFSET_C: u16 = 0x0743;
     pub const CTGP_WATTS: u16 = 0x0744;
     pub const DYNAMIC_BOOST_WATTS: u16 = 0x0745;
 
-    /// EC hardware switches & battery charging thresholds.
-    pub const FN_LOCK: u16 = 0x0760;
-    pub const WIN_LOCK: u16 = 0x0761;
+    /// EC hardware switches & battery charging control (upstream `uniwill-acpi.c`).
+    /// `FN_LOCK` is `BIT(3)` of `0x07A4` (`EC_ADDR_OEM_2`), NEVER clobbering other bits.
+    pub const FN_LOCK: u16 = 0x07A4;
+    pub const FN_LOCK_BIT: u8 = 1 << 3;
+    /// `0x0767` (`EC_ADDR_TRIGGER`) `BIT(0)` toggles Super/Win key lock; `0x0768` (`EC_ADDR_SWITCH_STATUS`) `BIT(0)` reads it.
+    pub const WIN_LOCK_TRIGGER: u16 = 0x0767;
+    pub const WIN_LOCK: u16 = 0x0768;
+    pub const WIN_LOCK_BIT: u8 = 1 << 0;
     pub const USB_SLEEP_CHARGING: u16 = 0x0762;
-    pub const CHARGE_START_PCT: u16 = 0x0765;
-    pub const CHARGE_END_PCT: u16 = 0x0766;
+    /// `0x07B9` (`EC_ADDR_CHARGE_CTRL`): bits `6..=0` (`0x7F`) hold charge end threshold percentage.
+    pub const CHARGE_CTRL: u16 = 0x07B9;
+    pub const CHARGE_CTRL_MASK: u8 = 0x7F;
 
-    /// Lightbar / chassis LED EC power rails (`0x767`/`0x768`).
-    pub const LIGHTBAR_POWER_PRIMARY: u16 = 0x0767;
-    pub const LIGHTBAR_POWER_SECONDARY: u16 = 0x0768;
+    /// Lightbar AC control register (`0x0748` `EC_ADDR_LIGHTBAR_AC_CTRL`, `BIT(0)` = `LIGHTBAR_APP_EXISTS`).
+    /// Never write `0x0767`/`0x0768` (those control `SUPER_KEY_LOCK`).
+    pub const LIGHTBAR_AC_CTRL: u16 = 0x0748;
+    pub const LIGHTBAR_APP_EXISTS_BIT: u8 = 1 << 0;
 }
 
 /// Configured backend selection policy (`Auto`, `Uwcc`, or `TuxedoIo`).
@@ -246,17 +256,17 @@ pub struct SmrwPowerLimits {
 }
 
 impl SmrwPowerLimits {
-    /// Default validated bounds for chassis `0x1A` (MECHREVO YAOSHI X6AR55xY).
+    /// Default validated bounds for chassis `0x1A` (MECHREVO YAOSHI X6AR55xY, Arrow Lake-HX + RTX 5080 Mobile).
     pub const fn chassis_0x1a_default() -> Self {
         Self {
             pl1_min_w: 15,
-            pl1_max_w: 90,
+            pl1_max_w: 215,
             pl2_min_w: 20,
-            pl2_max_w: 125,
+            pl2_max_w: 225,
             pl4_min_w: 25,
-            pl4_max_w: 160,
+            pl4_max_w: 255,
             ctgp_min_w: 55,
-            ctgp_max_w: 140,
+            ctgp_max_w: 175,
             dynamic_boost_min_w: 0,
             dynamic_boost_max_w: 25,
         }
@@ -702,33 +712,48 @@ impl PlatformBackend for UwccBackend {
 
     fn set_lightbar_power(&self, enabled: bool) -> Result<(), PlatformError> {
         self.require_available()?;
-        let val = u8::from(enabled);
+        let prev = self.transport.ec_read(uwcc_ec_reg::LIGHTBAR_AC_CTRL)?;
+        let next = if enabled {
+            prev | uwcc_ec_reg::LIGHTBAR_APP_EXISTS_BIT
+        } else {
+            prev & !uwcc_ec_reg::LIGHTBAR_APP_EXISTS_BIT
+        };
         self.transport
-            .ec_write(uwcc_ec_reg::LIGHTBAR_POWER_PRIMARY, val)?;
-        self.transport
-            .ec_write(uwcc_ec_reg::LIGHTBAR_POWER_SECONDARY, val)
+            .ec_write(uwcc_ec_reg::LIGHTBAR_AC_CTRL, next)
     }
 
     fn read_fn_lock(&self) -> Result<bool, PlatformError> {
         self.require_available()?;
-        Ok(self.transport.ec_read(uwcc_ec_reg::FN_LOCK)? != 0)
+        Ok((self.transport.ec_read(uwcc_ec_reg::FN_LOCK)? & uwcc_ec_reg::FN_LOCK_BIT) != 0)
     }
 
     fn set_fn_lock(&self, enabled: bool) -> Result<(), PlatformError> {
         self.require_available()?;
-        self.transport
-            .ec_write(uwcc_ec_reg::FN_LOCK, u8::from(enabled))
+        let prev = self.transport.ec_read(uwcc_ec_reg::FN_LOCK)?;
+        let next = if enabled {
+            prev | uwcc_ec_reg::FN_LOCK_BIT
+        } else {
+            prev & !uwcc_ec_reg::FN_LOCK_BIT
+        };
+        self.transport.ec_write(uwcc_ec_reg::FN_LOCK, next)
     }
 
     fn read_win_lock(&self) -> Result<bool, PlatformError> {
         self.require_available()?;
-        Ok(self.transport.ec_read(uwcc_ec_reg::WIN_LOCK)? != 0)
+        Ok((self.transport.ec_read(uwcc_ec_reg::WIN_LOCK)? & uwcc_ec_reg::WIN_LOCK_BIT) != 0)
     }
 
     fn set_win_lock(&self, enabled: bool) -> Result<(), PlatformError> {
         self.require_available()?;
-        self.transport
-            .ec_write(uwcc_ec_reg::WIN_LOCK, u8::from(enabled))
+        let currently_locked = self.read_win_lock()?;
+        if currently_locked == enabled {
+            return Ok(());
+        }
+        let prev_trigger = self.transport.ec_read(uwcc_ec_reg::WIN_LOCK_TRIGGER)?;
+        self.transport.ec_write(
+            uwcc_ec_reg::WIN_LOCK_TRIGGER,
+            prev_trigger | uwcc_ec_reg::WIN_LOCK_BIT,
+        )
     }
 
     fn read_usb_sleep_charging(&self) -> Result<bool, PlatformError> {
@@ -744,16 +769,19 @@ impl PlatformBackend for UwccBackend {
 
     fn read_charge_thresholds(&self) -> Result<(u8, u8), PlatformError> {
         self.require_available()?;
-        let start = self.transport.ec_read(uwcc_ec_reg::CHARGE_START_PCT)?;
-        let end = self.transport.ec_read(uwcc_ec_reg::CHARGE_END_PCT)?;
-        if !(MIN_CHARGE_THRESHOLD_PCT..=MAX_CHARGE_THRESHOLD_PCT).contains(&start)
-            || !(MIN_CHARGE_THRESHOLD_PCT..=MAX_CHARGE_THRESHOLD_PCT).contains(&end)
-            || start >= end
-        {
+        let raw = self.transport.ec_read(uwcc_ec_reg::CHARGE_CTRL)?;
+        let end = raw & uwcc_ec_reg::CHARGE_CTRL_MASK;
+        if !(MIN_CHARGE_THRESHOLD_PCT..=MAX_CHARGE_THRESHOLD_PCT).contains(&end) {
             return Err(PlatformError::InvalidArgument(
-                "EC reported invalid charge thresholds",
+                "EC reported invalid charge threshold",
             ));
         }
+        let start = end.saturating_sub(5).max(MIN_CHARGE_THRESHOLD_PCT);
+        let start = if start >= end {
+            end.saturating_sub(1)
+        } else {
+            start
+        };
         Ok((start, end))
     }
 
@@ -767,9 +795,9 @@ impl PlatformBackend for UwccBackend {
                 "Charge thresholds must satisfy 20 <= start < end <= 100",
             ));
         }
-        self.transport
-            .ec_write(uwcc_ec_reg::CHARGE_START_PCT, start)?;
-        self.transport.ec_write(uwcc_ec_reg::CHARGE_END_PCT, end)
+        let prev = self.transport.ec_read(uwcc_ec_reg::CHARGE_CTRL)?;
+        let next = (prev & !uwcc_ec_reg::CHARGE_CTRL_MASK) | (end & uwcc_ec_reg::CHARGE_CTRL_MASK);
+        self.transport.ec_write(uwcc_ec_reg::CHARGE_CTRL, next)
     }
 
     fn set_fan_boost(&self, enabled: bool) -> Result<(), PlatformError> {

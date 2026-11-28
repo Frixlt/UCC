@@ -48,7 +48,7 @@
 #define UWCC_WMI_EVENT_GUID "ABBC0F72-8EA1-11D1-00A0-C90629100000"
 
 /* Uniwill EC register addresses used by native hwmon and identity probe */
-#define UWCC_EC_REG_PROJECT_ID   0x0748U
+#define UWCC_EC_REG_PROJECT_ID   0x0740U
 #define UWCC_EC_REG_EC_VER_HI    0x0400U
 #define UWCC_EC_REG_EC_VER_LO    0x0401U
 

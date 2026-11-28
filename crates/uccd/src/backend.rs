@@ -677,6 +677,16 @@ impl LiveUccdBackend {
         }
     }
 
+    /// Polls one pending kernel WMI hotkey event when running on `UwccBackend`.
+    pub fn poll_uwcc_wmi_event(
+        &self,
+    ) -> Result<Option<ucc_hardware::UwccWmiEvent>, ucc_hardware::PlatformError> {
+        if self.platform.kind() != PlatformBackendKind::Uwcc {
+            return Ok(None);
+        }
+        self.platform.poll_wmi_event()
+    }
+
     /// Returns the most recently sampled real tachometer RPM for `fan_idx`, if supported.
     pub fn latest_fan_rpm(&self, fan_idx: usize) -> Option<u32> {
         self.read_rw(&self.latest_fan_rpms)

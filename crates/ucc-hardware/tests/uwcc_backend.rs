@@ -269,9 +269,11 @@ fn uwcc_backend_charge_thresholds_ec_switches_and_lightbar_power() {
     let transport = Arc::new(MockUwccTransport::chassis_0x1a_default());
     let backend = UwccBackend::new(Arc::clone(&transport) as _, None, None);
 
-    // Charging thresholds: valid 20 <= start < end <= 100
+    // Charge threshold (0x07B9 EC_ADDR_CHARGE_CTRL, bits 6..=0) preserves bit 7
+    transport.set_reg(uwcc_ec_reg::CHARGE_CTRL, 0x80);
     backend.set_charge_thresholds(50, 80).unwrap();
-    assert_eq!(backend.read_charge_thresholds().unwrap(), (50, 80));
+    assert_eq!(transport.get_reg(uwcc_ec_reg::CHARGE_CTRL), Some(0x80 | 80));
+    assert_eq!(backend.read_charge_thresholds().unwrap(), (75, 80));
     assert!(matches!(
         backend.set_charge_thresholds(80, 80),
         Err(PlatformError::InvalidArgument(_))
@@ -285,38 +287,41 @@ fn uwcc_backend_charge_thresholds_ec_switches_and_lightbar_power() {
         Err(PlatformError::InvalidArgument(_))
     ));
 
-    // Fn Lock, Win Lock, USB sleep charging
+    // Fn Lock: RMW on BIT(3) of 0x07A4 preserves unrelated bits
+    transport.set_reg(uwcc_ec_reg::FN_LOCK, 0x05);
     backend.set_fn_lock(true).unwrap();
     assert!(backend.read_fn_lock().unwrap());
-    assert_eq!(transport.get_reg(uwcc_ec_reg::FN_LOCK), Some(1));
+    assert_eq!(
+        transport.get_reg(uwcc_ec_reg::FN_LOCK),
+        Some(0x05 | uwcc_ec_reg::FN_LOCK_BIT)
+    );
 
+    // Win Lock: reads BIT(0) of 0x0768, toggles via BIT(0) of 0x0767
+    transport.set_reg(uwcc_ec_reg::WIN_LOCK, 0x00);
+    transport.set_reg(uwcc_ec_reg::WIN_LOCK_TRIGGER, 0x10);
     backend.set_win_lock(true).unwrap();
+    assert_eq!(
+        transport.get_reg(uwcc_ec_reg::WIN_LOCK_TRIGGER),
+        Some(0x10 | uwcc_ec_reg::WIN_LOCK_BIT)
+    );
+    transport.set_reg(uwcc_ec_reg::WIN_LOCK, uwcc_ec_reg::WIN_LOCK_BIT);
     assert!(backend.read_win_lock().unwrap());
-    assert_eq!(transport.get_reg(uwcc_ec_reg::WIN_LOCK), Some(1));
 
     backend.set_usb_sleep_charging(true).unwrap();
     assert!(backend.read_usb_sleep_charging().unwrap());
     assert_eq!(transport.get_reg(uwcc_ec_reg::USB_SLEEP_CHARGING), Some(1));
 
-    // Lightbar EC power rails 0x767 / 0x768
-    backend.set_lightbar_power(false).unwrap();
-    assert_eq!(
-        transport.get_reg(uwcc_ec_reg::LIGHTBAR_POWER_PRIMARY),
-        Some(0)
-    );
-    assert_eq!(
-        transport.get_reg(uwcc_ec_reg::LIGHTBAR_POWER_SECONDARY),
-        Some(0)
-    );
+    // Lightbar AC control RMW on 0x0748 BIT(0) — MUST NEVER touch 0x0767/0x0768 (Super key lock!)
+    transport.set_reg(uwcc_ec_reg::LIGHTBAR_AC_CTRL, 0x80);
+    transport.set_reg(uwcc_ec_reg::WIN_LOCK_TRIGGER, 0x00);
     backend.set_lightbar_power(true).unwrap();
     assert_eq!(
-        transport.get_reg(uwcc_ec_reg::LIGHTBAR_POWER_PRIMARY),
-        Some(1)
+        transport.get_reg(uwcc_ec_reg::LIGHTBAR_AC_CTRL),
+        Some(0x80 | uwcc_ec_reg::LIGHTBAR_APP_EXISTS_BIT)
     );
-    assert_eq!(
-        transport.get_reg(uwcc_ec_reg::LIGHTBAR_POWER_SECONDARY),
-        Some(1)
-    );
+    assert_eq!(transport.get_reg(uwcc_ec_reg::WIN_LOCK_TRIGGER), Some(0x00));
+    backend.set_lightbar_power(false).unwrap();
+    assert_eq!(transport.get_reg(uwcc_ec_reg::LIGHTBAR_AC_CTRL), Some(0x80));
 }
 
 #[test]
