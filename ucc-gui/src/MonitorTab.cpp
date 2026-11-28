@@ -254,9 +254,9 @@ MonitorTab::MonitorTab( UccdClient *client, QWidget *parent )
 
   m_fetchTimer.setInterval( 2000 );
   connect( &m_fetchTimer, &QTimer::timeout, this, &MonitorTab::fetchData );
-  // Advance chart axes at a modest 1 Hz CoarseTimer cadence instead of a 60 Hz
-  // PreciseTimer so QCharts are not continuously relayouted between telemetry polls.
-  m_frameTimer.setInterval( 1000 );
+  // Advance chart axes at a 10 Hz CoarseTimer cadence instead of a 60 Hz
+  // PreciseTimer so timeline scrolling stays smooth with 6x fewer QChart relayouts.
+  m_frameTimer.setInterval( 100 );
   m_frameTimer.setTimerType( Qt::CoarseTimer );
   connect( &m_frameTimer, &QTimer::timeout, this, &MonitorTab::renderFrame );
 }

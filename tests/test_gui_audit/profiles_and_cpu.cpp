@@ -156,11 +156,11 @@ void GuiAudit::ctgpSliderGuardsUnavailableAndInvertedBounds() {
     names->setCurrentIndex(names->findData("ctgp-edge"));
     auto* widget=window.findChild<QWidget*>("ctgpWidget");
     auto* slider=window.findChild<QSlider*>("ctgpSlider");
-    QVERIFY(widget->isVisibleTo(&window));
-    QVERIFY(slider->isEnabled());
-    QCOMPARE(slider->minimum(),80);
-    QCOMPARE(slider->maximum(),175);
-    QCOMPARE(slider->value(),100);
+    QTRY_VERIFY(widget->isVisibleTo(&window));
+    QTRY_VERIFY(slider->isEnabled());
+    QTRY_COMPARE(slider->minimum(),80);
+    QTRY_COMPARE(slider->maximum(),175);
+    QTRY_COMPARE(slider->value(),100);
   }
 void GuiAudit::displayBrightnessCommitsOnReleaseAndIgnoresMonitorDuringDrag() {
 #ifdef UCC_READ_ONLY_PREVIEW

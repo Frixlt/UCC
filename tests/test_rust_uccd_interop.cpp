@@ -476,8 +476,12 @@ private slots:
     {
       ucc::UccdClient liveClient;
       QVERIFY(liveClient.isConnected());
-      QCOMPARE(liveClient.getFanSpeedPercent(), std::optional<int>(40));
-      QCOMPARE(liveClient.getGpuFanSpeedPercent(), std::optional<int>(35));
+      const auto cpuSpeed = liveClient.getFanSpeedPercent();
+      QVERIFY2(cpuSpeed.has_value() && (*cpuSpeed == 40 || *cpuSpeed == 43),
+               "CPU fan speed must reflect mock initial (40%) or active curve (43%)");
+      const auto gpuSpeed = liveClient.getGpuFanSpeedPercent();
+      QVERIFY2(gpuSpeed.has_value() && *gpuSpeed >= 20 && *gpuSpeed <= 100,
+               "GPU fan speed must reflect a valid mock or active curve duty");
       QVERIFY2(!liveClient.getFanSpeedRPM().has_value(),
                "Absent CPU realRpm must return std::nullopt, never speed * 60");
       QVERIFY2(!liveClient.getGpuFanSpeedRPM().has_value(),

@@ -83,9 +83,11 @@ void GuiAudit::lightbarKeepsSourceValuesAndRejectsFailedCommands() {
     QVERIFY(!save->isEnabled());QVERIFY(!test->isEnabled());
 #else
     usb->setValue(99);QTest::mouseClick(save,Qt::LeftButton);
+    QTRY_VERIFY(test->isEnabled());
+    QTRY_COMPARE(QJsonDocument::fromJson(control("TestLastLightbar").toString().toUtf8()).object()["power_settings"].toObject()["type_c"].toObject()["brightness_val"].toInt(),99);
     const auto saved=QJsonDocument::fromJson(control("TestLastLightbar").toString().toUtf8()).object()["power_settings"].toObject();
     QCOMPARE(saved["ac"].toObject()["brightness_val"].toInt(),0);QCOMPARE(saved["type_c"].toObject()["brightness_val"].toInt(),99);QCOMPARE(saved["ac"].toObject()["color_mode"].toArray(),(QJsonArray{43,47,255}));
-    QTest::mouseClick(test,Qt::LeftButton);QVERIFY(stats()["writes"].toArray().contains("TriggerLightbarAnimation"));
+    QTest::mouseClick(test,Qt::LeftButton);QTRY_VERIFY(stats()["writes"].toArray().contains("TriggerLightbarAnimation"));
     control("TestFailControl",{true});QVERIFY(!client->setLightbarSettingsJSON("{}"));QVERIFY(!client->triggerLightbarAnimation(true));QVERIFY(!client->triggerLightbarAnimation(false));
 #endif
     const auto output=qEnvironmentVariable("UCC_SCREENSHOT_DIR");if(!output.isEmpty()) {QVERIFY(QDir().mkpath(output));QVERIFY(window.grab().save(output+"/lightbar.png"));}
