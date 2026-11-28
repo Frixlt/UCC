@@ -144,7 +144,10 @@ fn mutate_byte_splice(rng: &mut SplitMix64, buf: &mut Vec<u8>, donor: &[u8]) {
     let max_len = (donor.len() - start).min(64);
     let len = 1 + rng.next_usize(max_len);
     let insert_at = rng.next_usize(buf.len() + 1);
-    buf.splice(insert_at..insert_at, donor[start..start + len].iter().copied());
+    buf.splice(
+        insert_at..insert_at,
+        donor[start..start + len].iter().copied(),
+    );
 }
 
 fn mutate_truncate(rng: &mut SplitMix64, buf: &mut Vec<u8>) {
@@ -178,9 +181,7 @@ fn mutate_deep_nest(rng: &mut SplitMix64, buf: &mut Vec<u8>) {
             nested.extend_from_slice(b"{\"a\":");
         }
         nested.extend_from_slice(b"0");
-        for _ in 0..depth {
-            nested.push(b'}');
-        }
+        nested.resize(nested.len() + depth, b'}');
     } else {
         nested.resize(depth, b'[');
         nested.push(b'0');
@@ -443,15 +444,18 @@ fn fuzz_domain1_settings_and_profiles_json_corpus() {
             let _ = settings.get_profile("quiet");
             let _ = settings.get_active_profile_for_mode("power_ac");
             let _ = settings.get_active_profile_for_mode("power_type_c");
-            let _ = settings
-                .get_active_profile_for_mode_with_fallback("power_wc", Some("power_bat"));
+            let _ =
+                settings.get_active_profile_for_mode_with_fallback("power_wc", Some("power_bat"));
 
             let reserialized = settings
                 .to_json()
                 .expect("valid UccSettings must always serialize");
             let reparsed = UccSettings::from_json(&reserialized)
                 .expect("serialized UccSettings must always reparse");
-            assert_eq!(settings, reparsed, "UccSettings round-trip invariant failed");
+            assert_eq!(
+                settings, reparsed,
+                "UccSettings round-trip invariant failed"
+            );
         }
 
         let _ = ProfilesCatalog::from_json(&text);
@@ -534,10 +538,9 @@ fn fuzz_domain1_unknown_fields_duplicate_keys_and_deep_nesting() {
     }
 
     // 5. Boundary threshold values: -1 maps to None, 0..=100 valid, out-of-range errors.
-    let sentinel = UccSettings::from_json(
-        r#"{"chargeStartThreshold": -1, "chargeEndThreshold": -1}"#,
-    )
-    .expect("-1 sentinel thresholds");
+    let sentinel =
+        UccSettings::from_json(r#"{"chargeStartThreshold": -1, "chargeEndThreshold": -1}"#)
+            .expect("-1 sentinel thresholds");
     assert_eq!(sentinel.charge_start_threshold, None);
     assert_eq!(sentinel.charge_end_threshold, None);
     for bad in [-2_i64, 101, 255, i64::MIN, i64::MAX] {
@@ -555,13 +558,19 @@ fn fuzz_domain1_oversized_and_corrupt_file_rejection() {
     let huge_payload = vec![b' '; 8 * 1024 * 1024 + 64];
     fs::write(&huge_path, &huge_payload).expect("write huge file");
     let err = ConfigManager::load_from_path(&huge_path).expect_err("must reject >8MiB file");
-    assert!(matches!(err, ConfigError::Io(_)), "expected Io error, got {err:?}");
+    assert!(
+        matches!(err, ConfigError::Io(_)),
+        "expected Io error, got {err:?}"
+    );
 
     // 2. Invalid UTF-8 bytes in file must return ConfigError::Io without panic.
     let bad_utf8 = tmp.path().join("bad_utf8.json");
     fs::write(&bad_utf8, [0x7B, 0xFF, 0xFE, 0x80, 0x7D]).expect("write bad utf8");
     let err = ConfigManager::load_from_path(&bad_utf8).expect_err("must reject bad utf8");
-    assert!(matches!(err, ConfigError::Io(_)), "expected Io error, got {err:?}");
+    assert!(
+        matches!(err, ConfigError::Io(_)),
+        "expected Io error, got {err:?}"
+    );
 }
 
 // ============================================================================
@@ -816,14 +825,17 @@ fn fuzz_domain2_offline_user_data_and_merge_tcc() {
 #[test]
 fn fuzz_domain2_mechrevo_tcc_and_aquaris_import() {
     let mut rng = SplitMix64::new(0xD002_3333_9876_5432);
-    let (base_settings, base_profiles, base_user, base_curves, base_hw) =
-        sample_mechrevo_fixture();
+    let (base_settings, base_profiles, base_user, base_curves, base_hw) = sample_mechrevo_fixture();
 
     // Baseline check
-    assert!(
-        convert_mechrevo_tcc(&base_settings, &base_profiles, &base_user, &base_curves, &base_hw)
-            .is_ok()
-    );
+    assert!(convert_mechrevo_tcc(
+        &base_settings,
+        &base_profiles,
+        &base_user,
+        &base_curves,
+        &base_hw
+    )
+    .is_ok());
 
     // Regression: extreme i64 speed + offsetFanspeed must saturate cleanly without overflow.
     {
@@ -1016,11 +1028,25 @@ fn fuzz_domain3_ini_qsettings_rejection_and_legacy_json_corpus() {
         let lossy = String::from_utf8_lossy(&mutated);
 
         // INI/QSettings text is not JSON and must never panic or silently parse as UccSettings.
-        assert!(UccSettings::from_json(&lossy).is_err());
-        assert!(ProfilesCatalog::from_json(&lossy).is_err());
-        assert!(!is_valid_settings_content(&lossy));
-        assert!(legacy_mgr.parse_settings_json(&lossy).is_none());
-        assert!(LegacyProfileDto::parse_json(&lossy).is_err());
+        // Byte-level mutations (e.g. `mutate_deep_nest`) can occasionally synthesize a valid
+        // JSON object (`{"a":...}`), which `UccSettings` legitimately accepts via serde defaults.
+        let is_synthesized_json_object = matches!(
+            serde_json::from_str::<serde_json::Value>(&lossy),
+            Ok(serde_json::Value::Object(_))
+        );
+        let ucc_res = UccSettings::from_json(&lossy);
+        if iter < ini_refs.len() || !is_synthesized_json_object {
+            assert!(ucc_res.is_err());
+            assert!(ProfilesCatalog::from_json(&lossy).is_err());
+            assert!(!is_valid_settings_content(&lossy));
+            assert!(legacy_mgr.parse_settings_json(&lossy).is_none());
+            assert!(LegacyProfileDto::parse_json(&lossy).is_err());
+        } else {
+            let _ = ProfilesCatalog::from_json(&lossy);
+            let _ = is_valid_settings_content(&lossy);
+            let _ = legacy_mgr.parse_settings_json(&lossy);
+            let _ = LegacyProfileDto::parse_json(&lossy);
+        }
     }
 
     // 2. Legacy `SettingsManager` / `TccSettings` JSON fuzzing and round-trip invariants.
@@ -1091,11 +1117,8 @@ fn fuzz_domain3_ini_qsettings_rejection_and_legacy_json_corpus() {
                 ProfileState::TypeC,
                 ProfileState::Wc,
             ] {
-                let _ = legacy_mgr.resolve_startup_profile(
-                    &parsed.state_map,
-                    &parsed.profiles,
-                    state,
-                );
+                let _ =
+                    legacy_mgr.resolve_startup_profile(&parsed.state_map, &parsed.profiles, state);
             }
         }
     }
@@ -1162,7 +1185,8 @@ fn fuzz_domain4_backup_recovery_and_persistence_invariants() {
         let mgr = ConfigManager::with_custom_path(&cfg_path);
 
         mgr.save(&valid_v1).expect("save v1");
-        mgr.save(&valid_v2).expect("save v2 -> creates .bak and .backup");
+        mgr.save(&valid_v2)
+            .expect("save v2 -> creates .bak and .backup");
 
         // Corrupt primary with deterministic mutated garbage (guaranteed invalid).
         let base = *rng.choose(&corrupt_seeds);
@@ -1188,8 +1212,7 @@ fn fuzz_domain4_backup_recovery_and_persistence_invariants() {
 
         // Re-corrupt and verify explicit restore_from_backup repairs primary atomically.
         fs::write(&cfg_path, &corrupt).expect("re-corrupt primary");
-        let restored =
-            ConfigManager::restore_from_backup(&cfg_path).expect("restore from backup");
+        let restored = ConfigManager::restore_from_backup(&cfg_path).expect("restore from backup");
         assert_eq!(restored, valid_v1);
         assert_eq!(
             ConfigManager::load_from_path(&cfg_path).expect("load repaired primary"),
@@ -1348,7 +1371,10 @@ fn fuzz_domain4_symlink_and_platform_paths_safety() {
         });
 
         assert_eq!(
-            paths.system_settings_file.file_name().and_then(|s| s.to_str()),
+            paths
+                .system_settings_file
+                .file_name()
+                .and_then(|s| s.to_str()),
             Some("settings.json")
         );
         assert_eq!(

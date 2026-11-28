@@ -51,11 +51,10 @@ impl SplitMix64 {
     }
 
     fn fill_bytes(&mut self, buf: &mut [u8]) {
-        let mut chunks = buf.chunks_exact_mut(8);
-        for chunk in &mut chunks {
-            chunk.copy_from_slice(&self.next_u64().to_le_bytes());
+        let (chunks, rem) = buf.as_chunks_mut::<8>();
+        for chunk in chunks {
+            *chunk = self.next_u64().to_le_bytes();
         }
-        let rem = chunks.into_remainder();
         if !rem.is_empty() {
             let tail = self.next_u64().to_le_bytes();
             rem.copy_from_slice(&tail[..rem.len()]);
@@ -671,7 +670,16 @@ fn ble_crafted_adversarial_frames_and_semantic_guards() {
 
     // 2. Exhaustive command/opcode bytes (0..=255) and corrupted trailer/checksum positions
     for opcode in 0u8..=u8::MAX {
-        let framed = [PACKET_HEADER, opcode, 0x01, 50, 0x00, 0x00, 0x00, PACKET_FOOTER];
+        let framed = [
+            PACKET_HEADER,
+            opcode,
+            0x01,
+            50,
+            0x00,
+            0x00,
+            0x00,
+            PACKET_FOOTER,
+        ];
         assert_ble_packet_invariants(&framed);
 
         let bad_footer = [
@@ -755,7 +763,16 @@ fn ble_crafted_adversarial_frames_and_semantic_guards() {
     }
 
     // Crafted raw packet containing forbidden pump code 1 never panics in validate_packet
-    let raw_v12_pkt = [PACKET_HEADER, CMD_PUMP, 0x01, 60, 0x01, 0x00, 0x00, PACKET_FOOTER];
+    let raw_v12_pkt = [
+        PACKET_HEADER,
+        CMD_PUMP,
+        0x01,
+        60,
+        0x01,
+        0x00,
+        0x00,
+        PACKET_FOOTER,
+    ];
     assert_ble_packet_invariants(&raw_v12_pkt);
 
     // 5. Out-of-range fan speeds (101..=255)
@@ -780,7 +797,16 @@ fn ble_crafted_adversarial_frames_and_semantic_guards() {
         assert_eq!(fan_ctrl.mode(), CoolerMode::Auto);
         assert_eq!(fan_ctrl.desired_fan_target(), FanTarget::Unset);
 
-        let raw_bad_fan = [PACKET_HEADER, CMD_FAN, 0x01, speed, 0x00, 0x00, 0x00, PACKET_FOOTER];
+        let raw_bad_fan = [
+            PACKET_HEADER,
+            CMD_FAN,
+            0x01,
+            speed,
+            0x00,
+            0x00,
+            0x00,
+            PACKET_FOOTER,
+        ];
         assert_ble_packet_invariants(&raw_bad_fan);
     }
 
