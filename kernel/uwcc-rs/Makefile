@@ -5,6 +5,15 @@ KVER ?= $(shell uname -r)
 KDIR ?= /lib/modules/$(KVER)/build
 PWD  := $(shell pwd)
 
+ifeq ($(origin LLVM),undefined)
+  ifneq ($(wildcard $(KDIR)/.config),)
+    ifeq ($(shell grep -qs '^CONFIG_CC_IS_CLANG=y' "$(KDIR)/.config" && echo y),y)
+      LLVM := 1
+      export LLVM
+    endif
+  endif
+endif
+
 PACKAGE_NAME    := uwcc-rs
 PACKAGE_VERSION := 0.0.1
 DKMS_SRC_DIR    := /usr/src/$(PACKAGE_NAME)-$(PACKAGE_VERSION)
