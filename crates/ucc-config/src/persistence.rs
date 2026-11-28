@@ -192,6 +192,8 @@ pub fn write_atomic(target_path: impl AsRef<Path>, content: &[u8]) -> Result<(),
     // which replaces existing files/symlinks without traversing symlinks.
     let rotate_backup =
         |src_content: &[u8], dest_path: &Path, mode: u32| -> Result<(), std::io::Error> {
+            #[cfg(not(unix))]
+            let _ = mode;
             let parent = dest_path.parent().unwrap_or_else(|| Path::new("."));
             let bak_temp = parent.join(format!(
                 ".{}.bak.tmp.{}",

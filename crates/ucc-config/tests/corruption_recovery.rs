@@ -346,6 +346,7 @@ fn test_atomic_write_preserves_target_on_failure() {
     // 1. Initial valid write
     let initial_settings = create_default_settings();
     mgr.save(&initial_settings).expect("initial write");
+    #[cfg_attr(not(unix), allow(unused_variables))]
     let initial_content = fs::read_to_string(&config_file).expect("read initial");
 
     // 2. Make target file read-only to simulate write failure

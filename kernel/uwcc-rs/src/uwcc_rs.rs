@@ -69,7 +69,7 @@ pub struct UwccPwup {
 pub struct UwccInfo {
     /// UAPI ABI version (`UWCC_API_VERSION`).
     pub api_version: u32,
-    /// Uniwill chassis project ID read from EC (`0x0748`).
+    /// Uniwill chassis project ID read from EC (`0x0740`).
     pub project_id: u32,
     /// Encoded EC firmware version.
     pub ec_version: u32,

@@ -4,9 +4,11 @@ use serde_json::{json, Value};
 use std::fs;
 use std::path::PathBuf;
 use std::time::{SystemTime, UNIX_EPOCH};
+#[cfg(unix)]
+use ucc_config::write_atomic;
 use ucc_config::{
     cleanup_temp_files, default_high_performance_profile, default_max_energy_save_profile,
-    default_office_profile, default_quiet_profile, write_atomic, ConfigManager, UccSettings,
+    default_office_profile, default_quiet_profile, ConfigManager, UccSettings,
 };
 
 fn unique_temp_dir(prefix: &str) -> PathBuf {

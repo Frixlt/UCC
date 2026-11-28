@@ -18,10 +18,13 @@
 
 #ifdef __KERNEL__
 
+#include <asm/byteorder.h>
 #include <linux/acpi.h>
 #include <linux/capability.h>
 #include <linux/device.h>
+#include <linux/err.h>
 #include <linux/errno.h>
+#include <linux/minmax.h>
 #include <linux/fs.h>
 #include <linux/hwmon.h>
 #include <linux/ktime.h>
@@ -61,7 +64,7 @@
 #define UWCC_EC_REG_FAN1_RPM_HI  0x0464U
 #define UWCC_EC_REG_FAN1_RPM_LO  0x0465U
 #define UWCC_EC_REG_FAN2_RPM_HI  0x046CU
-#define UWCC_EC_REG_FAN2_RPM_LO  0x046BU
+#define UWCC_EC_REG_FAN2_RPM_LO  0x046DU
 
 /* Fan PWM duty registers (Uniwill 0..=200 scale) */
 #define UWCC_EC_REG_PWM1         0x075BU

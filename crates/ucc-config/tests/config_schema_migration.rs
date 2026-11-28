@@ -1,7 +1,9 @@
 use std::fs;
 #[cfg(unix)]
 use std::os::unix::fs::{symlink, PermissionsExt};
-use ucc_config::{ConfigManager, UccSettings};
+use ucc_config::ConfigManager;
+#[cfg(unix)]
+use ucc_config::UccSettings;
 
 #[cfg(unix)]
 #[test]

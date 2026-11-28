@@ -14,11 +14,13 @@ use std::path::Path;
 
 use serde_json::{json, Value};
 use tempfile::TempDir;
+#[cfg(unix)]
+use ucc_config::ConfigError;
 use ucc_config::{
     cleanup_temp_files, convert_mechrevo_tcc, convert_offline_import, create_default_settings,
     desktop_preferences, effective_tcc_fan_table, is_valid_settings_content, merge_tcc,
     read_tcc_fan_presets, resolve_platform_paths, validate_fan_points_slice,
-    validate_tcc_fan_points, write_atomic, ConfigError, ConfigManager, LegacyProfileDto,
+    validate_tcc_fan_points, write_atomic, ConfigManager, LegacyProfileDto,
     OfflineUserData, PathPlatform, ProfileState, ProfilesCatalog, SettingsManager, TccFanPoint,
     TccFanPreset, TccSettings, UccSettings,
 };
@@ -1270,6 +1272,7 @@ fn fuzz_domain4_backup_recovery_and_persistence_invariants() {
 
 #[test]
 fn fuzz_domain4_symlink_and_platform_paths_safety() {
+    #[cfg_attr(not(unix), allow(unused_variables))]
     let tmp = TempDir::new().expect("create tempdir");
 
     // 1. Symlink safety checks on Unix.

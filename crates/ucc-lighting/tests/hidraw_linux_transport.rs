@@ -395,8 +395,8 @@ fn ite_600b_preserves_physical_calibration_and_caps_brightness_to_50() {
 
 #[test]
 fn ite_lightbar_zones_lid_logo_and_ec_power_hook() {
-    assert_eq!(EC_LIGHTBAR_POWER_REG_PRIMARY, 0x0767);
-    assert_eq!(EC_LIGHTBAR_POWER_REG_SECONDARY, 0x0768);
+    assert_eq!(EC_LIGHTBAR_POWER_REG_PRIMARY, 0x0748);
+    assert_eq!(EC_LIGHTBAR_POWER_REG_SECONDARY, 0x0748);
     assert_eq!(LIGHTBAR_LID_LOGO_ZONE_ID, 5);
 
     // 1. 4-zone front Lightbar (048D:7001): no lid logo LED

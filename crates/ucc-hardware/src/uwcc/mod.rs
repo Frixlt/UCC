@@ -151,16 +151,17 @@ pub mod uwcc_ec_reg {
     pub const CPU_FAN_RPM_HI: u16 = 0x0464;
     pub const CPU_FAN_RPM_LO: u16 = 0x0465;
 
-    /// GPU tachometer RPM low byte (`0x46B`) and high byte (`0x46C`).
-    pub const GPU_FAN_RPM_LO: u16 = 0x046B;
+    /// GPU tachometer RPM low byte (`0x46D`) and high byte (`0x46C`, upstream `EC_ADDR_SECOND_FAN_RPM_1/2`).
+    pub const GPU_FAN_RPM_LO: u16 = 0x046D;
     pub const GPU_FAN_RPM_HI: u16 = 0x046C;
 
     /// Live fan duty readback registers (`0..=200` raw).
     pub const CPU_FAN_DUTY_READ: u16 = 0x075B;
     pub const GPU_FAN_DUTY_READ: u16 = 0x075C;
 
-    /// Manual fan control registers.
+    /// Manual fan control register (`0x0751` `EC_ADDR_MANUAL_FAN_CTRL`, `BIT(7)` = `FAN_MODE_USER`).
     pub const FAN_MANUAL_MODE: u16 = 0x0751;
+    pub const FAN_MODE_USER_BIT: u8 = 1 << 7;
     pub const CPU_FAN_DUTY_WRITE: u16 = 0x1804;
     pub const GPU_FAN_DUTY_WRITE: u16 = 0x1809;
 

@@ -693,10 +693,8 @@ impl MockUwccTransport {
         transport.set_reg(super::uwcc_ec_reg::PL4_WATTS, 115);
         transport.set_reg(super::uwcc_ec_reg::TCC_OFFSET_C, 0);
         transport.set_reg(super::uwcc_ec_reg::PERF_MODE, 2);
-        transport.set_reg(super::uwcc_ec_reg::CHARGE_START_PCT, 60);
-        transport.set_reg(super::uwcc_ec_reg::CHARGE_END_PCT, 80);
-        transport.set_reg(super::uwcc_ec_reg::LIGHTBAR_POWER_PRIMARY, 1);
-        transport.set_reg(super::uwcc_ec_reg::LIGHTBAR_POWER_SECONDARY, 1);
+        transport.set_reg(super::uwcc_ec_reg::CHARGE_CTRL, 80);
+        transport.set_reg(super::uwcc_ec_reg::LIGHTBAR_AC_CTRL, 0x81);
 
         let limits = super::SmrwPowerLimits::chassis_0x1a_default();
         transport.set_smrw_table(super::SMRW_POWER_LIMITS_OFFSET, limits.encode());
