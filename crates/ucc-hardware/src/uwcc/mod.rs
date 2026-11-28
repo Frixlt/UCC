@@ -162,6 +162,10 @@ pub mod uwcc_ec_reg {
     pub const CPU_FAN_DUTY_READ: u16 = 0x075B;
     pub const GPU_FAN_DUTY_READ: u16 = 0x075C;
 
+    /// Uniwill `0x1A` EC Custom mode activation register (`0x0706`, `0x41` = active, `0x40` = inactive).
+    pub const CUSTOM_MODE_0706: u16 = 0x0706;
+    pub const CUSTOM_MODE_0706_ACTIVE: u8 = 0x41;
+
     /// Uniwill `0x1A` Custom power mode control register (`0x0726`, `BIT(7)` = Custom power loop).
     /// Always modify via RMW to preserve protection bits (`BIT(3..6)`).
     pub const CUSTOM_MODE_CTRL: u16 = 0x0726;
@@ -194,6 +198,8 @@ pub mod uwcc_ec_reg {
     /// TDP writes (`0x0783..=0x0785`) and routes physical mode button presses to WMI `0x00B0`.
     pub const AP_OEM: u16 = 0x0741;
     pub const AP_OEM_ENABLE_MANUAL_CTRL_BIT: u8 = 1 << 0;
+    /// `BIT(2)` of `0x0741`: EC activation handshake request (EC clears BIT(2) upon ACK).
+    pub const AP_OEM_ACTIVATION_ACK_BIT: u8 = 1 << 2;
     /// `0x07C6` (`EC_ADDR_AP_OEM_6`): `BIT(2)` (`ENABLE_UNIVERSAL_FAN_CTRL`) latches Custom mode.
     pub const AP_OEM_6: u16 = 0x07C6;
     pub const AP_OEM_6_UNIVERSAL_FAN_BIT: u8 = 1 << 2;
@@ -707,9 +713,9 @@ impl UwccBackend {
             uwcc_ec_reg::CUSTOM_MODE_CUME_BIT,
             0,
         )?;
-        // 3. Set UFME (0x0751 BIT(7)) and clear TBME/HIGH so PMSC stays cleanly in Custom.
-        // Note: Do NOT set 0x07C6 BIT(2) (ENABLE_UNIVERSAL_FAN_CTRL) here — that bit switches
-        // EC fan control to the 0x0F00..=0x0F5F RamFan table and makes EC ignore 0x1804/0x1809.
+        // 3. Best-effort latch CUSTOM_MODE (0x0706 = 0x41) when kernel allowlist permits it.
+        let _ = self.rmw_ec_bits(uwcc_ec_reg::CUSTOM_MODE_0706, 0x01, 0);
+        // 4. Set UFME (0x0751 BIT(7)) and clear TBME/HIGH so PMSC stays cleanly in Custom.
         self.rmw_ec_bits(
             uwcc_ec_reg::FAN_MANUAL_MODE,
             uwcc_ec_reg::FAN_MODE_USER_BIT,
@@ -910,15 +916,24 @@ impl PlatformBackend for UwccBackend {
             );
         }
         let prev = self.transport.ec_read(uwcc_ec_reg::FAN_MANUAL_MODE)?;
-        let enabled_manual = (prev & uwcc_ec_reg::FAN_MODE_USER_BIT) == 0;
-        if enabled_manual {
-            self.transport.ec_write(
-                uwcc_ec_reg::FAN_MANUAL_MODE,
-                prev | uwcc_ec_reg::FAN_MODE_USER_BIT,
-            )?;
+        let mut next = prev | uwcc_ec_reg::FAN_MODE_USER_BIT;
+        // On Uniwill 0x1A, stock/manual duty caps around ~60% (~3500 RPM) unless FAN_MODE_BOOST
+        // (0x0751 BIT(6)) is set (verified live: 0x0751=0xC0 -> 0x075B=200 -> 5158/5259 RPM).
+        // Use hysteresis (>= 98% on, < 95% off) so 100% fan curve targets reach full ~5200+ RPM.
+        if self.is_chassis_0x1a() {
+            if percent >= 98 {
+                next |= uwcc_ec_reg::FAN_MODE_BOOST_BIT;
+            } else if percent < 95 {
+                next &= !uwcc_ec_reg::FAN_MODE_BOOST_BIT;
+            }
+        }
+        let changed_mode = next != prev;
+        if changed_mode {
+            self.transport
+                .ec_write(uwcc_ec_reg::FAN_MANUAL_MODE, next)?;
         }
         if let Err(err) = self.transport.ec_write(reg, duty) {
-            if enabled_manual {
+            if changed_mode {
                 let _ = self.transport.ec_write(uwcc_ec_reg::FAN_MANUAL_MODE, prev);
             }
             return Err(err);
@@ -935,7 +950,7 @@ impl PlatformBackend for UwccBackend {
             .and_then(|prev| {
                 self.transport.ec_write(
                     uwcc_ec_reg::FAN_MANUAL_MODE,
-                    prev & !uwcc_ec_reg::FAN_MODE_USER_BIT,
+                    prev & !(uwcc_ec_reg::FAN_MODE_USER_BIT | uwcc_ec_reg::FAN_MODE_BOOST_BIT),
                 )
             });
         ramfan_res.and(ec_res)
@@ -1348,6 +1363,22 @@ impl PlatformBackend for UwccBackend {
 
     fn set_fan_boost(&self, enabled: bool) -> Result<(), PlatformError> {
         self.require_ec()?;
+        if self.is_chassis_0x1a() {
+            // Verified live on X6AR55xY: 0x0751 BIT(6) (FAN_MODE_BOOST) drives 0x075B=200 (~5200+ RPM).
+            return if enabled {
+                self.rmw_ec_bits(
+                    uwcc_ec_reg::FAN_MANUAL_MODE,
+                    uwcc_ec_reg::FAN_MODE_BOOST_BIT,
+                    0,
+                )
+            } else {
+                self.rmw_ec_bits(
+                    uwcc_ec_reg::FAN_MANUAL_MODE,
+                    0,
+                    uwcc_ec_reg::FAN_MODE_BOOST_BIT,
+                )
+            };
+        }
         self.ramfan.set_fan_boost(enabled)
     }
 

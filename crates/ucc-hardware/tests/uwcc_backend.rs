@@ -1727,3 +1727,52 @@ fn chassis_0x1a_custom_mode_tdp_profiles_mode_enable_and_drop_cleanup() {
     // 4. Dropping UwccBackend releases 0x0741 BIT(0) (preserving 0x80) so EC regains mode button.
     assert_eq!(transport.get_reg(uwcc_ec_reg::AP_OEM), Some(0x80));
 }
+
+#[test]
+fn chassis_0x1a_fan_boost_hysteresis_and_custom_mode_0706() {
+    let transport = Arc::new(MockUwccTransport::chassis_0x1a_default());
+    transport.set_reg(uwcc_ec_reg::AP_OEM, 0x80);
+    transport.set_reg(uwcc_ec_reg::CUSTOM_MODE_0706, 0x40);
+    transport.set_reg(uwcc_ec_reg::CUSTOM_MODE_CTRL, 0x00);
+    transport.set_reg(uwcc_ec_reg::CUSTOM_MODE_ENABLE, 0x80);
+    transport.set_reg(uwcc_ec_reg::FAN_MANUAL_MODE, 0x80);
+
+    let backend = UwccBackend::new(Arc::clone(&transport) as _, None, None);
+
+    // set_tdp latches 0x0706 BIT(0) (0x40 -> 0x41)
+    backend.set_tdp(0, 150).unwrap();
+    assert_eq!(transport.get_reg(uwcc_ec_reg::CUSTOM_MODE_0706), Some(0x41));
+
+    // 100% fan target enables FAN_MODE_BOOST (0x0751 BIT(6)) for ~5200+ RPM
+    backend.set_fan_speed_percent(0, 100).unwrap();
+    assert_eq!(
+        transport.get_reg(uwcc_ec_reg::FAN_MANUAL_MODE),
+        Some(uwcc_ec_reg::FAN_MODE_USER_BIT | uwcc_ec_reg::FAN_MODE_BOOST_BIT)
+    );
+
+    // 96% stays in hysteresis band (boost remains set)
+    backend.set_fan_speed_percent(0, 96).unwrap();
+    assert_eq!(
+        transport.get_reg(uwcc_ec_reg::FAN_MANUAL_MODE),
+        Some(uwcc_ec_reg::FAN_MODE_USER_BIT | uwcc_ec_reg::FAN_MODE_BOOST_BIT)
+    );
+
+    // Below 95% clears FAN_MODE_BOOST
+    backend.set_fan_speed_percent(0, 90).unwrap();
+    assert_eq!(
+        transport.get_reg(uwcc_ec_reg::FAN_MANUAL_MODE),
+        Some(uwcc_ec_reg::FAN_MODE_USER_BIT)
+    );
+
+    // Explicit set_fan_boost toggles 0x0751 BIT(6) on 0x1A
+    backend.set_fan_boost(true).unwrap();
+    assert_eq!(
+        transport.get_reg(uwcc_ec_reg::FAN_MANUAL_MODE),
+        Some(uwcc_ec_reg::FAN_MODE_USER_BIT | uwcc_ec_reg::FAN_MODE_BOOST_BIT)
+    );
+    backend.set_fan_boost(false).unwrap();
+    assert_eq!(
+        transport.get_reg(uwcc_ec_reg::FAN_MANUAL_MODE),
+        Some(uwcc_ec_reg::FAN_MODE_USER_BIT)
+    );
+}
