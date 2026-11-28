@@ -83,3 +83,8 @@ compile_commands.json
 /pkg/
 /src/
 /*.pkg.tar.*
+
+# Arch makepkg build outputs for uwcc-dkms
+kernel/uwcc-rs/packaging/arch/pkg/
+kernel/uwcc-rs/packaging/arch/src/
+kernel/uwcc-rs/packaging/arch/*.pkg.tar.*

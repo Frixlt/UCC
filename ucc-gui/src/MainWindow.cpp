@@ -2843,6 +2843,7 @@ void MainWindow::fetchStartupCapabilities()
     if ( values.contains( QStringLiteral( "GetNVIDIAPowerCTRLMaxPowerLimit" ) ) )
       m_gpuMaxPowerLimit = values.value( QStringLiteral( "GetNVIDIAPowerCTRLMaxPowerLimit" ) ).toInt();
     updateCtgpVisibility();
+    updateEditableState();
 
     int defaultPower = 0;
     int maxPower = 0;

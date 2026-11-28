@@ -38,7 +38,8 @@ public:
   }
 protected:
   bool eventFilter(QObject *, QEvent *event) override {
-    if (event->type() == QEvent::Show || event->type() == QEvent::Hide)
+    if (event->type() == QEvent::Show || event->type() == QEvent::Hide ||
+        event->type() == QEvent::ShowToParent || event->type() == QEvent::HideToParent)
       schedule();
     return false;
   }
