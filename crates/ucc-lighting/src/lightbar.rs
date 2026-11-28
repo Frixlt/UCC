@@ -659,10 +659,13 @@ impl LightbarController {
             };
             let _ = self.write_color(final_color);
             if let Some(logo) = self.config.lid_logo {
-                if self.transport.has_lid_logo().unwrap_or(false) {
+                if logo.enabled
+                    && logo.brightness > 0
+                    && self.transport.has_lid_logo().unwrap_or(false)
+                {
                     let _ = self
                         .transport
-                        .write_lid_logo(logo.enabled, logo.color, logo.brightness);
+                        .write_lid_logo(true, logo.color, logo.brightness);
                 }
             }
             return;
@@ -730,12 +733,12 @@ impl LightbarController {
         } else {
             RgbColor::BLACK
         };
+        let has_logo = self.transport.has_lid_logo().unwrap_or(false);
+        // Disable lid logo BEFORE enabling front lightbar so 048D:7001 stop_fx (0x08 0x05)
+        // never extinguishes the front bar.
         if let Some(logo) = self.config.lid_logo {
-            if self.transport.has_lid_logo().unwrap_or(false) {
-                if let Err(e) = self
-                    .transport
-                    .write_lid_logo(logo.enabled, logo.color, logo.brightness)
-                {
+            if has_logo && (!logo.enabled || logo.brightness == 0) {
+                if let Err(e) = self.transport.write_lid_logo(false, RgbColor::BLACK, 0) {
                     self.last_ok = false;
                     self.last_error = e.to_string();
                     return Err(e);
@@ -744,7 +747,21 @@ impl LightbarController {
         }
         // Clear Flash/PulseOff idle color before restoring front lightbar brightness.
         self.write_color_result(idle_color)?;
-        self.write_brightness_result(prof.brightness_val)
+        self.write_brightness_result(prof.brightness_val)?;
+        // Apply enabled lid logo AFTER front lightbar so 048D:7000 zone 5 is not overwritten.
+        if let Some(logo) = self.config.lid_logo {
+            if has_logo && logo.enabled && logo.brightness > 0 {
+                if let Err(e) = self
+                    .transport
+                    .write_lid_logo(true, logo.color, logo.brightness)
+                {
+                    self.last_ok = false;
+                    self.last_error = e.to_string();
+                    return Err(e);
+                }
+            }
+        }
+        Ok(())
     }
 
     fn write_color(&mut self, rgb: RgbColor) -> bool {

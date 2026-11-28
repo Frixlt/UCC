@@ -34,8 +34,8 @@ pub use keyboard::{
     MECHREVO_PHYSICAL_KEY_COUNT,
 };
 pub use lightbar::{
-    LightbarAnimation, LightbarColorMode, LightbarController, LightbarPowerMode,
-    LightbarPowerProfile, LightbarSettings, LidLogoSettings, LIGHTBAR_FRAME_INTERVAL,
+    LidLogoSettings, LightbarAnimation, LightbarColorMode, LightbarController, LightbarPowerMode,
+    LightbarPowerProfile, LightbarSettings, LIGHTBAR_FRAME_INTERVAL,
 };
 pub use transport::{
     KeyboardCapabilities, LightbarCapabilities, LightingError, LightingOp, LightingTransport,

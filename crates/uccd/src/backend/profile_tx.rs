@@ -1738,11 +1738,27 @@ impl LiveUccdBackend {
                 if self.set_nvidia_power_offset_internal(offset) {
                     wrote_ctgp = true;
                 } else {
-                    warn!(
-                        profile_id = %profile.id,
-                        offset,
-                        "Profile apply failed: cTGP offset write failed"
-                    );
+                    if self.shutting_down.load(Ordering::SeqCst) {
+                        let _ = self.restore_charging_rollback(&charging_rb, None);
+                        return self.abort_apply_on_shutdown(
+                            prev_brightness,
+                            wrote_brightness,
+                            prev_webcam,
+                            wrote_webcam,
+                            hw_odm_prev,
+                            wrote_odm,
+                            &prev_tdps,
+                            tdps_written,
+                            cpu_res.rollback,
+                        );
+                    }
+                    if self.profile_commit_epoch.load(Ordering::SeqCst) == start_epoch {
+                        warn!(
+                            profile_id = %profile.id,
+                            offset,
+                            "Profile apply failed: cTGP offset write failed"
+                        );
+                    }
                     let _ = self.restore_ctgp_baseline(prev_ctgp, Some(start_epoch));
                     let _ = self.restore_charging_rollback(&charging_rb, Some(start_epoch));
                     self.restore_device_writes(

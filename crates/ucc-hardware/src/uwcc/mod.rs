@@ -210,9 +210,8 @@ pub mod uwcc_ec_reg {
     pub const BATTERY_MODE_HIGH_CAPACITY: u8 = 0x08;
     pub const BATTERY_MODE_BALANCED: u8 = 0x18;
     pub const BATTERY_MODE_STATIONARY: u8 = 0x28;
-    /// Lid logo EC persistence registers (`0x0767` trigger, `0x0769..=0x076B` RGB 0..=50,
-    /// `0x078C` commit `0x10`, `0x07AB` brightness/exists, `0x07C5` bit 5 logo flag).
-    pub const LOGO_TRIGGER: u16 = 0x0767;
+    /// Lid logo EC persistence registers (`0x0769..=0x076B` RGB 0..=50, `0x078C` commit `0x10`,
+    /// `0x07AB` brightness/exists, `0x07C5` bit 5 logo flag).
     pub const LOGO_R: u16 = 0x0769;
     pub const LOGO_G: u16 = 0x076A;
     pub const LOGO_B: u16 = 0x076B;
@@ -509,6 +508,9 @@ impl UwccBackend {
     /// Sets GPU cTGP wattage after enforcing `SMRW` bounds.
     pub fn set_ctgp(&self, watts: i32) -> Result<(), PlatformError> {
         self.require_available()?;
+        if (self.info.flags & UWCC_FLAG_HAS_EC) == 0 {
+            return Err(PlatformError::Unsupported("EC unavailable for cTGP write"));
+        }
         if !(self.smrw_limits.ctgp_min_w..=self.smrw_limits.ctgp_max_w).contains(&watts) {
             return Err(PlatformError::InvalidArgument(
                 "cTGP wattage outside SMRW hardware limits",
@@ -856,9 +858,7 @@ impl PlatformBackend for UwccBackend {
         }
         let raw = self.transport.ec_read(uwcc_ec_reg::CTGP_WATTS)?;
         if raw == 0 {
-            return Err(PlatformError::SensorUnavailable(
-                "EC cTGP register uninitialized",
-            ));
+            return Err(PlatformError::Unavailable);
         }
         Ok(i32::from(raw))
     }
@@ -892,9 +892,7 @@ impl PlatformBackend for UwccBackend {
             uwcc_ec_reg::BATTERY_MODE_BALANCED => "balanced",
             uwcc_ec_reg::BATTERY_MODE_STATIONARY => "stationary",
             _ => {
-                return Err(PlatformError::SensorUnavailable(
-                    "Unrecognized EC battery charging mode",
-                ));
+                return Err(PlatformError::Unavailable);
             }
         };
         Ok(mode.to_string())

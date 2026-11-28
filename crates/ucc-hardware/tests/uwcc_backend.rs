@@ -1343,6 +1343,7 @@ fn uwcc_backend_charging_profile_rmw_ctgp_and_lid_logo_ec_sequence() {
     use ucc_hardware::UwccTransport;
 
     let transport = Arc::new(MockUwccTransport::chassis_0x1a_default());
+    transport.set_reg(0x0767, 0x01); // WIN_LOCK_TRIGGER must remain untouched
     transport.set_reg(0x07A6, 0x89);
     transport.set_reg(0x07AB, 0x05); // bit0=exists, bit2=preserved
     transport.set_reg(0x07C5, 0x48);
@@ -1350,7 +1351,7 @@ fn uwcc_backend_charging_profile_rmw_ctgp_and_lid_logo_ec_sequence() {
     let backend = UwccBackend::new(Arc::clone(&transport) as Arc<dyn UwccTransport>, None, None);
     let platform: &dyn PlatformBackend = &backend;
 
-    // Uninitialized EC 0x0744 == 0 returns SensorUnavailable; valid write reads back cleanly.
+    // Uninitialized EC 0x0744 == 0 returns Unavailable; valid write reads back cleanly.
     assert!(platform.read_ctgp_limits().is_some());
     assert!(platform.read_ctgp_watts().is_err());
     platform.set_ctgp_watts(150).unwrap();
@@ -1364,38 +1365,43 @@ fn uwcc_backend_charging_profile_rmw_ctgp_and_lid_logo_ec_sequence() {
     assert_eq!(platform.read_charging_profile().unwrap(), "high_capacity");
 
     platform.set_charging_profile("balanced").unwrap();
-    assert_eq!(transport.get_reg(0x07A6), 0x99);
+    assert_eq!(transport.get_reg(0x07A6), Some(0x99));
     assert_eq!(platform.read_charging_profile().unwrap(), "balanced");
 
     platform.set_charging_profile("stationary").unwrap();
-    assert_eq!(transport.get_reg(0x07A6), 0xA9);
+    assert_eq!(transport.get_reg(0x07A6), Some(0xA9));
     assert_eq!(platform.read_charging_profile().unwrap(), "stationary");
 
     platform.set_charging_profile("high_capacity").unwrap();
-    assert_eq!(transport.get_reg(0x07A6), 0x89);
+    assert_eq!(transport.get_reg(0x07A6), Some(0x89));
     assert!(platform.set_charging_profile("invalid_mode").is_err());
+
+    // Unrecognized battery mode bits return Unavailable rather than misreporting high_capacity.
+    transport.set_reg(0x07A6, 0x38);
+    assert!(platform.read_charging_profile().is_err());
 
     // Lid logo EC sequence preserves low bits in 0x07AB, skips 0x0767 clobber, and commits 0x078C.
     assert!(platform.has_lid_logo_ec());
     platform.set_lid_logo_ec(true, 0, 255, 128, 80).unwrap();
-    assert_eq!(transport.get_reg(0x07AB), 0x25);
+    assert_eq!(transport.get_reg(0x07AB), Some(0x25));
     platform.set_lid_logo_ec(true, 0, 255, 128, 128).unwrap();
-    assert_eq!(transport.get_reg(0x07AB), 0x45);
+    assert_eq!(transport.get_reg(0x07AB), Some(0x45));
     platform.set_lid_logo_ec(true, 0, 255, 128, 255).unwrap();
-    assert_eq!(transport.get_reg(0x07C5), 0x68);
-    assert_eq!(transport.get_reg(0x0769), 0);
-    assert_eq!(transport.get_reg(0x076A), 50);
-    assert_eq!(transport.get_reg(0x076B), 25);
-    assert_eq!(transport.get_reg(0x07AB), 0x85);
-    assert_eq!(transport.get_reg(0x078C), 0x10);
+    assert_eq!(transport.get_reg(0x0767), Some(0x01));
+    assert_eq!(transport.get_reg(0x07C5), Some(0x68));
+    assert_eq!(transport.get_reg(0x0769), Some(0));
+    assert_eq!(transport.get_reg(0x076A), Some(50));
+    assert_eq!(transport.get_reg(0x076B), Some(25));
+    assert_eq!(transport.get_reg(0x07AB), Some(0x85));
+    assert_eq!(transport.get_reg(0x078C), Some(0x10));
 
     platform.set_lid_logo_ec(false, 0, 0, 0, 0).unwrap();
-    assert_eq!(transport.get_reg(0x07AB), 0x05);
-    assert_eq!(transport.get_reg(0x078C), 0x10);
+    assert_eq!(transport.get_reg(0x07AB), Some(0x05));
+    assert_eq!(transport.get_reg(0x078C), Some(0x10));
 
     // Hardware without LOGO_EXISTS_BIT rejects set_lid_logo_ec without forging bit 0.
     transport.set_reg(0x07AB, 0x00);
     assert!(!platform.has_lid_logo_ec());
     assert!(platform.set_lid_logo_ec(true, 255, 0, 0, 255).is_err());
-    assert_eq!(transport.get_reg(0x07AB), 0x00);
+    assert_eq!(transport.get_reg(0x07AB), Some(0x00));
 }

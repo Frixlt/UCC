@@ -843,24 +843,43 @@ impl UccdBackend for LiveUccdBackend {
             let Ok(prev_hw) = self.platform.read_charging_profile() else {
                 return false;
             };
-            self.charging_op_seq.fetch_add(1, Ordering::SeqCst);
+            let my_seq = self.charging_op_seq.fetch_add(1, Ordering::SeqCst) + 1;
             self.charging_write_seq.fetch_add(1, Ordering::SeqCst);
             let write_ok = self.platform.set_charging_profile(desc).is_ok()
                 && self.platform.read_charging_profile().ok().as_deref() == Some(desc);
             self.charging_write_seq.fetch_add(1, Ordering::SeqCst);
             if !write_ok {
-                let _ = self.platform.set_charging_profile(&prev_hw);
+                if self.charging_op_seq.load(Ordering::SeqCst) == my_seq
+                    && !self.shutdown_wait_expired.load(Ordering::SeqCst)
+                {
+                    self.charging_write_seq.fetch_add(1, Ordering::SeqCst);
+                    let _ = self.platform.set_charging_profile(&prev_hw);
+                    self.charging_write_seq.fetch_add(1, Ordering::SeqCst);
+                }
                 return false;
             }
-            if self
+            let persisted = self
                 .update_settings(|s| {
+                    if self.charging_op_seq.load(Ordering::SeqCst) != my_seq {
+                        return None;
+                    }
                     s.charging_profile = Some(desc.to_string());
                     Some(())
                 })
-                .is_none()
-            {
-                let _ = self.platform.set_charging_profile(&prev_hw);
+                .is_some();
+            if !persisted {
+                if self.charging_op_seq.load(Ordering::SeqCst) == my_seq
+                    && !self.shutdown_wait_expired.load(Ordering::SeqCst)
+                {
+                    self.charging_write_seq.fetch_add(1, Ordering::SeqCst);
+                    let _ = self.platform.set_charging_profile(&prev_hw);
+                    self.charging_write_seq.fetch_add(1, Ordering::SeqCst);
+                }
                 return false;
+            }
+            if self.charging_op_seq.load(Ordering::SeqCst) == my_seq {
+                self.lock_mutex(&self.charging_commit_state)
+                    .charging_profile = Some(desc.to_string());
             }
             return true;
         };

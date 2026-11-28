@@ -821,7 +821,12 @@ impl LiveUccdBackend {
                 }
             } else if rb.profile_path.is_none() {
                 if let Some(ref prev) = rb.prev_profile {
-                    if self.platform.set_charging_profile(prev).is_err() {
+                    self.charging_write_seq.fetch_add(1, Ordering::SeqCst);
+                    let rb_ok = self.platform.set_charging_profile(prev).is_ok()
+                        && self.platform.read_charging_profile().ok().as_deref()
+                            == Some(prev.as_str());
+                    self.charging_write_seq.fetch_add(1, Ordering::SeqCst);
+                    if !rb_ok {
                         ok = false;
                     }
                 }
@@ -998,6 +1003,10 @@ impl LiveUccdBackend {
                 if avail.iter().any(|p| p == desc) {
                     rb.prev_profile = self.platform.read_charging_profile().ok();
                     if rb.prev_profile.is_none() {
+                        let _ = self.restore_charging_rollback(&rb, start_epoch);
+                        return Err(());
+                    }
+                    if self.write_aborted_by_shutdown() {
                         let _ = self.restore_charging_rollback(&rb, start_epoch);
                         return Err(());
                     }
@@ -1828,7 +1837,8 @@ impl LiveUccdBackend {
                 if res.is_ok() {
                     let verified = match self.platform.read_ctgp_watts() {
                         Ok(actual_w) => actual_w == target_w,
-                        Err(_) => true,
+                        Err(ucc_hardware::PlatformError::Unsupported(_)) => true,
+                        Err(_) => false,
                     };
                     if verified {
                         *self.lock_mutex(&self.nvidia_power_offset) = Some(clamped_offset);
