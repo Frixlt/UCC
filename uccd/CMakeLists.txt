@@ -2,13 +2,9 @@ cmake_minimum_required(VERSION 3.16)
 project(uccd VERSION ${CMAKE_PROJECT_VERSION})
 
 # Install systemd service files (deduplicate legacy uccd-pre-sleep.service as a symlink)
-    RESULT_VARIABLE _ucc_symlink_res
 install(FILES uccd.service uccd-sleep.service
   DESTINATION lib/systemd/system
 )
-  if(NOT _ucc_symlink_res EQUAL 0)
-    message(FATAL_ERROR "Failed to create uccd-pre-sleep.service symlink (exit \${_ucc_symlink_res})")
-  endif()
 install(CODE "
   file(MAKE_DIRECTORY \"\$ENV{DESTDIR}\${CMAKE_INSTALL_PREFIX}/lib/systemd/system\")
   file(REMOVE \"\$ENV{DESTDIR}\${CMAKE_INSTALL_PREFIX}/lib/systemd/system/uccd-pre-sleep.service\")

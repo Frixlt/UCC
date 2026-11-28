@@ -507,6 +507,7 @@ impl PolkitAuthorizer {
                 );
             }
             Ok(Err(e)) => {
+                invalidate_polkit_proxy(conn).await;
                 tracing::warn!(
                     "Polkit primary check error for '{}': {e}",
                     action.action_id()
@@ -514,6 +515,7 @@ impl PolkitAuthorizer {
                 return false;
             }
             Err(_) => {
+                invalidate_polkit_proxy(conn).await;
                 tracing::warn!(
                     "Polkit primary check timed out for '{}'",
                     action.action_id()
@@ -543,6 +545,7 @@ impl PolkitAuthorizer {
         {
             Ok(Ok((is_authorized, _, _))) => is_authorized,
             Ok(Err(e)) => {
+                invalidate_polkit_proxy(conn).await;
                 tracing::warn!(
                     "Polkit fallback check error for '{}': {e}",
                     action.legacy_action_id()
@@ -550,6 +553,7 @@ impl PolkitAuthorizer {
                 false
             }
             Err(_) => {
+                invalidate_polkit_proxy(conn).await;
                 tracing::warn!(
                     "Polkit fallback check timed out for '{}'",
                     action.legacy_action_id()
