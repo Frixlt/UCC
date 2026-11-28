@@ -560,17 +560,17 @@ fn probe_smrw_limits(transport: &dyn UwccTransport) -> SmrwPowerLimits {
         if let Some(mut limits) = SmrwPowerLimits::decode_inou0000_12byte(&resp.data[..12]) {
             // Merge optional EC factory ceiling registers (0x07A7..=0x07A9, e.g. 0xD2 = 210W).
             if let Ok(ec_pl1) = transport.ec_read(uwcc_ec_reg::TDP_FACTORY_PL1_MAX) {
-                if ec_pl1 >= 15 {
+                if (15..u8::MAX).contains(&ec_pl1) {
                     limits.pl1_max_w = limits.pl1_max_w.max(i32::from(ec_pl1));
                 }
             }
             if let Ok(ec_pl2) = transport.ec_read(uwcc_ec_reg::TDP_FACTORY_PL2_MAX) {
-                if ec_pl2 >= 15 {
+                if (15..u8::MAX).contains(&ec_pl2) {
                     limits.pl2_max_w = limits.pl2_max_w.max(i32::from(ec_pl2));
                 }
             }
             if let Ok(ec_pl4) = transport.ec_read(uwcc_ec_reg::TDP_FACTORY_PL4_MAX) {
-                if ec_pl4 >= 15 {
+                if (15..u8::MAX).contains(&ec_pl4) {
                     limits.pl4_max_w = limits.pl4_max_w.max(i32::from(ec_pl4));
                 }
             }

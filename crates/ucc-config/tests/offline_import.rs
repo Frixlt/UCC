@@ -841,7 +841,7 @@ fn tcc_asar_and_mechrevo_import_edge_cases() {
         &hardware
     )
     .is_err());
-    let mut bad_user = user.clone();
+    let mut bad_user = user;
     bad_user["aquarisSaveState"] = json!("{malformed-json");
     assert!(
         convert_mechrevo_tcc(&settings_crlf, &profiles_crlf, &bad_user, &curves, &hardware)

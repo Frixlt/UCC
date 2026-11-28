@@ -208,7 +208,7 @@ async function n25_fan_rpm_does_not_fabricate_pct_times_60() {
     assert.equal(gpuRpm, -1, 'N25: missing GPU tachometer must report unavailable (-1)');
 }
 
-// Wave-2: UccdClient must read realRpm from GetFanDataCPU/GPU1/GPU2 when rpm is absent,
+// UccdClient must read realRpm from GetFanDataCPU/GPU1/GPU2 when rpm is absent,
 // average GPU1+GPU2 realRpm, and preserve realRpm === 0 instead of falling back to -1.
 async function gnome_client_reads_realRpm_key_from_fan_data() {
     const UccdClient = loadUccdClient();

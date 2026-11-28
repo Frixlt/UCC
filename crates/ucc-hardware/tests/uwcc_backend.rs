@@ -1215,3 +1215,23 @@ fn wmi_uinput_mock_emitter_error_propagation_and_unknown_codes() {
     emitter.clear();
     assert!(emitter.emitted_keys().is_empty());
 }
+
+#[test]
+fn uwcc_backend_ignores_0xff_unpopulated_ec_tdp_ceiling_sentinel() {
+    let transport = Arc::new(MockUwccTransport::new());
+    // Native 12-byte INOU0000 BX90 table: PL1=205W, PL2=205W, PL4=250W.
+    let bx90: [u8; 12] = [
+        0xCD, 0xCD, 0xFA, 0x05, 0x00, 0x19, 0x57, 0x96, 0xFF, 0xFF, 0xFF, 0xFF,
+    ];
+    transport.set_smrw_bytes(0, &bx90);
+    // Simulate an SKU where EC 0x07A7..=0x07A9 are unprogrammed (0xFF sentinel).
+    transport.set_ec_reg(uwcc_ec_reg::TDP_FACTORY_PL1_MAX, 0xFF);
+    transport.set_ec_reg(uwcc_ec_reg::TDP_FACTORY_PL2_MAX, 0xFF);
+    transport.set_ec_reg(uwcc_ec_reg::TDP_FACTORY_PL4_MAX, 0xFF);
+
+    let backend = UwccBackend::new(transport);
+    let limits = backend.smrw_limits();
+    assert_eq!(limits.pl1_max_w, 205);
+    assert_eq!(limits.pl2_max_w, 205);
+    assert_eq!(limits.pl4_max_w, 250);
+}

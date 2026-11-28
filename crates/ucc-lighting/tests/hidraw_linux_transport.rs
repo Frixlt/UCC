@@ -825,7 +825,7 @@ fn uniwill_hid_empty_zones_and_partial_chunk_failure_preserves_cache() {
     // 20 zones split into 2 chunks (16 + 4); fail on chunk index 1 (second call).
     hid.clear_sent();
     hid.arm_fail_on_call(1);
-    let twenty_zones = vec![RgbColor::new(200, 100, 50); 20];
+    let twenty_zones = [RgbColor::new(200, 100, 50); 20];
     assert!(matches!(
         transport.write_keyboard_zones(&twenty_zones),
         Err(LightingError::WriteFailed(_))

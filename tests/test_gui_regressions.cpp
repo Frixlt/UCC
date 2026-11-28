@@ -895,7 +895,7 @@ private slots:
              "M-GUI-05: getDGpuMemClockOffsetMHz must reject -999 sentinel");
   }
 
-  // Wave-2: SystemMonitor asynchronous snapshot updates CPU/GPU/fan metrics and
+  // SystemMonitor asynchronous snapshot updates CPU/GPU/fan metrics and
   // preserves negative dGPU clock offsets without blocking or losing state on deactivate.
   void system_monitor_snapshot_updates_metrics_and_preserves_negative_clock_offsets() {
     control(QStringLiteral("TestVisualFixture"));
