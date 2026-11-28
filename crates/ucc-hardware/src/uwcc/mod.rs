@@ -2,10 +2,12 @@
 //! Native Rust `/dev/uwcc` platform backend (`M14` / `ADR-05`).
 //!
 //! Provides clean-room userspace EC/ACPI control for Uniwill chassis (specifically
-//! `0x1A` / MECHREVO YAOSHI X6AR55xY): `SMRW` limits parsing, real tachometer RPM,
-//! `PL1`/`PL2`/`PL4` & `TCC` offset, `cTGP`/`Dynamic Boost`, `PWUP`, `RamFan 1.5`
-//! 16-point curves, charging thresholds, EC switches (`Fn Lock`, `Win Lock`,
-//! lightbar AC control `0x0748`, USB sleep charging), USB RGB+IR UVC webcam
+//! `0x1A` / MECHREVO YAOSHI X6AR55xY): `SMRW` limits parsing, tear-free tachometer RPM,
+//! `PL1`/`PL2`/`PL4` (including `0x0727 BIT(7)` `pl4_doubled` scaling) & `TCC` offset
+//! (`0x0786`/`0x0463`), `cTGP`/`Dynamic Boost` (`0x0743..=0x0746`, live `0x0788`/`0x07D5`),
+//! `PWUP`, `RamFan 1.5` 96-byte curves (`0x0F00..=0x0F5F`), charging thresholds (`0x07D0`/`0x07B9`)
+//! & battery profiles (`0x07A6`), EC switches (`Fn Lock` `0x074E BIT(4)`, `Win Lock`,
+//! lightbar AC control `0x0748`, USB sleep charging `0x0767 BIT(4)`), USB RGB+IR UVC webcam
 //! toggle over [`Sysfs`], and WMI-to-uinput hotkey event translation.
 
 pub mod ramfan;
@@ -14,8 +16,9 @@ pub mod webcam;
 pub mod wmi_events;
 
 pub use ramfan::{
-    ec_duty_to_percent, percent_to_ec_duty, RamFanController, RamFanCurve, RamFanPoint,
-    RAMFAN_BASE, RAMFAN_END, RAMFAN_MAX_TEMP_C, RAMFAN_POINTS,
+    ec_duty_to_percent, encode_fan_table, percent_to_ec_duty, EncodedRamFanTable, RamFanController,
+    RamFanCurve, RamFanPoint, RAMFAN_BASE, RAMFAN_END, RAMFAN_HYSTERESIS_C, RAMFAN_MAX_TEMP_C,
+    RAMFAN_PADDING_TEMP, RAMFAN_POINTS,
 };
 pub use uapi::{
     MockUwccTransport, UwccDevice, UwccEcReg, UwccGpuPower, UwccInfo, UwccMuxState, UwccPwup,
@@ -136,8 +139,8 @@ pub const SMRW_POWER_LIMITS_LEN: u16 = 20;
 /// Maximum physically plausible fan tachometer reading (RPM).
 pub const MAX_SANE_FAN_RPM: u32 = 15_000;
 
-/// Maximum allowed CPU TCC temperature offset in degrees Celsius (`0..=63`).
-pub const MAX_TCC_OFFSET_C: u8 = 63;
+/// Maximum allowed CPU TCC temperature offset in degrees Celsius (`0..=40`).
+pub const MAX_TCC_OFFSET_C: u8 = 40;
 
 /// Minimum allowed battery charge threshold percentage (`20..=100`).
 pub const MIN_CHARGE_THRESHOLD_PCT: u8 = 20;
@@ -149,6 +152,10 @@ pub const MAX_CHARGE_THRESHOLD_PCT: u8 = 100;
 pub mod uwcc_ec_reg {
     pub const CPU_TEMP_C: u16 = 0x043E;
     pub const GPU_TEMP_C: u16 = 0x044F;
+
+    /// Read-only CPU TCC offset readback (`0x0463`, bits `6..=0` = offset °C from TjMax).
+    pub const TCC_OFFSET_READ: u16 = 0x0463;
+    pub const TCC_OFFSET_MASK: u8 = 0x7F;
 
     /// CPU tachometer RPM high byte (`0x464`) and low byte (`0x465`).
     pub const CPU_FAN_RPM_HI: u16 = 0x0464;
@@ -172,9 +179,10 @@ pub mod uwcc_ec_reg {
     pub const CUSTOM_MODE_CTRL_BIT: u8 = 1 << 7;
 
     /// Uniwill `0x1A` Custom mode enable register (`0x0727`, `BIT(6)` = `CUME`, white LED).
-    /// WARNING: `BIT(7)` is `PL4D` (PL4 disable) — NEVER modify `BIT(7)`!
+    /// WARNING: `BIT(7)` is read-only `PL4D` / `pl4_doubled` (2 W/LSB PL4 scaling) — NEVER write `BIT(7)`!
     pub const CUSTOM_MODE_ENABLE: u16 = 0x0727;
     pub const CUSTOM_MODE_CUME_BIT: u8 = 1 << 6;
+    pub const CUSTOM_MODE_PL4D_BIT: u8 = 1 << 7;
 
     /// Manual fan control register (`0x0751` `EC_ADDR_MANUAL_FAN_CTRL`).
     /// On `0x1A`: `BIT(4)` = `TBME` (Turbo), `BIT(5)` = `HIGH`, `BIT(6)` = `BOOST`,
@@ -200,47 +208,77 @@ pub mod uwcc_ec_reg {
     pub const AP_OEM_ENABLE_MANUAL_CTRL_BIT: u8 = 1 << 0;
     /// `BIT(2)` of `0x0741`: EC activation handshake request (EC clears BIT(2) upon ACK).
     pub const AP_OEM_ACTIVATION_ACK_BIT: u8 = 1 << 2;
-    /// `0x07C6` (`EC_ADDR_AP_OEM_6`): `BIT(2)` (`ENABLE_UNIVERSAL_FAN_CTRL`) latches Custom mode.
+    /// `0x07C6` (`EC_ADDR_AP_OEM_6`): `BIT(2)` (`ENABLE_UNIVERSAL_FAN_CTRL`) latches RamFan 1.5 tables.
     pub const AP_OEM_6: u16 = 0x07C6;
     pub const AP_OEM_6_UNIVERSAL_FAN_BIT: u8 = 1 << 2;
+
+    /// EC capability register (`0x078E` `EC_ADDR_FAN_CTRL`): `BIT(6)` = `RamFan 1.5` capable
+    /// (gates whether `0x07A7..=0x07A9` are Turbo ceilings or Battery Saver limits).
+    pub const FAN_CTRL_CAPS: u16 = 0x078E;
+    pub const FAN_CTRL_CAPS_RAMFAN15_BIT: u8 = 1 << 6;
 
     /// Power and thermal limit registers (aligned with upstream Linux `uniwill-acpi.c`).
     pub const PL1_WATTS: u16 = 0x0783;
     pub const PL2_WATTS: u16 = 0x0784;
     pub const PL4_WATTS: u16 = 0x0785;
-    /// Read-only EC factory TDP ceiling registers (`0xD2 = 210W` on `YAOSHI Series-X6AR55xY`).
+    /// CPU TCC offset write register (`0x0786`, `BIT(7)` enable | `BIT(6..=0)` offset `0..=40`).
+    pub const TCC_OFFSET_C: u16 = 0x0786;
+    pub const TCC_OFFSET_ENABLE_BIT: u8 = 1 << 7;
+    /// Read-only EC factory Turbo TDP ceiling registers (valid ONLY when `0x078E BIT(6) == 1`).
     pub const TDP_FACTORY_PL1_MAX: u16 = 0x07A7;
     pub const TDP_FACTORY_PL2_MAX: u16 = 0x07A8;
     pub const TDP_FACTORY_PL4_MAX: u16 = 0x07A9;
-    pub const TCC_OFFSET_C: u16 = 0x0743;
+
+    /// GPU cTGP & Dynamic Boost control/target registers (`0x0743..=0x0746`) + live readback.
+    pub const CTGP_DB_CTRL: u16 = 0x0743;
+    pub const CTGP_DB_GENERAL_ENABLE_BIT: u8 = 1 << 0;
+    pub const CTGP_DB_DB_ENABLE_BIT: u8 = 1 << 1;
+    pub const CTGP_DB_CTGP_ENABLE_BIT: u8 = 1 << 2;
+    /// cTGP offset above `base_tgp_w` (`0..=254` W).
     pub const CTGP_WATTS: u16 = 0x0744;
-    pub const DYNAMIC_BOOST_WATTS: u16 = 0x0745;
+    /// Dynamic Boost TPP target (`0xFF` when DB enabled, `0x00` when disabled).
+    pub const DB_TPP_TARGET: u16 = 0x0745;
+    /// Dynamic Boost watts (`0..=25` W, `EC_ADDR_CTGP_DB_DB_OFFSET`).
+    pub const DYNAMIC_BOOST_WATTS: u16 = 0x0746;
+    /// Live cTGP offset readback (`0x0788`, RO; live cTGP = `base_tgp_w + EC[0x0788]`).
+    pub const CTGP_LIVE_OFFSET: u16 = 0x0788;
+    /// Live Dynamic Boost watts readback (`0x07D5`, RO).
+    pub const DB_LIVE_WATTS: u16 = 0x07D5;
 
     /// EC hardware switches & battery charging control (upstream `uniwill-acpi.c`).
-    /// `FN_LOCK` is `BIT(3)` of `0x07A4` (`EC_ADDR_OEM_2`), NEVER clobbering other bits.
-    pub const FN_LOCK: u16 = 0x07A4;
-    pub const FN_LOCK_BIT: u8 = 1 << 3;
+    /// `FN_LOCK` is `BIT(4)` of `0x074E` (`EC_ADDR_BIOS_OEM`), NEVER clobbering other bits.
+    pub const FN_LOCK: u16 = 0x074E;
+    pub const FN_LOCK_BIT: u8 = 1 << 4;
     /// `0x0767` (`EC_ADDR_TRIGGER`) `BIT(0)` toggles Super/Win key lock; `0x0768` (`EC_ADDR_SWITCH_STATUS`) `BIT(0)` reads it.
     pub const WIN_LOCK_TRIGGER: u16 = 0x0767;
     pub const WIN_LOCK: u16 = 0x0768;
     pub const WIN_LOCK_BIT: u8 = 1 << 0;
-    pub const USB_SLEEP_CHARGING: u16 = 0x0762;
-    /// `0x07B9` (`EC_ADDR_CHARGE_CTRL`): bits `6..=0` (`0x7F`) hold charge end threshold percentage.
+    /// `USB_SLEEP_CHARGING` is `BIT(4)` of `0x0767` (`EC_ADDR_TRIGGER`), strictly RMW.
+    pub const USB_SLEEP_CHARGING: u16 = 0x0767;
+    pub const USB_SLEEP_CHARGING_BIT: u8 = 1 << 4;
+    /// `0x07B9` (`EC_ADDR_CHARGE_CTRL`): bits `6..=0` (`0x7F`) hold charge end threshold (`0` = 100%).
+    /// WARNING: `BIT(7)` (`CHARGE_CTRL_REACHED`) is RO status — NEVER write `BIT(7)` back!
     pub const CHARGE_CTRL: u16 = 0x07B9;
     pub const CHARGE_CTRL_MASK: u8 = 0x7F;
+    /// `0x07D0` (`CHARGE_LIMIT_DOWN`): charge start/resume threshold percentage (`20..=95`).
+    pub const CHARGE_LIMIT_DOWN: u16 = 0x07D0;
 
-    /// Lightbar AC control register (`0x0748` `EC_ADDR_LIGHTBAR_AC_CTRL`, `BIT(0)` = `LIGHTBAR_APP_EXISTS`).
-    /// Never write `0x0767`/`0x0768` (those control `SUPER_KEY_LOCK`).
+    /// Lightbar AC control register (`0x0748` `EC_ADDR_LIGHTBAR_AC_CTRL`):
+    /// `BIT(0)` = `LIGHTBAR_APP_EXISTS` (kept set), `BIT(2)` = `LIGHTBAR_S0_OFF` (`0` = on, `1` = off).
     pub const LIGHTBAR_AC_CTRL: u16 = 0x0748;
     pub const LIGHTBAR_APP_EXISTS_BIT: u8 = 1 << 0;
-    /// Battery charging profile mode register (`0x07A6`, mask `0x38`: `0x08`/`0x18`/`0x28`).
+    pub const LIGHTBAR_S0_OFF_BIT: u8 = 1 << 2;
+
+    /// Battery charging profile mode register (`0x07A6`, mask `0x30`: `0x00`/`0x10`/`0x20`).
+    /// Strictly preserves `BIT(3)` (touchpad LED) and `BIT(6)` (touchpad toggle).
     pub const BATTERY_CHARGE_MODE: u16 = 0x07A6;
-    pub const BATTERY_CHARGE_MODE_MASK: u8 = 0x38;
-    pub const BATTERY_MODE_HIGH_CAPACITY: u8 = 0x08;
-    pub const BATTERY_MODE_BALANCED: u8 = 0x18;
-    pub const BATTERY_MODE_STATIONARY: u8 = 0x28;
+    pub const BATTERY_CHARGE_MODE_MASK: u8 = 0x30;
+    pub const BATTERY_MODE_HIGH_CAPACITY: u8 = 0x00;
+    pub const BATTERY_MODE_BALANCED: u8 = 0x10;
+    pub const BATTERY_MODE_STATIONARY: u8 = 0x20;
+
     /// Lid logo EC persistence registers (`0x0769..=0x076B` RGB 0..=50, `0x078C` commit `0x10`,
-    /// `0x07AB` brightness/exists, `0x07C5` bit 5 logo flag).
+    /// `0x07AB` brightness/exists `0x01/0x21/0x41/0x61/0x81`, `0x07C5` bit 5 logo flag).
     pub const LOGO_R: u16 = 0x0769;
     pub const LOGO_G: u16 = 0x076A;
     pub const LOGO_B: u16 = 0x076B;
@@ -248,8 +286,10 @@ pub mod uwcc_ec_reg {
     pub const LOGO_COMMIT_VAL: u8 = 0x10;
     pub const LOGO_BRIGHTNESS: u16 = 0x07AB;
     pub const LOGO_EXISTS_BIT: u8 = 0x01;
+    pub const LOGO_BRIGHTNESS_MASK: u8 = 0xE0;
     pub const OEM_BYTE5: u16 = 0x07C5;
     pub const OEM_BYTE5_LOGO_BIT: u8 = 1 << 5;
+    pub const OEM_BYTE5_WHISPER_REQ_BIT: u8 = 1 << 6;
 }
 
 /// Configured backend selection policy (`Auto`, `Uwcc`, or `TuxedoIo`).
@@ -303,10 +343,12 @@ pub struct SmrwPowerLimits {
     pub pl2_max_w: i32,
     pub pl4_min_w: i32,
     pub pl4_max_w: i32,
+    pub base_tgp_w: i32,
     pub ctgp_min_w: i32,
     pub ctgp_max_w: i32,
     pub dynamic_boost_min_w: i32,
     pub dynamic_boost_max_w: i32,
+    pub tcc_max_offset_c: u8,
 }
 
 impl SmrwPowerLimits {
@@ -319,10 +361,12 @@ impl SmrwPowerLimits {
             pl2_max_w: 225,
             pl4_min_w: 25,
             pl4_max_w: 255,
+            base_tgp_w: 55,
             ctgp_min_w: 55,
             ctgp_max_w: 175,
             dynamic_boost_min_w: 0,
             dynamic_boost_max_w: 25,
+            tcc_max_offset_c: 0,
         }
     }
 
@@ -348,14 +392,15 @@ impl SmrwPowerLimits {
 
     /// Parses a native 12-byte `INOU0000` `SMRW` buffer (`AX20`/`AX40`/`AX60`/`AX90`/`BX90`/`G2X9`).
     ///
-    /// Layout verified against `DSDT.dsl`:
+    /// Layout verified against `DSDT.dsl` and `EC_01_POWER_AND_MODES.md`:
     /// - `data[0]`: PL1 max (W)
     /// - `data[1]`: PL2 max (W)
-    /// - `data[2]`: PL4 max (W)
-    /// - `data[4]`: cTGP base floor (W) (`0` on `AX*`/`BX*`, e.g. `0x46` = 70 W on `G2X9`)
-    /// - `data[5]`: Dynamic Boost max (W) (e.g. `0x19` = 25 W)
-    /// - `data[7]`: Base TGP offset / max (W); `base_tgp_max = data[4] + data[7]`,
-    ///   total cTGP max = `base_tgp_max + dynamic_boost_max`
+    /// - `data[2]`: PL4 max (raw W; caller scales by `2 W/LSB` when `0x0727 BIT(7)` `pl4_doubled` is set)
+    /// - `data[3]`: `TccOffset` (`tcc_max_offset_c`)
+    /// - `data[4]`: `ConfigurableTGP` — max cTGP offset above `base_tgp_w` (W)
+    /// - `data[5]`: `DynamicBoost` — max Dynamic Boost (W, separate from `ctgp_max_w`)
+    /// - `data[6]`: `TargetTemperature` (°C)
+    /// - `data[7]`: `DefaultTGP` — `base_tgp_w` (W), baseline for `0x0744`/`0x0788` offsets
     /// - `data[8..12]`: `0xFF` sentinel tail
     pub fn decode_inou0000_12byte(data: &[u8]) -> Option<Self> {
         if data.len() < usize::from(SMRW_INOU0000_LEN) || data[8..12] != [0xFF, 0xFF, 0xFF, 0xFF] {
@@ -364,27 +409,22 @@ impl SmrwPowerLimits {
         let pl1_max_w = i32::from(data[0]);
         let pl2_max_w = i32::from(data[1]);
         let pl4_max_w = i32::from(data[2]);
-        let base_tgp_min_w = i32::from(data[4]);
+        let tcc_max_offset_c = data[3];
+        let ctgp_offset_max_w = i32::from(data[4]);
         let dynamic_boost_max_w = i32::from(data[5]);
-        let base_tgp_offset_w = i32::from(data[7]);
-        let base_tgp_max_w = base_tgp_min_w + base_tgp_offset_w;
-        let ctgp_max_w = base_tgp_max_w + dynamic_boost_max_w;
+        let base_tgp_w = i32::from(data[7]);
+        let ctgp_min_w = base_tgp_w;
+        let ctgp_max_w = base_tgp_w + ctgp_offset_max_w;
 
         if pl1_max_w < 15
             || pl2_max_w < 15
             || pl4_max_w < 15
             || dynamic_boost_max_w > 100
-            || !(35..=250).contains(&base_tgp_max_w)
+            || !(35..=250).contains(&base_tgp_w)
             || ctgp_max_w > i32::from(u8::MAX)
         {
             return None;
         }
-
-        let ctgp_min_w = if base_tgp_min_w > 0 {
-            base_tgp_min_w.min(ctgp_max_w)
-        } else {
-            55.min(ctgp_max_w)
-        };
 
         Some(Self {
             pl1_min_w: 15,
@@ -393,10 +433,12 @@ impl SmrwPowerLimits {
             pl2_max_w,
             pl4_min_w: 25.min(pl4_max_w),
             pl4_max_w,
+            base_tgp_w,
             ctgp_min_w,
             ctgp_max_w,
             dynamic_boost_min_w: 0,
             dynamic_boost_max_w,
+            tcc_max_offset_c,
         })
     }
 
@@ -436,10 +478,12 @@ impl SmrwPowerLimits {
             pl2_max_w,
             pl4_min_w,
             pl4_max_w,
+            base_tgp_w: ctgp_min_w,
             ctgp_min_w,
             ctgp_max_w,
             dynamic_boost_min_w,
             dynamic_boost_max_w,
+            tcc_max_offset_c: 0,
         })
     }
 
@@ -460,6 +504,7 @@ pub struct UwccBackend {
     ramfan: RamFanController,
     webcam: Option<UsbWebcamController>,
     info: UwccInfo,
+    pl4_doubled: bool,
     smrw_limits: SmrwPowerLimits,
     capabilities: PlatformCapabilities,
 }
@@ -481,8 +526,15 @@ impl UwccBackend {
                 "UWCC driver API version mismatch; disabling backend operations"
             );
         }
+        let has_ec = api_version_valid && (info.flags & UWCC_FLAG_HAS_EC) != 0;
+        // Read-only hardware PL4 scaling bit (0x0727 BIT(7)): NEVER write BIT(7).
+        let pl4_doubled = has_ec
+            && transport
+                .ec_read(uwcc_ec_reg::CUSTOM_MODE_ENABLE)
+                .is_ok_and(|v| (v & uwcc_ec_reg::CUSTOM_MODE_PL4D_BIT) != 0);
+
         let smrw_limits = if api_version_valid {
-            probe_smrw_limits(transport.as_ref(), info.flags)
+            probe_smrw_limits(transport.as_ref(), info.flags, pl4_doubled)
         } else {
             SmrwPowerLimits::chassis_0x1a_default()
         };
@@ -490,7 +542,6 @@ impl UwccBackend {
         let has_webcam_sysfs = webcam.is_some();
 
         let device_id = dmi.and_then(|d| identify_device(d, None));
-        let has_ec = api_version_valid && (info.flags & UWCC_FLAG_HAS_EC) != 0;
         let has_pwup = api_version_valid && (info.flags & UWCC_FLAG_HAS_PWUP) != 0;
         let water_cooler_supported = has_pwup
             || (api_version_valid
@@ -524,6 +575,7 @@ impl UwccBackend {
             ramfan,
             webcam,
             info,
+            pl4_doubled,
             smrw_limits,
             capabilities,
         }
@@ -532,6 +584,11 @@ impl UwccBackend {
     /// Returns cached driver and chassis info from `UWCC_IOC_GET_INFO`.
     pub fn info(&self) -> UwccInfo {
         self.info
+    }
+
+    /// Returns `true` when EC `0x0727 BIT(7)` indicates `2 W/LSB` PL4 encoding.
+    pub fn is_pl4_doubled(&self) -> bool {
+        self.pl4_doubled
     }
 
     /// Returns parsed `SMRW` factory power limits for this chassis.
@@ -549,7 +606,9 @@ impl UwccBackend {
         (self.smrw_limits.ctgp_min_w, self.smrw_limits.ctgp_max_w)
     }
 
-    /// Sets GPU cTGP wattage after enforcing `SMRW` bounds.
+    /// Sets GPU cTGP wattage after enforcing `SMRW` bounds:
+    /// writes offset `(watts - base_tgp_w)` to `0x0744`, latches `0x0743` (`BIT(0) | BIT(2)`),
+    /// and notifies `PWBT` when advertised.
     pub fn set_ctgp(&self, watts: i32) -> Result<(), PlatformError> {
         self.require_available()?;
         if (self.info.flags & UWCC_FLAG_HAS_EC) == 0 {
@@ -560,17 +619,39 @@ impl UwccBackend {
                 "cTGP wattage outside SMRW hardware limits",
             ));
         }
-        let raw = u8::try_from(watts)
-            .map_err(|_| PlatformError::InvalidArgument("Power limit out of byte range"))?;
-        let prev_raw = self.transport.ec_read(uwcc_ec_reg::CTGP_WATTS).ok();
-        self.transport.ec_write(uwcc_ec_reg::CTGP_WATTS, raw)?;
+        let offset = watts - self.smrw_limits.base_tgp_w;
+        if !(0..=254).contains(&offset) {
+            return Err(PlatformError::InvalidArgument(
+                "cTGP offset above base TGP out of byte range (0..=254)",
+            ));
+        }
+        let offset_raw = offset as u8;
+        let prev_offset = self.transport.ec_read(uwcc_ec_reg::CTGP_WATTS).ok();
+        let prev_ctrl = self.transport.ec_read(uwcc_ec_reg::CTGP_DB_CTRL).ok();
+
+        self.transport
+            .ec_write(uwcc_ec_reg::CTGP_WATTS, offset_raw)?;
+        if let Err(err) = self.rmw_ec_bits(
+            uwcc_ec_reg::CTGP_DB_CTRL,
+            uwcc_ec_reg::CTGP_DB_GENERAL_ENABLE_BIT | uwcc_ec_reg::CTGP_DB_CTGP_ENABLE_BIT,
+            0,
+        ) {
+            if let Some(prev) = prev_offset {
+                let _ = self.transport.ec_write(uwcc_ec_reg::CTGP_WATTS, prev);
+            }
+            return Err(err);
+        }
+
         if (self.info.flags & UWCC_FLAG_HAS_PWBT) != 0 {
             if let Err(err) = self
                 .transport
-                .set_gpu_power(UWCC_GPU_POWER_OP_BASE_TGP, u32::from(raw))
+                .set_gpu_power(UWCC_GPU_POWER_OP_BASE_TGP, watts as u32)
             {
-                if let Some(prev) = prev_raw {
+                if let Some(prev) = prev_offset {
                     let _ = self.transport.ec_write(uwcc_ec_reg::CTGP_WATTS, prev);
+                }
+                if let Some(prev) = prev_ctrl {
+                    let _ = self.transport.ec_write(uwcc_ec_reg::CTGP_DB_CTRL, prev);
                 }
                 return Err(err);
             }
@@ -586,7 +667,9 @@ impl UwccBackend {
         )
     }
 
-    /// Sets GPU Dynamic Boost wattage after enforcing `SMRW` bounds.
+    /// Sets GPU Dynamic Boost wattage after enforcing `SMRW` bounds:
+    /// writes `0xFF`/`0x00` to `0x0745` (`DB_TPP_TARGET`), `watts` to `0x0746` (`DB_MAX_TGP`),
+    /// RMW `0x0743` (`BIT(1)` and `BIT(0)` when enabling), and notifies `PWDB` when advertised.
     pub fn set_dynamic_boost(&self, watts: i32) -> Result<(), PlatformError> {
         self.require_available()?;
         if (self.info.flags & UWCC_FLAG_HAS_EC) == 0 {
@@ -601,26 +684,90 @@ impl UwccBackend {
         }
         let raw = u8::try_from(watts)
             .map_err(|_| PlatformError::InvalidArgument("Power limit out of byte range"))?;
-        let prev_raw = self
+        let tpp_target: u8 = if raw > 0 { 0xFF } else { 0x00 };
+
+        let prev_tpp = self.transport.ec_read(uwcc_ec_reg::DB_TPP_TARGET).ok();
+        let prev_db = self
             .transport
             .ec_read(uwcc_ec_reg::DYNAMIC_BOOST_WATTS)
             .ok();
+        let prev_ctrl = self.transport.ec_read(uwcc_ec_reg::CTGP_DB_CTRL).ok();
+
+        let rollback = || {
+            if let Some(prev) = prev_tpp {
+                let _ = self.transport.ec_write(uwcc_ec_reg::DB_TPP_TARGET, prev);
+            }
+            if let Some(prev) = prev_db {
+                let _ = self
+                    .transport
+                    .ec_write(uwcc_ec_reg::DYNAMIC_BOOST_WATTS, prev);
+            }
+            if let Some(prev) = prev_ctrl {
+                let _ = self.transport.ec_write(uwcc_ec_reg::CTGP_DB_CTRL, prev);
+            }
+        };
+
         self.transport
-            .ec_write(uwcc_ec_reg::DYNAMIC_BOOST_WATTS, raw)?;
+            .ec_write(uwcc_ec_reg::DB_TPP_TARGET, tpp_target)?;
+        if let Err(err) = self
+            .transport
+            .ec_write(uwcc_ec_reg::DYNAMIC_BOOST_WATTS, raw)
+        {
+            rollback();
+            return Err(err);
+        }
+        let ctrl_res = if raw > 0 {
+            self.rmw_ec_bits(
+                uwcc_ec_reg::CTGP_DB_CTRL,
+                uwcc_ec_reg::CTGP_DB_GENERAL_ENABLE_BIT | uwcc_ec_reg::CTGP_DB_DB_ENABLE_BIT,
+                0,
+            )
+        } else {
+            self.rmw_ec_bits(
+                uwcc_ec_reg::CTGP_DB_CTRL,
+                0,
+                uwcc_ec_reg::CTGP_DB_DB_ENABLE_BIT,
+            )
+        };
+        if let Err(err) = ctrl_res {
+            rollback();
+            return Err(err);
+        }
+
         if (self.info.flags & UWCC_FLAG_HAS_PWDB) != 0 {
             if let Err(err) = self
                 .transport
                 .set_gpu_power(UWCC_GPU_POWER_OP_DYNAMIC_BOOST, u32::from(raw))
             {
-                if let Some(prev) = prev_raw {
-                    let _ = self
-                        .transport
-                        .ec_write(uwcc_ec_reg::DYNAMIC_BOOST_WATTS, prev);
-                }
+                rollback();
                 return Err(err);
             }
         }
         Ok(())
+    }
+
+    /// Reads lid logo EC persistence state `(enabled, r, g, b, brightness)` from
+    /// `0x07AB` and `0x0769..=0x076B`.
+    pub fn read_lid_logo_ec(&self) -> Result<(bool, u8, u8, u8, u8), PlatformError> {
+        self.require_ec()?;
+        if !self.has_lid_logo_ec() {
+            return Err(PlatformError::Unsupported(
+                "Lid logo EC hardware not present",
+            ));
+        }
+        let ab = self.transport.ec_read(uwcc_ec_reg::LOGO_BRIGHTNESS)?;
+        let brightness = match ab & uwcc_ec_reg::LOGO_BRIGHTNESS_MASK {
+            0x80 => 255,
+            0x60 => 191,
+            0x40 => 127,
+            0x20 => 63,
+            _ => 0,
+        };
+        let unscale = |v: u8| -> u8 { ((u16::from(v.min(50)) * 255 + 25) / 50) as u8 };
+        let r = unscale(self.transport.ec_read(uwcc_ec_reg::LOGO_R)?);
+        let g = unscale(self.transport.ec_read(uwcc_ec_reg::LOGO_G)?);
+        let b = unscale(self.transport.ec_read(uwcc_ec_reg::LOGO_B)?);
+        Ok((brightness > 0, r, g, b, brightness))
     }
 
     fn require_available(&self) -> Result<(), PlatformError> {
@@ -714,7 +861,12 @@ impl UwccBackend {
             0,
         )?;
         // 3. Best-effort latch CUSTOM_MODE (0x0706 = 0x41) when kernel allowlist permits it.
-        let _ = self.rmw_ec_bits(uwcc_ec_reg::CUSTOM_MODE_0706, 0x01, 0);
+        if let Err(err) = self.transport.ec_write(
+            uwcc_ec_reg::CUSTOM_MODE_0706,
+            uwcc_ec_reg::CUSTOM_MODE_0706_ACTIVE,
+        ) {
+            tracing::debug!(%err, "Optional EC 0x0706 custom-mode latch skipped");
+        }
         // 4. Set UFME (0x0751 BIT(7)) and clear TBME/HIGH so PMSC stays cleanly in Custom.
         self.rmw_ec_bits(
             uwcc_ec_reg::FAN_MANUAL_MODE,
@@ -743,12 +895,24 @@ impl UwccBackend {
 
 impl Drop for UwccBackend {
     fn drop(&mut self) {
-        // Release AP_EXIST (0x0741 BIT(0)) on clean shutdown so the physical mode button
-        // returns to autonomous EC firmware cycling when uccd is stopped.
-        if self.is_chassis_0x1a()
-            && self.transport.is_available()
-            && (self.info.flags & UWCC_FLAG_HAS_EC) != 0
-        {
+        if self.transport.is_available() && (self.info.flags & UWCC_FLAG_HAS_EC) != 0 {
+            // 1. Disarm RamFan 1.5 table latch (0x07C6 BIT(2)) and Fan Boost (0x0751 BIT(6)).
+            let _ = self.rmw_ec_bits(
+                uwcc_ec_reg::AP_OEM_6,
+                0,
+                uwcc_ec_reg::AP_OEM_6_UNIVERSAL_FAN_BIT,
+            );
+            let _ = self.rmw_ec_bits(
+                uwcc_ec_reg::FAN_MANUAL_MODE,
+                0,
+                uwcc_ec_reg::FAN_MODE_BOOST_BIT,
+            );
+            // 2. On 0x1A, clear CUME (0x0727 BIT(6), preserving PL4D BIT(7)) and 0x0726 BIT(7).
+            if self.is_chassis_0x1a() {
+                let _ = self.disable_custom_mode_0x1a();
+            }
+            // 3. Release AP_EXIST (0x0741 BIT(0)) on all EC chassis so the physical mode button
+            //    returns to autonomous EC firmware cycling when uccd stops.
             let _ = self.rmw_ec_bits(
                 uwcc_ec_reg::AP_OEM,
                 0,
@@ -758,7 +922,11 @@ impl Drop for UwccBackend {
     }
 }
 
-fn probe_smrw_limits(transport: &dyn UwccTransport, flags: u32) -> SmrwPowerLimits {
+fn probe_smrw_limits(
+    transport: &dyn UwccTransport,
+    flags: u32,
+    pl4_doubled: bool,
+) -> SmrwPowerLimits {
     if !transport.is_available() || (flags & UWCC_FLAG_HAS_SMRW) == 0 {
         return SmrwPowerLimits::chassis_0x1a_default();
     }
@@ -770,21 +938,35 @@ fn probe_smrw_limits(transport: &dyn UwccTransport, flags: u32) -> SmrwPowerLimi
     };
     if let Ok(resp) = transport.smrw(req12) {
         if let Some(mut limits) = SmrwPowerLimits::decode_inou0000_12byte(&resp.data[..12]) {
-            // Merge optional EC factory ceiling registers (0x07A7..=0x07A9, e.g. 0xD2 = 210W).
+            if pl4_doubled {
+                limits.pl4_max_w = limits.pl4_max_w.saturating_mul(2);
+            }
+            // Merge optional EC factory Turbo ceiling registers (0x07A7..=0x07A9) ONLY when
+            // 0x078E BIT(6) (RamFan 1.5 capable) is set; otherwise 0x07A7..=0x07A9 is Battery Saver.
             if (flags & UWCC_FLAG_HAS_EC) != 0 {
-                if let Ok(ec_pl1) = transport.ec_read(uwcc_ec_reg::TDP_FACTORY_PL1_MAX) {
-                    if (15..u8::MAX).contains(&ec_pl1) {
-                        limits.pl1_max_w = limits.pl1_max_w.max(i32::from(ec_pl1));
+                let has_ramfan15 = transport
+                    .ec_read(uwcc_ec_reg::FAN_CTRL_CAPS)
+                    .is_ok_and(|v| (v & uwcc_ec_reg::FAN_CTRL_CAPS_RAMFAN15_BIT) != 0);
+                if has_ramfan15 {
+                    if let Ok(ec_pl1) = transport.ec_read(uwcc_ec_reg::TDP_FACTORY_PL1_MAX) {
+                        if (15..u8::MAX).contains(&ec_pl1) {
+                            limits.pl1_max_w = limits.pl1_max_w.max(i32::from(ec_pl1));
+                        }
                     }
-                }
-                if let Ok(ec_pl2) = transport.ec_read(uwcc_ec_reg::TDP_FACTORY_PL2_MAX) {
-                    if (15..u8::MAX).contains(&ec_pl2) {
-                        limits.pl2_max_w = limits.pl2_max_w.max(i32::from(ec_pl2));
+                    if let Ok(ec_pl2) = transport.ec_read(uwcc_ec_reg::TDP_FACTORY_PL2_MAX) {
+                        if (15..u8::MAX).contains(&ec_pl2) {
+                            limits.pl2_max_w = limits.pl2_max_w.max(i32::from(ec_pl2));
+                        }
                     }
-                }
-                if let Ok(ec_pl4) = transport.ec_read(uwcc_ec_reg::TDP_FACTORY_PL4_MAX) {
-                    if (15..u8::MAX).contains(&ec_pl4) {
-                        limits.pl4_max_w = limits.pl4_max_w.max(i32::from(ec_pl4));
+                    if let Ok(ec_pl4) = transport.ec_read(uwcc_ec_reg::TDP_FACTORY_PL4_MAX) {
+                        if (15..u8::MAX).contains(&ec_pl4) {
+                            let ec_pl4_w = if pl4_doubled {
+                                i32::from(ec_pl4) * 2
+                            } else {
+                                i32::from(ec_pl4)
+                            };
+                            limits.pl4_max_w = limits.pl4_max_w.max(ec_pl4_w);
+                        }
                     }
                 }
             }
@@ -873,9 +1055,16 @@ impl PlatformBackend for UwccBackend {
                 ))
             }
         };
-        let hi = self.transport.ec_read(hi_reg)?;
-        let lo = self.transport.ec_read(lo_reg)?;
-        decode_tachometer_rpm(hi, lo)
+        // Tear-free 16-bit read: hi1 -> lo -> hi2 (up to 3 attempts).
+        for _ in 0..3 {
+            let hi1 = self.transport.ec_read(hi_reg)?;
+            let lo = self.transport.ec_read(lo_reg)?;
+            let hi2 = self.transport.ec_read(hi_reg)?;
+            if hi1 == hi2 {
+                return decode_tachometer_rpm(hi1, lo);
+            }
+        }
+        Err(PlatformError::Unavailable)
     }
 
     fn set_fan_speed_percent(&self, fan_idx: usize, percent: u8) -> Result<(), PlatformError> {
@@ -896,30 +1085,28 @@ impl PlatformBackend for UwccBackend {
         };
         let duty = percent_to_ec_duty(percent);
         // On Uniwill 0x1A, setting UFME (0x0751 BIT(7)) without CUME (0x0727 BIT(6)) forces
-        // Office mode (45 W CPU cap). Latch Custom mode bits before enabling manual fan duty.
+        // Office mode (45 W CPU cap). Latch Custom mode bits and disarm RamFan table latch.
         if self.is_chassis_0x1a() {
-            let _ = self.rmw_ec_bits(
+            self.rmw_ec_bits(
                 uwcc_ec_reg::CUSTOM_MODE_CTRL,
                 uwcc_ec_reg::CUSTOM_MODE_CTRL_BIT,
                 0,
-            );
-            let _ = self.rmw_ec_bits(
+            )?;
+            self.rmw_ec_bits(
                 uwcc_ec_reg::CUSTOM_MODE_ENABLE,
                 uwcc_ec_reg::CUSTOM_MODE_CUME_BIT,
                 0,
-            );
-            // Ensure 0x07C6 BIT(2) (RamFan table mode) is cleared so EC obeys 0x1804/0x1809 duty.
-            let _ = self.rmw_ec_bits(
+            )?;
+            self.rmw_ec_bits(
                 uwcc_ec_reg::AP_OEM_6,
                 0,
                 uwcc_ec_reg::AP_OEM_6_UNIVERSAL_FAN_BIT,
-            );
+            )?;
         }
         let prev = self.transport.ec_read(uwcc_ec_reg::FAN_MANUAL_MODE)?;
         let mut next = prev | uwcc_ec_reg::FAN_MODE_USER_BIT;
-        // On Uniwill 0x1A, stock/manual duty caps around ~60% (~3500 RPM) unless FAN_MODE_BOOST
-        // (0x0751 BIT(6)) is set (verified live: 0x0751=0xC0 -> 0x075B=200 -> 5158/5259 RPM).
-        // Use hysteresis (>= 98% on, < 95% off) so 100% fan curve targets reach full ~5200+ RPM.
+        // On Uniwill 0x1A, legacy manual duty caps around ~60% (~3500 RPM) unless FAN_MODE_BOOST
+        // (0x0751 BIT(6)) is set (hysteresis: >= 98% on, < 95% off).
         if self.is_chassis_0x1a() {
             if percent >= 98 {
                 next |= uwcc_ec_reg::FAN_MODE_BOOST_BIT;
@@ -959,7 +1146,12 @@ impl PlatformBackend for UwccBackend {
     fn read_tdp(&self, index: usize) -> Result<i32, PlatformError> {
         self.require_ec()?;
         let reg = Self::tdp_reg(index)?;
-        Ok(i32::from(self.transport.ec_read(reg)?))
+        let raw = i32::from(self.transport.ec_read(reg)?);
+        if index == 2 && self.pl4_doubled {
+            Ok(raw * 2)
+        } else {
+            Ok(raw)
+        }
     }
 
     fn read_tdp_limits(&self, index: usize) -> Result<(i32, i32), PlatformError> {
@@ -980,12 +1172,16 @@ impl PlatformBackend for UwccBackend {
             ));
         }
         let reg = Self::tdp_reg(index)?;
-        let raw = u8::try_from(watts)
+        let encoded = if index == 2 && self.pl4_doubled {
+            watts / 2
+        } else {
+            watts
+        };
+        let raw = u8::try_from(encoded)
             .map_err(|_| PlatformError::InvalidArgument("Power limit out of byte range"))?;
         if self.is_chassis_0x1a() {
             // On Uniwill 0x1A, custom PL1/PL2/PL4 only take effect in Custom mode (CUME + 0x0726
-            // BIT(7) + AP_OEM BIT(0) + UFME + 0x07C6 BIT(2)); otherwise EC caps CPU at 45 W or
-            // zeroes 0x0783..=0x0785 within 1s.
+            // BIT(7) + AP_OEM BIT(0) + UFME); otherwise EC caps CPU at 45 W or zeroes 0x0783..=0x0785.
             self.enable_custom_mode_0x1a()?;
         } else if let Ok(prev_oem) = self.transport.ec_read(uwcc_ec_reg::AP_OEM) {
             if (prev_oem & uwcc_ec_reg::AP_OEM_ENABLE_MANUAL_CTRL_BIT) == 0 {
@@ -1001,31 +1197,40 @@ impl PlatformBackend for UwccBackend {
     fn read_perf_profile(&self) -> Result<i32, PlatformError> {
         self.require_ec()?;
         if self.is_chassis_0x1a() {
-            // Follow DSDT PMSC priority on 0x1A:
-            // CUME (0x0727 BIT(6)) -> Custom (3); TBME (0x0751 BIT(4)) -> Turbo (3);
-            // UFME (0x0751 BIT(7)) -> Office (1); else -> Gaming (2).
-            let cume = self
-                .transport
-                .ec_read(uwcc_ec_reg::CUSTOM_MODE_ENABLE)
-                .map(|v| (v & uwcc_ec_reg::CUSTOM_MODE_CUME_BIT) != 0)
-                .unwrap_or(false);
-            if cume {
-                return Ok(3);
-            }
-            let fan_ctrl = self.transport.ec_read(uwcc_ec_reg::FAN_MANUAL_MODE)?;
-            if (fan_ctrl & uwcc_ec_reg::FAN_MODE_TURBO_BIT) != 0 {
-                return Ok(3);
-            }
-            if (fan_ctrl & uwcc_ec_reg::FAN_MODE_USER_BIT) != 0 {
-                return Ok(1);
-            }
-            return Ok(2);
+            return match self.read_pmsc_mode()? {
+                "custom" | "turbo" => Ok(3),
+                "office" => Ok(1),
+                _ => Ok(2),
+            };
         }
         let code = i32::from(self.transport.ec_read(uwcc_ec_reg::PERF_MODE)?);
         if !(1..=3).contains(&code) {
             return Err(PlatformError::Unavailable);
         }
         Ok(code)
+    }
+
+    fn read_pmsc_mode(&self) -> Result<&'static str, PlatformError> {
+        self.require_ec()?;
+        // Follow DSDT PMSC priority:
+        // 1. CUME (0x0727 BIT(6)) -> "custom"
+        // 2. TBME (0x0751 BIT(4)) -> "turbo"
+        // 3. UFME (0x0751 BIT(7)) -> "office"
+        // 4. else                 -> "gaming"
+        let cume = (self.transport.ec_read(uwcc_ec_reg::CUSTOM_MODE_ENABLE)?
+            & uwcc_ec_reg::CUSTOM_MODE_CUME_BIT)
+            != 0;
+        if cume {
+            return Ok("custom");
+        }
+        let fan_ctrl = self.transport.ec_read(uwcc_ec_reg::FAN_MANUAL_MODE)?;
+        if (fan_ctrl & uwcc_ec_reg::FAN_MODE_TURBO_BIT) != 0 {
+            return Ok("turbo");
+        }
+        if (fan_ctrl & uwcc_ec_reg::FAN_MODE_USER_BIT) != 0 {
+            return Ok("office");
+        }
+        Ok("gaming")
     }
 
     fn set_perf_profile(&self, profile_code: i32) -> Result<(), PlatformError> {
@@ -1091,6 +1296,11 @@ impl PlatformBackend for UwccBackend {
 
     fn set_mode(&self, mode: i32) -> Result<(), PlatformError> {
         self.require_ec()?;
+        if self.is_chassis_0x1a() {
+            return Err(PlatformError::Unsupported(
+                "Raw EC 0x0752 mode writes are unsupported on chassis 0x1A; use set_perf_profile",
+            ));
+        }
         if !(0..=255).contains(&mode) {
             return Err(PlatformError::InvalidArgument(
                 "Uniwill mode must be in 0..=255",
@@ -1116,22 +1326,21 @@ impl PlatformBackend for UwccBackend {
     }
 
     fn read_tcc_offset(&self) -> Result<u8, PlatformError> {
-        self.require_available()?;
-        Err(PlatformError::Unsupported(
-            "CPU TCC offset is not mapped to EC 0x0743 (EC_ADDR_CTGP_DB_CTRL)",
-        ))
+        self.require_ec()?;
+        Ok(self.transport.ec_read(uwcc_ec_reg::TCC_OFFSET_READ)? & uwcc_ec_reg::TCC_OFFSET_MASK)
     }
 
     fn set_tcc_offset(&self, offset_c: u8) -> Result<(), PlatformError> {
-        self.require_available()?;
+        self.require_ec()?;
         if offset_c > MAX_TCC_OFFSET_C {
             return Err(PlatformError::InvalidArgument(
-                "CPU TCC offset must be 0..=63 C",
+                "CPU TCC offset must be 0..=40 C",
             ));
         }
-        Err(PlatformError::Unsupported(
-            "CPU TCC offset is not mapped to EC 0x0743 (EC_ADDR_CTGP_DB_CTRL)",
-        ))
+        self.transport.ec_write(
+            uwcc_ec_reg::TCC_OFFSET_C,
+            uwcc_ec_reg::TCC_OFFSET_ENABLE_BIT | offset_c,
+        )
     }
 
     fn set_pwup(&self, enable: bool, level: u32) -> Result<(), PlatformError> {
@@ -1151,19 +1360,39 @@ impl PlatformBackend for UwccBackend {
     }
 
     fn read_ctgp_watts(&self) -> Result<i32, PlatformError> {
-        self.require_available()?;
-        if (self.info.flags & UWCC_FLAG_HAS_EC) == 0 {
-            return Err(PlatformError::Unsupported("EC unavailable for cTGP read"));
+        self.require_ec()?;
+        if let Ok(live) = self.transport.ec_read(uwcc_ec_reg::CTGP_LIVE_OFFSET) {
+            if live != u8::MAX {
+                return Ok(self.smrw_limits.base_tgp_w + i32::from(live));
+            }
         }
-        let raw = self.transport.ec_read(uwcc_ec_reg::CTGP_WATTS)?;
-        if raw == 0 {
+        let offset = self.transport.ec_read(uwcc_ec_reg::CTGP_WATTS)?;
+        if offset == u8::MAX {
+            return Err(PlatformError::Unavailable);
+        }
+        Ok(self.smrw_limits.base_tgp_w + i32::from(offset))
+    }
+
+    fn set_ctgp_watts(&self, watts: i32) -> Result<(), PlatformError> {
+        self.set_ctgp(watts)
+    }
+
+    fn read_dynamic_boost_watts(&self) -> Result<i32, PlatformError> {
+        self.require_ec()?;
+        if let Ok(live) = self.transport.ec_read(uwcc_ec_reg::DB_LIVE_WATTS) {
+            if live != u8::MAX {
+                return Ok(i32::from(live));
+            }
+        }
+        let raw = self.transport.ec_read(uwcc_ec_reg::DYNAMIC_BOOST_WATTS)?;
+        if raw == u8::MAX {
             return Err(PlatformError::Unavailable);
         }
         Ok(i32::from(raw))
     }
 
-    fn set_ctgp_watts(&self, watts: i32) -> Result<(), PlatformError> {
-        self.set_ctgp(watts)
+    fn set_dynamic_boost_watts(&self, watts: i32) -> Result<(), PlatformError> {
+        self.set_dynamic_boost(watts)
     }
 
     fn charging_profiles_available(&self) -> Vec<String> {
@@ -1247,16 +1476,21 @@ impl PlatformBackend for UwccBackend {
         let preserved_low = (prev_ab & 0x1F) | uwcc_ec_reg::LOGO_EXISTS_BIT;
         if enabled && brightness > 0 {
             let scale = |v: u8| -> u8 { ((u16::from(v) * 50 + 127) / 255) as u8 };
+            // 5 hardware brightness levels: 0x01 (off), 0x21 (25%), 0x41 (50%), 0x61 (75%), 0x81 (100%).
             let br_bits = match brightness {
-                1..=85 => 0x20,
-                86..=170 => 0x40,
+                1..=63 => 0x20,
+                64..=127 => 0x40,
+                128..=191 => 0x60,
                 _ => 0x80,
             };
+            // Guard 0x07C5 BIT(5) so we never clobber Whisper Mode BIT(6) or other flags.
             let oem5 = self.transport.ec_read(uwcc_ec_reg::OEM_BYTE5)?;
-            self.transport.ec_write(
-                uwcc_ec_reg::OEM_BYTE5,
-                oem5 | uwcc_ec_reg::OEM_BYTE5_LOGO_BIT,
-            )?;
+            if (oem5 & uwcc_ec_reg::OEM_BYTE5_WHISPER_REQ_BIT) == 0 {
+                let next_oem5 = oem5 | uwcc_ec_reg::OEM_BYTE5_LOGO_BIT;
+                if next_oem5 != oem5 {
+                    self.transport.ec_write(uwcc_ec_reg::OEM_BYTE5, next_oem5)?;
+                }
+            }
             self.transport.ec_write(uwcc_ec_reg::LOGO_R, scale(r))?;
             self.transport.ec_write(uwcc_ec_reg::LOGO_G, scale(g))?;
             self.transport.ec_write(uwcc_ec_reg::LOGO_B, scale(b))?;
@@ -1265,6 +1499,14 @@ impl PlatformBackend for UwccBackend {
             self.transport
                 .ec_write(uwcc_ec_reg::LOGO_COMMIT, uwcc_ec_reg::LOGO_COMMIT_VAL)
         } else {
+            // Symmetrically clear 0x07C5 BIT(5) on disable without clobbering Whisper Mode BIT(6).
+            let oem5 = self.transport.ec_read(uwcc_ec_reg::OEM_BYTE5)?;
+            if (oem5 & uwcc_ec_reg::OEM_BYTE5_WHISPER_REQ_BIT) == 0 {
+                let next_oem5 = oem5 & !uwcc_ec_reg::OEM_BYTE5_LOGO_BIT;
+                if next_oem5 != oem5 {
+                    self.transport.ec_write(uwcc_ec_reg::OEM_BYTE5, next_oem5)?;
+                }
+            }
             self.transport
                 .ec_write(uwcc_ec_reg::LOGO_BRIGHTNESS, preserved_low)?;
             self.transport
@@ -1275,10 +1517,11 @@ impl PlatformBackend for UwccBackend {
     fn set_lightbar_power(&self, enabled: bool) -> Result<(), PlatformError> {
         self.require_ec()?;
         let prev = self.transport.ec_read(uwcc_ec_reg::LIGHTBAR_AC_CTRL)?;
+        // Always keep BIT(0) (LIGHTBAR_APP_EXISTS) set; toggle BIT(2) (S0_OFF: 0 = on, 1 = off).
         let next = if enabled {
-            prev | uwcc_ec_reg::LIGHTBAR_APP_EXISTS_BIT
+            (prev | uwcc_ec_reg::LIGHTBAR_APP_EXISTS_BIT) & !uwcc_ec_reg::LIGHTBAR_S0_OFF_BIT
         } else {
-            prev & !uwcc_ec_reg::LIGHTBAR_APP_EXISTS_BIT
+            prev | uwcc_ec_reg::LIGHTBAR_APP_EXISTS_BIT | uwcc_ec_reg::LIGHTBAR_S0_OFF_BIT
         };
         self.transport.ec_write(uwcc_ec_reg::LIGHTBAR_AC_CTRL, next)
     }
@@ -1290,13 +1533,11 @@ impl PlatformBackend for UwccBackend {
 
     fn set_fn_lock(&self, enabled: bool) -> Result<(), PlatformError> {
         self.require_ec()?;
-        let prev = self.transport.ec_read(uwcc_ec_reg::FN_LOCK)?;
-        let next = if enabled {
-            prev | uwcc_ec_reg::FN_LOCK_BIT
+        if enabled {
+            self.rmw_ec_bits(uwcc_ec_reg::FN_LOCK, uwcc_ec_reg::FN_LOCK_BIT, 0)
         } else {
-            prev & !uwcc_ec_reg::FN_LOCK_BIT
-        };
-        self.transport.ec_write(uwcc_ec_reg::FN_LOCK, next)
+            self.rmw_ec_bits(uwcc_ec_reg::FN_LOCK, 0, uwcc_ec_reg::FN_LOCK_BIT)
+        }
     }
 
     fn read_win_lock(&self) -> Result<bool, PlatformError> {
@@ -1319,29 +1560,52 @@ impl PlatformBackend for UwccBackend {
 
     fn read_usb_sleep_charging(&self) -> Result<bool, PlatformError> {
         self.require_ec()?;
-        Ok(self.transport.ec_read(uwcc_ec_reg::USB_SLEEP_CHARGING)? != 0)
+        Ok((self.transport.ec_read(uwcc_ec_reg::USB_SLEEP_CHARGING)?
+            & uwcc_ec_reg::USB_SLEEP_CHARGING_BIT)
+            != 0)
     }
 
     fn set_usb_sleep_charging(&self, enabled: bool) -> Result<(), PlatformError> {
         self.require_ec()?;
-        self.transport
-            .ec_write(uwcc_ec_reg::USB_SLEEP_CHARGING, u8::from(enabled))
+        if enabled {
+            self.rmw_ec_bits(
+                uwcc_ec_reg::USB_SLEEP_CHARGING,
+                uwcc_ec_reg::USB_SLEEP_CHARGING_BIT,
+                0,
+            )
+        } else {
+            self.rmw_ec_bits(
+                uwcc_ec_reg::USB_SLEEP_CHARGING,
+                0,
+                uwcc_ec_reg::USB_SLEEP_CHARGING_BIT,
+            )
+        }
     }
 
     fn read_charge_thresholds(&self) -> Result<(u8, u8), PlatformError> {
         self.require_ec()?;
-        let raw = self.transport.ec_read(uwcc_ec_reg::CHARGE_CTRL)?;
-        let end = raw & uwcc_ec_reg::CHARGE_CTRL_MASK;
+        let raw_end =
+            self.transport.ec_read(uwcc_ec_reg::CHARGE_CTRL)? & uwcc_ec_reg::CHARGE_CTRL_MASK;
+        let end = if raw_end == 0 {
+            MAX_CHARGE_THRESHOLD_PCT
+        } else {
+            raw_end
+        };
         if !(MIN_CHARGE_THRESHOLD_PCT..=MAX_CHARGE_THRESHOLD_PCT).contains(&end) {
             return Err(PlatformError::InvalidArgument(
                 "EC reported invalid charge threshold",
             ));
         }
-        let start = end.saturating_sub(5).max(MIN_CHARGE_THRESHOLD_PCT);
-        let start = if start >= end {
-            end.saturating_sub(1)
+        let raw_start = self.transport.ec_read(uwcc_ec_reg::CHARGE_LIMIT_DOWN)?;
+        let start = if (MIN_CHARGE_THRESHOLD_PCT..end).contains(&raw_start) {
+            raw_start
         } else {
-            start
+            let fallback = end.saturating_sub(5).max(MIN_CHARGE_THRESHOLD_PCT);
+            if fallback >= end {
+                end.saturating_sub(1)
+            } else {
+                fallback
+            }
         };
         Ok((start, end))
     }
@@ -1356,29 +1620,19 @@ impl PlatformBackend for UwccBackend {
                 "Charge thresholds must satisfy 20 <= start < end <= 100",
             ));
         }
-        let prev = self.transport.ec_read(uwcc_ec_reg::CHARGE_CTRL)?;
-        let next = (prev & !uwcc_ec_reg::CHARGE_CTRL_MASK) | (end & uwcc_ec_reg::CHARGE_CTRL_MASK);
-        self.transport.ec_write(uwcc_ec_reg::CHARGE_CTRL, next)
+        self.transport
+            .ec_write(uwcc_ec_reg::CHARGE_LIMIT_DOWN, start)?;
+        // NEVER write back BIT(7) (CHARGE_CTRL_REACHED); encode 100% as 0.
+        let end_raw = (if end == MAX_CHARGE_THRESHOLD_PCT {
+            0
+        } else {
+            end
+        }) & uwcc_ec_reg::CHARGE_CTRL_MASK;
+        self.transport.ec_write(uwcc_ec_reg::CHARGE_CTRL, end_raw)
     }
 
     fn set_fan_boost(&self, enabled: bool) -> Result<(), PlatformError> {
         self.require_ec()?;
-        if self.is_chassis_0x1a() {
-            // Verified live on X6AR55xY: 0x0751 BIT(6) (FAN_MODE_BOOST) drives 0x075B=200 (~5200+ RPM).
-            return if enabled {
-                self.rmw_ec_bits(
-                    uwcc_ec_reg::FAN_MANUAL_MODE,
-                    uwcc_ec_reg::FAN_MODE_BOOST_BIT,
-                    0,
-                )
-            } else {
-                self.rmw_ec_bits(
-                    uwcc_ec_reg::FAN_MANUAL_MODE,
-                    0,
-                    uwcc_ec_reg::FAN_MODE_BOOST_BIT,
-                )
-            };
-        }
         self.ramfan.set_fan_boost(enabled)
     }
 

@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+
 //! Pluggable hardware transport seam (`M6.7` / `ADR-05`) for keyboard & lightbar LEDs.
 
 use serde::{Deserialize, Serialize};

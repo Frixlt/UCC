@@ -20,6 +20,9 @@
 #define UWCC_SMRW_MAX_LEN       64U
 #define UWCC_SMRW_TABLE_LIMIT   0x0100U
 #define UWCC_WMI_RING_CAPACITY  64U
+#define UWCC_PWUP_MAX_LEVEL     7U
+#define UWCC_PWBT_MAX_WATTS     300U
+#define UWCC_PWDB_MAX_WATTS     100U
 
 /* Capability flags reported in struct uwcc_info.flags */
 #define UWCC_FLAG_HAS_EC         (1U << 0)
@@ -73,7 +76,7 @@ struct uwcc_smrw {
 /**
  * struct uwcc_pwup - Liquid-cooler power boost (ACPI PWUP) payload.
  * @enable: 0 to disable power boost, 1 to enable.
- * @level:  Boost level (0..=3; must be 0 when enable == 0).
+ * @level:  Boost level (0..=7; must be 0 when enable == 0).
  */
 struct uwcc_pwup {
 	__u32 enable;

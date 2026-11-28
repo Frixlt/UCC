@@ -300,14 +300,16 @@ pub fn detect_vendor(hardware: &dyn HardwareIo) -> DeviceVendor {
         return DeviceVendor::Unsupported;
     }
 
-    // 1. Check Clevo driver capabilities
-    if let Ok(1) = hardware.read_i32(requests::R_HWCHECK_CL) {
-        return DeviceVendor::Clevo;
-    }
-
-    // 2. Check Uniwill driver capabilities
+    // 1. Check Uniwill driver capabilities BEFORE Clevo: some Uniwill chassis
+    //    (e.g. MECHREVO YAOSHI X6AR55xY / 0x1A) also expose Clevo WMI GUID ABBC0F6D
+    //    and must never be misdetected as Clevo.
     if let Ok(1) = hardware.read_i32(requests::R_HWCHECK_UW) {
         return DeviceVendor::Uniwill;
+    }
+
+    // 2. Check Clevo driver capabilities
+    if let Ok(1) = hardware.read_i32(requests::R_HWCHECK_CL) {
+        return DeviceVendor::Clevo;
     }
 
     // 3. Neither hardware interface responded
@@ -440,6 +442,200 @@ impl DmiQuirks {
     }
 }
 
+/// CPU silicon vendor used to disambiguate colliding EC ProjectIDs (e.g. `0x1A` Intel vs AMD).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
+pub enum CpuVendor {
+    Intel,
+    Amd,
+    #[default]
+    Unknown,
+}
+
+impl CpuVendor {
+    /// Parses a CPU vendor identifier from `/proc/cpuinfo` `vendor_id` (`GenuineIntel`,
+    /// `AuthenticAMD`) or a human-readable CPU model string.
+    pub fn from_str_hint(raw: &str) -> Self {
+        let lower = raw.trim().to_ascii_lowercase();
+        if lower.contains("genuineintel") || lower.contains("intel") {
+            Self::Intel
+        } else if lower.contains("authenticamd") || lower.contains("amd") {
+            Self::Amd
+        } else {
+            Self::Unknown
+        }
+    }
+
+    /// Reads CPU vendor from `/proc/cpuinfo` via [`Sysfs`].
+    pub fn read_from_sysfs(sysfs: &dyn Sysfs) -> Self {
+        let Ok(raw) = sysfs.read(Path::new("/proc/cpuinfo")) else {
+            return Self::Unknown;
+        };
+        for line in raw.lines() {
+            if let Some(rest) = line.strip_prefix("vendor_id") {
+                if let Some((_, val)) = rest.split_once(':') {
+                    let parsed = Self::from_str_hint(val);
+                    if parsed != Self::Unknown {
+                        return parsed;
+                    }
+                }
+            }
+        }
+        Self::Unknown
+    }
+}
+
+/// Disambiguated Uniwill chassis family for `0x1A` (`ProjectID = 13 << 1`) and related boards.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum ChassisFamily {
+    /// Intel `X6AR55xY` / `X6AR5xxY` / `X6AR5xxY_mLED` (`IDY_7Y`, MECHREVO YAOSHI,
+    /// XMG NEO 16 E25, TUXEDO Stellaris 16 Gen7 Intel).
+    IntelX6AR55xY,
+    /// AMD `X6FR5xxY` / `X6FR57TY` / `X6FR559Y` (MECHREVO AMD, XMG NEO 16 A25,
+    /// TUXEDO Stellaris 16 Gen7 AMD, PCSpecialist Recoil 16 AMD).
+    AmdX6FR5xxY,
+    /// Generic or legacy chassis without `0x1A` Intel/AMD collision.
+    Generic,
+}
+
+/// Hardware chassis profile capturing platform-specific EC quirks for disambiguated models.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub struct ChassisProfile {
+    pub family: ChassisFamily,
+    pub cpu_vendor: CpuVendor,
+    /// Whether `0x07C6` contains shared firmware bits (e.g. EC 77.0 `BIT(6)` power button,
+    /// ERM battery flags `BIT(3..4)`) and must only be modified via RMW on `BIT(2)` (`0x04`).
+    pub requires_0x07c6_rmw: bool,
+    /// Whether the chassis uses `CUME` (`0x0727 BIT(6)`) + `UFME` (`0x0751 BIT(7)`) custom mode.
+    pub cume_capable: bool,
+    /// Whether battery protection uses `0x07A6` charge modes rather than `0x07B9` percentage limits.
+    pub uses_charge_modes: bool,
+}
+
+impl ChassisProfile {
+    pub const fn intel_x6ar55xy() -> Self {
+        Self {
+            family: ChassisFamily::IntelX6AR55xY,
+            cpu_vendor: CpuVendor::Intel,
+            requires_0x07c6_rmw: true,
+            cume_capable: true,
+            uses_charge_modes: true,
+        }
+    }
+
+    pub const fn amd_x6fr5xxy() -> Self {
+        Self {
+            family: ChassisFamily::AmdX6FR5xxY,
+            cpu_vendor: CpuVendor::Amd,
+            requires_0x07c6_rmw: true,
+            cume_capable: true,
+            uses_charge_modes: true,
+        }
+    }
+
+    pub const fn generic(cpu_vendor: CpuVendor) -> Self {
+        Self {
+            family: ChassisFamily::Generic,
+            cpu_vendor,
+            requires_0x07c6_rmw: true,
+            cume_capable: false,
+            uses_charge_modes: false,
+        }
+    }
+}
+
+/// Known MECHREVO Intel `X6AR5*` DMI `board_name` values (excluding the exact 4-field
+/// `YAOSHI Series-X6AR55xY` tuple which is gated strictly on all 4 DMI fields).
+const MECHREVO_INTEL_BOARD_NAMES: &[&str] = &[
+    "X6AR5xxY",
+    "X6AR5xxY_mLED",
+    "YAOSHI Series-X6AR5xxY",
+    "YAOSHI Series-X6AR5xxY_mLED",
+];
+
+/// Known MECHREVO AMD `X6FR5*` DMI `board_name` values.
+const MECHREVO_AMD_BOARD_NAMES: &[&str] = &[
+    "X6FR5xxY",
+    "X6FR57TY",
+    "X6FR559Y",
+    "YAOSHI Series-X6FR5xxY",
+    "YAOSHI Series-X6FR57TY",
+    "YAOSHI Series-X6FR559Y",
+];
+
+fn match_mechrevo_expanded_board(dmi: &DmiInfo) -> Option<UniwillDeviceID> {
+    if classify_manufacturer(&dmi.sys_vendor, &dmi.board_vendor) != LaptopManufacturer::Mechrevo {
+        return None;
+    }
+    let board = dmi.board_name.as_str();
+    if MECHREVO_INTEL_BOARD_NAMES.contains(&board) {
+        return Some(UniwillDeviceID::STELLARIS16I07);
+    }
+    if MECHREVO_AMD_BOARD_NAMES.contains(&board) {
+        return Some(UniwillDeviceID::STELLARIS16A07);
+    }
+    None
+}
+
+/// Disambiguates Intel `X6AR55xY` (`IDY_7Y`) vs AMD `X6FR5xxY` chassis that share EC
+/// `ProjectID = 0x1A` (`13 << 1`), using DMI `board_name` (highest priority) and [`CpuVendor`].
+pub fn disambiguate_chassis_profile(
+    dmi: &DmiInfo,
+    cpu_vendor: CpuVendor,
+    project_id: Option<u32>,
+) -> ChassisProfile {
+    let board = dmi.board_name.trim();
+    let is_intel_board = board.eq_ignore_ascii_case("YAOSHI Series-X6AR55xY")
+        || board.eq_ignore_ascii_case("X6AR55xY")
+        || MECHREVO_INTEL_BOARD_NAMES
+            .iter()
+            .any(|name| board.eq_ignore_ascii_case(name));
+    if is_intel_board {
+        return if cpu_vendor == CpuVendor::Amd {
+            ChassisProfile::generic(cpu_vendor)
+        } else {
+            ChassisProfile::intel_x6ar55xy()
+        };
+    }
+
+    let is_amd_board = MECHREVO_AMD_BOARD_NAMES
+        .iter()
+        .any(|name| board.eq_ignore_ascii_case(name))
+        || board.starts_with("X6FR5");
+    if is_amd_board {
+        return if cpu_vendor == CpuVendor::Intel {
+            ChassisProfile::generic(cpu_vendor)
+        } else {
+            ChassisProfile::amd_x6fr5xxy()
+        };
+    }
+
+    match identify_device(dmi, None) {
+        Some(UniwillDeviceID::STELLARIS16I07 | UniwillDeviceID::XNE16E25)
+            if cpu_vendor != CpuVendor::Amd =>
+        {
+            return ChassisProfile::intel_x6ar55xy();
+        }
+        Some(
+            UniwillDeviceID::STELLARIS16A07
+            | UniwillDeviceID::XNE16A25
+            | UniwillDeviceID::PCS_X6FR559Y,
+        ) if cpu_vendor != CpuVendor::Intel => {
+            return ChassisProfile::amd_x6fr5xxy();
+        }
+        _ => {}
+    }
+
+    if project_id == Some(crate::uwcc::CHASSIS_PROJECT_0X1A) {
+        return match cpu_vendor {
+            CpuVendor::Intel => ChassisProfile::intel_x6ar55xy(),
+            CpuVendor::Amd => ChassisProfile::amd_x6fr5xxy(),
+            CpuVendor::Unknown => ChassisProfile::generic(CpuVendor::Unknown),
+        };
+    }
+
+    ChassisProfile::generic(cpu_vendor)
+}
+
 /// Check whether the laptop is a whitelisted supported device matching baseline `Utils.hpp`.
 pub fn is_device_supported(dmi: &DmiInfo) -> bool {
     if dmi.product_sku == "0001"
@@ -447,6 +643,10 @@ pub fn is_device_supported(dmi: &DmiInfo) -> bool {
         && dmi.board_name == "YAOSHI Series-X6AR55xY"
         && dmi.board_version == "Standard"
     {
+        return true;
+    }
+
+    if match_mechrevo_expanded_board(dmi).is_some() {
         return true;
     }
 
@@ -465,6 +665,11 @@ pub fn identify_device(
         && dmi.product_sku == "0001"
     {
         return Some(UniwillDeviceID::STELLARIS16I07);
+    }
+
+    // 1b. Expanded MECHREVO DMI board_name matching (X6AR5xxY / X6AR5xxY_mLED / X6FR5*)
+    if let Some(id) = match_mechrevo_expanded_board(dmi) {
+        return Some(id);
     }
 
     // 2. SKU matching table
@@ -635,5 +840,123 @@ pub fn detect_device_capabilities(
             ctgp_supported: false,
             hwp_dynamic_boost_supported: false,
         },
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::traits::{MockHardwareIo, MockSysfs};
+
+    #[test]
+    fn detect_vendor_prefers_uniwill_when_both_uw_and_cl_present() {
+        let hw = MockHardwareIo::new();
+        hw.set_i32_read(requests::R_HWCHECK_CL, 1);
+        hw.set_i32_read(requests::R_HWCHECK_UW, 1);
+        assert_eq!(detect_vendor(&hw), DeviceVendor::Uniwill);
+    }
+
+    #[test]
+    fn expanded_mechrevo_board_names_supported_and_identified() {
+        for intel_board in ["X6AR5xxY", "X6AR5xxY_mLED", "YAOSHI Series-X6AR5xxY_mLED"] {
+            let dmi = DmiInfo {
+                sys_vendor: "MECHREVO".into(),
+                board_name: intel_board.into(),
+                ..Default::default()
+            };
+            assert!(
+                is_device_supported(&dmi),
+                "{intel_board} should be supported"
+            );
+            assert_eq!(
+                identify_device(&dmi, None),
+                Some(UniwillDeviceID::STELLARIS16I07),
+                "{intel_board} should map to STELLARIS16I07"
+            );
+        }
+
+        for amd_board in ["X6FR5xxY", "X6FR57TY", "X6FR559Y"] {
+            let dmi = DmiInfo {
+                sys_vendor: "MECHREVO".into(),
+                board_name: amd_board.into(),
+                ..Default::default()
+            };
+            assert!(is_device_supported(&dmi), "{amd_board} should be supported");
+            assert_eq!(
+                identify_device(&dmi, None),
+                Some(UniwillDeviceID::STELLARIS16A07),
+                "{amd_board} should map to STELLARIS16A07"
+            );
+        }
+
+        // Non-MECHREVO vendor with MECHREVO board name does not match MECHREVO alias
+        let non_mechrevo = DmiInfo {
+            sys_vendor: "OtherVendor".into(),
+            board_name: "X6FR5xxY".into(),
+            ..Default::default()
+        };
+        assert!(!is_device_supported(&non_mechrevo));
+        assert_eq!(identify_device(&non_mechrevo, None), None);
+    }
+
+    #[test]
+    fn disambiguate_chassis_profile_intel_vs_amd_and_cpu_vendor() {
+        let intel_dmi = DmiInfo {
+            sys_vendor: "MECHREVO".into(),
+            board_name: "YAOSHI Series-X6AR55xY".into(),
+            ..Default::default()
+        };
+        assert_eq!(
+            disambiguate_chassis_profile(&intel_dmi, CpuVendor::Intel, Some(0x1A)).family,
+            ChassisFamily::IntelX6AR55xY
+        );
+        // Contradictory board_name (Intel) + CPU vendor (AMD) fails safe to Generic
+        assert_eq!(
+            disambiguate_chassis_profile(&intel_dmi, CpuVendor::Amd, Some(0x1A)).family,
+            ChassisFamily::Generic
+        );
+
+        let amd_dmi = DmiInfo {
+            sys_vendor: "MECHREVO".into(),
+            board_name: "X6FR57TY".into(),
+            ..Default::default()
+        };
+        assert_eq!(
+            disambiguate_chassis_profile(&amd_dmi, CpuVendor::Amd, Some(0x1A)).family,
+            ChassisFamily::AmdX6FR5xxY
+        );
+        // Contradictory board_name (AMD) + CPU vendor (Intel) fails safe to Generic
+        assert_eq!(
+            disambiguate_chassis_profile(&amd_dmi, CpuVendor::Intel, Some(0x1A)).family,
+            ChassisFamily::Generic
+        );
+
+        // Fallback to project_id 0x1A + CPU vendor when board_name is unknown
+        let empty_dmi = DmiInfo::default();
+        assert_eq!(
+            disambiguate_chassis_profile(&empty_dmi, CpuVendor::Intel, Some(0x1A)).family,
+            ChassisFamily::IntelX6AR55xY
+        );
+        assert_eq!(
+            disambiguate_chassis_profile(&empty_dmi, CpuVendor::Amd, Some(0x1A)).family,
+            ChassisFamily::AmdX6FR5xxY
+        );
+
+        // CpuVendor::read_from_sysfs parses /proc/cpuinfo
+        let sysfs = MockSysfs::new();
+        sysfs.set_file(
+            "/proc/cpuinfo",
+            "processor	: 0
+vendor_id	: GenuineIntel
+",
+        );
+        assert_eq!(CpuVendor::read_from_sysfs(&sysfs), CpuVendor::Intel);
+        sysfs.set_file(
+            "/proc/cpuinfo",
+            "processor	: 0
+vendor_id	: AuthenticAMD
+",
+        );
+        assert_eq!(CpuVendor::read_from_sysfs(&sysfs), CpuVendor::Amd);
     }
 }

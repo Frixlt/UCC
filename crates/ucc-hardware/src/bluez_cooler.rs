@@ -5,8 +5,8 @@
 //! fake BlueZ test stands run through the exact same client entry points).
 
 use crate::cooler::{
-    CoolerController, CoolerError, CoolerPacketEncoder, NORDIC_UART_CHAR_RX, NORDIC_UART_CHAR_TX,
-    NORDIC_UART_SERVICE_UUID,
+    CoolerController, CoolerError, CoolerPacketEncoder, GATT_CACHE_PURGE_FAILURE_THRESHOLD,
+    NORDIC_UART_CHAR_RX, NORDIC_UART_CHAR_TX,
 };
 use std::collections::HashMap;
 use std::time::{Duration, Instant};
@@ -16,6 +16,7 @@ use zbus::{Connection, Proxy};
 const DEFAULT_GATT_RESOLVE_TIMEOUT: Duration = Duration::from_secs(5);
 const GATT_POLL_INTERVAL: Duration = Duration::from_millis(25);
 const BLUEZ_GATT_TIMEOUT: Duration = Duration::from_secs(3);
+const MAX_DISCOVER_BACKOFF: Duration = Duration::from_secs(30);
 
 /// Supported LCT liquid cooler hardware revisions.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -124,18 +125,22 @@ impl BluezCoolerClient {
     }
 
     async fn get_managed_objects(&self) -> Result<ManagedObjectsMap, CoolerError> {
-        let proxy = Proxy::new(
-            &self.conn,
-            self.bus_name.as_str(),
-            "/",
-            "org.freedesktop.DBus.ObjectManager",
+        let proxy = tokio::time::timeout(
+            BLUEZ_GATT_TIMEOUT,
+            Proxy::new(
+                &self.conn,
+                self.bus_name.as_str(),
+                "/",
+                "org.freedesktop.DBus.ObjectManager",
+            ),
         )
         .await
+        .map_err(|_| CoolerError::NotConnected)?
         .map_err(|_| CoolerError::NotConnected)?;
 
-        proxy
-            .call("GetManagedObjects", &())
+        tokio::time::timeout(BLUEZ_GATT_TIMEOUT, proxy.call("GetManagedObjects", &()))
             .await
+            .map_err(|_| CoolerError::NotConnected)?
             .map_err(|_| CoolerError::NotConnected)
     }
 
@@ -188,13 +193,6 @@ impl BluezCoolerClient {
                 .get("Name")
                 .and_then(|v| String::try_from(v.clone()).ok())
                 .unwrap_or_default();
-            let uuids = dev_props
-                .get("UUIDs")
-                .and_then(|v| Vec::<String>::try_from(v.clone()).ok())
-                .unwrap_or_default();
-            let _has_nus = uuids
-                .iter()
-                .any(|u| u.eq_ignore_ascii_case(NORDIC_UART_SERVICE_UUID));
 
             // Strict name match prevents auto-connecting to non-cooler Nordic UART BLE peripherals
             // (e.g. watches, microcontrollers) per ISSUE-36.
@@ -254,16 +252,21 @@ impl BluezCoolerClient {
         gatt_timeout: Duration,
     ) -> Result<BluezGattSession, CoolerError> {
         let deadline = tokio::time::Instant::now() + gatt_timeout;
-        let dev_proxy = zbus::proxy::Builder::<Proxy>::new(&self.conn)
+        let remaining_dev = deadline.saturating_duration_since(tokio::time::Instant::now());
+        if remaining_dev.is_zero() {
+            return Err(CoolerError::NotConnected);
+        }
+        let dev_builder = zbus::proxy::Builder::<Proxy>::new(&self.conn)
             .destination(self.bus_name.clone())
             .map_err(|_| CoolerError::NotConnected)?
             .path(cooler.device_path.clone())
             .map_err(|_| CoolerError::NotConnected)?
             .interface("org.bluez.Device1")
             .map_err(|_| CoolerError::NotConnected)?
-            .cache_properties(zbus::proxy::CacheProperties::No)
-            .build()
+            .cache_properties(zbus::proxy::CacheProperties::No);
+        let dev_proxy = tokio::time::timeout(remaining_dev, dev_builder.build())
             .await
+            .map_err(|_| CoolerError::NotConnected)?
             .map_err(|_| CoolerError::NotConnected)?;
 
         let remaining_connect = deadline.saturating_duration_since(tokio::time::Instant::now());
@@ -315,14 +318,24 @@ impl BluezCoolerClient {
         };
 
         if let Some(ref rx_path) = rx_opt {
-            let Ok(rx_proxy) = Proxy::new(
-                &self.conn,
-                self.bus_name.clone(),
-                rx_path.clone(),
-                "org.bluez.GattCharacteristic1",
-            )
-            .await
-            else {
+            let remaining_rx = deadline.saturating_duration_since(tokio::time::Instant::now());
+            let rx_proxy = if remaining_rx.is_zero() {
+                None
+            } else {
+                tokio::time::timeout(
+                    remaining_rx,
+                    Proxy::new(
+                        &self.conn,
+                        self.bus_name.clone(),
+                        rx_path.clone(),
+                        "org.bluez.GattCharacteristic1",
+                    ),
+                )
+                .await
+                .ok()
+                .and_then(Result::ok)
+            };
+            let Some(rx_proxy) = rx_proxy else {
                 let _ = tokio::time::timeout(
                     Duration::from_millis(500),
                     dev_proxy.call_method("Disconnect", &()),
@@ -350,16 +363,26 @@ impl BluezCoolerClient {
             }
         }
 
-        let tx_proxy = match Proxy::new(
-            &self.conn,
-            self.bus_name.clone(),
-            tx_path,
-            "org.bluez.GattCharacteristic1",
-        )
-        .await
-        {
-            Ok(proxy) => proxy,
-            Err(_) => {
+        let remaining_tx = deadline.saturating_duration_since(tokio::time::Instant::now());
+        let tx_proxy = if remaining_tx.is_zero() {
+            None
+        } else {
+            tokio::time::timeout(
+                remaining_tx,
+                Proxy::new(
+                    &self.conn,
+                    self.bus_name.clone(),
+                    tx_path,
+                    "org.bluez.GattCharacteristic1",
+                ),
+            )
+            .await
+            .ok()
+            .and_then(Result::ok)
+        };
+        let tx_proxy = match tx_proxy {
+            Some(proxy) => proxy,
+            None => {
                 let _ = tokio::time::timeout(
                     Duration::from_millis(500),
                     dev_proxy.call_method("Disconnect", &()),
@@ -385,21 +408,60 @@ impl BluezCoolerClient {
             if !ifaces.contains_key("org.bluez.Adapter1") {
                 continue;
             }
-            if let Ok(adapter) = Proxy::new(
-                &self.conn,
-                self.bus_name.clone(),
-                path.as_str().to_string(),
-                "org.bluez.Adapter1",
+            if let Ok(Ok(adapter)) = tokio::time::timeout(
+                BLUEZ_GATT_TIMEOUT,
+                Proxy::new(
+                    &self.conn,
+                    self.bus_name.clone(),
+                    path.as_str().to_string(),
+                    "org.bluez.Adapter1",
+                ),
             )
             .await
             {
-                let _ = adapter.call_method("StartDiscovery", &()).await;
+                let _ = tokio::time::timeout(
+                    BLUEZ_GATT_TIMEOUT,
+                    adapter.call_method("StartDiscovery", &()),
+                )
+                .await;
             }
         }
         Ok(())
     }
 
-    /// Discovers coolers and retries with backoff until a trusted match connects (late-adapter lifecycle).
+    async fn purge_device_cache(&self, device_path: &str) {
+        let Some((adapter_path, _)) = device_path.rsplit_once('/') else {
+            return;
+        };
+        if adapter_path.is_empty() {
+            return;
+        }
+        if let Ok(dev_obj) = OwnedObjectPath::try_from(device_path) {
+            if let Ok(Ok(adapter)) = tokio::time::timeout(
+                BLUEZ_GATT_TIMEOUT,
+                Proxy::new(
+                    &self.conn,
+                    self.bus_name.clone(),
+                    adapter_path.to_string(),
+                    "org.bluez.Adapter1",
+                ),
+            )
+            .await
+            {
+                let _ = tokio::time::timeout(
+                    BLUEZ_GATT_TIMEOUT,
+                    adapter.call_method("RemoveDevice", &(dev_obj,)),
+                )
+                .await;
+            }
+        }
+        let _ = self.start_discovery().await;
+    }
+
+    /// Discovers coolers and retries with capped exponential backoff until a trusted match connects.
+    ///
+    /// After [`GATT_CACHE_PURGE_FAILURE_THRESHOLD`] consecutive connection failures on a discovered
+    /// device, purges BlueZ's cached device entry and restarts discovery before retrying.
     pub async fn discover_and_connect(
         &self,
         saved: Option<&SavedCoolerIdentity>,
@@ -407,16 +469,29 @@ impl BluezCoolerClient {
         backoff: Duration,
     ) -> Result<(DiscoveredCooler, BluezGattSession), CoolerError> {
         let attempts = max_attempts.max(1);
+        let mut consecutive_failures = 0u32;
+
         for attempt in 0..attempts {
             if let Ok(coolers) = self.discover_coolers().await {
                 if let Some(chosen) = select_cooler(&coolers, saved).cloned() {
-                    if let Ok(session) = self.connect_cooler(&chosen).await {
-                        return Ok((chosen, session));
+                    match self.connect_cooler(&chosen).await {
+                        Ok(session) => return Ok((chosen, session)),
+                        Err(_) => {
+                            consecutive_failures = consecutive_failures.saturating_add(1);
+                            if consecutive_failures >= GATT_CACHE_PURGE_FAILURE_THRESHOLD {
+                                self.purge_device_cache(&chosen.device_path).await;
+                                consecutive_failures = 0;
+                            }
+                        }
                     }
                 }
             }
             if attempt + 1 < attempts {
-                tokio::time::sleep(backoff).await;
+                let shift = (attempt as u32).min(5);
+                let delay = backoff
+                    .saturating_mul(1u32 << shift)
+                    .min(MAX_DISCOVER_BACKOFF);
+                tokio::time::sleep(delay).await;
             }
         }
         Err(CoolerError::NotConnected)
@@ -460,7 +535,8 @@ impl BluezGattSession {
     }
 
     /// Flushes ready commands from [`CoolerController`] over this BlueZ session while preserving
-    /// the 80ms gap and keeping any failed packet queued for retry (`W1-05`).
+    /// the 80ms gap (measured after each BLE write completes) and keeping any failed packet queued
+    /// for retry (`W1-05`).
     pub async fn flush_controller(
         &self,
         controller: &mut CoolerController,
@@ -470,15 +546,19 @@ impl BluezGattSession {
             return Err(CoolerError::NotConnected);
         }
         let mut sent = 0usize;
-        while let Some(queued) = controller.peek_ready_at(now) {
+        let mut check_now = now;
+        while let Some(queued) = controller.peek_ready_at(check_now) {
             let pkt = queued.command.encode()?;
             match self.write_packet(pkt).await {
                 Ok(()) => {
-                    controller.commit_sent_at(now);
+                    let completed_at = Instant::now().max(check_now);
+                    controller.commit_sent_at(completed_at);
+                    check_now = completed_at;
                     sent += 1;
                 }
                 Err(err) => {
-                    controller.record_write_attempt_at(now);
+                    let failed_at = Instant::now().max(check_now);
+                    controller.record_write_attempt_at(failed_at);
                     return Err(err);
                 }
             }
@@ -488,21 +568,31 @@ impl BluezGattSession {
 
     pub async fn disconnect(&self) -> Result<(), CoolerError> {
         if let Some(ref rx_path) = self.rx_path {
-            if let Ok(rx_proxy) = Proxy::new(
-                &self.conn,
-                self.bus_name.clone(),
-                rx_path.clone(),
-                "org.bluez.GattCharacteristic1",
+            if let Ok(Ok(rx_proxy)) = tokio::time::timeout(
+                BLUEZ_GATT_TIMEOUT,
+                Proxy::new(
+                    &self.conn,
+                    self.bus_name.clone(),
+                    rx_path.clone(),
+                    "org.bluez.GattCharacteristic1",
+                ),
             )
             .await
             {
-                let _ = rx_proxy.call_method("StopNotify", &()).await;
+                let _ = tokio::time::timeout(
+                    BLUEZ_GATT_TIMEOUT,
+                    rx_proxy.call_method("StopNotify", &()),
+                )
+                .await;
             }
         }
-        self.dev_proxy
-            .call_method("Disconnect", &())
-            .await
-            .map_err(|_| CoolerError::NotConnected)?;
+        tokio::time::timeout(
+            BLUEZ_GATT_TIMEOUT,
+            self.dev_proxy.call_method("Disconnect", &()),
+        )
+        .await
+        .map_err(|_| CoolerError::NotConnected)?
+        .map_err(|_| CoolerError::NotConnected)?;
         Ok(())
     }
 }

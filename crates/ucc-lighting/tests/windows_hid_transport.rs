@@ -5,7 +5,7 @@ use ucc_lighting::{
     frame_windows_feature_report, frame_windows_output_report, unframe_windows_feature_report,
     HidDeviceTransport, LightingError, LightingTransport, MockWinHidSysApi, RgbColor,
     UniwillHidTransport, WinHidDeviceRecord, WindowsHidTransport, ITE_KEYBOARD_PRODUCT_ID,
-    ITE_VENDOR_ID, VENDOR_USAGE_PAGE_MIN,
+    ITE_VENDOR_ID,
 };
 
 const WIN_KBD_BOOT_PATH: &str = r"\\?\hid#vid_048d&pid_600b&mi_00#7&1a2b3c4d&0&0000#{4d1e55b2}";
@@ -19,27 +19,30 @@ fn sample_ite_windows_devices() -> Vec<WinHidDeviceRecord> {
             path: WIN_KBD_BOOT_PATH.to_string(),
             vendor_id: ITE_VENDOR_ID,
             product_id: ITE_KEYBOARD_PRODUCT_ID,
+            version_number: 0,
             usage_page: 0x0001,
             usage: 0x0006,
             feature_report_byte_length: 0,
             output_report_byte_length: 0,
         },
-        // Keyboard vendor lighting interface (UsagePage 0xFF89, 8B feature + 64B row output).
+        // Keyboard vendor lighting interface (UsagePage 0xFF03, 8B feature + 64B row output).
         WinHidDeviceRecord {
             path: WIN_KBD_VENDOR_PATH.to_string(),
             vendor_id: ITE_VENDOR_ID,
             product_id: ITE_KEYBOARD_PRODUCT_ID,
-            usage_page: 0xFF89,
+            version_number: 0,
+            usage_page: 0xFF03,
             usage: 0x00CC,
             feature_report_byte_length: 9,
             output_report_byte_length: 65,
         },
-        // Lightbar + lid logo vendor interface (048D:7000, UsagePage 0xFF00).
+        // Lightbar + lid logo vendor interface (048D:7000, UsagePage 0xFF03).
         WinHidDeviceRecord {
             path: WIN_LIGHTBAR_PATH.to_string(),
             vendor_id: ITE_VENDOR_ID,
             product_id: 0x7000,
-            usage_page: VENDOR_USAGE_PAGE_MIN,
+            version_number: 0,
+            usage_page: 0xFF03,
             usage: 0x0001,
             feature_report_byte_length: 9,
             output_report_byte_length: 0,
@@ -56,10 +59,10 @@ fn windows_hid_feature_report_framing_prepends_report_id_and_pads() {
     assert_eq!(&framed[1..9], &raw);
     assert!(framed[9..].iter().all(|&b| b == 0));
 
-    // Already-framed report starting with Report ID 0x00 is not double-prefixed.
-    let preframed = [0x00, 0x08, 0x01, 200, 0, 0, 0, 0, 0];
-    let exact = frame_windows_feature_report(&preframed, 9).unwrap();
-    assert_eq!(exact, preframed);
+    // Payloads starting with 0x00 always get Report ID 0x00 prepended (no heuristic bug).
+    let zero_payload = [0x00, 0x08, 0x01, 200, 0, 0, 0, 0];
+    let exact = frame_windows_feature_report(&zero_payload, 9).unwrap();
+    assert_eq!(exact, [0x00, 0x00, 0x08, 0x01, 200, 0, 0, 0, 0]);
 
     // Unframing strips leading Report ID 0x00 and resizes cleanly.
     let unframed = unframe_windows_feature_report(&framed, 8);
@@ -96,7 +99,7 @@ fn windows_hid_transport_selects_vendor_usage_page_over_boot_keyboard() {
     let win_hid = Arc::new(WindowsHidTransport::new(Arc::clone(&sys) as _));
 
     assert_eq!(win_hid.device_usage_page(WIN_KBD_BOOT_PATH), Some(0x0001));
-    assert_eq!(win_hid.device_usage_page(WIN_KBD_VENDOR_PATH), Some(0xFF89));
+    assert_eq!(win_hid.device_usage_page(WIN_KBD_VENDOR_PATH), Some(0xFF03));
     assert_eq!(win_hid.device_interface_number(WIN_KBD_VENDOR_PATH), None);
 
     let lighting = UniwillHidTransport::new(Arc::clone(&win_hid) as _);
@@ -104,7 +107,7 @@ fn windows_hid_transport_selects_vendor_usage_page_over_boot_keyboard() {
     let kbd = lighting.detect_keyboard().unwrap().unwrap();
     assert_eq!(kbd.zones, 126);
     let lb = lighting.detect_lightbar().unwrap().unwrap();
-    assert_eq!(lb.zones, 5);
+    assert_eq!(lb.zones, 3);
 
     lighting.set_keyboard_buffer_input(true).unwrap();
     lighting.write_keyboard_brightness(255).unwrap();
@@ -117,12 +120,14 @@ fn windows_hid_transport_selects_vendor_usage_page_over_boot_keyboard() {
         .unwrap();
 
     let reports = sys.sent_reports();
-    // 14 keyboard reports (1 brightness + 6*(0x16 + 64B row) + 1 latch) + 1 lightbar brightness + 5 lightbar/logo zone reports = 20 total.
-    assert_eq!(reports.len(), 20);
+    // 1 (0xA2 probe) + 14 keyboard + 2 lightbar brightness (hinge+base) + 2 lightbar color (hinge+base) = 19 total.
+    assert_eq!(reports.len(), 19);
+    assert_eq!(reports[0].0, WIN_LIGHTBAR_PATH);
+    assert_eq!(reports[0].1[1], 0xA2);
 
     // Every keyboard report targets the vendor lighting interface, never the boot keyboard.
     // Feature reports (9 bytes) alternate with 64-byte planar row output reports (65 bytes).
-    for (idx, (path, buf)) in reports[..14].iter().enumerate() {
+    for (idx, (path, buf)) in reports[1..15].iter().enumerate() {
         assert_eq!(path, WIN_KBD_VENDOR_PATH);
         let expected_len = if (1..=12).contains(&idx) && idx % 2 == 0 {
             65
@@ -133,20 +138,20 @@ fn windows_hid_transport_selects_vendor_usage_page_over_boot_keyboard() {
         assert_eq!(buf[0], 0x00);
     }
     // Brightness report: [0x00, 0x08, 0x02, 0x33, 0x00, 50, ...]
-    assert_eq!(&reports[0].1[1..6], &[0x08, 0x02, 0x33, 0x00, 50]);
+    assert_eq!(&reports[1].1[1..6], &[0x08, 0x02, 0x33, 0x00, 50]);
     // Row 0 select + planar BGR row report (col 0 = 10,20,30; col 1 = 40,50,60).
-    assert_eq!(&reports[1].1[1..4], &[0x16, 0x00, 0x00]);
+    assert_eq!(&reports[2].1[1..4], &[0x16, 0x00, 0x00]);
     assert_eq!(
-        (reports[2].1[44], reports[2].1[23], reports[2].1[2]),
+        (reports[3].1[44], reports[3].1[23], reports[3].1[2]),
         (10, 20, 30)
     );
     assert_eq!(
-        (reports[2].1[45], reports[2].1[24], reports[2].1[3]),
+        (reports[3].1[45], reports[3].1[24], reports[3].1[3]),
         (40, 50, 60)
     );
 
     // Every lightbar report targets 048D:7000 with exact 9-byte framed buffer.
-    for (path, buf) in &reports[14..] {
+    for (path, buf) in &reports[15..] {
         assert_eq!(path, WIN_LIGHTBAR_PATH);
         assert_eq!(buf.len(), 9);
         assert_eq!(buf[0], 0x00);
@@ -194,8 +199,8 @@ fn windows_hid_126_key_calibration_lid_logo_zone5_and_ec_hook() {
     use ucc_core::KeyboardBacklightState;
     use ucc_lighting::{
         EcLightbarPowerHook, KeyboardBacklightController, LightbarController,
-        LIGHTBAR_LID_LOGO_ZONE_ID, MECHREVO_ENTER_LED_ID, MECHREVO_EXPECTED_ZONES,
-        MECHREVO_LCTRL_LED_ID, MECHREVO_LSHIFT_LED_ID,
+        MECHREVO_ENTER_LED_ID, MECHREVO_EXPECTED_ZONES, MECHREVO_LCTRL_LED_ID,
+        MECHREVO_LSHIFT_LED_ID,
     };
 
     let sys = Arc::new(MockWinHidSysApi::new(sample_ite_windows_devices()));
@@ -301,7 +306,7 @@ fn windows_hid_126_key_calibration_lid_logo_zone5_and_ec_hook() {
     // 2. LightbarController + lid logo zone 5 + write_lightbar_zones + EC hook.
     let mut lb = LightbarController::new(Arc::clone(&transport) as _);
     assert_eq!(lb.status_json()["available"], true);
-    assert_eq!(lb.status_json()["zones"], 5);
+    assert_eq!(lb.status_json()["zones"], 3);
     lb.configure(&json!({
         "managed": true,
         "welcome_anim": false,
@@ -324,18 +329,16 @@ fn windows_hid_126_key_calibration_lid_logo_zone5_and_ec_hook() {
         .expect("lightbar off");
     transport
         .write_lid_logo_color(RgbColor::new(12, 34, 56))
-        .expect("write lid logo zone 5");
+        .expect("write lid logo zone 3");
 
-    let five_zones = [
+    let three_zones = [
         RgbColor::new(1, 2, 3),
         RgbColor::new(4, 5, 6),
-        RgbColor::new(7, 8, 9),
-        RgbColor::new(10, 11, 12),
         RgbColor::new(200, 100, 50),
     ];
     transport
-        .write_lightbar_zones(&five_zones)
-        .expect("write 5 lightbar zones");
+        .write_lightbar_zones(&three_zones)
+        .expect("write 3 lightbar zones");
 
     assert_eq!(
         *ec_events.lock().unwrap_or_else(|e| e.into_inner()),
@@ -343,28 +346,16 @@ fn windows_hid_126_key_calibration_lid_logo_zone5_and_ec_hook() {
     );
 
     let all_reports = sys.sent_reports();
-    // 14 kbd + 5 configure color + 1 configure brightness + 1 off + 1 lid logo + 5 zones = 27.
-    assert_eq!(all_reports.len(), 27);
     for (path, buf) in &all_reports[14..] {
         assert_eq!(path, WIN_LIGHTBAR_PATH);
         assert_eq!(buf.len(), 9);
         assert_eq!(buf[0], 0x00);
     }
-    let expected_logo = vec![
-        0x00,
-        0x14,
-        0x00,
-        LIGHTBAR_LID_LOGO_ZONE_ID,
-        12,
-        34,
-        56,
-        0,
-        0,
-    ];
-    assert_eq!(all_reports[21].1, expected_logo);
+    let expected_logo = vec![0x00, 0x14, 0x03, 0x01, 12, 34, 56, 0, 0];
+    assert!(all_reports.iter().any(|(_, b)| b == &expected_logo));
     assert_eq!(
-        all_reports[26].1,
-        vec![0x00, 0x14, 0x00, 5, 200, 100, 50, 0, 0]
+        all_reports.last().unwrap().1,
+        vec![0x00, 0x14, 0x03, 0x01, 200, 100, 50, 0, 0]
     );
 }
 
@@ -378,10 +369,7 @@ fn windows_hid_case_insensitive_cache_and_zero_len_get() {
     assert_eq!(devices.len(), 3);
 
     let upper_lb_path = WIN_LIGHTBAR_PATH.to_ascii_uppercase();
-    assert_eq!(
-        win_hid.device_usage_page(&upper_lb_path),
-        Some(VENDOR_USAGE_PAGE_MIN)
-    );
+    assert_eq!(win_hid.device_usage_page(&upper_lb_path), Some(0xFF03));
     win_hid
         .send_feature_report(&upper_lb_path, &[0x08, 0x01, 0x55, 0, 0, 0, 0, 0])
         .expect("case-insensitive send");

@@ -521,3 +521,401 @@ fn m_sec_08_resolve_trusted_program_fails_closed_no_path_fallback() {
         "M-SEC-08: resolve_trusted_program must return Option and fail closed instead of falling back to untrusted PATH"
     );
 }
+
+#[test]
+fn p0_cooler_manual_overheat_failsafe_triggers_blocks_turnoff_and_releases() {
+    use std::time::Instant;
+    use ucc_core::{FanPoint, FanProfile};
+    use ucc_hardware::cooler::{
+        CoolerController, CoolerError, CoolerMode, CoolerPacketEncoder, FanTarget,
+        MockBleTransport, PumpTarget, PumpVoltage, BLE_WRITE_GAP, OVERHEAT_RELEASE_TEMP_C,
+        OVERHEAT_TRIGGER_TEMP_C,
+    };
+
+    let profile = FanProfile {
+        table_water_cooler_fan: vec![FanPoint::new(40, 30), FanPoint::new(80, 80)],
+        ..Default::default()
+    };
+    let transport = MockBleTransport::new(true);
+    let mut ctrl = CoolerController::new();
+    ctrl.on_connected();
+
+    // Put cooler in Manual mode with low fan and low pump.
+    ctrl.set_manual_fan_speed(20).unwrap();
+    ctrl.set_manual_pump_voltage(PumpVoltage::V7).unwrap();
+    assert_eq!(ctrl.mode(), CoolerMode::Manual);
+    let mut now = Instant::now();
+    ctrl.flush_ready(&transport, now).unwrap();
+    now += BLE_WRITE_GAP;
+    ctrl.flush_ready(&transport, now).unwrap();
+    transport.clear();
+
+    // Below trigger (89C): overheat override remains inactive.
+    ctrl.apply_profile_temperature(&profile, OVERHEAT_TRIGGER_TEMP_C - 1)
+        .unwrap();
+    assert!(!ctrl.is_overheat_override_active());
+    assert_eq!(ctrl.desired_fan_target(), FanTarget::Speed(20));
+
+    // At trigger (90C): overheat override latches EVEN in Manual mode and enqueues max cooling.
+    ctrl.apply_profile_temperature(&profile, OVERHEAT_TRIGGER_TEMP_C)
+        .unwrap();
+    assert!(ctrl.is_overheat_override_active());
+    assert_eq!(ctrl.mode(), CoolerMode::Manual);
+    assert_eq!(ctrl.desired_fan_target(), FanTarget::Speed(100));
+    assert_eq!(
+        ctrl.desired_pump_target(),
+        PumpTarget::Voltage(PumpVoltage::V11)
+    );
+
+    now += BLE_WRITE_GAP;
+    assert_eq!(ctrl.flush_ready(&transport, now).unwrap(), 1);
+    now += BLE_WRITE_GAP;
+    assert_eq!(ctrl.flush_ready(&transport, now).unwrap(), 1);
+    let pkts = transport.packets();
+    assert_eq!(
+        pkts,
+        vec![
+            CoolerPacketEncoder::fan_speed(100).unwrap(),
+            CoolerPacketEncoder::pump_voltage(PumpVoltage::V11).unwrap(),
+        ]
+    );
+
+    // While overheat override is active, turn-offs and reductions below max must be blocked.
+    assert_eq!(
+        ctrl.turn_off_manual_fan(),
+        Err(CoolerError::OverheatProtectionActive)
+    );
+    assert_eq!(
+        ctrl.turn_off_manual_pump(),
+        Err(CoolerError::OverheatProtectionActive)
+    );
+    assert_eq!(
+        ctrl.turn_off_fan(),
+        Err(CoolerError::OverheatProtectionActive)
+    );
+    assert_eq!(
+        ctrl.turn_off_pump(),
+        Err(CoolerError::OverheatProtectionActive)
+    );
+    assert_eq!(
+        ctrl.set_manual_fan_speed(50),
+        Err(CoolerError::OverheatProtectionActive)
+    );
+    assert_eq!(
+        ctrl.set_manual_pump_voltage(PumpVoltage::V8),
+        Err(CoolerError::OverheatProtectionActive)
+    );
+    assert_eq!(
+        ctrl.set_fan_speed(30),
+        Err(CoolerError::OverheatProtectionActive)
+    );
+    assert_eq!(
+        ctrl.set_pump_voltage(PumpVoltage::V7),
+        Err(CoolerError::OverheatProtectionActive)
+    );
+
+    // Hysteresis: at exactly OVERHEAT_RELEASE_TEMP_C (80C), override must remain active.
+    ctrl.apply_profile_temperature(&profile, OVERHEAT_RELEASE_TEMP_C)
+        .unwrap();
+    assert!(ctrl.is_overheat_override_active());
+
+    // Below release (79C): override clears and restores previous Manual targets.
+    transport.clear();
+    ctrl.apply_profile_temperature(&profile, OVERHEAT_RELEASE_TEMP_C - 1)
+        .unwrap();
+    assert!(!ctrl.is_overheat_override_active());
+    assert_eq!(ctrl.desired_fan_target(), FanTarget::Speed(20));
+    assert_eq!(
+        ctrl.desired_pump_target(),
+        PumpTarget::Voltage(PumpVoltage::V7)
+    );
+    now += BLE_WRITE_GAP;
+    assert_eq!(ctrl.flush_ready(&transport, now).unwrap(), 1);
+    now += BLE_WRITE_GAP;
+    assert_eq!(ctrl.flush_ready(&transport, now).unwrap(), 1);
+    assert_eq!(
+        transport.packets(),
+        vec![
+            CoolerPacketEncoder::fan_speed(20).unwrap(),
+            CoolerPacketEncoder::pump_voltage(PumpVoltage::V7).unwrap(),
+        ]
+    );
+
+    // Manual turn-off is allowed again once cooled below release threshold.
+    assert!(ctrl.turn_off_manual_fan().is_ok());
+
+    // Invalid/out-of-range sensor temperature also latches overheat protection.
+    ctrl.apply_profile_temperature(&profile, -1).unwrap();
+    assert!(ctrl.is_overheat_override_active());
+    assert_eq!(ctrl.desired_fan_target(), FanTarget::Speed(100));
+    assert_eq!(
+        ctrl.desired_pump_target(),
+        PumpTarget::Voltage(PumpVoltage::V11)
+    );
+}
+
+#[test]
+fn p1_cpu_controller_rolls_back_on_partial_core_failure() {
+    use std::os::unix::fs::PermissionsExt;
+    use ucc_hardware::cpu::CpuController;
+
+    let tmp = TempDir::new().unwrap();
+    let root = tmp.path();
+    fs::write(root.join("present"), "0-1").unwrap();
+    fs::write(root.join("possible"), "0-1").unwrap();
+
+    for idx in 0..2 {
+        let cpu = root.join(format!("cpu{idx}"));
+        let cpufreq = cpu.join("cpufreq");
+        fs::create_dir_all(&cpufreq).unwrap();
+        if idx > 0 {
+            fs::write(cpu.join("online"), "1").unwrap();
+        }
+        fs::write(cpufreq.join("cpuinfo_min_freq"), "800000").unwrap();
+        fs::write(cpufreq.join("cpuinfo_max_freq"), "4800000").unwrap();
+        fs::write(cpufreq.join("scaling_min_freq"), "800000").unwrap();
+        fs::write(cpufreq.join("scaling_max_freq"), "4800000").unwrap();
+        fs::write(cpufreq.join("scaling_governor"), "powersave").unwrap();
+        fs::write(
+            cpufreq.join("scaling_available_governors"),
+            "performance powersave",
+        )
+        .unwrap();
+    }
+
+    // Make cpu1/cpufreq/scaling_max_freq read-only to force partial failure on core 1.
+    let cpu1_max = root.join("cpu1/cpufreq/scaling_max_freq");
+    fs::set_permissions(&cpu1_max, fs::Permissions::from_mode(0o444)).unwrap();
+
+    let ctrl = CpuController::new(root);
+    let res = ctrl.set_governor_scaling_max_frequency(Some(3200000));
+    // Restore permissions before asserting so TempDir cleans up cleanly.
+    fs::set_permissions(&cpu1_max, fs::Permissions::from_mode(0o644)).unwrap();
+
+    assert!(
+        res.is_err(),
+        "Write to read-only cpu1 scaling_max_freq must fail"
+    );
+    assert_eq!(
+        ctrl.cores[0].read_scaling_max_freq(),
+        Some(4800000),
+        "Core 0 scaling_max_freq must be rolled back to 4800000 after core 1 failure"
+    );
+
+    // Verify set_enabled_cores rolls back earlier core mutations in reverse order.
+    fs::write(root.join("cpu1/online"), "0").unwrap();
+    let mut ops: Vec<(u32, bool)> = Vec::new();
+    let err = ctrl.set_enabled_cores(&[0, 1], |core, enable| {
+        ops.push((core.core_index, enable));
+        false
+    });
+    assert!(err.is_err());
+    assert_eq!(ops, vec![(1, true)]);
+}
+
+#[test]
+fn p1_windows_power_set_throttle_bounds_rolls_back_on_partial_failure() {
+    use ucc_hardware::windows_power::{
+        PowerGuid, WindowsPowerController, WindowsPowerError, WindowsPowerSource,
+        WindowsPowerTransport, GUID_PROCESSOR_THROTTLE_MAXIMUM, GUID_PROCESSOR_THROTTLE_MINIMUM,
+    };
+
+    struct FailOnSetting {
+        values: Mutex<BTreeMap<PowerGuid, u32>>,
+        fail_setting: PowerGuid,
+    }
+    impl WindowsPowerTransport for FailOnSetting {
+        fn is_available(&self) -> bool {
+            true
+        }
+        fn read_value_index(
+            &self,
+            _source: WindowsPowerSource,
+            _subgroup: PowerGuid,
+            setting: PowerGuid,
+        ) -> Result<u32, WindowsPowerError> {
+            Ok(*self.values.lock().unwrap().get(&setting).unwrap_or(&0))
+        }
+        fn write_value_index(
+            &self,
+            _source: WindowsPowerSource,
+            _subgroup: PowerGuid,
+            setting: PowerGuid,
+            value: u32,
+        ) -> Result<(), WindowsPowerError> {
+            if setting == self.fail_setting {
+                return Err(WindowsPowerError::Unavailable);
+            }
+            self.values.lock().unwrap().insert(setting, value);
+            Ok(())
+        }
+        fn apply_active_scheme(&self) -> Result<(), WindowsPowerError> {
+            Ok(())
+        }
+    }
+
+    let mut init = BTreeMap::new();
+    init.insert(GUID_PROCESSOR_THROTTLE_MINIMUM, 10);
+    init.insert(GUID_PROCESSOR_THROTTLE_MAXIMUM, 90);
+    let transport = Arc::new(FailOnSetting {
+        values: Mutex::new(init),
+        fail_setting: GUID_PROCESSOR_THROTTLE_MAXIMUM,
+    });
+    let ctrl = WindowsPowerController::new(Arc::clone(&transport) as _);
+
+    assert!(ctrl
+        .set_throttle_bounds(WindowsPowerSource::Ac, 30, 80)
+        .is_err());
+    assert_eq!(
+        *transport
+            .values
+            .lock()
+            .unwrap()
+            .get(&GUID_PROCESSOR_THROTTLE_MINIMUM)
+            .unwrap(),
+        10,
+        "Minimum throttle must be rolled back to 10 when maximum throttle write fails"
+    );
+}
+
+#[test]
+fn p1_fan_controller_write_failsafe_backoff_auto_recovers_and_reads_measured_speed() {
+    use ucc_core::{FanPoint, FanProfile};
+    use ucc_hardware::fan_controller::{FanController, WRITE_FAILSAFE_INITIAL_BACKOFF_MS};
+    use ucc_hardware::platform::{
+        MockPlatformBackend, PlatformBackendKind, PlatformCapabilities, PlatformWrite,
+    };
+
+    struct MeasuredSpeedBackend {
+        inner: MockPlatformBackend,
+        measured: [u8; 2],
+    }
+
+    impl PlatformBackend for MeasuredSpeedBackend {
+        fn kind(&self) -> PlatformBackendKind {
+            self.inner.kind()
+        }
+        fn is_available(&self) -> bool {
+            self.inner.is_available()
+        }
+        fn capabilities(&self) -> PlatformCapabilities {
+            self.inner.capabilities()
+        }
+        fn read_fan_temp(&self, fan_idx: usize) -> Result<i32, PlatformError> {
+            self.inner.read_fan_temp(fan_idx)
+        }
+        fn read_fan_speed_percent(&self, fan_idx: usize) -> Result<u8, PlatformError> {
+            Ok(self.measured[fan_idx])
+        }
+        fn set_fan_speed_percent(&self, fan_idx: usize, percent: u8) -> Result<(), PlatformError> {
+            self.inner.set_fan_speed_percent(fan_idx, percent)
+        }
+        fn set_fans_auto(&self) -> Result<(), PlatformError> {
+            self.inner.set_fans_auto()
+        }
+        fn read_tdp(&self, idx: usize) -> Result<i32, PlatformError> {
+            self.inner.read_tdp(idx)
+        }
+        fn read_tdp_limits(&self, idx: usize) -> Result<(i32, i32), PlatformError> {
+            self.inner.read_tdp_limits(idx)
+        }
+        fn set_tdp(&self, idx: usize, watts: i32) -> Result<(), PlatformError> {
+            self.inner.set_tdp(idx, watts)
+        }
+        fn set_perf_profile(&self, value: i32) -> Result<(), PlatformError> {
+            self.inner.set_perf_profile(value)
+        }
+        fn set_mode_enable(&self, value: bool) -> Result<(), PlatformError> {
+            self.inner.set_mode_enable(value)
+        }
+        fn set_mode(&self, value: i32) -> Result<(), PlatformError> {
+            self.inner.set_mode(value)
+        }
+    }
+
+    let inner = MockPlatformBackend::uniwill_default();
+    inner.set_fan_temp(0, 70);
+    inner.set_fan_temp(1, 70);
+    let backend = MeasuredSpeedBackend {
+        inner,
+        measured: [62, 58],
+    };
+
+    let profile = FanProfile {
+        table_cpu: vec![FanPoint::new(40, 60)],
+        table_gpu: vec![FanPoint::new(40, 60)],
+        ..Default::default()
+    };
+
+    let mut ctrl = FanController::new(&backend, profile, false);
+
+    // Normal tick reads measured fan speed via read_fan_speed_percent (not raw target 60).
+    let snap = ctrl.tick(&backend, true, 1_000);
+    assert!(!snap.fallback_auto);
+    assert_eq!(snap.speeds_percent, vec![Some(62), Some(58)]);
+
+    // Simulate 2 consecutive write failures -> enters write failsafe auto.
+    backend.inner.set_fail_writes(true);
+    let s1 = ctrl.tick(&backend, true, 2_000);
+    assert!(!s1.fallback_auto);
+    let _s2 = ctrl.tick(&backend, true, 3_000);
+    backend.inner.set_fail_writes(false);
+
+    // Before backoff expires (3_000 + 5_000 = 8_000), controller stays in failsafe auto.
+    let s3 = ctrl.tick(&backend, true, 4_000);
+    assert!(s3.fallback_auto);
+    assert!(backend
+        .inner
+        .journal()
+        .contains(&PlatformWrite::SetFansAuto));
+
+    // After backoff expires, controller automatically probes and recovers manual control.
+    let s4 = ctrl.tick(&backend, true, 3_000 + WRITE_FAILSAFE_INITIAL_BACKOFF_MS);
+    assert!(
+        !s4.fallback_auto,
+        "FanController must auto-recover from write_failsafe_active after backoff elapses"
+    );
+    assert_eq!(s4.speeds_percent, vec![Some(62), Some(58)]);
+}
+
+#[tokio::test]
+async fn p1_fan_worker_drop_synchronously_restores_fans_auto() {
+    use std::time::Duration;
+    use ucc_core::{FanPoint, FanProfile};
+    use ucc_hardware::fan_controller::{spawn_fan_worker, FanWorkerConfig};
+    use ucc_hardware::platform::{MockPlatformBackend, PlatformWrite};
+
+    let backend = Arc::new(MockPlatformBackend::uniwill_default());
+    backend.set_fan_temp(0, 65);
+    backend.set_fan_temp(1, 60);
+    let profile = FanProfile {
+        table_cpu: vec![FanPoint::new(40, 60)],
+        table_gpu: vec![FanPoint::new(40, 50)],
+        ..Default::default()
+    };
+
+    let worker = spawn_fan_worker(
+        Arc::clone(&backend) as _,
+        FanWorkerConfig {
+            profile,
+            fan_control_enabled: true,
+            same_speed: false,
+            temporary_curves: None,
+        },
+        Duration::from_millis(15),
+    );
+    for _ in 0..50 {
+        if worker.latest_snapshot().is_some() {
+            break;
+        }
+        tokio::time::sleep(Duration::from_millis(10)).await;
+    }
+    backend.clear_journal();
+
+    // Drop without calling shutdown().await -> Drop must synchronously call set_fans_auto().
+    drop(worker);
+    assert!(
+        backend.journal().contains(&PlatformWrite::SetFansAuto),
+        "Dropping FanWorkerHandle without shutdown() must synchronously call set_fans_auto()"
+    );
+}

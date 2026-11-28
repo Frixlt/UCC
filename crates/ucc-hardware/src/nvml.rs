@@ -917,7 +917,7 @@ impl NvmlWrapper {
             return Ok(());
         }
 
-        let _guard = self.init_lock.lock().unwrap();
+        let _guard = self.init_lock.lock().unwrap_or_else(|e| e.into_inner());
 
         if self.power_guard.get_runtime_status(dev_path) != GpuRuntimeStatus::Active {
             return Err(NvmlError::GpuSuspended);
@@ -1289,7 +1289,7 @@ impl NvmlWrapper {
             let core_voltage_mv = self
                 .nvapi
                 .lock()
-                .unwrap()
+                .unwrap_or_else(|e| e.into_inner())
                 .read_voltage_mv_for_bdf(target_bdf, &current_bdfs);
 
             if temperature_c.is_none()

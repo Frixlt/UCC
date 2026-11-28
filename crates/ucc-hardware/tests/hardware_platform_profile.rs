@@ -242,3 +242,90 @@ fn tuxedo_io_platform_profile_priority_and_ibpg10amd_quirk() {
     );
     assert_eq!(backend_quirk_tux.read_perf_profile().unwrap(), 2);
 }
+
+#[test]
+fn tuxedo_io_perf_profile_unifies_read_fallback_and_propagates_write_errors() {
+    use std::path::PathBuf;
+    use std::sync::atomic::{AtomicBool, Ordering};
+    use ucc_hardware::traits::Sysfs;
+
+    struct ToggleFailSysfs {
+        inner: MockSysfs,
+        fail_reads: AtomicBool,
+        fail_writes: AtomicBool,
+    }
+
+    impl Sysfs for ToggleFailSysfs {
+        fn read(&self, path: &Path) -> std::io::Result<String> {
+            if self.fail_reads.load(Ordering::SeqCst) {
+                return Err(std::io::Error::new(
+                    std::io::ErrorKind::PermissionDenied,
+                    "simulated read error",
+                ));
+            }
+            self.inner.read(path)
+        }
+
+        fn write(&self, path: &Path, content: &str) -> std::io::Result<()> {
+            if self.fail_writes.load(Ordering::SeqCst) {
+                return Err(std::io::Error::new(
+                    std::io::ErrorKind::PermissionDenied,
+                    "simulated write error",
+                ));
+            }
+            self.inner.write(path, content)
+        }
+
+        fn exists(&self, path: &Path) -> bool {
+            self.inner.exists(path)
+        }
+
+        fn read_dir(&self, path: &Path) -> std::io::Result<Vec<PathBuf>> {
+            self.inner.read_dir(path)
+        }
+    }
+
+    let hw = MockHardwareIo::new();
+    hw.set_i32_read(requests::R_HWCHECK_UW, 1);
+    hw.set_i32_read(requests::R_UW_PROFS_AVAILABLE, 0);
+
+    let inner = MockSysfs::new();
+    let profile_path =
+        Path::new("/sys/bus/platform/devices/tuxedo_platform_profile/platform_profile");
+    let choices_path =
+        Path::new("/sys/bus/platform/devices/tuxedo_platform_profile/platform_profile_choices");
+    inner.set_file(
+        profile_path,
+        "balanced
+",
+    );
+    inner.set_file(
+        choices_path,
+        "low-power balanced performance
+",
+    );
+
+    let sysfs = Arc::new(ToggleFailSysfs {
+        inner,
+        fail_reads: AtomicBool::new(false),
+        fail_writes: AtomicBool::new(false),
+    });
+
+    let backend = TuxedoIoBackend::with_sysfs(hw, None, Arc::clone(&sysfs) as _);
+    assert_eq!(backend.read_perf_profile().unwrap(), 2);
+
+    // If sysfs read subsequently fails, unified fallback returns cached profile
+    sysfs.fail_reads.store(true, Ordering::SeqCst);
+    assert_eq!(backend.read_perf_profile().unwrap(), 2);
+
+    // If sysfs write fails, set_perf_profile propagates PlatformError::Io instead of Unsupported
+    sysfs.fail_reads.store(false, Ordering::SeqCst);
+    sysfs.fail_writes.store(true, Ordering::SeqCst);
+    let err = backend
+        .set_perf_profile(3)
+        .expect_err("sysfs write failure must propagate as PlatformError::Io");
+    assert!(
+        matches!(err, PlatformError::Io { ref source, .. } if source.kind() == std::io::ErrorKind::PermissionDenied),
+        "expected PlatformError::Io(PermissionDenied), got {err:?}"
+    );
+}

@@ -752,7 +752,7 @@ mod win32_wmi {
     const EOAC_NONE: u32 = 0;
     const WBEM_FLAG_FORWARD_ONLY: i32 = 0x20;
     const WBEM_FLAG_RETURN_IMMEDIATELY: i32 = 0x10;
-    const WBEM_INFINITE: i32 = -1;
+    const WBEM_NEXT_TIMEOUT_MS: i32 = 5_000;
 
     const VT_I4: u16 = 3;
     const VT_BSTR: u16 = 8;
@@ -760,7 +760,6 @@ mod win32_wmi {
     const VT_I8: u16 = 20;
     const VT_UI8: u16 = 21;
 
-    #[allow(dead_code)]
     #[repr(C)]
     struct Guid {
         data1: u32,
@@ -785,7 +784,6 @@ mod win32_wmi {
         data4: [0x88, 0x4d, 0x00, 0xaa, 0x00, 0x4b, 0x2e, 0x24],
     };
 
-    #[allow(dead_code)]
     #[repr(C)]
     struct Variant {
         vt: u16,
@@ -836,7 +834,6 @@ mod win32_wmi {
         release: unsafe extern "system" fn(*mut c_void) -> u32,
     }
 
-    #[allow(dead_code)]
     #[repr(C)]
     struct IWbemLocatorVtbl {
         base: IUnknownVtbl,
@@ -858,7 +855,6 @@ mod win32_wmi {
         vtbl: *const IWbemLocatorVtbl,
     }
 
-    #[allow(dead_code)]
     #[repr(C)]
     struct IWbemServicesVtbl {
         base: IUnknownVtbl,
@@ -913,7 +909,6 @@ mod win32_wmi {
         vtbl: *const IWbemServicesVtbl,
     }
 
-    #[allow(dead_code)]
     #[repr(C)]
     struct IEnumWbemClassObjectVtbl {
         base: IUnknownVtbl,
@@ -932,7 +927,6 @@ mod win32_wmi {
         vtbl: *const IEnumWbemClassObjectVtbl,
     }
 
-    #[allow(dead_code)]
     #[repr(C)]
     struct IWbemClassObjectVtbl {
         base: IUnknownVtbl,
@@ -1103,9 +1097,13 @@ mod win32_wmi {
             if ptr.is_null() {
                 return None;
             }
+            const MAX_BSTR_BYTES: u32 = 1024 * 1024;
             // SAFETY: For a `VT_BSTR` populated by WMI, `ptr` points to a NUL-terminated
-            // UTF-16 string whose byte length is stored in the `u32` immediately preceding it.
-            let len_bytes = unsafe { *(ptr.cast::<u32>().offset(-1)) };
+            // UTF-16 string whose byte length is stored in the 4 bytes immediately preceding it.
+            let len_bytes = unsafe { ptr::read_unaligned(ptr.cast::<u8>().sub(4).cast::<u32>()) };
+            if len_bytes % 2 != 0 || len_bytes > MAX_BSTR_BYTES {
+                return None;
+            }
             let len_u16 = (len_bytes / 2) as usize;
             // SAFETY: `ptr` is valid for `len_u16` UTF-16 code units per the BSTR ABI.
             let slice = unsafe { std::slice::from_raw_parts(ptr, len_u16) };
@@ -1263,7 +1261,7 @@ mod win32_wmi {
             let vtbl = (*enumerator.as_ptr()).vtbl;
             ((*vtbl).next)(
                 enumerator.as_ptr(),
-                WBEM_INFINITE,
+                WBEM_NEXT_TIMEOUT_MS,
                 1,
                 &mut obj_raw,
                 &mut returned,

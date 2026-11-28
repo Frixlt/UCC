@@ -142,12 +142,17 @@ impl MetricsHistoryStore {
 
     pub fn set_horizon_seconds(&self, seconds: i32) {
         let clamped = seconds.clamp(Self::MIN_HORIZON_S, Self::MAX_HORIZON_S);
-        let mut inner = self.inner.write().unwrap();
+        let mut inner = self.inner.write().unwrap_or_else(|e| e.into_inner());
         inner.horizon_ms = i64::from(clamped) * 1000;
     }
 
     pub fn horizon_seconds(&self) -> i32 {
-        (self.inner.read().unwrap().horizon_ms / 1000) as i32
+        (self
+            .inner
+            .read()
+            .unwrap_or_else(|e| e.into_inner())
+            .horizon_ms
+            / 1000) as i32
     }
 
     /// Pushes a finite sample maintaining chronological order by `timestamp_ms`, and evicts
@@ -157,7 +162,7 @@ impl MetricsHistoryStore {
         if !value.is_finite() {
             return;
         }
-        let mut inner = self.inner.write().unwrap();
+        let mut inner = self.inner.write().unwrap_or_else(|e| e.into_inner());
         let horizon_ms = inner.horizon_ms;
         let buf = &mut inner.buffers[id as usize];
         let pt = MetricDataPoint {
@@ -185,7 +190,7 @@ impl MetricsHistoryStore {
 
     /// Serializes points with `timestamp_ms >= since_ms` matching C++ `querySinceJSON`.
     pub fn query_since_json(&self, since_ms: i64) -> String {
-        let inner = self.inner.read().unwrap();
+        let inner = self.inner.read().unwrap_or_else(|e| e.into_inner());
         let mut map = serde_json::Map::new();
         for id in MetricId::ALL {
             let buf = &inner.buffers[id as usize];
@@ -206,7 +211,7 @@ impl MetricsHistoryStore {
 
     /// Serializes points with `timestamp_ms >= since_ms` into C++ `MetricsHistoryStore` binary format.
     pub fn query_since_binary(&self, since_ms: i64) -> Vec<u8> {
-        let inner = self.inner.read().unwrap();
+        let inner = self.inner.read().unwrap_or_else(|e| e.into_inner());
         let mut out = Vec::with_capacity(2048);
 
         for id in MetricId::ALL {
@@ -282,8 +287,22 @@ pub fn decode_history_binary(
 
         let mut points = Vec::with_capacity(count);
         for idx in 0..count {
-            let ts = i64::from_ne_bytes(bytes[offset..offset + 8].try_into().unwrap());
-            let val = f64::from_ne_bytes(bytes[offset + 8..offset + 16].try_into().unwrap());
+            let ts_bytes: [u8; 8] = bytes[offset..offset + 8].try_into().map_err(|_| {
+                HistoryCodecError::TruncatedPayload {
+                    metric_id: raw_id,
+                    expected_bytes,
+                    remaining_bytes: remaining,
+                }
+            })?;
+            let val_bytes: [u8; 8] = bytes[offset + 8..offset + 16].try_into().map_err(|_| {
+                HistoryCodecError::TruncatedPayload {
+                    metric_id: raw_id,
+                    expected_bytes,
+                    remaining_bytes: remaining,
+                }
+            })?;
+            let ts = i64::from_ne_bytes(ts_bytes);
+            let val = f64::from_ne_bytes(val_bytes);
             offset += 16;
             if !val.is_finite() {
                 return Err(HistoryCodecError::NonFiniteValue {

@@ -11,7 +11,6 @@ use thiserror::Error;
 pub const NORDIC_UART_SERVICE_UUID: &str = "6e400001-b5a3-f393-e0a9-e50e24dcca9e";
 pub const NORDIC_UART_CHAR_TX: &str = "6e400002-b5a3-f393-e0a9-e50e24dcca9e";
 pub const NORDIC_UART_CHAR_RX: &str = "6e400003-b5a3-f393-e0a9-e50e24dcca9e";
-pub const CLIENT_CHAR_CONFIG_DESCRIPTOR_UUID: &str = "00002902-0000-1000-8000-00805f9b34fb";
 
 /// Timing constants matching C++ implementation
 pub const BLE_WRITE_GAP: Duration = Duration::from_millis(80);
@@ -19,6 +18,10 @@ pub const KEEPALIVE_INTERVAL: Duration = Duration::from_secs(10);
 pub const KEEPALIVE_MISS_THRESHOLD: u32 = 3;
 pub const FAST_RECONNECT_MAX_FAILURES: u32 = 3;
 pub const GATT_CACHE_PURGE_FAILURE_THRESHOLD: u32 = 3;
+
+/// Mandatory liquid-cooler overheat failsafe thresholds (enforced even in `CoolerMode::Manual`).
+pub const OVERHEAT_TRIGGER_TEMP_C: i32 = 90;
+pub const OVERHEAT_RELEASE_TEMP_C: i32 = 80;
 
 /// Protocol command IDs
 pub const CMD_RESET: u8 = 0x19;
@@ -89,6 +92,8 @@ pub enum CoolerError {
     InvalidVoltageCode(u8),
     #[error("Device not connected")]
     NotConnected,
+    #[error("Overheat protection is active; cooling cannot be reduced or disabled")]
+    OverheatProtectionActive,
 }
 
 /// Pure protocol packet encoder
@@ -566,11 +571,17 @@ impl MockBleTransport {
     }
 
     pub fn packets(&self) -> Vec<[u8; 8]> {
-        self.packets.lock().unwrap().clone()
+        self.packets
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .clone()
     }
 
     pub fn clear(&self) {
-        self.packets.lock().unwrap().clear();
+        self.packets
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .clear();
     }
 }
 
@@ -584,7 +595,10 @@ impl BleTransport for MockBleTransport {
             return Err(CoolerError::NotConnected);
         }
         CoolerPacketEncoder::validate_packet(&packet)?;
-        self.packets.lock().unwrap().push(packet);
+        self.packets
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .push(packet);
         Ok(())
     }
 }
@@ -601,6 +615,7 @@ pub struct CoolerController {
     manual_pump: PumpTarget,
     desired_rgb: RgbTarget,
     suspending: bool,
+    overheat_override: bool,
 }
 
 impl Default for CoolerController {
@@ -621,6 +636,7 @@ impl CoolerController {
             manual_pump: PumpTarget::Unset,
             desired_rgb: RgbTarget::Unset,
             suspending: false,
+            overheat_override: false,
         }
     }
 
@@ -651,7 +667,14 @@ impl CoolerController {
         self.queue.generation()
     }
 
+    pub fn is_overheat_override_active(&self) -> bool {
+        self.overheat_override
+    }
+
     pub fn desired_fan_target(&self) -> FanTarget {
+        if self.overheat_override {
+            return FanTarget::Speed(100);
+        }
         match self.mode {
             CoolerMode::Auto => self.auto_fan,
             CoolerMode::Manual => self.manual_fan,
@@ -659,6 +682,9 @@ impl CoolerController {
     }
 
     pub fn desired_pump_target(&self) -> PumpTarget {
+        if self.overheat_override {
+            return PumpTarget::Voltage(PumpVoltage::V11);
+        }
         match self.mode {
             CoolerMode::Auto => self.auto_pump,
             CoolerMode::Manual => self.manual_pump,
@@ -689,25 +715,54 @@ impl CoolerController {
         temp_c: i32,
         force: bool,
     ) -> Result<(), CoolerError> {
-        let curve_fan = profile.get_water_cooler_fan_speed_for_temp(temp_c);
-        let next_fan = if curve_fan >= 0 {
-            FanTarget::Speed(curve_fan.clamp(0, 100) as u8)
-        } else {
-            self.auto_fan
-        };
+        let sensor_invalid = !(0..=150).contains(&temp_c);
+        let mut fan_changed = false;
+        let mut pump_changed = false;
 
-        let next_pump = if !profile.table_pump.is_empty() {
-            PumpTarget::Voltage(from_core_pump_voltage(
-                profile.get_pump_speed_for_temp(temp_c),
-            ))
-        } else {
-            self.auto_pump
-        };
+        if !sensor_invalid {
+            let curve_fan = profile.get_water_cooler_fan_speed_for_temp(temp_c);
+            let next_fan = if curve_fan >= 0 {
+                FanTarget::Speed(curve_fan.clamp(0, 100) as u8)
+            } else {
+                self.auto_fan
+            };
 
-        let fan_changed = next_fan != self.auto_fan;
-        let pump_changed = next_pump != self.auto_pump;
-        self.auto_fan = next_fan;
-        self.auto_pump = next_pump;
+            let next_pump = if !profile.table_pump.is_empty() {
+                PumpTarget::Voltage(from_core_pump_voltage(
+                    profile.get_pump_speed_for_temp(temp_c),
+                ))
+            } else {
+                self.auto_pump
+            };
+
+            fan_changed = next_fan != self.auto_fan;
+            pump_changed = next_pump != self.auto_pump;
+            self.auto_fan = next_fan;
+            self.auto_pump = next_pump;
+        }
+
+        let was_overheat = self.overheat_override;
+        if sensor_invalid || temp_c >= OVERHEAT_TRIGGER_TEMP_C {
+            self.overheat_override = true;
+        } else if self.overheat_override && temp_c < OVERHEAT_RELEASE_TEMP_C {
+            self.overheat_override = false;
+        }
+
+        if self.overheat_override {
+            if !was_overheat || force {
+                self.queue.clear_fan_and_pump();
+                self.queue.enqueue(CoolerCommand::FanSpeed(100))?;
+                self.queue
+                    .enqueue(CoolerCommand::PumpVoltage(PumpVoltage::V11))?;
+            }
+            return Ok(());
+        }
+
+        if was_overheat {
+            self.queue.clear_fan_and_pump();
+            self.enqueue_active_fan_and_pump();
+            return Ok(());
+        }
 
         if self.mode == CoolerMode::Auto {
             if force || fan_changed {
@@ -772,6 +827,9 @@ impl CoolerController {
     pub fn set_fan_speed(&mut self, percent: u8) -> Result<(), CoolerError> {
         let cmd = CoolerCommand::FanSpeed(percent);
         cmd.validate()?;
+        if self.overheat_override && percent < 100 {
+            return Err(CoolerError::OverheatProtectionActive);
+        }
         match self.mode {
             CoolerMode::Auto => self.auto_fan = FanTarget::Speed(percent),
             CoolerMode::Manual => self.manual_fan = FanTarget::Speed(percent),
@@ -782,6 +840,9 @@ impl CoolerController {
     pub fn set_pump_voltage(&mut self, voltage: PumpVoltage) -> Result<(), CoolerError> {
         let cmd = CoolerCommand::PumpVoltage(voltage);
         cmd.validate()?;
+        if self.overheat_override && voltage != PumpVoltage::V11 {
+            return Err(CoolerError::OverheatProtectionActive);
+        }
         match self.mode {
             CoolerMode::Auto => self.auto_pump = PumpTarget::Voltage(voltage),
             CoolerMode::Manual => self.manual_pump = PumpTarget::Voltage(voltage),
@@ -823,12 +884,16 @@ impl CoolerController {
         target: FanTarget,
     ) -> Result<(), CoolerError> {
         cmd.validate()?;
+        if self.overheat_override && !matches!(cmd, CoolerCommand::FanSpeed(100)) {
+            return Err(CoolerError::OverheatProtectionActive);
+        }
         let prev_mode = self.mode;
         let prev_target = self.manual_fan;
         if prev_mode != CoolerMode::Manual {
             self.queue.clear_fan_and_pump();
             self.mode = CoolerMode::Manual;
-            let _ = Self::enqueue_pump_target(&mut self.queue, self.manual_pump);
+            let pump = self.desired_pump_target();
+            let _ = Self::enqueue_pump_target(&mut self.queue, pump);
         }
         self.manual_fan = target;
         if let Err(err) = self.queue.enqueue(cmd) {
@@ -845,12 +910,16 @@ impl CoolerController {
         target: PumpTarget,
     ) -> Result<(), CoolerError> {
         cmd.validate()?;
+        if self.overheat_override && !matches!(cmd, CoolerCommand::PumpVoltage(PumpVoltage::V11)) {
+            return Err(CoolerError::OverheatProtectionActive);
+        }
         let prev_mode = self.mode;
         let prev_target = self.manual_pump;
         if prev_mode != CoolerMode::Manual {
             self.queue.clear_fan_and_pump();
             self.mode = CoolerMode::Manual;
-            let _ = Self::enqueue_fan_target(&mut self.queue, self.manual_fan);
+            let fan = self.desired_fan_target();
+            let _ = Self::enqueue_fan_target(&mut self.queue, fan);
         }
         self.manual_pump = target;
         if let Err(err) = self.queue.enqueue(cmd) {
@@ -883,6 +952,9 @@ impl CoolerController {
     }
 
     pub fn turn_off_fan(&mut self) -> Result<(), CoolerError> {
+        if self.overheat_override {
+            return Err(CoolerError::OverheatProtectionActive);
+        }
         match self.mode {
             CoolerMode::Auto => self.auto_fan = FanTarget::Off,
             CoolerMode::Manual => self.manual_fan = FanTarget::Off,
@@ -891,6 +963,9 @@ impl CoolerController {
     }
 
     pub fn turn_off_pump(&mut self) -> Result<(), CoolerError> {
+        if self.overheat_override {
+            return Err(CoolerError::OverheatProtectionActive);
+        }
         match self.mode {
             CoolerMode::Auto => self.auto_pump = PumpTarget::Voltage(PumpVoltage::Off),
             CoolerMode::Manual => self.manual_pump = PumpTarget::Voltage(PumpVoltage::Off),

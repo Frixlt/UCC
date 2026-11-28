@@ -74,24 +74,39 @@ impl MockHardwareIo {
     }
 
     pub fn set_i32_read(&self, request: u64, val: i32) {
-        self.i32_reads.lock().unwrap().insert(request, val);
+        self.i32_reads
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .insert(request, val);
     }
 
     pub fn set_str_read(&self, request: u64, val: impl Into<String>) {
-        self.str_reads.lock().unwrap().insert(request, val.into());
+        self.str_reads
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .insert(request, val.into());
     }
 
     pub fn set_error(&self, request: u64) {
-        self.error_requests.lock().unwrap().insert(request);
+        self.error_requests
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .insert(request);
     }
 
     pub fn clear_error(&self, request: u64) {
-        self.error_requests.lock().unwrap().remove(&request);
+        self.error_requests
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .remove(&request);
     }
 
     /// Returns a copy of all recorded hardware writes.
     pub fn journal(&self) -> Vec<HardwareIoWrite> {
-        self.journal.lock().unwrap().clone()
+        self.journal
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .clone()
     }
 
     /// Returns the shared journal handle.
@@ -101,7 +116,10 @@ impl MockHardwareIo {
 
     /// Clears the write journal.
     pub fn clear_journal(&self) {
-        self.journal.lock().unwrap().clear();
+        self.journal
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .clear();
     }
 }
 
@@ -110,7 +128,12 @@ impl HardwareIo for MockHardwareIo {
         if !self.is_available() {
             return Err(IoctlError::DeviceUnavailable);
         }
-        if self.error_requests.lock().unwrap().contains(&request) {
+        if self
+            .error_requests
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .contains(&request)
+        {
             return Err(IoctlError::IoctlFailed {
                 request,
                 source: nix::Error::EIO,
@@ -118,7 +141,7 @@ impl HardwareIo for MockHardwareIo {
         }
         self.i32_reads
             .lock()
-            .unwrap()
+            .unwrap_or_else(|e| e.into_inner())
             .get(&request)
             .copied()
             .ok_or(IoctlError::IoctlFailed {
@@ -131,7 +154,12 @@ impl HardwareIo for MockHardwareIo {
         if !self.is_available() {
             return Err(IoctlError::DeviceUnavailable);
         }
-        if self.error_requests.lock().unwrap().contains(&request) {
+        if self
+            .error_requests
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .contains(&request)
+        {
             return Err(IoctlError::IoctlFailed {
                 request,
                 source: nix::Error::EIO,
@@ -139,7 +167,7 @@ impl HardwareIo for MockHardwareIo {
         }
         self.journal
             .lock()
-            .unwrap()
+            .unwrap_or_else(|e| e.into_inner())
             .push(HardwareIoWrite::WriteI32 {
                 request,
                 val,
@@ -152,7 +180,12 @@ impl HardwareIo for MockHardwareIo {
         if !self.is_available() {
             return Err(IoctlError::DeviceUnavailable);
         }
-        if self.error_requests.lock().unwrap().contains(&request) {
+        if self
+            .error_requests
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .contains(&request)
+        {
             return Err(IoctlError::IoctlFailed {
                 request,
                 source: nix::Error::EIO,
@@ -160,7 +193,7 @@ impl HardwareIo for MockHardwareIo {
         }
         self.journal
             .lock()
-            .unwrap()
+            .unwrap_or_else(|e| e.into_inner())
             .push(HardwareIoWrite::CallNone {
                 request,
                 timestamp: Instant::now(),
@@ -172,7 +205,12 @@ impl HardwareIo for MockHardwareIo {
         if !self.is_available() {
             return Err(IoctlError::DeviceUnavailable);
         }
-        if self.error_requests.lock().unwrap().contains(&request) {
+        if self
+            .error_requests
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .contains(&request)
+        {
             return Err(IoctlError::IoctlFailed {
                 request,
                 source: nix::Error::EIO,
@@ -180,7 +218,7 @@ impl HardwareIo for MockHardwareIo {
         }
         self.str_reads
             .lock()
-            .unwrap()
+            .unwrap_or_else(|e| e.into_inner())
             .get(&request)
             .cloned()
             .ok_or(IoctlError::IoctlFailed {
@@ -225,17 +263,68 @@ pub struct SysfsWrite {
 #[derive(Debug, Default, Clone, Copy)]
 pub struct RealSysfs;
 
+fn sysfs_error_to_io(err: crate::sysfs::SysfsError) -> std::io::Error {
+    match err {
+        crate::sysfs::SysfsError::NotFound(p) => std::io::Error::new(
+            std::io::ErrorKind::NotFound,
+            format!("Sysfs node not found: {}", p.display()),
+        ),
+        crate::sysfs::SysfsError::PermissionDenied(p) => std::io::Error::new(
+            std::io::ErrorKind::PermissionDenied,
+            format!("Permission denied accessing sysfs node: {}", p.display()),
+        ),
+        crate::sysfs::SysfsError::UnsafePath(p) => std::io::Error::new(
+            std::io::ErrorKind::PermissionDenied,
+            format!("Unsafe sysfs path: {}", p.display()),
+        ),
+        crate::sysfs::SysfsError::ParseError { path, reason } => std::io::Error::new(
+            std::io::ErrorKind::InvalidData,
+            format!("Parse error on {}: {reason}", path.display()),
+        ),
+        crate::sysfs::SysfsError::Io { source, .. } => source,
+    }
+}
+
+fn sysfs_root_and_target(
+    path: &Path,
+) -> Result<(crate::sysfs::SysfsRoot, PathBuf), std::io::Error> {
+    if path.starts_with("/sys") || path.starts_with("/proc") {
+        return Ok((crate::sysfs::SysfsRoot::production(), path.to_path_buf()));
+    }
+    let parent = path.parent().ok_or_else(|| {
+        std::io::Error::new(
+            std::io::ErrorKind::PermissionDenied,
+            format!("Path has no parent directory: {}", path.display()),
+        )
+    })?;
+    let file_name = path.file_name().ok_or_else(|| {
+        std::io::Error::new(
+            std::io::ErrorKind::InvalidInput,
+            format!("Path has no file name: {}", path.display()),
+        )
+    })?;
+    Ok((
+        crate::sysfs::SysfsRoot::custom(parent),
+        PathBuf::from(file_name),
+    ))
+}
+
 impl Sysfs for RealSysfs {
     fn read(&self, path: &Path) -> Result<String, std::io::Error> {
-        std::fs::read_to_string(path)
+        let (root, target) = sysfs_root_and_target(path)?;
+        root.read_string(target).map_err(sysfs_error_to_io)
     }
 
     fn write(&self, path: &Path, content: &str) -> Result<(), std::io::Error> {
-        std::fs::write(path, content)
+        let (root, target) = sysfs_root_and_target(path)?;
+        root.write_string(target, content)
+            .map_err(sysfs_error_to_io)
     }
 
     fn exists(&self, path: &Path) -> bool {
-        path.exists()
+        sysfs_root_and_target(path)
+            .map(|(root, target)| root.exists(target))
+            .unwrap_or(false)
     }
 
     fn read_dir(&self, path: &Path) -> Result<Vec<PathBuf>, std::io::Error> {
@@ -269,34 +358,44 @@ impl MockSysfs {
     pub fn set_file(&self, path: impl AsRef<Path>, content: impl Into<String>) {
         self.files
             .lock()
-            .unwrap()
+            .unwrap_or_else(|e| e.into_inner())
             .insert(path.as_ref().to_path_buf(), content.into());
     }
 
     pub fn get_file(&self, path: impl AsRef<Path>) -> Option<String> {
-        self.files.lock().unwrap().get(path.as_ref()).cloned()
+        self.files
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .get(path.as_ref())
+            .cloned()
     }
 
     pub fn remove_file(&self, path: impl AsRef<Path>) -> Option<String> {
-        self.files.lock().unwrap().remove(path.as_ref())
+        self.files
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .remove(path.as_ref())
     }
 
     pub fn set_read_error(&self, path: impl AsRef<Path>) {
         self.fail_reads
             .lock()
-            .unwrap()
+            .unwrap_or_else(|e| e.into_inner())
             .insert(path.as_ref().to_path_buf());
     }
 
     pub fn set_write_error(&self, path: impl AsRef<Path>) {
         self.fail_writes
             .lock()
-            .unwrap()
+            .unwrap_or_else(|e| e.into_inner())
             .insert(path.as_ref().to_path_buf());
     }
 
     pub fn journal(&self) -> Vec<SysfsWrite> {
-        self.journal.lock().unwrap().clone()
+        self.journal
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .clone()
     }
 
     pub fn journal_ref(&self) -> Arc<Mutex<Vec<SysfsWrite>>> {
@@ -304,13 +403,21 @@ impl MockSysfs {
     }
 
     pub fn clear_journal(&self) {
-        self.journal.lock().unwrap().clear();
+        self.journal
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .clear();
     }
 }
 
 impl Sysfs for MockSysfs {
     fn read(&self, path: &Path) -> Result<String, std::io::Error> {
-        if self.fail_reads.lock().unwrap().contains(path) {
+        if self
+            .fail_reads
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .contains(path)
+        {
             return Err(std::io::Error::new(
                 std::io::ErrorKind::PermissionDenied,
                 "Simulated read permission denied",
@@ -318,7 +425,7 @@ impl Sysfs for MockSysfs {
         }
         self.files
             .lock()
-            .unwrap()
+            .unwrap_or_else(|e| e.into_inner())
             .get(path)
             .cloned()
             .ok_or_else(|| {
@@ -330,7 +437,12 @@ impl Sysfs for MockSysfs {
     }
 
     fn write(&self, path: &Path, content: &str) -> Result<(), std::io::Error> {
-        if self.fail_writes.lock().unwrap().contains(path) {
+        if self
+            .fail_writes
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .contains(path)
+        {
             return Err(std::io::Error::new(
                 std::io::ErrorKind::PermissionDenied,
                 "Simulated write permission denied",
@@ -339,22 +451,28 @@ impl Sysfs for MockSysfs {
         let p = path.to_path_buf();
         self.files
             .lock()
-            .unwrap()
+            .unwrap_or_else(|e| e.into_inner())
             .insert(p.clone(), content.to_string());
-        self.journal.lock().unwrap().push(SysfsWrite {
-            path: p,
-            content: content.to_string(),
-            timestamp: Instant::now(),
-        });
+        self.journal
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .push(SysfsWrite {
+                path: p,
+                content: content.to_string(),
+                timestamp: Instant::now(),
+            });
         Ok(())
     }
 
     fn exists(&self, path: &Path) -> bool {
-        self.files.lock().unwrap().contains_key(path)
+        self.files
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .contains_key(path)
     }
 
     fn read_dir(&self, path: &Path) -> Result<Vec<PathBuf>, std::io::Error> {
-        let files = self.files.lock().unwrap();
+        let files = self.files.lock().unwrap_or_else(|e| e.into_inner());
         let mut results = HashSet::new();
         for key in files.keys() {
             if let Ok(rel) = key.strip_prefix(path) {
@@ -452,16 +570,22 @@ impl MockProcessRunner {
         let args_vec: Vec<String> = args.iter().map(|s| s.to_string()).collect();
         self.responses
             .lock()
-            .unwrap()
+            .unwrap_or_else(|e| e.into_inner())
             .insert((program.to_string(), args_vec), output);
     }
 
     pub fn set_default_response(&self, output: ProcessOutput) {
-        *self.default_response.lock().unwrap() = Some(output);
+        *self
+            .default_response
+            .lock()
+            .unwrap_or_else(|e| e.into_inner()) = Some(output);
     }
 
     pub fn journal(&self) -> Vec<ProcessExecution> {
-        self.journal.lock().unwrap().clone()
+        self.journal
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .clone()
     }
 
     pub fn journal_ref(&self) -> Arc<Mutex<Vec<ProcessExecution>>> {
@@ -469,29 +593,39 @@ impl MockProcessRunner {
     }
 
     pub fn clear_journal(&self) {
-        self.journal.lock().unwrap().clear();
+        self.journal
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .clear();
     }
 }
 
 impl ProcessRunner for MockProcessRunner {
     fn run(&self, program: &str, args: &[&str]) -> Result<ProcessOutput, std::io::Error> {
         let args_vec: Vec<String> = args.iter().map(|s| s.to_string()).collect();
-        self.journal.lock().unwrap().push(ProcessExecution {
-            program: program.to_string(),
-            args: args_vec.clone(),
-            timestamp: Instant::now(),
-        });
+        self.journal
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .push(ProcessExecution {
+                program: program.to_string(),
+                args: args_vec.clone(),
+                timestamp: Instant::now(),
+            });
 
         if let Some(resp) = self
             .responses
             .lock()
-            .unwrap()
+            .unwrap_or_else(|e| e.into_inner())
             .get(&(program.to_string(), args_vec))
         {
             return Ok(resp.clone());
         }
 
-        if let Some(ref def) = *self.default_response.lock().unwrap() {
+        if let Some(ref def) = *self
+            .default_response
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+        {
             return Ok(def.clone());
         }
 
@@ -551,28 +685,28 @@ impl MockClock {
     }
 
     pub fn advance(&self, duration: Duration) {
-        let mut now = self.now.lock().unwrap();
+        let mut now = self.now.lock().unwrap_or_else(|e| e.into_inner());
         *now += duration;
-        let mut sys = self.system_time.lock().unwrap();
+        let mut sys = self.system_time.lock().unwrap_or_else(|e| e.into_inner());
         *sys += duration;
     }
 
     pub fn set_now(&self, instant: Instant) {
-        *self.now.lock().unwrap() = instant;
+        *self.now.lock().unwrap_or_else(|e| e.into_inner()) = instant;
     }
 
     pub fn set_system_time(&self, time: SystemTime) {
-        *self.system_time.lock().unwrap() = time;
+        *self.system_time.lock().unwrap_or_else(|e| e.into_inner()) = time;
     }
 }
 
 impl Clock for MockClock {
     fn now(&self) -> Instant {
-        *self.now.lock().unwrap()
+        *self.now.lock().unwrap_or_else(|e| e.into_inner())
     }
 
     fn system_time(&self) -> SystemTime {
-        *self.system_time.lock().unwrap()
+        *self.system_time.lock().unwrap_or_else(|e| e.into_inner())
     }
 }
 
@@ -636,7 +770,7 @@ impl MockGpuBackend {
     }
 
     pub fn set_telemetry(&self, telemetry: GpuTelemetry) {
-        *self.telemetry.lock().unwrap() = telemetry;
+        *self.telemetry.lock().unwrap_or_else(|e| e.into_inner()) = telemetry;
     }
 
     pub fn set_suspended(&self, is_susp: bool) {
@@ -644,7 +778,10 @@ impl MockGpuBackend {
     }
 
     pub fn journal(&self) -> Vec<GpuWrite> {
-        self.journal.lock().unwrap().clone()
+        self.journal
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .clone()
     }
 
     pub fn journal_ref(&self) -> Arc<Mutex<Vec<GpuWrite>>> {
@@ -652,7 +789,10 @@ impl MockGpuBackend {
     }
 
     pub fn clear_journal(&self) {
-        self.journal.lock().unwrap().clear();
+        self.journal
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .clear();
     }
 }
 
@@ -664,7 +804,11 @@ impl GpuBackend for MockGpuBackend {
         if self.fail_telemetry.load(Ordering::SeqCst) {
             return Err(NvmlError::NvmlCall(1));
         }
-        Ok(self.telemetry.lock().unwrap().clone())
+        Ok(self
+            .telemetry
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .clone())
     }
 
     fn is_suspended(&self) -> bool {
@@ -678,10 +822,13 @@ impl GpuBackend for MockGpuBackend {
         if self.fail_power.load(Ordering::SeqCst) {
             return Err(NvmlError::NvmlCall(1));
         }
-        self.journal.lock().unwrap().push(GpuWrite::SetPowerLimit {
-            watts,
-            timestamp: Instant::now(),
-        });
+        self.journal
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .push(GpuWrite::SetPowerLimit {
+                watts,
+                timestamp: Instant::now(),
+            });
         Ok(())
     }
 
@@ -692,10 +839,13 @@ impl GpuBackend for MockGpuBackend {
         if self.fail_power.load(Ordering::SeqCst) {
             return Err(NvmlError::NvmlCall(1));
         }
-        self.journal.lock().unwrap().push(GpuWrite::SetPowerOffset {
-            offset_watts,
-            timestamp: Instant::now(),
-        });
+        self.journal
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .push(GpuWrite::SetPowerOffset {
+                offset_watts,
+                timestamp: Instant::now(),
+            });
         Ok(())
     }
 }

@@ -829,8 +829,11 @@ mod winrt_ffi {
                     let vtable = *(self.ptr as *const *const *const c_void);
                     if !vtable.is_null() {
                         let release_ptr = *vtable.add(2);
-                        let release = core::mem::transmute::<*const c_void, ReleaseFn>(release_ptr);
-                        let _ = release(self.ptr);
+                        if !release_ptr.is_null() {
+                            let release =
+                                core::mem::transmute::<*const c_void, ReleaseFn>(release_ptr);
+                            let _ = release(self.ptr);
+                        }
                     }
                 }
             }

@@ -60,6 +60,7 @@ void uwcc_misc_deregister(void);
 /* Serialized ACPI INOU0000 calls (protected by internal EC mutex) */
 int uwcc_acpi_ec_read(u16 addr, u8 *out_val);
 int uwcc_acpi_ec_write(u16 addr, u8 val);
+int uwcc_acpi_ec_rmw(u16 addr, u8 mask, u8 val);
 int uwcc_acpi_smrw(u16 offset, u16 len, u8 *out_buf);
 int uwcc_acpi_pwup(u32 enable, u32 level);
 int uwcc_acpi_gpu_power(u32 op, u32 value);

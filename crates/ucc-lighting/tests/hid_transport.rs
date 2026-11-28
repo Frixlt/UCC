@@ -26,7 +26,7 @@ fn uniwill_hid_transport_handles_keyboard_lightbar_and_logo_zones() {
     assert_eq!(kbd.zones, 126);
 
     let lb = transport.detect_lightbar().unwrap().unwrap();
-    assert_eq!(lb.zones, 5); // 4 front zones + lid logo LED (048D:7000)
+    assert_eq!(lb.zones, 3); // hinge + base + logo (048D:7000 fallback topology)
 
     transport.set_keyboard_buffer_input(true).unwrap();
     transport.write_keyboard_brightness(200).unwrap();
@@ -42,8 +42,8 @@ fn uniwill_hid_transport_handles_keyboard_lightbar_and_logo_zones() {
     transport
         .write_lightbar_color(RgbColor::new(255, 64, 0))
         .unwrap();
-    // 1 kbd brightness + 6*(0x16 + 64B row) + 1 latch + 1 lb brightness + 5 lb zones = 20.
-    assert_eq!(hid.recorded_reports().len(), 20);
+    // 1 (0xA2 probe) + 1 kbd brightness + 6*(0x16 + 64B row) + 1 latch + 2 lb brightness (hinge+base) + 2 lb color (hinge+base) = 19.
+    assert_eq!(hid.recorded_reports().len(), 19);
 
     hid.set_fail_writes(true);
     assert!(transport.write_lightbar_color(RgbColor::default()).is_err());

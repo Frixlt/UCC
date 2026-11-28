@@ -145,7 +145,7 @@ fn hidraw_linux_enumerates_mock_sysfs_and_filters_interfaces() {
         "0003:048D:600B.0002",
         "HID_ID=0003:0000048D:0000600B\n",
         "01",
-        Some(&[0x06, 0x89, 0xFF, 0x09, 0x01]),
+        Some(&[0x06, 0x03, 0xFF, 0x09, 0x01]),
     );
     #[cfg(not(unix))]
     {
@@ -155,7 +155,7 @@ fn hidraw_linux_enumerates_mock_sysfs_and_filters_interfaces() {
         fs::write(dev.join("bInterfaceNumber"), "01\n").expect("write iface");
         fs::write(
             dev.join("report_descriptor"),
-            [0x06u8, 0x89, 0xFF, 0x09, 0x01],
+            [0x06u8, 0x03, 0xFF, 0x09, 0x01],
         )
         .expect("write desc");
     }
@@ -169,6 +169,11 @@ fn hidraw_linux_enumerates_mock_sysfs_and_filters_interfaces() {
     )
     .expect("write hidraw3 uevent");
     fs::write(hidraw3_dev.join("bInterfaceNumber"), "01\n").expect("write hidraw3 iface");
+    fs::write(
+        hidraw3_dev.join("report_descriptor"),
+        [0x06u8, 0x03, 0xFF, 0x09, 0x02],
+    )
+    .expect("write hidraw3 desc");
 
     // ITE 048D:7000 on hidraw10 (tests numeric sorting after hidraw3)
     #[cfg(unix)]
@@ -216,7 +221,7 @@ fn hidraw_linux_enumerates_mock_sysfs_and_filters_interfaces() {
     assert_eq!(hidraw.device_interface_number("/dev/hidraw3"), Some(1));
     assert_eq!(hidraw.device_interface_number("/dev/hidraw10"), Some(1));
     assert_eq!(hidraw.device_usage_page("/dev/hidraw1"), Some(0x0001));
-    assert_eq!(hidraw.device_usage_page("/dev/hidraw2"), Some(0xFF89));
+    assert_eq!(hidraw.device_usage_page("/dev/hidraw2"), Some(0xFF03));
     assert_eq!(hidraw.device_usage_page("/dev/hidraw10"), Some(0xFF00));
 
     // UniwillHidTransport detects 126-zone keyboard (hidraw2) and 4-zone lightbar (hidraw3)
@@ -324,7 +329,7 @@ fn ite_600b_preserves_physical_calibration_and_caps_brightness_to_50() {
         product_id: ITE_KEYBOARD_PRODUCT_ID,
         path: "/dev/hidraw2".to_string(),
     }]));
-    mock_hid.set_device_usage_page("/dev/hidraw2", 0xFF89);
+    mock_hid.set_device_usage_page("/dev/hidraw2", 0xFF03);
 
     let transport = Arc::new(UniwillHidTransport::new(Arc::clone(&mock_hid) as _));
     let mut kbd = KeyboardBacklightController::new(Arc::clone(&transport) as _);
@@ -439,11 +444,20 @@ fn ite_lightbar_zones_lid_logo_and_ec_power_hook() {
         .write_lightbar_zones(&four_zones)
         .expect("write 4 zones");
     let reports_7001 = mock_7001.recorded_reports();
-    assert_eq!(reports_7001.len(), 4);
-    assert_eq!(reports_7001[0].1, vec![0x14, 0x00, 1, 255, 0, 0, 0, 0]);
-    assert_eq!(reports_7001[1].1, vec![0x14, 0x00, 2, 0, 255, 0, 0, 0]);
-    assert_eq!(reports_7001[2].1, vec![0x14, 0x00, 3, 0, 0, 255, 0, 0]);
-    assert_eq!(reports_7001[3].1, vec![0x14, 0x00, 4, 255, 255, 0, 0, 0]);
+    // 1 power_on + 4 zone colors (0x14 0x02 slot) + 1 apply (0x08 0x22) = 6
+    assert_eq!(reports_7001.len(), 6);
+    assert_eq!(
+        reports_7001[0].1,
+        vec![0x1A, 0x02, 0x01, 0x04, 0, 0, 0, 0x01]
+    );
+    assert_eq!(reports_7001[1].1, vec![0x14, 0x02, 1, 255, 0, 0, 0, 0]);
+    assert_eq!(reports_7001[2].1, vec![0x14, 0x02, 2, 0, 255, 0, 0, 0]);
+    assert_eq!(reports_7001[3].1, vec![0x14, 0x02, 3, 0, 0, 255, 0, 0]);
+    assert_eq!(reports_7001[4].1, vec![0x14, 0x02, 4, 255, 255, 0, 0, 0]);
+    assert_eq!(
+        reports_7001[5].1,
+        vec![0x08, 0x22, 0x01, 0x01, 100, 0x01, 0, 0]
+    );
 
     // Passing 5 zones to a 4-zone controller must be rejected
     assert!(matches!(
@@ -476,9 +490,10 @@ fn ite_lightbar_zones_lid_logo_and_ec_power_hook() {
             .expect("detect")
             .expect("present")
             .zones,
-        5
+        3
     );
     assert!(transport_7000.has_lid_logo().expect("has_lid_logo"));
+    mock_7000.clear_reports();
 
     // Turning brightness > 0 enables EC power rail, brightness == 0 disables EC power rail
     transport_7000
@@ -496,34 +511,43 @@ fn ite_lightbar_zones_lid_logo_and_ec_power_hook() {
         vec![true, false]
     );
     let reports_7000 = mock_7000.recorded_reports();
-    assert_eq!(reports_7000.len(), 3);
+    // 2 front brightness (hinge 0x21 + base 0x22) + 1 logo color (0x14 0x03) + 2 front off = 5
+    assert_eq!(reports_7000.len(), 5);
     let expected_lvl = UniwillHidTransport::scale_keyboard_brightness(200);
     assert_eq!(
         reports_7000[0].1,
-        vec![0x08, 0x02, 0x01, 0x05, expected_lvl, 0x01, 0, 0]
+        vec![0x08, 0x21, 0x01, 0x01, expected_lvl, 0x01, 0, 0]
     );
-    assert_eq!(reports_7000[1].1, vec![0x14, 0x00, 5, 12, 34, 56, 0, 0]);
-    assert_eq!(reports_7000[2].1, vec![0x08, 0x01, 0, 0, 0, 0, 0, 0]);
+    assert_eq!(
+        reports_7000[1].1,
+        vec![0x08, 0x22, 0x01, 0x01, expected_lvl, 0x01, 0, 0]
+    );
+    assert_eq!(reports_7000[2].1, vec![0x14, 0x03, 0x01, 12, 34, 56, 0, 0]);
+    assert_eq!(reports_7000[3].1, vec![0x08, 0x01, 0x01, 0, 0, 0, 0, 0]);
+    assert_eq!(reports_7000[4].1, vec![0x08, 0x01, 0x02, 0, 0, 0, 0, 0]);
 
-    // Writing all 5 zones (4 front + lid logo) re-enables EC power automatically for non-black
+    // Writing all 3 zones (hinge + base + logo) re-enables EC power automatically for non-black
     mock_7000.clear_reports();
-    let five_zones = [
+    let three_zones = [
         RgbColor::new(1, 2, 3),
         RgbColor::new(4, 5, 6),
-        RgbColor::new(7, 8, 9),
-        RgbColor::new(10, 11, 12),
         RgbColor::new(200, 100, 50),
     ];
     transport_7000
-        .write_lightbar_zones(&five_zones)
-        .expect("write 5 zones");
+        .write_lightbar_zones(&three_zones)
+        .expect("write 3 zones");
     assert_eq!(
         *ec_events.lock().unwrap_or_else(|e| e.into_inner()),
         vec![true, false, true]
     );
     let zone_reports = mock_7000.recorded_reports();
-    assert_eq!(zone_reports.len(), 5);
-    assert_eq!(zone_reports[4].1, vec![0x14, 0x00, 5, 200, 100, 50, 0, 0]);
+    assert_eq!(zone_reports.len(), 3);
+    assert_eq!(zone_reports[0].1, vec![0x14, 0x01, 0x01, 1, 2, 3, 0, 0]);
+    assert_eq!(zone_reports[1].1, vec![0x14, 0x02, 0x01, 4, 5, 6, 0, 0]);
+    assert_eq!(
+        zone_reports[2].1,
+        vec![0x14, 0x03, 0x01, 200, 100, 50, 0, 0]
+    );
 }
 
 #[test]
@@ -549,7 +573,7 @@ fn lightbar_controller_over_hid_preserves_all_5_animations_and_flash_stays_off()
 
     let mut lb = LightbarController::new(Arc::clone(&transport) as _);
     assert_eq!(lb.status_json()["available"], true);
-    assert_eq!(lb.status_json()["zones"], 5);
+    assert_eq!(lb.status_json()["zones"], 3);
 
     let base_rgb = RgbColor::new(0, 160, 240);
     for anim in LightbarAnimation::ALL {
@@ -595,20 +619,20 @@ fn lightbar_controller_over_hid_preserves_all_5_animations_and_flash_stays_off()
         assert!(!lb.is_animating());
 
         let final_reports = mock_hid.recorded_reports();
-        // 5 zones written on completion (4 front + lid logo zone 5)
-        assert_eq!(final_reports.len(), 5);
+        // 2 front zones (hinge flag=1 + base flag=2) written on completion
+        assert_eq!(final_reports.len(), 2);
         if matches!(anim, LightbarAnimation::Flash | LightbarAnimation::PulseOff) {
             assert!(lb.is_flash_off());
             for (idx, (_, r)) in final_reports.iter().enumerate() {
-                assert_eq!(r, &vec![0x14, 0x00, (idx + 1) as u8, 0, 0, 0, 0, 0]);
+                assert_eq!(r, &vec![0x14, (idx + 1) as u8, 0x01, 0, 0, 0, 0, 0]);
             }
         } else {
             assert!(!lb.is_flash_off());
             for (idx, (_, r)) in final_reports.iter().enumerate() {
                 let expected = vec![
                     0x14,
-                    0x00,
                     (idx + 1) as u8,
+                    0x01,
                     base_rgb.r,
                     base_rgb.g,
                     base_rgb.b,
@@ -972,28 +996,30 @@ fn ite8291_zero_and_dim_brightness_partial_zones_and_8233_16slot_lightbar() {
         ]
     );
 
-    // ITE 8233 (048D:7001) lightbar color writes slots 0 and 1 so 0x08 static color index 1 lights up.
+    // ITE 8233 (048D:7001) Zone 2 color sends power_on + 0x14 0x02 0x01 R G B + 0x08 0x22.
     mock_hid.clear_reports();
     transport
         .write_lightbar_color(RgbColor::new(0, 128, 255))
         .expect("8233 color");
     let lb_reports = mock_hid.recorded_reports();
-    assert_eq!(lb_reports.len(), 2);
-    for (slot, (path, pkt)) in lb_reports.iter().enumerate() {
-        assert_eq!(path, "/dev/hidraw0");
-        assert_eq!(pkt, &vec![0x14, 0x00, slot as u8, 0, 128, 255, 0, 0]);
-    }
+    assert_eq!(lb_reports.len(), 3);
+    assert_eq!(lb_reports[0].0, "/dev/hidraw0");
+    assert_eq!(lb_reports[0].1, vec![0x1A, 0x02, 0x01, 0x04, 0, 0, 0, 0x01]);
+    assert_eq!(lb_reports[1].1, vec![0x14, 0x02, 0x01, 0, 128, 255, 0, 0]);
+    assert_eq!(
+        lb_reports[2].1,
+        vec![0x08, 0x22, 0x01, 0x01, 100, 0x01, 0, 0]
+    );
 
-    // ITE 8233 brightness sends 0x08 enable + 0x09 0x02 (0..=100) full brightness.
+    // ITE 8233 brightness sends 0x08 0x22 with real lb_level (0..=100).
     mock_hid.clear_reports();
     transport.write_lightbar_brightness(255).expect("8233 br");
     let br_reports = mock_hid.recorded_reports();
-    assert_eq!(br_reports.len(), 2);
+    assert_eq!(br_reports.len(), 1);
     assert_eq!(
         br_reports[0].1,
-        vec![0x08, 0x02, 0x01, 0x05, 50, 0x01, 0, 0]
+        vec![0x08, 0x22, 0x01, 0x01, 100, 0x01, 0, 0]
     );
-    assert_eq!(br_reports[1].1, vec![0x09, 0x02, 100, 0, 0, 0, 0, 0]);
 }
 
 #[test]
@@ -1192,12 +1218,14 @@ fn ite8233_zero_brightness_and_managed_false_teardown() {
             })),
     );
 
-    // 1. write_lightbar_brightness(0) on 048D:7001 sends 0x09 0x02 0, 0x08 0x01, and EC power off.
+    // 1. write_lightbar_brightness(0) on 048D:7001 sends full 4-packet power-off sequence + EC power off.
     transport.write_lightbar_brightness(0).expect("8233 off");
     let off_br = mock_hid.recorded_reports();
-    assert_eq!(off_br.len(), 2);
-    assert_eq!(off_br[0].1, vec![0x09, 0x02, 0, 0, 0, 0, 0, 0]);
-    assert_eq!(off_br[1].1, vec![0x08, 0x01, 0, 0, 0, 0, 0, 0]);
+    assert_eq!(off_br.len(), 4);
+    assert_eq!(off_br[0].1, vec![0x12, 0x00, 0x03, 0, 0, 0, 0, 0]);
+    assert_eq!(off_br[1].1, vec![0x08, 0x05, 0, 0, 0, 0, 0, 0]);
+    assert_eq!(off_br[2].1, vec![0x08, 0x01, 0x02, 0, 0, 0, 0, 0]);
+    assert_eq!(off_br[3].1, vec![0x1A, 0x02, 0x00, 0, 0, 0, 0, 0x01]);
     assert_eq!(
         *ec_power.lock().unwrap_or_else(|e| e.into_inner()),
         vec![false]
@@ -1228,7 +1256,7 @@ fn ite8233_zero_brightness_and_managed_false_teardown() {
         .any(|(_, p)| p == &vec![0x1A, 0x03, 0x00, 0, 0, 0, 0, 0x01]));
     assert!(teardown
         .iter()
-        .any(|(_, p)| p == &vec![0x14, 0x00, 1, 0, 0, 0, 0, 0]));
+        .any(|(_, p)| p == &vec![0x14, 0x02, 0x01, 0, 0, 0, 0, 0]));
     assert_eq!(
         ec_logo
             .lock()
@@ -1270,29 +1298,31 @@ fn ite7000_five_zone_disabled_lid_logo_stays_off_after_configure_and_animation()
     }))
     .expect("configure 5-zone with disabled lid logo");
 
-    let cfg_zone5: Vec<Vec<u8>> = mock_hid
-        .recorded_reports()
-        .into_iter()
-        .map(|(_, p)| p)
-        .filter(|p| p.len() >= 3 && p[0] == 0x14 && p[2] == LIGHTBAR_LID_LOGO_ZONE_ID)
-        .collect();
-    assert_eq!(
-        cfg_zone5.last(),
-        Some(&vec![0x14, 0x00, LIGHTBAR_LID_LOGO_ZONE_ID, 0, 0, 0, 0, 0])
+    // On 048D:7000, front lightbar writes only target hinge (flag=1) and base (flag=2), never logo (flag=3),
+    // and lid_logo disabled emits 0x08 0x05 + 0x08 0x01 0x03.
+    let cfg_reports = mock_hid.recorded_reports();
+    assert!(
+        cfg_reports
+            .iter()
+            .any(|(_, p)| p == &vec![0x08, 0x01, 0x03, 0, 0, 0, 0, 0]),
+        "disabled lid_logo must turn off logo zone 3"
+    );
+    assert!(
+        !cfg_reports
+            .iter()
+            .any(|(_, p)| p.len() >= 2 && p[0] == 0x14 && p[1] == 0x03),
+        "front lightbar color must not write logo zone 3"
     );
 
     mock_hid.clear_reports();
     assert!(lb.trigger(true));
     lb.advance(LightbarAnimation::Pulse.duration_ms());
-    let anim_zone5: Vec<Vec<u8>> = mock_hid
-        .recorded_reports()
-        .into_iter()
-        .map(|(_, p)| p)
-        .filter(|p| p.len() >= 3 && p[0] == 0x14 && p[2] == LIGHTBAR_LID_LOGO_ZONE_ID)
-        .collect();
-    assert_eq!(
-        anim_zone5.last(),
-        Some(&vec![0x14, 0x00, LIGHTBAR_LID_LOGO_ZONE_ID, 0, 0, 0, 0, 0])
+    let anim_reports = mock_hid.recorded_reports();
+    assert!(
+        !anim_reports
+            .iter()
+            .any(|(_, p)| p.len() >= 2 && p[0] == 0x14 && p[1] == 0x03),
+        "front lightbar animation must never touch logo zone 3"
     );
 }
 
@@ -1387,7 +1417,7 @@ fn lightbar_and_keyboard_cache_and_retry_once_after_usb_reenumeration() {
         .write_lightbar_brightness(128)
         .expect("lb brightness");
     transport
-        .write_lightbar_zones(&[RgbColor::new(1, 2, 3); 4])
+        .write_lightbar_zones(&[RgbColor::new(1, 2, 3); 3])
         .expect("lb zones");
     transport
         .write_lid_logo_color(RgbColor::new(10, 20, 30))

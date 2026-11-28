@@ -22,6 +22,7 @@ pub struct WinHidDeviceRecord {
     pub path: String,
     pub vendor_id: u16,
     pub product_id: u16,
+    pub version_number: u16,
     pub usage_page: u16,
     pub usage: u16,
     pub feature_report_byte_length: usize,
@@ -38,18 +39,20 @@ impl WinHidDeviceRecord {
         }
     }
 
-    /// Returns `true` when this interface belongs to a vendor-defined HID usage page (`>= 0xFF00`).
+    /// Returns `true` when this interface belongs to a valid vendor-defined lighting HID usage page
+    /// (`>= 0xFF00`, explicitly excluding non-LED collection `0xFF89`).
     pub fn is_vendor_lighting_interface(&self) -> bool {
         self.usage_page >= VENDOR_USAGE_PAGE_MIN
+            && self.usage_page != crate::hid_transport::ITE_USAGE_PAGE_EXCLUDED_FF89
     }
 }
 
 /// Frames a HID feature report payload for Windows `HidD_SetFeature`.
 ///
 /// Windows `HidD_SetFeature` expects a buffer of exact length `FeatureReportByteLength` whose first
-/// byte is the HID Report ID (`0x00` for unnumbered reports). If `report` does not already begin
-/// with `0x00`, a leading `0x00` Report ID byte is prepended. The resulting buffer is zero-padded
-/// to `feature_report_byte_length`, rejecting empty payloads or payloads exceeding the device limit.
+/// byte is the HID Report ID (`0x00` for unnumbered reports). Always prepends `0x00` unconditionally
+/// (unified with Linux `HIDIOCSFEATURE` framing) and zero-pads to `feature_report_byte_length`,
+/// rejecting empty payloads or payloads exceeding the device limit.
 pub fn frame_windows_feature_report(
     report: &[u8],
     feature_report_byte_length: usize,
@@ -65,29 +68,17 @@ pub fn frame_windows_feature_report(
         ));
     }
 
-    let mut framed = vec![0u8; feature_report_byte_length];
-    if report[0] == 0x00 {
-        if report.len() > feature_report_byte_length {
-            return Err(LightingError::InvalidConfig(format!(
-                "HID feature report length {} exceeds device FeatureReportByteLength {}",
-                report.len(),
-                feature_report_byte_length
-            )));
-        }
-        framed[..report.len()].copy_from_slice(report);
-    } else {
-        let needed = report.len().saturating_add(1);
-        if needed > feature_report_byte_length {
-            return Err(LightingError::InvalidConfig(format!(
-                "HID feature report {} (+1 Report ID) exceeds FeatureReportByteLength {}",
-                report.len(),
-                feature_report_byte_length
-            )));
-        }
-        framed[0] = 0x00;
-        framed[1..1 + report.len()].copy_from_slice(report);
+    let needed = report.len().saturating_add(1);
+    if needed > feature_report_byte_length {
+        return Err(LightingError::InvalidConfig(format!(
+            "HID feature report {} (+1 Report ID) exceeds FeatureReportByteLength {}",
+            report.len(),
+            feature_report_byte_length
+        )));
     }
-
+    let mut framed = vec![0u8; feature_report_byte_length];
+    framed[0] = 0x00;
+    framed[1..1 + report.len()].copy_from_slice(report);
     Ok(framed)
 }
 
@@ -124,10 +115,10 @@ pub fn frame_windows_output_report(
     Ok(framed)
 }
 
-/// Strips an optional leading `0x00` Report ID byte from a `HidD_GetFeature` buffer and resizes
+/// Strips the leading `0x00` Report ID byte from a `HidD_GetFeature` buffer and resizes
 /// cleanly to `requested_len` (truncating or zero-padding as needed).
 pub fn unframe_windows_feature_report(raw: &[u8], requested_len: usize) -> Vec<u8> {
-    let payload = if raw.first() == Some(&0x00) && raw.len() > 1 {
+    let payload = if raw.first() == Some(&0x00) {
         &raw[1..]
     } else {
         raw
@@ -161,6 +152,7 @@ pub struct MockWinHidSysApi {
     devices: Mutex<Vec<WinHidDeviceRecord>>,
     sent_reports: Mutex<Vec<(String, Vec<u8>)>>,
     feature_buffers: Mutex<BTreeMap<String, Vec<u8>>>,
+    feature_responses: Mutex<BTreeMap<(String, u8), Vec<u8>>>,
     fail_writes: Mutex<bool>,
     fail_reads: Mutex<bool>,
 }
@@ -171,9 +163,17 @@ impl MockWinHidSysApi {
             devices: Mutex::new(devices),
             sent_reports: Mutex::new(Vec::new()),
             feature_buffers: Mutex::new(BTreeMap::new()),
+            feature_responses: Mutex::new(BTreeMap::new()),
             fail_writes: Mutex::new(false),
             fail_reads: Mutex::new(false),
         }
+    }
+
+    pub fn set_feature_response(&self, path: &str, command: u8, framed_response: Vec<u8>) {
+        self.feature_responses
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .insert((path.to_ascii_lowercase(), command), framed_response);
     }
 
     pub fn set_fail_writes(&self, fail: bool) {
@@ -235,10 +235,26 @@ impl WinHidSysApi for MockWinHidSysApi {
             .lock()
             .unwrap_or_else(|e| e.into_inner())
             .push((dev.path.clone(), report.to_vec()));
-        self.feature_buffers
-            .lock()
-            .unwrap_or_else(|e| e.into_inner())
-            .insert(dev.path.to_ascii_lowercase(), report.to_vec());
+        let key = dev.path.to_ascii_lowercase();
+        let cmd = report.get(1).copied();
+        let seeded = cmd.and_then(|c| {
+            self.feature_responses
+                .lock()
+                .unwrap_or_else(|e| e.into_inner())
+                .get(&(key.clone(), c))
+                .cloned()
+        });
+        if let Some(resp) = seeded {
+            self.feature_buffers
+                .lock()
+                .unwrap_or_else(|e| e.into_inner())
+                .insert(key, resp);
+        } else if cmd != Some(0xA2) {
+            self.feature_buffers
+                .lock()
+                .unwrap_or_else(|e| e.into_inner())
+                .insert(key, report.to_vec());
+        }
         Ok(())
     }
 
@@ -316,6 +332,13 @@ impl WindowsHidTransport {
         Ok(records)
     }
 
+    fn invalidate_cache(&self) {
+        self.device_cache
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .clear();
+    }
+
     fn resolve_record(&self, path: &str) -> Result<WinHidDeviceRecord, LightingError> {
         let key = path.to_ascii_lowercase();
         if let Some(rec) = self
@@ -347,13 +370,21 @@ impl HidDeviceTransport for WindowsHidTransport {
     fn send_feature_report(&self, path: &str, report: &[u8]) -> Result<(), LightingError> {
         let rec = self.resolve_record(path)?;
         let framed = frame_windows_feature_report(report, rec.feature_report_byte_length)?;
-        self.sys.set_feature_report(&rec.path, &framed)
+        let res = self.sys.set_feature_report(&rec.path, &framed);
+        if res.is_err() {
+            self.invalidate_cache();
+        }
+        res
     }
 
     fn send_output_report(&self, path: &str, report: &[u8]) -> Result<(), LightingError> {
         let rec = self.resolve_record(path)?;
         let framed = frame_windows_output_report(report, rec.output_report_byte_length)?;
-        self.sys.set_output_report(&rec.path, &framed)
+        let res = self.sys.set_output_report(&rec.path, &framed);
+        if res.is_err() {
+            self.invalidate_cache();
+        }
+        res
     }
 
     fn get_feature_report(&self, path: &str, len: usize) -> Result<Vec<u8>, LightingError> {
@@ -365,7 +396,10 @@ impl HidDeviceTransport for WindowsHidTransport {
         }
         let mut raw = vec![0u8; rec.feature_report_byte_length];
         raw[0] = 0x00;
-        self.sys.get_feature_report(&rec.path, &mut raw)?;
+        if let Err(err) = self.sys.get_feature_report(&rec.path, &mut raw) {
+            self.invalidate_cache();
+            return Err(err);
+        }
         Ok(unframe_windows_feature_report(&raw, len))
     }
 
@@ -373,8 +407,26 @@ impl HidDeviceTransport for WindowsHidTransport {
         self.resolve_record(path).ok().map(|r| r.usage_page)
     }
 
+    fn device_usage(&self, path: &str) -> Option<u16> {
+        self.resolve_record(path).ok().map(|r| r.usage)
+    }
+
+    fn device_version_number(&self, path: &str) -> Option<u16> {
+        self.resolve_record(path).ok().map(|r| r.version_number)
+    }
+
+    fn device_output_report_byte_length(&self, path: &str) -> Option<usize> {
+        self.resolve_record(path)
+            .ok()
+            .map(|r| r.output_report_byte_length)
+    }
+
     fn device_interface_number(&self, _path: &str) -> Option<i32> {
         None
+    }
+
+    fn requires_explicit_interface_metadata(&self) -> bool {
+        true
     }
 }
 
@@ -728,6 +780,7 @@ mod win_hid_ffi {
                 path,
                 vendor_id: attrs.vendor_id,
                 product_id: attrs.product_id,
+                version_number: attrs.version_number,
                 usage_page: caps.usage_page,
                 usage: caps.usage,
                 feature_report_byte_length: usize::from(caps.feature_report_byte_length),
@@ -790,6 +843,7 @@ mod win_hid_ffi {
                     std::io::Error::last_os_error()
                 )));
             }
+            std::thread::sleep(std::time::Duration::from_millis(1));
             Ok(())
         }
 

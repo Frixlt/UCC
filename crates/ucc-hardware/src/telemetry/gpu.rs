@@ -296,7 +296,13 @@ fn resolve_card_cpu_package_id(
     }
     match packages.len() {
         0 => CardPackageLookup::Unknown,
-        1 => CardPackageLookup::Unique(*packages.iter().next().unwrap()),
+        1 => {
+            if let Some(&pkg) = packages.iter().next() {
+                CardPackageLookup::Unique(pkg)
+            } else {
+                CardPackageLookup::Unknown
+            }
+        }
         _ => CardPackageLookup::Ambiguous,
     }
 }

@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+
 //! Front lightbar controller (`M6.3`–`M6.6`) ported from `LightbarController.hpp`.
 
 use crate::hid_transport::LIGHTBAR_FRONT_ZONES;
@@ -8,8 +10,8 @@ use std::collections::BTreeMap;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
-/// Animation scheduler tick interval (`16 ms` / ~62.5 Hz) for smooth LED fades.
-pub const LIGHTBAR_FRAME_INTERVAL: Duration = Duration::from_millis(16);
+/// Animation scheduler tick interval (`33 ms` / ~30 Hz) for smooth LED fades without USB HID saturation.
+pub const LIGHTBAR_FRAME_INTERVAL: Duration = Duration::from_millis(33);
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum LightbarAnimation {
@@ -680,12 +682,11 @@ impl LightbarController {
         self.animating = true;
         self.anim_started = Some(Instant::now());
         self.flash_off = false;
-        self.advance(0);
-        if !self.last_ok {
+        if let Err(err) = self.advance_result(0) {
             self.animating = false;
             self.anim_started = None;
             self.consecutive_anim_errors = 0;
-            return Err(LightingError::WriteFailed(self.last_error.clone()));
+            return Err(err);
         }
         Ok(true)
     }
@@ -705,10 +706,18 @@ impl LightbarController {
     }
 
     /// Steps the active animation deterministically by `elapsed_ms`.
+    ///
+    /// Records any hardware write failure into `status_json()["ok"]` / `status_json()["error"]`
+    /// without silently swallowing errors.
     pub fn advance(&mut self, elapsed_ms: u64) {
+        let _ = self.advance_result(elapsed_ms);
+    }
+
+    /// Steps the active animation deterministically by `elapsed_ms`, returning any hardware write error.
+    pub fn advance_result(&mut self, elapsed_ms: u64) -> Result<(), LightingError> {
         if !self.animating {
             self.anim_started = None;
-            return;
+            return Ok(());
         }
         if elapsed_ms >= self.active_animation.duration_ms() {
             self.animating = false;
@@ -723,38 +732,51 @@ impl LightbarController {
             } else {
                 self.resolve_color()
             };
-            let _ = self.write_color(final_color);
+            self.write_color_result(final_color)?;
             if let Some(logo) = self.config.lid_logo {
                 if self.transport.has_lid_logo().unwrap_or(false) {
                     let shared_zone_logo = self
                         .caps
                         .as_ref()
                         .is_some_and(|c| c.zones > LIGHTBAR_FRONT_ZONES);
-                    if logo.enabled && logo.brightness > 0 {
-                        let _ = self
-                            .transport
-                            .write_lid_logo(true, logo.color, logo.brightness);
+                    let logo_res = if logo.enabled && logo.brightness > 0 {
+                        self.transport
+                            .write_lid_logo(true, logo.color, logo.brightness)
                     } else if shared_zone_logo {
-                        let _ = self.transport.write_lid_logo(false, RgbColor::BLACK, 0);
+                        self.transport.write_lid_logo(false, RgbColor::BLACK, 0)
+                    } else {
+                        Ok(())
+                    };
+                    if let Err(err) = logo_res {
+                        self.last_ok = false;
+                        self.last_error = err.to_string();
+                        return Err(err);
                     }
                 }
             }
-            return;
+            self.last_ok = true;
+            self.last_error.clear();
+            return Ok(());
         }
 
         let frame_rgb = self.active_animation.frame(elapsed_ms, self.base_color);
         if self.last_written_color == Some(frame_rgb) {
-            return;
+            return Ok(());
         }
-        if self.write_color(frame_rgb) {
-            self.consecutive_anim_errors = 0;
-            self.last_ok = true;
-            self.last_error.clear();
-        } else {
-            self.consecutive_anim_errors = self.consecutive_anim_errors.saturating_add(1);
-            if self.consecutive_anim_errors >= MAX_CONSECUTIVE_ANIM_ERRORS {
-                self.animating = false;
-                self.anim_started = None;
+        match self.write_color_result(frame_rgb) {
+            Ok(()) => {
+                self.consecutive_anim_errors = 0;
+                self.last_ok = true;
+                self.last_error.clear();
+                Ok(())
+            }
+            Err(err) => {
+                self.consecutive_anim_errors = self.consecutive_anim_errors.saturating_add(1);
+                if self.consecutive_anim_errors >= MAX_CONSECUTIVE_ANIM_ERRORS {
+                    self.animating = false;
+                    self.anim_started = None;
+                }
+                Err(err)
             }
         }
     }
@@ -859,10 +881,6 @@ impl LightbarController {
             }
         }
         Ok(())
-    }
-
-    fn write_color(&mut self, rgb: RgbColor) -> bool {
-        self.write_color_result(rgb).is_ok()
     }
 
     fn write_color_result(&mut self, rgb: RgbColor) -> Result<(), LightingError> {

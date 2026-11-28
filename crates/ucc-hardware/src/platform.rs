@@ -54,6 +54,12 @@ pub enum PlatformError {
     SensorUnavailable(usize),
     #[error("Platform backend is unavailable")]
     Unavailable,
+    #[error("Platform I/O error ({context}): {source}")]
+    Io {
+        context: &'static str,
+        #[source]
+        source: std::io::Error,
+    },
 }
 
 /// Recorded mutation operations on a mock [`PlatformBackend`].
@@ -170,6 +176,25 @@ pub trait PlatformBackend: Send + Sync {
         Err(PlatformError::Unsupported("cTGP wattage write unsupported"))
     }
 
+    /// Reads the live or configured NVIDIA Dynamic Boost wattage (`0x07D5` / `0x0746`) when supported.
+    fn read_dynamic_boost_watts(&self) -> Result<i32, PlatformError> {
+        Err(PlatformError::Unsupported(
+            "Dynamic Boost wattage read unsupported",
+        ))
+    }
+
+    /// Sets NVIDIA Dynamic Boost wattage (`0x0743 BIT(1)`, `0x0745`, `0x0746`, `PWDB`) when supported.
+    fn set_dynamic_boost_watts(&self, _watts: i32) -> Result<(), PlatformError> {
+        Err(PlatformError::Unsupported(
+            "Dynamic Boost wattage write unsupported",
+        ))
+    }
+
+    /// Reads the active EC PMSC mode (`"office"`, `"gaming"`, `"turbo"`, or `"custom"`) when supported.
+    fn read_pmsc_mode(&self) -> Result<&'static str, PlatformError> {
+        Err(PlatformError::Unsupported("PMSC mode read unsupported"))
+    }
+
     /// Returns firmware charging profile descriptors when supported directly by the platform backend.
     fn charging_profiles_available(&self) -> Vec<String> {
         Vec::new()
@@ -208,7 +233,7 @@ pub trait PlatformBackend: Send + Sync {
         ))
     }
 
-    /// Controls EC lightbar / chassis LED power rail (`0x767`/`0x768`) when supported.
+    /// Controls EC lightbar / chassis LED power rail (`0x0748`, `LIGHTBAR_AC_CTRL`) when supported.
     fn set_lightbar_power(&self, _enabled: bool) -> Result<(), PlatformError> {
         Err(PlatformError::Unsupported(
             "Lightbar EC power switch unsupported",
@@ -634,25 +659,43 @@ impl<H: HardwareIo> PlatformBackend for TuxedoIoBackend<H> {
             .ok_or(PlatformError::Unsupported(
                 "Reading perf profile unsupported",
             ))?;
-        if let Some(ref sys) = self.sysfs {
-            let raw = sys.read(path).map_err(|_| {
-                PlatformError::Unsupported("Reading perf profile from sysfs unavailable")
-            })?;
-            return map_platform_profile_str_to_code(vendor, &raw).ok_or(
-                PlatformError::Unsupported("Unrecognized platform_profile sysfs value"),
-            );
-        }
-        if let Ok(raw) = read_to_string_nofollow(path) {
-            if let Some(code) = map_platform_profile_str_to_code(vendor, &raw) {
-                return Ok(code);
+        let raw_result = match self.sysfs {
+            Some(ref sys) => sys.read(path),
+            None => read_to_string_nofollow(path),
+        };
+        match raw_result {
+            Ok(raw) => {
+                if let Some(code) = map_platform_profile_str_to_code(vendor, &raw) {
+                    *self
+                        .cached_perf_profile
+                        .lock()
+                        .unwrap_or_else(|e| e.into_inner()) = Some(code);
+                    return Ok(code);
+                }
+                tracing::warn!(
+                    path = %path.display(),
+                    value = raw.trim(),
+                    "Unrecognized platform_profile sysfs value"
+                );
+                Err(PlatformError::Unsupported(
+                    "Unrecognized platform_profile sysfs value",
+                ))
+            }
+            Err(source) => {
+                tracing::warn!(
+                    path = %path.display(),
+                    error = %source,
+                    "Failed to read platform_profile from sysfs, checking cached value"
+                );
+                self.cached_perf_profile
+                    .lock()
+                    .unwrap_or_else(|e| e.into_inner())
+                    .ok_or(PlatformError::Io {
+                        context: "Reading perf profile from sysfs failed",
+                        source,
+                    })
             }
         }
-        self.cached_perf_profile
-            .lock()
-            .unwrap_or_else(|e| e.into_inner())
-            .ok_or(PlatformError::Unsupported(
-                "Reading perf profile from sysfs unavailable",
-            ))
     }
 
     fn set_perf_profile(&self, profile_code: i32) -> Result<(), PlatformError> {
@@ -667,33 +710,57 @@ impl<H: HardwareIo> PlatformBackend for TuxedoIoBackend<H> {
         };
         validate_perf_profile_code(vendor, effective_available, profile_code)?;
 
-        let try_sysfs_fallback = || -> Option<()> {
-            let path = self.platform_profile_path.as_ref()?;
-            let profile_str =
-                map_perf_profile_code_to_str(vendor, profile_code, path, self.sysfs.as_deref())?;
+        enum SysfsFallbackOutcome {
+            Written,
+            NotConfigured,
+            WriteFailed(std::io::Error),
+        }
+
+        let try_sysfs_fallback = || -> SysfsFallbackOutcome {
+            let Some(path) = self.platform_profile_path.as_ref() else {
+                return SysfsFallbackOutcome::NotConfigured;
+            };
+            let Some(profile_str) =
+                map_perf_profile_code_to_str(vendor, profile_code, path, self.sysfs.as_deref())
+            else {
+                return SysfsFallbackOutcome::NotConfigured;
+            };
             let write_res = if let Some(ref sys) = self.sysfs {
                 sys.write(path, profile_str)
             } else {
                 write_nofollow(path, profile_str)
             };
-            if write_res.is_ok() {
-                *self
-                    .cached_perf_profile
-                    .lock()
-                    .unwrap_or_else(|e| e.into_inner()) = Some(profile_code);
-                Some(())
-            } else {
-                None
+            match write_res {
+                Ok(()) => {
+                    *self
+                        .cached_perf_profile
+                        .lock()
+                        .unwrap_or_else(|e| e.into_inner()) = Some(profile_code);
+                    SysfsFallbackOutcome::Written
+                }
+                Err(err) => {
+                    tracing::warn!(
+                        path = %path.display(),
+                        profile = profile_str,
+                        error = %err,
+                        "Failed to write platform_profile sysfs fallback"
+                    );
+                    SysfsFallbackOutcome::WriteFailed(err)
+                }
             }
         };
 
         if vendor == DeviceVendor::Uniwill && self.capabilities.perf_profiles_available < 2 {
-            if try_sysfs_fallback().is_some() {
-                return Ok(());
-            }
-            return Err(PlatformError::Unsupported(
-                "Uniwill device reports fewer than 2 performance profiles",
-            ));
+            return match try_sysfs_fallback() {
+                SysfsFallbackOutcome::Written => Ok(()),
+                SysfsFallbackOutcome::WriteFailed(source) => Err(PlatformError::Io {
+                    context: "Writing perf profile to sysfs failed",
+                    source,
+                }),
+                SysfsFallbackOutcome::NotConfigured => Err(PlatformError::Unsupported(
+                    "Uniwill device reports fewer than 2 performance profiles",
+                )),
+            };
         }
 
         match set_perf_profile(&self.hw, vendor, profile_code) {
@@ -704,12 +771,21 @@ impl<H: HardwareIo> PlatformBackend for TuxedoIoBackend<H> {
                     .unwrap_or_else(|e| e.into_inner()) = Some(profile_code);
                 Ok(())
             }
-            Err(ioctl_err) => {
-                if try_sysfs_fallback().is_some() {
-                    return Ok(());
+            Err(ioctl_err) => match try_sysfs_fallback() {
+                SysfsFallbackOutcome::Written => Ok(()),
+                SysfsFallbackOutcome::WriteFailed(source) => {
+                    tracing::warn!(
+                        ioctl_error = %ioctl_err,
+                        sysfs_error = %source,
+                        "Both ioctl and sysfs fallback failed for set_perf_profile"
+                    );
+                    Err(PlatformError::Io {
+                        context: "Writing perf profile to sysfs fallback failed",
+                        source,
+                    })
                 }
-                Err(ioctl_err.into())
-            }
+                SysfsFallbackOutcome::NotConfigured => Err(ioctl_err.into()),
+            },
         }
     }
 
@@ -1244,9 +1320,9 @@ impl PlatformBackend for MockPlatformBackend {
 
     fn set_pwup(&self, enable: bool, level: u32) -> Result<(), PlatformError> {
         self.ensure_write_ready()?;
-        if level > 3 || (!enable && level != 0) {
+        if level > crate::uwcc::uapi::UWCC_PWUP_MAX_LEVEL || (!enable && level != 0) {
             return Err(PlatformError::InvalidArgument(
-                "PWUP level must be 0..=3 (and 0 when disabled)",
+                "PWUP level must be 0..=7 (and 0 when disabled)",
             ));
         }
         self.journal

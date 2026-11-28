@@ -1,16 +1,23 @@
 //! Fan control orchestrator operating strictly against [`PlatformBackend`].
 
 use crate::platform::{PlatformBackend, PlatformError};
-use std::sync::{Arc, Mutex};
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::{Arc, Condvar, Mutex};
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
-use tokio::sync::{oneshot, watch};
 use tokio::task::JoinHandle;
 use ucc_core::{FanControlLogic, FanLogicType, FanProfile, TemporaryFanCurves};
 
+/// Initial backoff before retrying manual fan writes after consecutive write failures.
+pub const WRITE_FAILSAFE_INITIAL_BACKOFF_MS: i64 = 5_000;
+
+/// Maximum exponential backoff cap for write-failsafe auto-recovery attempts.
+pub const WRITE_FAILSAFE_MAX_BACKOFF_MS: i64 = 60_000;
+
 /// Output of a single cooling control tick.
 ///
-/// `speeds_percent` strictly reflects *confirmed applied* speeds (manual mode) or hardware
-/// readback speeds (auto mode), never unconfirmed targets whose write failed (`W1-02`).
+/// `speeds_percent` strictly reflects *confirmed applied* speeds (measured readback when available,
+/// falling back to the confirmed target) or hardware readback speeds (auto mode), never unconfirmed
+/// targets whose write failed (`W1-02`).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct FanTickSnapshot {
     pub timestamp_ms: i64,
@@ -31,6 +38,8 @@ pub struct FanController {
     in_failsafe_auto: bool,
     consecutive_write_failures: u32,
     write_failsafe_active: bool,
+    write_failsafe_retry_after_ms: Option<i64>,
+    write_failsafe_backoff_level: u32,
 }
 
 impl FanController {
@@ -70,6 +79,8 @@ impl FanController {
             in_failsafe_auto: false,
             consecutive_write_failures: 0,
             write_failsafe_active: false,
+            write_failsafe_retry_after_ms: None,
+            write_failsafe_backoff_level: 0,
         }
     }
 
@@ -86,23 +97,29 @@ impl FanController {
     }
 
     pub fn set_profile(&mut self, profile: FanProfile) {
+        if self.base_profile == profile {
+            return;
+        }
         self.base_profile = profile;
-        self.consecutive_write_failures = 0;
-        self.write_failsafe_active = false;
+        self.reset_write_failsafe();
         self.sync_profiles();
     }
 
     pub fn apply_temporary_curves(&mut self, curves: TemporaryFanCurves) {
+        if self.temporary_curves.as_ref() == Some(&curves) {
+            return;
+        }
         self.temporary_curves = Some(curves);
-        self.consecutive_write_failures = 0;
-        self.write_failsafe_active = false;
+        self.reset_write_failsafe();
         self.sync_profiles();
     }
 
     pub fn clear_temporary_curves(&mut self) {
+        if self.temporary_curves.is_none() {
+            return;
+        }
         self.temporary_curves = None;
-        self.consecutive_write_failures = 0;
-        self.write_failsafe_active = false;
+        self.reset_write_failsafe();
         self.sync_profiles();
     }
 
@@ -110,13 +127,30 @@ impl FanController {
         self.temporary_curves.is_some()
     }
 
+    fn reset_write_failsafe(&mut self) {
+        self.consecutive_write_failures = 0;
+        self.write_failsafe_active = false;
+        self.write_failsafe_retry_after_ms = None;
+        self.write_failsafe_backoff_level = 0;
+    }
+
+    fn arm_write_failsafe(&mut self, timestamp_ms: i64) {
+        let shift = self.write_failsafe_backoff_level.min(4);
+        let backoff_ms = WRITE_FAILSAFE_INITIAL_BACKOFF_MS
+            .saturating_mul(1i64 << shift)
+            .min(WRITE_FAILSAFE_MAX_BACKOFF_MS);
+        self.write_failsafe_active = true;
+        self.write_failsafe_retry_after_ms = Some(timestamp_ms.saturating_add(backoff_ms));
+        self.write_failsafe_backoff_level =
+            self.write_failsafe_backoff_level.saturating_add(1).min(4);
+    }
+
     /// Restores firmware automatic fan control; clears active-control tracking only after success (`W1-01`).
     pub fn restore_auto(&mut self, backend: &dyn PlatformBackend) -> Result<(), PlatformError> {
         backend.set_fans_auto()?;
         self.was_control_enabled = false;
         self.in_failsafe_auto = false;
-        self.consecutive_write_failures = 0;
-        self.write_failsafe_active = false;
+        self.reset_write_failsafe();
         Ok(())
     }
 
@@ -190,8 +224,7 @@ impl FanController {
         }
 
         if !fan_control_enabled {
-            self.consecutive_write_failures = 0;
-            self.write_failsafe_active = false;
+            self.reset_write_failsafe();
             if self.was_control_enabled && !is_cancelled() && backend.set_fans_auto().is_ok() {
                 self.was_control_enabled = false;
                 self.in_failsafe_auto = false;
@@ -250,18 +283,26 @@ impl FanController {
             target_speeds.push(target);
         }
 
-        if self.write_failsafe_active {
-            if !self.in_failsafe_auto && !is_cancelled() && backend.set_fans_auto().is_ok() {
-                self.in_failsafe_auto = true;
+        let probing_recovery = if self.write_failsafe_active {
+            let recovery_due = self
+                .write_failsafe_retry_after_ms
+                .is_some_and(|retry_at| timestamp_ms >= retry_at);
+            if !recovery_due {
+                if !self.in_failsafe_auto && !is_cancelled() && backend.set_fans_auto().is_ok() {
+                    self.in_failsafe_auto = true;
+                }
+                return FanTickSnapshot {
+                    timestamp_ms,
+                    temps_c,
+                    speeds_percent: vec![None; count],
+                    calculated_speeds: target_speeds.into_iter().map(Some).collect(),
+                    fallback_auto: self.in_failsafe_auto,
+                };
             }
-            return FanTickSnapshot {
-                timestamp_ms,
-                temps_c,
-                speeds_percent: vec![None; count],
-                calculated_speeds: target_speeds.into_iter().map(Some).collect(),
-                fallback_auto: self.in_failsafe_auto,
-            };
-        }
+            true
+        } else {
+            false
+        };
 
         self.in_failsafe_auto = false;
 
@@ -279,7 +320,10 @@ impl FanController {
                 };
             }
             match backend.set_fan_speed_percent(i, target) {
-                Ok(()) => speeds_percent.push(temps_c[i].map(|_| target)),
+                Ok(()) => {
+                    let measured = backend.read_fan_speed_percent(i).ok().unwrap_or(target);
+                    speeds_percent.push(temps_c[i].map(|_| measured));
+                }
                 Err(_) => {
                     speeds_percent.push(None);
                     any_write_failed = true;
@@ -289,8 +333,8 @@ impl FanController {
 
         if any_write_failed {
             self.consecutive_write_failures = self.consecutive_write_failures.saturating_add(1);
-            if self.consecutive_write_failures >= 2 {
-                self.write_failsafe_active = true;
+            if probing_recovery || self.consecutive_write_failures >= 2 {
+                self.arm_write_failsafe(timestamp_ms);
                 if !is_cancelled() && backend.set_fans_auto().is_ok() {
                     self.in_failsafe_auto = true;
                 }
@@ -303,7 +347,7 @@ impl FanController {
                 };
             }
         } else {
-            self.consecutive_write_failures = 0;
+            self.reset_write_failsafe();
         }
 
         FanTickSnapshot {
@@ -326,7 +370,7 @@ impl FanController {
     }
 }
 
-/// Runtime configuration passed to the asynchronous [`spawn_fan_worker`] loop (`M5.3` / `W1-09`).
+/// Runtime configuration passed to the background [`spawn_fan_worker`] loop (`M5.3` / `W1-09`).
 #[derive(Debug, Clone)]
 pub struct FanWorkerConfig {
     pub profile: FanProfile,
@@ -335,18 +379,29 @@ pub struct FanWorkerConfig {
     pub temporary_curves: Option<TemporaryFanCurves>,
 }
 
+struct SharedWorkerState {
+    config: FanWorkerConfig,
+    generation: u64,
+}
+
 /// Handle controlling a running background [`FanController`] loop with guaranteed firmware-auto
 /// restoration on explicit shutdown, backend errors, or worker cancellation (`W1-09`).
 pub struct FanWorkerHandle {
-    config_tx: watch::Sender<FanWorkerConfig>,
-    stop_tx: Option<oneshot::Sender<()>>,
+    backend: Arc<dyn PlatformBackend>,
+    shared: Arc<(Mutex<SharedWorkerState>, Condvar)>,
+    stop_flag: Arc<AtomicBool>,
     latest_snapshot: Arc<Mutex<Option<FanTickSnapshot>>>,
     join_handle: Option<JoinHandle<Result<(), PlatformError>>>,
+    shutdown_completed: bool,
 }
 
 impl FanWorkerHandle {
     pub fn update_config(&self, config: FanWorkerConfig) {
-        let _ = self.config_tx.send(config);
+        let (lock, cvar) = &*self.shared;
+        let mut guard = lock.lock().unwrap_or_else(|e| e.into_inner());
+        guard.config = config;
+        guard.generation = guard.generation.wrapping_add(1);
+        cvar.notify_all();
     }
 
     pub fn latest_snapshot(&self) -> Option<FanTickSnapshot> {
@@ -358,24 +413,27 @@ impl FanWorkerHandle {
 
     /// Gracefully stops the worker loop and awaits firmware-auto restoration.
     pub async fn shutdown(mut self) -> Result<(), PlatformError> {
-        if let Some(tx) = self.stop_tx.take() {
-            let _ = tx.send(());
-        }
-        if let Some(handle) = self.join_handle.take() {
+        self.stop_flag.store(true, Ordering::Release);
+        self.shared.1.notify_all();
+        let res = if let Some(handle) = self.join_handle.take() {
             match handle.await {
                 Ok(res) => res,
                 Err(_) => Err(PlatformError::Unavailable),
             }
         } else {
             Ok(())
-        }
+        };
+        self.shutdown_completed = true;
+        res
     }
 }
 
 impl Drop for FanWorkerHandle {
     fn drop(&mut self) {
-        if let Some(tx) = self.stop_tx.take() {
-            let _ = tx.send(());
+        self.stop_flag.store(true, Ordering::Release);
+        self.shared.1.notify_all();
+        if !self.shutdown_completed {
+            let _ = self.backend.set_fans_auto();
         }
     }
 }
@@ -387,21 +445,33 @@ fn current_epoch_ms() -> i64 {
         .unwrap_or(0)
 }
 
-/// Spawns a periodic asynchronous fan worker that applies updates, handles transient failures, and
-/// restores firmware auto control upon shutdown or channel cancellation (`W1-09`).
+/// Spawns a periodic fan worker on Tokio's blocking thread pool (off async worker threads) that
+/// applies updates, handles transient failures, and restores firmware auto control upon shutdown
+/// or handle drop (`W1-09`).
 pub fn spawn_fan_worker(
     backend: Arc<dyn PlatformBackend>,
     initial: FanWorkerConfig,
     interval: Duration,
 ) -> FanWorkerHandle {
-    let (config_tx, mut config_rx) = watch::channel(initial.clone());
-    let (stop_tx, mut stop_rx) = oneshot::channel();
+    let shared = Arc::new((
+        Mutex::new(SharedWorkerState {
+            config: initial.clone(),
+            generation: 0,
+        }),
+        Condvar::new(),
+    ));
+    let stop_flag = Arc::new(AtomicBool::new(false));
     let latest_snapshot = Arc::new(Mutex::new(None));
-    let snapshot_ref = Arc::clone(&latest_snapshot);
 
-    let join_handle = tokio::spawn(async move {
+    let worker_backend = Arc::clone(&backend);
+    let worker_shared = Arc::clone(&shared);
+    let worker_stop = Arc::clone(&stop_flag);
+    let snapshot_ref = Arc::clone(&latest_snapshot);
+    let tick_interval = interval.max(Duration::from_millis(10));
+
+    let join_handle = tokio::task::spawn_blocking(move || {
         let mut controller = FanController::new(
-            backend.as_ref(),
+            worker_backend.as_ref(),
             initial.profile.clone(),
             initial.same_speed,
         );
@@ -409,47 +479,64 @@ pub fn spawn_fan_worker(
             controller.apply_temporary_curves(curves.clone());
         }
         let mut current_cfg = initial;
-        let mut ticker = tokio::time::interval(interval.max(Duration::from_millis(10)));
-        ticker.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
+        let mut seen_generation = 0u64;
 
         loop {
-            tokio::select! {
-                _ = &mut stop_rx => {
-                    break;
-                }
-                changed = config_rx.changed() => {
-                    if changed.is_err() {
-                        break;
+            if worker_stop.load(Ordering::Acquire) {
+                break;
+            }
+
+            // Pick up any pending config update before ticking.
+            {
+                let (lock, _) = &*worker_shared;
+                let guard = lock.lock().unwrap_or_else(|e| e.into_inner());
+                if guard.generation != seen_generation {
+                    seen_generation = guard.generation;
+                    let next_cfg = guard.config.clone();
+                    controller.set_same_speed(next_cfg.same_speed);
+                    if next_cfg.profile != current_cfg.profile {
+                        controller.set_profile(next_cfg.profile.clone());
                     }
-                    current_cfg = config_rx.borrow().clone();
-                    controller.set_same_speed(current_cfg.same_speed);
-                    controller.set_profile(current_cfg.profile.clone());
-                    match &current_cfg.temporary_curves {
-                        Some(curves) => controller.apply_temporary_curves(curves.clone()),
-                        None => controller.clear_temporary_curves(),
+                    if next_cfg.temporary_curves != current_cfg.temporary_curves {
+                        match &next_cfg.temporary_curves {
+                            Some(curves) => controller.apply_temporary_curves(curves.clone()),
+                            None => controller.clear_temporary_curves(),
+                        }
                     }
+                    current_cfg = next_cfg;
                 }
-                _ = ticker.tick() => {
-                    let snap = controller.tick(
-                        backend.as_ref(),
-                        current_cfg.fan_control_enabled,
-                        current_epoch_ms(),
-                    );
-                    *snapshot_ref.lock().unwrap_or_else(|e| e.into_inner()) = Some(snap);
-                }
+            }
+
+            let snap = controller.tick_cancellable(
+                worker_backend.as_ref(),
+                current_cfg.fan_control_enabled,
+                current_epoch_ms(),
+                || worker_stop.load(Ordering::Acquire),
+            );
+            *snapshot_ref.lock().unwrap_or_else(|e| e.into_inner()) = Some(snap);
+
+            if worker_stop.load(Ordering::Acquire) {
+                break;
+            }
+
+            // Sleep until next tick interval, waking immediately on stop or config update.
+            let (lock, cvar) = &*worker_shared;
+            let guard = lock.lock().unwrap_or_else(|e| e.into_inner());
+            if !worker_stop.load(Ordering::Acquire) && guard.generation == seen_generation {
+                let _ = cvar.wait_timeout(guard, tick_interval);
             }
         }
 
         // Bounded restoration attempts with exponential backoff on exit
         let mut last_err = None;
         for attempt in 0..3u32 {
-            match controller.restore_auto(backend.as_ref()) {
+            match controller.restore_auto(worker_backend.as_ref()) {
                 Ok(()) => return Ok(()),
                 Err(e) => {
                     last_err = Some(e);
                     if attempt < 2 {
                         let backoff = Duration::from_millis(25 * (1u64 << attempt));
-                        tokio::time::sleep(backoff).await;
+                        std::thread::sleep(backoff);
                     }
                 }
             }
@@ -458,9 +545,11 @@ pub fn spawn_fan_worker(
     });
 
     FanWorkerHandle {
-        config_tx,
-        stop_tx: Some(stop_tx),
+        backend,
+        shared,
+        stop_flag,
         latest_snapshot,
         join_handle: Some(join_handle),
+        shutdown_completed: false,
     }
 }

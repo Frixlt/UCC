@@ -103,7 +103,7 @@ impl PowerDeviceController {
     }
 
     pub fn set_runner(&self, runner: ProcessRunner) {
-        let mut r = self.runner.write().unwrap();
+        let mut r = self.runner.write().unwrap_or_else(|e| e.into_inner());
         *r = runner;
     }
 
@@ -114,7 +114,7 @@ impl PowerDeviceController {
     pub fn set_settings(&self, settings: Value) -> Result<(), String> {
         Self::validate(&settings)?;
         {
-            let mut s = self.settings.write().unwrap();
+            let mut s = self.settings.write().unwrap_or_else(|e| e.into_inner());
             *s = settings;
         }
         self.revision.fetch_add(1, Ordering::SeqCst);
@@ -122,11 +122,17 @@ impl PowerDeviceController {
     }
 
     pub fn settings(&self) -> Value {
-        self.settings.read().unwrap().clone()
+        self.settings
+            .read()
+            .unwrap_or_else(|e| e.into_inner())
+            .clone()
     }
 
     pub fn status(&self) -> Value {
-        self.status.read().unwrap().clone()
+        self.status
+            .read()
+            .unwrap_or_else(|e| e.into_inner())
+            .clone()
     }
 
     pub fn revision(&self) -> u64 {
@@ -192,7 +198,11 @@ impl PowerDeviceController {
     }
 
     fn run_command(&self, program: &str, args: &[&str]) -> bool {
-        let runner = self.runner.read().unwrap().clone();
+        let runner = self
+            .runner
+            .read()
+            .unwrap_or_else(|e| e.into_inner())
+            .clone();
         runner(program, args)
     }
 
@@ -375,7 +385,7 @@ impl PowerDeviceController {
             });
         }
 
-        let mut st = self.status.write().unwrap();
+        let mut st = self.status.write().unwrap_or_else(|e| e.into_inner());
         *st = result;
     }
 

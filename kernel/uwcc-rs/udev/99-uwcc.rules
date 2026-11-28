@@ -1,16 +1,14 @@
 # SPDX-License-Identifier: GPL-2.0-only
 # udev rules for uwcc-rs (/dev/uwcc) and direct USB HID lighting devices (ADR-05).
 
-# Uniwill EC/WMI character device (/dev/uwcc): root-owned daemon access by default.
-# Optional: append TAG+="uaccess" if granting local active-seat read access is required;
-# EC_WRITE and PWUP ioctls still require CAP_SYS_ADMIN in kernel space.
+# Uniwill EC/WMI character device (/dev/uwcc): root-owned daemon access only.
 ACTION=="add|change", KERNEL=="uwcc", SUBSYSTEM=="misc", MODE="0660", GROUP="root", TAG+="systemd"
 
 # ITE 8291r3 per-key RGB keyboard controller (048D:600B)
-ACTION=="add|change", SUBSYSTEM=="hidraw", ATTRS{idVendor}=="048d", ATTRS{idProduct}=="600b", MODE="0660", GROUP="root"
+ACTION=="add|change", SUBSYSTEM=="hidraw", SUBSYSTEMS=="usb", ATTRS{idVendor}=="048d", ATTRS{idProduct}=="600b", MODE="0660", GROUP="root"
 
 # ITE front Lightbar controller, 4-zone (048D:7001)
-ACTION=="add|change", SUBSYSTEM=="hidraw", ATTRS{idVendor}=="048d", ATTRS{idProduct}=="7001", MODE="0660", GROUP="root"
+ACTION=="add|change", SUBSYSTEM=="hidraw", SUBSYSTEMS=="usb", ATTRS{idVendor}=="048d", ATTRS{idProduct}=="7001", MODE="0660", GROUP="root"
 
 # ITE Lightbar + lid logo controller, 5-zone (048D:7000)
-ACTION=="add|change", SUBSYSTEM=="hidraw", ATTRS{idVendor}=="048d", ATTRS{idProduct}=="7000", MODE="0660", GROUP="root"
+ACTION=="add|change", SUBSYSTEM=="hidraw", SUBSYSTEMS=="usb", ATTRS{idVendor}=="048d", ATTRS{idProduct}=="7000", MODE="0660", GROUP="root"

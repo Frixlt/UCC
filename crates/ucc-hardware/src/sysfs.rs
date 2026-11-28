@@ -303,7 +303,11 @@ impl SysfsRoot {
                 }
             }
 
-            let _ = file.set_len(0);
+            if self.root_path != Path::new("/") {
+                // Regular files in custom test sandboxes need truncation when overwriting
+                // with a shorter payload; real /sys and /proc virtual files must not be truncated.
+                let _ = file.set_len(0);
+            }
             file.write_all(data.as_bytes())?;
             file.flush()?;
             Ok(())

@@ -528,28 +528,48 @@ impl WindowsPowerController {
             ));
         }
 
-        let current_max = self
+        let prev_min = self
+            .transport
+            .read_value_index(
+                source,
+                GUID_PROCESSOR_SETTINGS_SUBGROUP,
+                GUID_PROCESSOR_THROTTLE_MINIMUM,
+            )
+            .ok();
+        let prev_max = self
             .transport
             .read_value_index(
                 source,
                 GUID_PROCESSOR_SETTINGS_SUBGROUP,
                 GUID_PROCESSOR_THROTTLE_MAXIMUM,
             )
-            .unwrap_or(100);
+            .ok();
+        let current_max = prev_max.unwrap_or(100);
 
-        if min_percent > current_max {
+        let max_first = min_percent > current_max;
+        if max_first {
             self.transport.write_value_index(
                 source,
                 GUID_PROCESSOR_SETTINGS_SUBGROUP,
                 GUID_PROCESSOR_THROTTLE_MAXIMUM,
                 max_percent,
             )?;
-            self.transport.write_value_index(
+            if let Err(err) = self.transport.write_value_index(
                 source,
                 GUID_PROCESSOR_SETTINGS_SUBGROUP,
                 GUID_PROCESSOR_THROTTLE_MINIMUM,
                 min_percent,
-            )?;
+            ) {
+                if let Some(old_max) = prev_max {
+                    let _ = self.transport.write_value_index(
+                        source,
+                        GUID_PROCESSOR_SETTINGS_SUBGROUP,
+                        GUID_PROCESSOR_THROTTLE_MAXIMUM,
+                        old_max,
+                    );
+                }
+                return Err(err);
+            }
         } else {
             self.transport.write_value_index(
                 source,
@@ -557,14 +577,64 @@ impl WindowsPowerController {
                 GUID_PROCESSOR_THROTTLE_MINIMUM,
                 min_percent,
             )?;
-            self.transport.write_value_index(
+            if let Err(err) = self.transport.write_value_index(
                 source,
                 GUID_PROCESSOR_SETTINGS_SUBGROUP,
                 GUID_PROCESSOR_THROTTLE_MAXIMUM,
                 max_percent,
-            )?;
+            ) {
+                if let Some(old_min) = prev_min {
+                    let _ = self.transport.write_value_index(
+                        source,
+                        GUID_PROCESSOR_SETTINGS_SUBGROUP,
+                        GUID_PROCESSOR_THROTTLE_MINIMUM,
+                        old_min,
+                    );
+                }
+                return Err(err);
+            }
         }
-        self.transport.apply_active_scheme()
+
+        if let Err(err) = self.transport.apply_active_scheme() {
+            // Roll back in reverse write order so min never transiently exceeds max.
+            if max_first {
+                if let Some(old_min) = prev_min {
+                    let _ = self.transport.write_value_index(
+                        source,
+                        GUID_PROCESSOR_SETTINGS_SUBGROUP,
+                        GUID_PROCESSOR_THROTTLE_MINIMUM,
+                        old_min,
+                    );
+                }
+                if let Some(old_max) = prev_max {
+                    let _ = self.transport.write_value_index(
+                        source,
+                        GUID_PROCESSOR_SETTINGS_SUBGROUP,
+                        GUID_PROCESSOR_THROTTLE_MAXIMUM,
+                        old_max,
+                    );
+                }
+            } else {
+                if let Some(old_max) = prev_max {
+                    let _ = self.transport.write_value_index(
+                        source,
+                        GUID_PROCESSOR_SETTINGS_SUBGROUP,
+                        GUID_PROCESSOR_THROTTLE_MAXIMUM,
+                        old_max,
+                    );
+                }
+                if let Some(old_min) = prev_min {
+                    let _ = self.transport.write_value_index(
+                        source,
+                        GUID_PROCESSOR_SETTINGS_SUBGROUP,
+                        GUID_PROCESSOR_THROTTLE_MINIMUM,
+                        old_min,
+                    );
+                }
+            }
+            return Err(err);
+        }
+        Ok(())
     }
 
     /// Reads the configured maximum processor frequency in MHz (`0` = unlimited).

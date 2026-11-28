@@ -73,18 +73,28 @@ pub fn parse_hid_id_from_uevent(uevent: &str) -> Option<(u16, u16)> {
     None
 }
 
-/// Parses the primary `Usage Page` global item from a raw USB HID report descriptor.
+/// Parses ALL Global `Usage Page` items across all collections in a raw USB HID report descriptor.
 ///
 /// Follows USB HID 1.11 item encoding: Global `Usage Page` has prefix `0x05` (1-byte),
 /// `0x06` (2-byte little-endian), or `0x07` (4-byte little-endian).
-pub fn parse_hid_report_descriptor_usage_page(descriptor: &[u8]) -> Option<u16> {
+pub fn parse_hid_report_descriptor_usage_pages(descriptor: &[u8]) -> Vec<u16> {
+    let mut pages = Vec::new();
     let mut idx = 0usize;
     while idx < descriptor.len() {
         let prefix = descriptor[idx];
         if prefix == 0xFE {
             // Long item: 0xFE, bDataSize, bLongItemTag, data[bDataSize]
-            let data_len = usize::from(*descriptor.get(idx + 1)?);
-            idx = idx.checked_add(3)?.checked_add(data_len)?;
+            let Some(&raw_len) = descriptor.get(idx + 1) else {
+                break;
+            };
+            let data_len = usize::from(raw_len);
+            let Some(next) = idx.checked_add(3).and_then(|v| v.checked_add(data_len)) else {
+                break;
+            };
+            if next > descriptor.len() {
+                break;
+            }
+            idx = next;
             continue;
         }
 
@@ -94,14 +104,16 @@ pub fn parse_hid_report_descriptor_usage_page(descriptor: &[u8]) -> Option<u16> 
         } else {
             usize::from(size_code)
         };
-        let next_idx = idx.checked_add(1)?.checked_add(data_len)?;
+        let Some(next_idx) = idx.checked_add(1).and_then(|v| v.checked_add(data_len)) else {
+            break;
+        };
         if next_idx > descriptor.len() {
             break;
         }
 
         // Global item (bType = 1 => bits 3..2 == 0b01) with Usage Page tag (bTag = 0)
         if (prefix & 0xFC) == 0x04 {
-            return match data_len {
+            let parsed = match data_len {
                 1 => Some(u16::from(descriptor[idx + 1])),
                 2 => Some(u16::from_le_bytes([
                     descriptor[idx + 1],
@@ -118,14 +130,53 @@ pub fn parse_hid_report_descriptor_usage_page(descriptor: &[u8]) -> Option<u16> 
                 }
                 _ => None,
             };
+            if let Some(page) = parsed {
+                if !pages.contains(&page) {
+                    pages.push(page);
+                }
+            }
         }
 
         idx = next_idx;
     }
-    None
+    pages
 }
 
-/// Reads and parses the HID report descriptor usage page from sysfs
+/// Parses the best lighting `Usage Page` across all collections in a raw USB HID report descriptor.
+///
+/// Prefers valid vendor lighting usage pages ranked by `0xFF03 > 0xFF12 > 0xFF02 > other >= 0xFF00`
+/// (excluding `0xFF89`), falling back to the first parsed usage page when no vendor lighting
+/// collection is present.
+pub fn parse_hid_report_descriptor_usage_page(descriptor: &[u8]) -> Option<u16> {
+    let pages = parse_hid_report_descriptor_usage_pages(descriptor);
+    let best_vendor = pages
+        .iter()
+        .copied()
+        .filter(|&p| crate::hid_transport::usage_page_priority(p) > 0)
+        .max_by_key(|&p| crate::hid_transport::usage_page_priority(p));
+    best_vendor.or_else(|| pages.first().copied())
+}
+
+/// Reads and parses ALL HID report descriptor usage pages from sysfs
+/// (`{sysfs_hidraw_root}/{hidraw_name}/device/report_descriptor`).
+///
+/// Returns `None` if reading `report_descriptor` fails (never falling back to an assumed match).
+pub fn read_sysfs_hidraw_usage_pages(
+    sysfs_hidraw_root: &Path,
+    hidraw_name: &str,
+) -> Option<Vec<u16>> {
+    if !is_valid_hidraw_name(hidraw_name) {
+        return None;
+    }
+    let desc_path = sysfs_hidraw_root
+        .join(hidraw_name)
+        .join("device")
+        .join("report_descriptor");
+    let bytes = fs::read(desc_path).ok()?;
+    Some(parse_hid_report_descriptor_usage_pages(&bytes))
+}
+
+/// Reads and parses the best HID report descriptor usage page from sysfs
 /// (`{sysfs_hidraw_root}/{hidraw_name}/device/report_descriptor`).
 pub fn read_sysfs_hidraw_usage_page(sysfs_hidraw_root: &Path, hidraw_name: &str) -> Option<u16> {
     if !is_valid_hidraw_name(hidraw_name) {
@@ -301,8 +352,7 @@ impl HidrawDeviceTransport {
             }
         };
         let mut guard = slot.lock().unwrap_or_else(|e| e.into_inner());
-        let had_cached = guard.is_some();
-        if !had_cached {
+        if guard.is_none() {
             match self.open_hidraw_file(path) {
                 Ok(file) => *guard = Some(file),
                 Err(err) => {
@@ -312,33 +362,20 @@ impl HidrawDeviceTransport {
                 }
             }
         }
-        let first_res = op(guard.as_mut().expect("cached hidraw handle"));
-        if first_res.is_ok() {
-            return first_res;
-        }
-        if !had_cached {
+        let Some(file) = guard.as_mut() else {
+            drop(guard);
+            self.evict_open_file_slot(path, &slot);
+            return Err(LightingError::Unavailable);
+        };
+        // Evict stale handle on any I/O failure and let `UniwillHidTransport` perform the single
+        // top-level retry (prevents 2x2 double-retry amplification across layers).
+        let res = op(file);
+        if res.is_err() {
             *guard = None;
             drop(guard);
             self.evict_open_file_slot(path, &slot);
-            return first_res;
         }
-        *guard = None;
-        let mut fresh = match self.open_hidraw_file(path) {
-            Ok(file) => file,
-            Err(err) => {
-                drop(guard);
-                self.evict_open_file_slot(path, &slot);
-                return Err(err);
-            }
-        };
-        let retry_res = op(&mut fresh);
-        if retry_res.is_ok() {
-            *guard = Some(fresh);
-        } else {
-            drop(guard);
-            self.evict_open_file_slot(path, &slot);
-        }
-        retry_res
+        res
     }
 }
 
@@ -426,6 +463,7 @@ impl HidDeviceTransport for HidrawDeviceTransport {
             if ret < 0 {
                 return Err(LightingError::Io(std::io::Error::last_os_error()));
             }
+            std::thread::sleep(std::time::Duration::from_millis(1));
             Ok(())
         })
     }
@@ -465,20 +503,37 @@ impl HidDeviceTransport for HidrawDeviceTransport {
     fn get_feature_report(&self, path: &str, len: usize) -> Result<Vec<u8>, LightingError> {
         use std::os::unix::io::AsRawFd;
 
-        let req = hidiocgfeature_request(len).ok_or_else(|| {
+        if len == 0 {
+            return Err(LightingError::InvalidConfig(
+                "Invalid HID feature report length: 0".to_string(),
+            ));
+        }
+        // Unified framing with Windows: `HIDIOCGFEATURE` uses `buf[0]` as the Report ID (`0x00`),
+        // so request `len + 1` bytes and strip the leading Report ID byte `0x00` on read.
+        let total_len = len.saturating_add(1);
+        let req = hidiocgfeature_request(total_len).ok_or_else(|| {
             LightingError::InvalidConfig(format!("Invalid HID feature report length: {len}"))
         })?;
         self.with_hidraw_file(path, |file| {
-            let mut buf = vec![0u8; len];
+            let mut buf = vec![0u8; total_len];
+            buf[0] = 0x00;
             // SAFETY: `file` is a validated `/dev/hidraw*` character device descriptor,
-            // `req` is `HIDIOCGFEATURE(len)`, and `buf` is a valid mutable byte buffer.
+            // `req` is `HIDIOCGFEATURE(total_len)`, and `buf` is a valid mutable byte buffer.
             let ret =
                 unsafe { libc::ioctl(file.as_raw_fd(), req as libc::Ioctl, buf.as_mut_ptr()) };
             if ret < 0 {
                 return Err(LightingError::Io(std::io::Error::last_os_error()));
             }
-            buf.truncate((ret as usize).min(len));
-            Ok(buf)
+            buf.truncate((ret as usize).min(total_len));
+            let payload = if buf.first() == Some(&0x00) {
+                &buf[1..]
+            } else {
+                &buf[..]
+            };
+            let mut out = vec![0u8; len];
+            let copy_len = payload.len().min(len);
+            out[..copy_len].copy_from_slice(&payload[..copy_len]);
+            Ok(out)
         })
     }
 
@@ -499,5 +554,9 @@ impl HidDeviceTransport for HidrawDeviceTransport {
 
     fn uses_host_sysfs(&self) -> bool {
         self.sysfs_hidraw_root == Path::new(DEFAULT_SYSFS_HIDRAW_ROOT)
+    }
+
+    fn requires_explicit_interface_metadata(&self) -> bool {
+        true
     }
 }

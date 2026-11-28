@@ -34,6 +34,9 @@ pub const UWCC_SMRW_MAX_LEN: usize = 64;
 /// Kernel WMI ring buffer capacity (`UWCC_WMI_RING_CAPACITY` in `uapi/uwcc.h`).
 pub const UWCC_WMI_RING_CAPACITY: usize = 64;
 
+/// Maximum valid `PWUP` boost level (`UWCC_PWUP_MAX_LEVEL` in `uapi/uwcc.h`).
+pub const UWCC_PWUP_MAX_LEVEL: u32 = 7;
+
 /// Capability bitmask flags returned in [`UwccInfo::flags`].
 pub const UWCC_FLAG_HAS_EC: u32 = 1 << 0;
 pub const UWCC_FLAG_HAS_SMRW: u32 = 1 << 1;
@@ -140,6 +143,11 @@ pub struct UwccMuxState {
     pub boot_mode: u32,
 }
 
+const _: () = assert!(std::mem::size_of::<UwccEcReg>() == 4);
+const _: () = assert!(std::mem::size_of::<UwccSmrw>() == 68);
+const _: () = assert!(std::mem::size_of::<UwccPwup>() == 8);
+const _: () = assert!(std::mem::size_of::<UwccInfo>() == 16);
+const _: () = assert!(std::mem::size_of::<UwccWmiEvent>() == 16);
 const _: () = assert!(std::mem::size_of::<UwccGpuPower>() == 8);
 const _: () = assert!(std::mem::size_of::<UwccMuxState>() == 8);
 
@@ -436,9 +444,9 @@ impl UwccTransport for UwccDevice {
     }
 
     fn pwup(&self, enable: bool, level: u32) -> Result<(), PlatformError> {
-        if level > 3 || (!enable && level != 0) {
+        if level > UWCC_PWUP_MAX_LEVEL || (!enable && level != 0) {
             return Err(PlatformError::InvalidArgument(
-                "PWUP level must be 0..=3 (and 0 when disabled)",
+                "PWUP level must be 0..=7 (and 0 when disabled)",
             ));
         }
         let mut payload = UwccPwup {
@@ -559,8 +567,17 @@ impl UwccTransport for UwccDevice {
                 ));
             }
         };
-        if (n as usize) < size {
+        if n == 0 {
             return Ok(None);
+        }
+        if (n as usize) < size {
+            return Err(PlatformError::Io {
+                context: "Short read from /dev/uwcc WMI event stream",
+                source: std::io::Error::new(
+                    std::io::ErrorKind::UnexpectedEof,
+                    format!("partial WMI event read: expected {} bytes, got {}", size, n),
+                ),
+            });
         }
         Ok(Some(evt))
     }
@@ -818,9 +835,9 @@ impl UwccTransport for MockUwccTransport {
         if !self.is_available() || self.fail_writes.load(Ordering::SeqCst) {
             return Err(PlatformError::Unavailable);
         }
-        if level > 3 || (!enable && level != 0) {
+        if level > UWCC_PWUP_MAX_LEVEL || (!enable && level != 0) {
             return Err(PlatformError::InvalidArgument(
-                "PWUP level must be 0..=3 (and 0 when disabled)",
+                "PWUP level must be 0..=7 (and 0 when disabled)",
             ));
         }
         self.journal
@@ -886,5 +903,74 @@ impl UwccTransport for MockUwccTransport {
             .lock()
             .unwrap_or_else(|e| e.into_inner())
             .pop_front())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn mock_uwcc_transport_pwup_validates_0_to_7() {
+        let transport = MockUwccTransport::new();
+        for level in 0..=UWCC_PWUP_MAX_LEVEL {
+            transport
+                .pwup(true, level)
+                .unwrap_or_else(|e| panic!("level {level} should succeed: {e}"));
+        }
+        transport.pwup(false, 0).unwrap();
+        assert!(matches!(
+            transport.pwup(true, UWCC_PWUP_MAX_LEVEL + 1),
+            Err(PlatformError::InvalidArgument(_))
+        ));
+        assert!(matches!(
+            transport.pwup(false, 1),
+            Err(PlatformError::InvalidArgument(_))
+        ));
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn poll_event_rejects_partial_read_and_decodes_full_event() {
+        use std::io::Write;
+        use tempfile::NamedTempFile;
+
+        // 1. Partial read (4 bytes < 16 bytes) must return PlatformError::Io, never Ok(None)
+        let mut partial_file = NamedTempFile::new().expect("temp file");
+        partial_file
+            .write_all(&[1, 2, 3, 4])
+            .expect("write partial");
+        partial_file.flush().expect("flush");
+        let dev = UwccDevice::open(partial_file.path()).expect("open partial file");
+        let err = dev
+            .poll_event()
+            .expect_err("partial read must return error instead of Ok(None)");
+        assert!(
+            matches!(err, PlatformError::Io { ref source, .. } if source.kind() == std::io::ErrorKind::UnexpectedEof),
+            "expected PlatformError::Io(UnexpectedEof), got {err:?}"
+        );
+
+        // 2. Empty file (EOF, 0 bytes) returns Ok(None)
+        let empty_file = NamedTempFile::new().expect("empty file");
+        let empty_dev = UwccDevice::open(empty_file.path()).expect("open empty file");
+        assert_eq!(empty_dev.poll_event().expect("eof poll"), None);
+
+        // 3. Full 16-byte UwccWmiEvent decodes cleanly
+        let expected = UwccWmiEvent {
+            timestamp_ns: 0x0102_0304_0506_0708,
+            code: 0x00B0,
+            payload: 0x0000_0001,
+        };
+        let mut full_file = NamedTempFile::new().expect("full file");
+        let raw_bytes = unsafe {
+            std::slice::from_raw_parts(
+                (&expected as *const UwccWmiEvent).cast::<u8>(),
+                std::mem::size_of::<UwccWmiEvent>(),
+            )
+        };
+        full_file.write_all(raw_bytes).expect("write event");
+        full_file.flush().expect("flush");
+        let full_dev = UwccDevice::open(full_file.path()).expect("open full file");
+        assert_eq!(full_dev.poll_event().expect("full poll"), Some(expected));
     }
 }

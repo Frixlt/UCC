@@ -22,21 +22,40 @@ use std::sync::Mutex;
 /// Canonical Linux uinput device path.
 pub const UINPUT_DEVICE_PATH: &str = "/dev/uinput";
 
-/// Uniwill WMI hotkey event codes emitted by `/dev/uwcc`.
+/// Uniwill WMI hotkey and system EC event codes emitted by `/dev/uwcc`
+/// (synchronized with upstream Linux `drivers/platform/x86/uniwill/uniwill-wmi.h`).
 pub mod wmi_code {
-    /// Upstream `uniwill-acpi.c`: `UNIWILL_OSD_TOUCHPAD_TOGGLE_OFF` (`0x002E`).
-    pub const TOUCHPAD_TOGGLE: u32 = 0x002E;
-    /// Upstream `uniwill-acpi.c`: `UNIWILL_OSD_TOUCHPAD_TOGGLE_ON` (`0x002F`).
-    pub const TOUCHPAD_TOGGLE_ON: u32 = 0x002F;
-    /// Upstream `uniwill-acpi.c`: `UNIWILL_OSD_PERFORMANCE_MODE_TOGGLE` (`0x00B0`),
+    /// Upstream `uniwill-wmi.h`: `UNIWILL_OSD_TOUCHPAD_ON` (`0x0004`).
+    pub const TOUCHPAD_TOGGLE: u32 = 0x0004;
+    /// Upstream `uniwill-wmi.h`: `UNIWILL_OSD_TOUCHPAD_OFF` (`0x0005`).
+    pub const TOUCHPAD_TOGGLE_ON: u32 = 0x0005;
+    /// Upstream `uniwill-wmi.h`: `UNIWILL_OSD_SUPER_KEY_DISABLE` (`0x0040`).
+    pub const WIN_LOCK_DISABLE: u32 = 0x0040;
+    /// Upstream `uniwill-wmi.h`: `UNIWILL_OSD_SUPER_KEY_ENABLE` (`0x0041`).
+    pub const WIN_LOCK_ENABLE: u32 = 0x0041;
+    /// Upstream `uniwill-wmi.h`: `UNIWILL_OSD_SUPER_KEY_STATE_CHANGED` (`0x00A5`).
+    pub const WIN_LOCK_TOGGLE: u32 = 0x00A5;
+    /// Upstream `uniwill-wmi.h`: `UNIWILL_OSD_FAN_BOOST_STATE_CHANGED` (`0x00A7`).
+    pub const FAN_BOOST_TOGGLE: u32 = 0x00A7;
+    /// Upstream `uniwill-wmi.h`: `UNIWILL_OSD_DC_ADAPTER_CHANGED` (`0x00AB`).
+    pub const DC_ADAPTER_CHANGED: u32 = 0x00AB;
+    /// Upstream `uniwill-wmi.h`: `UNIWILL_OSD_BATTERY_ALERT` (`0x00AE`).
+    pub const BATTERY_ALERT: u32 = 0x00AE;
+    /// Upstream `uniwill-wmi.h`: `UNIWILL_OSD_PERFORMANCE_MODE_TOGGLE` (`0x00B0`),
     /// emitted when `0x0741 BIT(0)` (`AP_EXIST`) is set and the physical mode button is pressed.
     pub const PERF_MODE_CYCLE: u32 = 0x00B0;
+    /// Upstream `uniwill-wmi.h`: `UNIWILL_OSD_KBDILLUMDOWN` (`0x00B1`).
+    pub const KBD_BRIGHTNESS_DOWN: u32 = 0x00B1;
+    /// Upstream `uniwill-wmi.h`: `UNIWILL_OSD_KBDILLUMUP` (`0x00B2`).
     pub const KBD_BRIGHTNESS_UP: u32 = 0x00B2;
-    pub const KBD_BRIGHTNESS_DOWN: u32 = 0x00B3;
-    pub const WEBCAM_TOGGLE: u32 = 0x00B4;
-    pub const FAN_BOOST_TOGGLE: u32 = 0x00B5;
+    /// Upstream `uniwill-wmi.h`: `UNIWILL_OSD_FN_LOCK` (`0x00B8`).
     pub const FN_LOCK_TOGGLE: u32 = 0x00B8;
-    pub const WIN_LOCK_TOGGLE: u32 = 0x00B9;
+    /// System EC event: fan safety / emergency override (`0x00BB`).
+    pub const EV_SAFETY: u32 = 0x00BB;
+    /// System EC event: liquid cooler power level change (`0x00C2`, `0x07C7 bits 4:2`).
+    pub const EV_HWOC: u32 = 0x00C2;
+    /// Upstream `uniwill-wmi.h`: `UNIWILL_OSD_WEBCAM_TOGGLE` (`0x00CF`).
+    pub const WEBCAM_TOGGLE: u32 = 0x00CF;
 }
 
 /// Standard Linux `<linux/input-event-codes.h>` keycodes emitted via `/dev/uinput`.
@@ -69,7 +88,9 @@ pub enum UwccHotkeyEvent {
 pub fn translate_wmi_event(event: UwccWmiEvent) -> UwccHotkeyEvent {
     match event.code {
         wmi_code::FN_LOCK_TOGGLE => UwccHotkeyEvent::FnLockToggle,
-        wmi_code::WIN_LOCK_TOGGLE => UwccHotkeyEvent::WinLockToggle,
+        wmi_code::WIN_LOCK_TOGGLE | wmi_code::WIN_LOCK_DISABLE | wmi_code::WIN_LOCK_ENABLE => {
+            UwccHotkeyEvent::WinLockToggle
+        }
         wmi_code::TOUCHPAD_TOGGLE | wmi_code::TOUCHPAD_TOGGLE_ON => UwccHotkeyEvent::TouchpadToggle,
         wmi_code::PERF_MODE_CYCLE => UwccHotkeyEvent::PerformanceModeCycle,
         wmi_code::KBD_BRIGHTNESS_UP => UwccHotkeyEvent::KeyboardBrightnessUp,
@@ -207,6 +228,13 @@ mod linux_uinput_abi {
         pub code: u16,
         pub value: i32,
     }
+
+    const _: () = assert!(
+        std::mem::size_of::<InputEvent>()
+            == std::mem::size_of::<libc::time_t>() + std::mem::size_of::<libc::suseconds_t>() + 8
+    );
+    #[cfg(target_pointer_width = "64")]
+    const _: () = assert!(std::mem::size_of::<InputEvent>() == 24);
 
     const UINPUT_MAGIC: u8 = b'U';
     pub const UI_DEV_CREATE: u64 = nix::request_code_none!(UINPUT_MAGIC, 1);
@@ -357,19 +385,75 @@ impl LinuxUinputEmitter {
         ]
     }
 
-    fn write_batch_all(writer: &mut impl Write, mut buf: &[u8]) -> Result<(), PlatformError> {
+    fn write_release_best_effort(writer: &mut impl Write, mut release_buf: &[u8]) {
         const MAX_EAGAIN_RETRIES: u8 = 5;
         const MAX_EINTR_RETRIES: u8 = 16;
         let event_size = std::mem::size_of::<linux_uinput_abi::InputEvent>();
         let mut eagain_retries = 0u8;
         let mut eintr_retries = 0u8;
-        while !buf.is_empty() {
-            match writer.write(buf) {
-                Ok(0) => return Err(PlatformError::Unavailable),
+        while !release_buf.is_empty() {
+            match writer.write(release_buf) {
+                Ok(0) => break,
                 Ok(n) => {
                     if n % event_size != 0 {
-                        return Err(PlatformError::Unavailable);
+                        break;
                     }
+                    release_buf = &release_buf[n..];
+                    eagain_retries = 0;
+                    eintr_retries = 0;
+                }
+                Err(err) if err.kind() == std::io::ErrorKind::Interrupted => {
+                    eintr_retries += 1;
+                    if eintr_retries > MAX_EINTR_RETRIES {
+                        break;
+                    }
+                }
+                Err(err) if err.kind() == std::io::ErrorKind::WouldBlock => {
+                    eagain_retries += 1;
+                    if eagain_retries > MAX_EAGAIN_RETRIES {
+                        break;
+                    }
+                    std::thread::sleep(std::time::Duration::from_millis(1));
+                }
+                Err(err) => {
+                    tracing::warn!(
+                        error = %err,
+                        "Best-effort uinput key-up release write failed"
+                    );
+                    break;
+                }
+            }
+        }
+    }
+
+    fn write_batch_all(writer: &mut impl Write, full_buf: &[u8]) -> Result<(), PlatformError> {
+        const MAX_EAGAIN_RETRIES: u8 = 5;
+        const MAX_EINTR_RETRIES: u8 = 16;
+        let event_size = std::mem::size_of::<linux_uinput_abi::InputEvent>();
+        let key_down_len = 2 * event_size;
+        let mut buf = full_buf;
+        let mut written = 0usize;
+        let mut eagain_retries = 0u8;
+        let mut eintr_retries = 0u8;
+
+        let fail = |writer: &mut _, written: usize| -> Result<(), PlatformError> {
+            // If at least the key-down event was emitted and the batch was not finished,
+            // attempt a best-effort key-up + SYN_REPORT so the key never gets stuck pressed.
+            if written >= event_size && written < full_buf.len() && full_buf.len() >= 4 * event_size
+            {
+                Self::write_release_best_effort(writer, &full_buf[key_down_len..4 * event_size]);
+            }
+            Err(PlatformError::Unavailable)
+        };
+
+        while !buf.is_empty() {
+            match writer.write(buf) {
+                Ok(0) => return fail(writer, written),
+                Ok(n) => {
+                    if n % event_size != 0 {
+                        return fail(writer, written);
+                    }
+                    written += n;
                     buf = &buf[n..];
                     eagain_retries = 0;
                     eintr_retries = 0;
@@ -377,18 +461,18 @@ impl LinuxUinputEmitter {
                 Err(err) if err.kind() == std::io::ErrorKind::Interrupted => {
                     eintr_retries += 1;
                     if eintr_retries > MAX_EINTR_RETRIES {
-                        return Err(PlatformError::Unavailable);
+                        return fail(writer, written);
                     }
                     continue;
                 }
                 Err(err) if err.kind() == std::io::ErrorKind::WouldBlock => {
                     eagain_retries += 1;
                     if eagain_retries > MAX_EAGAIN_RETRIES {
-                        return Err(PlatformError::Unavailable);
+                        return fail(writer, written);
                     }
                     std::thread::sleep(std::time::Duration::from_millis(1));
                 }
-                Err(_) => return Err(PlatformError::Unavailable),
+                Err(_) => return fail(writer, written),
             }
         }
         Ok(())
@@ -416,5 +500,166 @@ impl Drop for LinuxUinputEmitter {
         let _ = crate::ioctl::retry_eintr(|| unsafe {
             libc::ioctl(guard.as_raw_fd(), linux_uinput_abi::UI_DEV_DESTROY as _)
         });
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn wmi_codes_match_upstream_uniwill_wmi_h() {
+        assert_eq!(wmi_code::TOUCHPAD_TOGGLE, 0x0004);
+        assert_eq!(wmi_code::TOUCHPAD_TOGGLE_ON, 0x0005);
+        assert_eq!(wmi_code::WIN_LOCK_DISABLE, 0x0040);
+        assert_eq!(wmi_code::WIN_LOCK_ENABLE, 0x0041);
+        assert_eq!(wmi_code::WIN_LOCK_TOGGLE, 0x00A5);
+        assert_eq!(wmi_code::FAN_BOOST_TOGGLE, 0x00A7);
+        assert_eq!(wmi_code::DC_ADAPTER_CHANGED, 0x00AB);
+        assert_eq!(wmi_code::BATTERY_ALERT, 0x00AE);
+        assert_eq!(wmi_code::PERF_MODE_CYCLE, 0x00B0);
+        assert_eq!(wmi_code::KBD_BRIGHTNESS_DOWN, 0x00B1);
+        assert_eq!(wmi_code::KBD_BRIGHTNESS_UP, 0x00B2);
+        assert_eq!(wmi_code::FN_LOCK_TOGGLE, 0x00B8);
+        assert_eq!(wmi_code::EV_SAFETY, 0x00BB);
+        assert_eq!(wmi_code::EV_HWOC, 0x00C2);
+        assert_eq!(wmi_code::WEBCAM_TOGGLE, 0x00CF);
+
+        let evt = |code| UwccWmiEvent {
+            timestamp_ns: 1,
+            code,
+            payload: 0,
+        };
+        assert_eq!(
+            translate_wmi_event(evt(wmi_code::TOUCHPAD_TOGGLE)),
+            UwccHotkeyEvent::TouchpadToggle
+        );
+        assert_eq!(
+            translate_wmi_event(evt(wmi_code::TOUCHPAD_TOGGLE_ON)),
+            UwccHotkeyEvent::TouchpadToggle
+        );
+        assert_eq!(
+            translate_wmi_event(evt(wmi_code::WIN_LOCK_DISABLE)),
+            UwccHotkeyEvent::WinLockToggle
+        );
+        assert_eq!(
+            translate_wmi_event(evt(wmi_code::WIN_LOCK_ENABLE)),
+            UwccHotkeyEvent::WinLockToggle
+        );
+        assert_eq!(
+            translate_wmi_event(evt(wmi_code::WIN_LOCK_TOGGLE)),
+            UwccHotkeyEvent::WinLockToggle
+        );
+        assert_eq!(
+            translate_wmi_event(evt(wmi_code::KBD_BRIGHTNESS_DOWN)),
+            UwccHotkeyEvent::KeyboardBrightnessDown
+        );
+        assert_eq!(
+            translate_wmi_event(evt(wmi_code::WEBCAM_TOGGLE)),
+            UwccHotkeyEvent::WebcamToggle
+        );
+        assert_eq!(
+            translate_wmi_event(evt(wmi_code::FAN_BOOST_TOGGLE)),
+            UwccHotkeyEvent::FanBoostToggle
+        );
+
+        // System EC events must not be mapped to uinput keycodes
+        for sys_code in [
+            wmi_code::DC_ADAPTER_CHANGED,
+            wmi_code::BATTERY_ALERT,
+            wmi_code::EV_SAFETY,
+            wmi_code::EV_HWOC,
+        ] {
+            let translated = translate_wmi_event(evt(sys_code));
+            assert_eq!(translated, UwccHotkeyEvent::Unknown(sys_code));
+            assert_eq!(hotkey_to_linux_keycode(translated), None);
+        }
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn write_batch_all_emits_best_effort_key_up_after_key_down_failure() {
+        struct PartialFailWriter {
+            event_size: usize,
+            call_idx: usize,
+            written: Vec<u8>,
+        }
+
+        impl Write for PartialFailWriter {
+            fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
+                self.call_idx += 1;
+                match self.call_idx {
+                    // First call: accept only key-down + SYN_REPORT (first 2 InputEvents)
+                    1 => {
+                        let take = (2 * self.event_size).min(buf.len());
+                        self.written.extend_from_slice(&buf[..take]);
+                        Ok(take)
+                    }
+                    // Second call: fail the normal key-up write
+                    2 => Err(std::io::Error::new(
+                        std::io::ErrorKind::BrokenPipe,
+                        "transient uinput failure",
+                    )),
+                    // Third call: accept best-effort recovery key-up + SYN_REPORT
+                    _ => {
+                        self.written.extend_from_slice(buf);
+                        Ok(buf.len())
+                    }
+                }
+            }
+
+            fn flush(&mut self) -> std::io::Result<()> {
+                Ok(())
+            }
+        }
+
+        let events = LinuxUinputEmitter::build_key_click_batch(linux_key::KEY_PROG1);
+        let event_size = std::mem::size_of::<linux_uinput_abi::InputEvent>();
+        let bytes = unsafe {
+            std::slice::from_raw_parts(events.as_ptr().cast::<u8>(), std::mem::size_of_val(&events))
+        };
+
+        let mut writer = PartialFailWriter {
+            event_size,
+            call_idx: 0,
+            written: Vec::new(),
+        };
+        let err = LinuxUinputEmitter::write_batch_all(&mut writer, bytes)
+            .expect_err("original write failure must still be returned");
+        assert!(matches!(err, PlatformError::Unavailable));
+        // The full 4-event sequence (key-down + SYN + recovery key-up + SYN) must be present
+        assert_eq!(writer.written.len(), 4 * event_size);
+        assert_eq!(&writer.written[..], bytes);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn write_batch_all_does_not_emit_key_up_when_first_write_fails() {
+        struct ImmediateFailWriter {
+            calls: usize,
+        }
+
+        impl Write for ImmediateFailWriter {
+            fn write(&mut self, _buf: &[u8]) -> std::io::Result<usize> {
+                self.calls += 1;
+                Err(std::io::Error::new(
+                    std::io::ErrorKind::BrokenPipe,
+                    "immediate failure",
+                ))
+            }
+
+            fn flush(&mut self) -> std::io::Result<()> {
+                Ok(())
+            }
+        }
+
+        let events = LinuxUinputEmitter::build_key_click_batch(linux_key::KEY_PROG1);
+        let bytes = unsafe {
+            std::slice::from_raw_parts(events.as_ptr().cast::<u8>(), std::mem::size_of_val(&events))
+        };
+        let mut writer = ImmediateFailWriter { calls: 0 };
+        let err = LinuxUinputEmitter::write_batch_all(&mut writer, bytes).unwrap_err();
+        assert!(matches!(err, PlatformError::Unavailable));
+        assert_eq!(writer.calls, 1, "no spurious key-up should be sent");
     }
 }

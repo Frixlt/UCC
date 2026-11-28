@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: GPL-2.0-only
 _reload_udev() {
 	if [ -d /run/systemd/system ] && command -v udevadm >/dev/null 2>&1; then
 		udevadm control --reload-rules || true

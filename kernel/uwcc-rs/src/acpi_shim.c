@@ -61,8 +61,8 @@
 
 /* Uniwill EC register addresses used by native hwmon and identity probe */
 #define UWCC_EC_REG_PROJECT_ID   0x0740U
-#define UWCC_EC_REG_EC_VER_HI    0x0770U
-#define UWCC_EC_REG_EC_VER_LO    0x0771U
+#define UWCC_EC_REG_EC_VER_HI    0x0454U
+#define UWCC_EC_REG_EC_VER_LO    0x047DU
 
 /* D3cold-safe EC temperature registers (degrees Celsius) */
 #define UWCC_EC_REG_CPU_TEMP     0x043EU
@@ -230,6 +230,32 @@ int uwcc_acpi_ec_write(u16 addr, u8 val)
 	return ret;
 }
 
+int uwcc_acpi_ec_rmw(u16 addr, u8 mask, u8 val)
+{
+	u8 cur = 0;
+	u8 next;
+	int ret;
+
+	if (mask == 0U)
+		return -EACCES;
+
+	if (mutex_lock_interruptible(&uwcc_ec_lock))
+		return -ERESTARTSYS;
+
+	if (mask == 0xFFU) {
+		ret = uwcc_ec_write_locked(addr, val);
+	} else {
+		ret = uwcc_ec_read_locked(addr, &cur);
+		if (!ret) {
+			next = (u8)((cur & ~mask) | (val & mask));
+			ret = uwcc_ec_write_locked(addr, next);
+		}
+	}
+
+	mutex_unlock(&uwcc_ec_lock);
+	return ret;
+}
+
 int uwcc_acpi_smrw(u16 offset, u16 len, u8 *out_buf)
 {
 	u16 pos;
@@ -257,7 +283,7 @@ int uwcc_acpi_smrw(u16 offset, u16 len, u8 *out_buf)
 	 *   buf[2..63] = 0
 	 * and returns a 32-bit integer (or buffer on alternate firmware).
 	 */
-	for (pos = 0; pos < len; pos += 4U) {
+	for (pos = 0; pos < len; ) {
 		/* 64-byte zero-padded input buffer (protected by uwcc_ec_lock) prevents AE_AML_BUFFER_LIMIT */
 		union acpi_object arg;
 		struct acpi_object_list params;
@@ -280,10 +306,7 @@ int uwcc_acpi_smrw(u16 offset, u16 len, u8 *out_buf)
 		status = acpi_evaluate_object(uwcc_acpi_handle, "SMRW", &params, &output);
 		if (ACPI_FAILURE(status) || !output.pointer) {
 			kfree(output.pointer);
-			if (status == AE_AML_BUFFER_LIMIT && pos > 0)
-				ret = 0;
-			else
-				ret = -EIO;
+			ret = -EIO;
 			break;
 		}
 
@@ -294,13 +317,19 @@ int uwcc_acpi_smrw(u16 offset, u16 len, u8 *out_buf)
 
 			memcpy(out_buf + pos, &dword, chunk);
 			kfree(output.pointer);
+			pos += (u16)chunk;
 		} else if (obj->type == ACPI_TYPE_BUFFER && obj->buffer.pointer) {
 			size_t copy_len = min_t(size_t, (size_t)(len - pos),
 						(size_t)obj->buffer.length);
 
+			if (copy_len == 0) {
+				kfree(output.pointer);
+				ret = -EPROTO;
+				break;
+			}
 			memcpy(out_buf + pos, obj->buffer.pointer, copy_len);
 			kfree(output.pointer);
-			break;
+			pos += (u16)copy_len;
 		} else {
 			kfree(output.pointer);
 			ret = -EPROTO;
@@ -319,7 +348,7 @@ int uwcc_acpi_pwup(u32 enable, u32 level)
 	acpi_status status;
 	int ret = 0;
 
-	if (enable > 1U || level > 3U)
+	if (enable > 1U || level > UWCC_PWUP_MAX_LEVEL)
 		return -EINVAL;
 	if (enable == 0U && level != 0U)
 		return -EINVAL;
@@ -354,6 +383,16 @@ int uwcc_acpi_gpu_power(u32 op, u32 value)
 	const char *method;
 	acpi_status status;
 	int ret = 0;
+
+	if (op == UWCC_GPU_POWER_OP_BASE_TGP) {
+		if (value > UWCC_PWBT_MAX_WATTS)
+			return -EINVAL;
+	} else if (op == UWCC_GPU_POWER_OP_DYNAMIC_BOOST) {
+		if (value > UWCC_PWDB_MAX_WATTS)
+			return -EINVAL;
+	} else {
+		return -EINVAL;
+	}
 
 	if (mutex_lock_interruptible(&uwcc_ec_lock))
 		return -ERESTARTSYS;
@@ -525,10 +564,10 @@ static struct wmi_driver uwcc_wmi_driver = {
 
 static int uwcc_dev_open(struct inode *inode, struct file *filp)
 {
-	(void)inode;
-	(void)filp;
+	if (!uwcc_rs_is_ready())
+		return -ENODEV;
 
-	return uwcc_rs_is_ready() ? 0 : -ENODEV;
+	return nonseekable_open(inode, filp);
 }
 
 static long uwcc_dev_ioctl(struct file *filp, unsigned int cmd, unsigned long arg)
@@ -565,12 +604,13 @@ static long uwcc_dev_ioctl(struct file *filp, unsigned int cmd, unsigned long ar
 
 	case UWCC_IOC_EC_WRITE: {
 		struct uwcc_ec_reg reg;
+		bool sys_admin = capable(CAP_SYS_ADMIN);
 
-		if (!writable || !capable(CAP_SYS_ADMIN))
+		if (!writable || !sys_admin)
 			return -EPERM;
 		if (copy_from_user(&reg, argp, sizeof(reg)))
 			return -EFAULT;
-		return uwcc_rs_ioctl_ec_write(&reg, true, true);
+		return uwcc_rs_ioctl_ec_write(&reg, writable, sys_admin);
 	}
 
 	case UWCC_IOC_SMRW: {
@@ -588,22 +628,24 @@ static long uwcc_dev_ioctl(struct file *filp, unsigned int cmd, unsigned long ar
 
 	case UWCC_IOC_PWUP: {
 		struct uwcc_pwup pwup;
+		bool sys_admin = capable(CAP_SYS_ADMIN);
 
-		if (!writable || !capable(CAP_SYS_ADMIN))
+		if (!writable || !sys_admin)
 			return -EPERM;
 		if (copy_from_user(&pwup, argp, sizeof(pwup)))
 			return -EFAULT;
-		return uwcc_rs_ioctl_pwup(&pwup, true, true);
+		return uwcc_rs_ioctl_pwup(&pwup, writable, sys_admin);
 	}
 
 	case UWCC_IOC_GPU_POWER: {
 		struct uwcc_gpu_power req;
+		bool sys_admin = capable(CAP_SYS_ADMIN);
 
-		if (!writable || !capable(CAP_SYS_ADMIN))
+		if (!writable || !sys_admin)
 			return -EPERM;
 		if (copy_from_user(&req, argp, sizeof(req)))
 			return -EFAULT;
-		return uwcc_rs_ioctl_gpu_power(&req, true, true);
+		return uwcc_rs_ioctl_gpu_power(&req, writable, sys_admin);
 	}
 
 	case UWCC_IOC_MUX_GET: {
@@ -620,12 +662,13 @@ static long uwcc_dev_ioctl(struct file *filp, unsigned int cmd, unsigned long ar
 
 	case UWCC_IOC_MUX_SET: {
 		struct uwcc_mux_state req;
+		bool sys_admin = capable(CAP_SYS_ADMIN);
 
-		if (!writable || !capable(CAP_SYS_ADMIN))
+		if (!writable || !sys_admin)
 			return -EPERM;
 		if (copy_from_user(&req, argp, sizeof(req)))
 			return -EFAULT;
-		return uwcc_rs_ioctl_mux_set(&req, true, true);
+		return uwcc_rs_ioctl_mux_set(&req, writable, sys_admin);
 	}
 
 	default:

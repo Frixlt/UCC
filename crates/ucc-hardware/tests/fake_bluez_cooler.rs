@@ -394,11 +394,9 @@ async fn production_bluez_client_discovers_connects_and_drives_cooler_controller
         session.flush_controller(&mut controller, t0).await.unwrap(),
         1
     );
+    let t1 = std::time::Instant::now() + BLE_WRITE_GAP;
     assert_eq!(
-        session
-            .flush_controller(&mut controller, t0 + BLE_WRITE_GAP)
-            .await
-            .unwrap(),
+        session.flush_controller(&mut controller, t1).await.unwrap(),
         1
     );
 

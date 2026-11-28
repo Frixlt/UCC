@@ -323,7 +323,7 @@ impl TuxedoIoDevice {
         }
 
         let mut val: i32 = 0;
-        retry_eintr(|| libc::ioctl(self.file.as_raw_fd(), request, &mut val))
+        retry_eintr(|| libc::ioctl(self.file.as_raw_fd(), request as libc::Ioctl, &mut val))
             .map_err(|source| IoctlError::IoctlFailed { request, source })?;
         Ok(val)
     }
@@ -345,7 +345,7 @@ impl TuxedoIoDevice {
                 "Cannot invoke write_i32 with non-write or unsupported ioctl request",
             ));
         }
-        retry_eintr(|| libc::ioctl(self.file.as_raw_fd(), request, &mut val))
+        retry_eintr(|| libc::ioctl(self.file.as_raw_fd(), request as libc::Ioctl, &mut val))
             .map_err(|source| IoctlError::IoctlFailed { request, source })?;
         Ok(())
     }
@@ -366,7 +366,7 @@ impl TuxedoIoDevice {
                 "Cannot invoke call_none with argument-bearing or unsupported ioctl request",
             ));
         }
-        retry_eintr(|| libc::ioctl(self.file.as_raw_fd(), request))
+        retry_eintr(|| libc::ioctl(self.file.as_raw_fd(), request as libc::Ioctl))
             .map_err(|source| IoctlError::IoctlFailed { request, source })?;
         Ok(())
     }
@@ -420,8 +420,14 @@ impl TuxedoIoDevice {
         }
 
         let mut buffer = vec![0u8; max_len.max(1)];
-        retry_eintr(|| libc::ioctl(self.file.as_raw_fd(), request, buffer.as_mut_ptr()))
-            .map_err(|source| IoctlError::IoctlFailed { request, source })?;
+        retry_eintr(|| {
+            libc::ioctl(
+                self.file.as_raw_fd(),
+                request as libc::Ioctl,
+                buffer.as_mut_ptr(),
+            )
+        })
+        .map_err(|source| IoctlError::IoctlFailed { request, source })?;
         let c_str = CStr::from_bytes_until_nul(&buffer).map_err(|_| {
             IoctlError::PreconditionFailed("String from ioctl is missing NUL terminator")
         })?;
@@ -444,7 +450,7 @@ impl TuxedoIoDevice {
         request: u64,
         arg: *mut libc::c_void,
     ) -> Result<i32, IoctlError> {
-        retry_eintr(|| libc::ioctl(self.file.as_raw_fd(), request, arg))
+        retry_eintr(|| libc::ioctl(self.file.as_raw_fd(), request as libc::Ioctl, arg))
             .map_err(|source| IoctlError::IoctlFailed { request, source })
     }
 

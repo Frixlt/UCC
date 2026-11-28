@@ -305,3 +305,46 @@ fn tuxedo_io_clevo_webcam_and_runtime_disconnect_fail_closed() {
         Err(PlatformError::Unavailable)
     ));
 }
+
+#[test]
+fn platform_backend_default_dynamic_boost_and_pmsc_mode_return_unsupported() {
+    let mock = MockPlatformBackend::uniwill_default();
+    let dyn_backend: &dyn PlatformBackend = &mock;
+    assert!(matches!(
+        dyn_backend.read_dynamic_boost_watts(),
+        Err(PlatformError::Unsupported(_))
+    ));
+    assert!(matches!(
+        dyn_backend.set_dynamic_boost_watts(15),
+        Err(PlatformError::Unsupported(_))
+    ));
+    assert!(matches!(
+        dyn_backend.read_pmsc_mode(),
+        Err(PlatformError::Unsupported(_))
+    ));
+}
+
+#[test]
+fn mock_platform_backend_pwup_accepts_up_to_level_7() {
+    let mock = MockPlatformBackend::uniwill_default();
+    mock.set_pwup(true, 4).unwrap();
+    mock.set_pwup(true, 7).unwrap();
+    mock.set_pwup(false, 0).unwrap();
+    assert!(matches!(
+        mock.set_pwup(true, 8),
+        Err(PlatformError::InvalidArgument(_))
+    ));
+    assert!(matches!(
+        mock.set_pwup(false, 1),
+        Err(PlatformError::InvalidArgument(_))
+    ));
+}
+
+#[test]
+fn tuxedo_io_backend_prefers_uniwill_when_both_uw_and_cl_checks_succeed() {
+    let hw = MockHardwareIo::new();
+    hw.set_i32_read(requests::R_HWCHECK_CL, 1);
+    hw.set_i32_read(requests::R_HWCHECK_UW, 1);
+    let backend = TuxedoIoBackend::new(hw, None, None);
+    assert_eq!(backend.capabilities().device.vendor, DeviceVendor::Uniwill);
+}

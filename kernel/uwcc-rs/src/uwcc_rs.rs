@@ -16,6 +16,7 @@ mod validation;
 
 use core::cell::UnsafeCell;
 use core::ffi::c_ulong;
+use core::marker::PhantomData;
 use core::mem::size_of;
 
 use kernel::prelude::*;
@@ -23,8 +24,8 @@ use kernel::prelude::*;
 pub use ring_buffer::WmiEvent;
 use ring_buffer::WmiRingBuffer;
 use validation::{
-    validate_ec_read, validate_ec_write, validate_gpu_power, validate_mux_set, validate_pwup,
-    validate_smrw,
+    ec_write_mask, validate_ec_read, validate_ec_write, validate_gpu_power, validate_mux_set,
+    validate_pwup, validate_smrw,
 };
 
 // ---------------------------------------------------------------------------
@@ -119,7 +120,7 @@ extern "C" {
     fn uwcc_misc_register() -> i32;
     fn uwcc_misc_deregister();
     fn uwcc_acpi_ec_read(addr: u16, out_val: *mut u8) -> i32;
-    fn uwcc_acpi_ec_write(addr: u16, val: u8) -> i32;
+    fn uwcc_acpi_ec_rmw(addr: u16, mask: u8, val: u8) -> i32;
     fn uwcc_acpi_smrw(offset: u16, len: u16, out_buf: *mut u8) -> i32;
     fn uwcc_acpi_pwup(enable: u32, level: u32) -> i32;
     fn uwcc_acpi_gpu_power(op: u32, value: u32) -> i32;
@@ -169,12 +170,14 @@ static DRIVER_STATE: StateCell = StateCell(UnsafeCell::new(DriverState::new()));
 
 struct StateGuard {
     flags: c_ulong,
+    _not_send: PhantomData<*mut ()>,
 }
 
 impl Drop for StateGuard {
     #[inline]
     fn drop(&mut self) {
-        // SAFETY: Releases `uwcc_state_lock` and restores IRQ state matching `uwcc_state_lock_irqsave`.
+        // SAFETY: `StateGuard` is `!Send`, so drop runs on the same CPU that acquired
+        // `uwcc_state_lock` via `uwcc_state_lock_irqsave`.
         unsafe { uwcc_state_unlock_irqrestore(self.flags) };
     }
 }
@@ -184,6 +187,7 @@ fn with_state<R>(f: impl FnOnce(&mut DriverState) -> R) -> R {
     // SAFETY: Acquires `uwcc_state_lock` with IRQs saved to serialize access to `DRIVER_STATE`.
     let _guard = StateGuard {
         flags: unsafe { uwcc_state_lock_irqsave() },
+        _not_send: PhantomData,
     };
     // SAFETY: `uwcc_state_lock` is held for the lifetime of `_guard`, granting exclusive access.
     let state = unsafe { &mut *DRIVER_STATE.0.get() };
@@ -325,7 +329,8 @@ pub unsafe extern "C" fn uwcc_rs_ioctl_ec_read(reg: *mut UwccEcReg) -> i32 {
     0
 }
 
-/// Validates permissions and EC allowlist, then dispatches `UWCC_IOC_EC_WRITE`.
+/// Validates permissions and EC allowlist, then dispatches `UWCC_IOC_EC_WRITE`
+/// via atomic kernel-side RMW with the register's bitmask policy.
 ///
 /// # Safety
 ///
@@ -349,8 +354,9 @@ pub unsafe extern "C" fn uwcc_rs_ioctl_ec_write(
         return err.to_errno();
     }
 
-    // SAFETY: Address and permissions were validated above.
-    unsafe { uwcc_acpi_ec_write(req.addr, req.val) }
+    let mask = ec_write_mask(req.addr);
+    // SAFETY: Address, permissions, and RMW bitmask policy were validated above.
+    unsafe { uwcc_acpi_ec_rmw(req.addr, mask, req.val) }
 }
 
 /// Validates bounds and dispatches `UWCC_IOC_SMRW`.
@@ -542,7 +548,7 @@ impl kernel::Module for UwccModule {
             with_state(|s| {
                 s.ready = false;
             });
-            // SAFETY: Unwind in strict reverse order: wake readers, unregister hwmon, exit ACPI/WMI.
+            // SAFETY: Wake blocked readers, then unregister hwmon and tear down WMI/ACPI handles.
             unsafe {
                 uwcc_wmi_wake_all();
                 uwcc_hwmon_unregister();
@@ -567,8 +573,8 @@ impl Drop for UwccModule {
         with_state(|s| {
             s.ready = false;
         });
-        // SAFETY: Unwind in strict reverse order of init: wake blocked readers,
-        // deregister /dev/uwcc, unregister hwmon, and tear down WMI driver & ACPI handles.
+        // SAFETY: Wake blocked /dev/uwcc readers, then deregister /dev/uwcc,
+        // unregister hwmon, and tear down WMI driver & ACPI handles.
         unsafe {
             uwcc_wmi_wake_all();
             uwcc_misc_deregister();

@@ -102,8 +102,20 @@ impl UsbWebcamController {
             }
         }
 
-        let entries = self.sysfs.read_dir(&self.usb_root).map_err(|_| {
-            PlatformError::Unsupported("USB sysfs root unavailable for webcam control")
+        let entries = self.sysfs.read_dir(&self.usb_root).map_err(|source| {
+            if source.kind() == std::io::ErrorKind::NotFound {
+                PlatformError::Unsupported("USB sysfs root unavailable for webcam control")
+            } else {
+                tracing::warn!(
+                    path = %self.usb_root.display(),
+                    error = %source,
+                    "Failed to enumerate USB sysfs root for webcam control"
+                );
+                PlatformError::Io {
+                    context: "Reading USB sysfs root directory failed",
+                    source,
+                }
+            }
         })?;
 
         let mut parent_devices: Vec<PathBuf> = Vec::new();
@@ -232,12 +244,33 @@ impl UsbWebcamController {
         if webcams.is_empty() {
             return Err(PlatformError::Unsupported("No USB UVC webcam detected"));
         }
+        let mut any_read_ok = false;
+        let mut last_err: Option<std::io::Error> = None;
         for cam in &webcams {
             let auth_path = cam.device_path.join("authorized");
-            if let Ok(raw) = self.sysfs.read(&auth_path) {
-                if raw.trim() == "1" {
-                    return Ok(true);
+            match self.sysfs.read(&auth_path) {
+                Ok(raw) => {
+                    any_read_ok = true;
+                    if raw.trim() == "1" {
+                        return Ok(true);
+                    }
                 }
+                Err(err) => {
+                    tracing::warn!(
+                        path = %auth_path.display(),
+                        error = %err,
+                        "Failed to read USB webcam authorized state"
+                    );
+                    last_err = Some(err);
+                }
+            }
+        }
+        if !any_read_ok {
+            if let Some(source) = last_err {
+                return Err(PlatformError::Io {
+                    context: "Reading USB webcam authorized sysfs attribute failed",
+                    source,
+                });
             }
         }
         Ok(false)
@@ -253,9 +286,18 @@ impl UsbWebcamController {
         let val = if enabled { "1" } else { "0" };
         for cam in &webcams {
             let auth_path = cam.device_path.join("authorized");
-            self.sysfs
-                .write(&auth_path, val)
-                .map_err(|_| PlatformError::Unavailable)?;
+            self.sysfs.write(&auth_path, val).map_err(|source| {
+                tracing::warn!(
+                    path = %auth_path.display(),
+                    value = val,
+                    error = %source,
+                    "Failed to write USB webcam authorized state"
+                );
+                PlatformError::Io {
+                    context: "Writing USB webcam authorized sysfs attribute failed",
+                    source,
+                }
+            })?;
         }
         Ok(())
     }
@@ -263,5 +305,86 @@ impl UsbWebcamController {
     /// Returns the configured USB sysfs root path.
     pub fn usb_root(&self) -> &Path {
         &self.usb_root
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::traits::MockSysfs;
+    use std::sync::atomic::{AtomicBool, Ordering};
+
+    struct FaultyAuthSysfs {
+        inner: MockSysfs,
+        fail_auth_reads: AtomicBool,
+        fail_auth_writes: AtomicBool,
+    }
+
+    impl Sysfs for FaultyAuthSysfs {
+        fn read(&self, path: &Path) -> std::io::Result<String> {
+            if self.fail_auth_reads.load(Ordering::SeqCst)
+                && path.file_name().and_then(|n| n.to_str()) == Some("authorized")
+            {
+                return Err(std::io::Error::new(
+                    std::io::ErrorKind::PermissionDenied,
+                    "simulated sysfs read EACCES",
+                ));
+            }
+            self.inner.read(path)
+        }
+
+        fn write(&self, path: &Path, content: &str) -> std::io::Result<()> {
+            if self.fail_auth_writes.load(Ordering::SeqCst)
+                && path.file_name().and_then(|n| n.to_str()) == Some("authorized")
+            {
+                return Err(std::io::Error::new(
+                    std::io::ErrorKind::PermissionDenied,
+                    "simulated sysfs write EACCES",
+                ));
+            }
+            self.inner.write(path, content)
+        }
+
+        fn exists(&self, path: &Path) -> bool {
+            self.inner.exists(path)
+        }
+
+        fn read_dir(&self, path: &Path) -> std::io::Result<Vec<PathBuf>> {
+            self.inner.read_dir(path)
+        }
+    }
+
+    #[test]
+    fn is_enabled_and_set_enabled_preserve_io_error_causes() {
+        let inner = MockSysfs::new();
+        inner.set_file("/sys/bus/usb/devices/1-6/authorized", "1");
+        inner.set_file("/sys/bus/usb/devices/1-6/idVendor", "04f2");
+        inner.set_file("/sys/bus/usb/devices/1-6/idProduct", "b751");
+        inner.set_file("/sys/bus/usb/devices/1-6:1.0/bInterfaceClass", "0e");
+
+        let sysfs = Arc::new(FaultyAuthSysfs {
+            inner,
+            fail_auth_reads: AtomicBool::new(true),
+            fail_auth_writes: AtomicBool::new(true),
+        });
+        let controller = UsbWebcamController::new(Arc::clone(&sysfs) as _);
+
+        // When all sysfs.read calls fail, is_enabled() MUST NOT return Ok(false)
+        let read_err = controller
+            .is_enabled()
+            .expect_err("all-failed authorized reads must return Err, not Ok(false)");
+        assert!(
+            matches!(read_err, PlatformError::Io { ref source, .. } if source.kind() == std::io::ErrorKind::PermissionDenied),
+            "expected PlatformError::Io(PermissionDenied), got {read_err:?}"
+        );
+
+        // set_enabled() must preserve underlying I/O error instead of collapsing to Unavailable
+        let write_err = controller
+            .set_enabled(false)
+            .expect_err("authorized write failure must return Err");
+        assert!(
+            matches!(write_err, PlatformError::Io { ref source, .. } if source.kind() == std::io::ErrorKind::PermissionDenied),
+            "expected PlatformError::Io(PermissionDenied), got {write_err:?}"
+        );
     }
 }

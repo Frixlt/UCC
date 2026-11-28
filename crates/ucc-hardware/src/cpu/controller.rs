@@ -1,9 +1,47 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 use super::topology::parse_cpu_range_list;
+use crate::sysfs::{SysfsError, SysfsRoot};
 use serde::{Deserialize, Serialize};
 use std::collections::HashSet;
-use std::fs;
 use std::path::{Path, PathBuf};
+
+fn sysfs_error_to_io(err: SysfsError) -> std::io::Error {
+    match err {
+        SysfsError::NotFound(p) => std::io::Error::new(
+            std::io::ErrorKind::NotFound,
+            format!("Sysfs node not found: {}", p.display()),
+        ),
+        SysfsError::PermissionDenied(p) => std::io::Error::new(
+            std::io::ErrorKind::PermissionDenied,
+            format!("Permission denied accessing sysfs node: {}", p.display()),
+        ),
+        SysfsError::UnsafePath(p) => std::io::Error::new(
+            std::io::ErrorKind::PermissionDenied,
+            format!("Unsafe sysfs path: {}", p.display()),
+        ),
+        SysfsError::ParseError { path, reason } => std::io::Error::new(
+            std::io::ErrorKind::InvalidData,
+            format!("Parse error on {}: {reason}", path.display()),
+        ),
+        SysfsError::Io { source, .. } => source,
+    }
+}
+
+fn read_under(base: &Path, rel: &str) -> Result<String, SysfsError> {
+    if base.starts_with("/sys") || base.starts_with("/proc") {
+        SysfsRoot::production().read_string(base.join(rel))
+    } else {
+        SysfsRoot::custom(base).read_string(rel)
+    }
+}
+
+fn write_under(base: &Path, rel: &str, data: &str) -> Result<(), SysfsError> {
+    if base.starts_with("/sys") || base.starts_with("/proc") {
+        SysfsRoot::production().write_string(base.join(rel), data)
+    } else {
+        SysfsRoot::custom(base).write_string(rel, data)
+    }
+}
 
 /// Supported CPU scaling drivers.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -28,7 +66,7 @@ impl ScalingDriver {
     }
 }
 
-/// Controller for a single logical CPU core via sysfs.
+/// Controller for a single logical CPU core via sysfs (`SysfsRoot` + `O_NOFOLLOW`).
 #[derive(Debug, Clone)]
 pub struct LogicalCpu {
     pub base_path: PathBuf,
@@ -50,55 +88,90 @@ impl LogicalCpu {
         }
     }
 
+    fn read_cpu_node(&self, node: &str) -> Result<String, SysfsError> {
+        read_under(&self.base_path, &format!("cpu{}/{}", self.core_index, node))
+    }
+
+    fn write_cpu_node(&self, node: &str, data: &str) -> Result<(), SysfsError> {
+        write_under(
+            &self.base_path,
+            &format!("cpu{}/{}", self.core_index, node),
+            data,
+        )
+    }
+
+    fn read_cpufreq_node(&self, node: &str) -> Result<String, SysfsError> {
+        read_under(
+            &self.base_path,
+            &format!("cpu{}/cpufreq/{}", self.core_index, node),
+        )
+    }
+
+    fn write_cpufreq_node(&self, node: &str, data: &str) -> Result<(), std::io::Error> {
+        write_under(
+            &self.base_path,
+            &format!("cpu{}/cpufreq/{}", self.core_index, node),
+            data,
+        )
+        .map_err(sysfs_error_to_io)
+    }
+
+    fn read_cpufreq_u32(&self, node: &str) -> Option<u32> {
+        self.read_cpufreq_node(node)
+            .ok()?
+            .trim()
+            .parse::<u32>()
+            .ok()
+    }
+
     /// Whether this core has an /online node (mandatory core 0 does not).
     pub fn is_online_controllable(&self) -> bool {
-        self.cpu_path.join("online").exists()
+        !matches!(self.read_cpu_node("online"), Err(SysfsError::NotFound(_)))
     }
 
     pub fn read_online(&self) -> Option<bool> {
-        let path = self.cpu_path.join("online");
-        if !path.exists() {
-            return Some(true); // Non-hotpluggable core 0 is always online
-        }
-        let content = fs::read_to_string(path).ok()?;
-        match content.trim() {
-            "1" | "true" => Some(true),
-            "0" | "false" => Some(false),
-            _ => None,
+        match self.read_cpu_node("online") {
+            Ok(content) => match content.trim() {
+                "1" | "true" => Some(true),
+                "0" | "false" => Some(false),
+                _ => None,
+            },
+            Err(SysfsError::NotFound(_)) => Some(true), // Non-hotpluggable core 0 is always online
+            Err(_) => None,
         }
     }
 
     pub fn write_online(&self, online: bool) -> Result<(), std::io::Error> {
-        let path = self.cpu_path.join("online");
-        if !path.exists() {
-            return Ok(()); // Non-hotpluggable core 0
+        match self.write_cpu_node("online", if online { "1" } else { "0" }) {
+            Ok(()) | Err(SysfsError::NotFound(_)) => Ok(()), // Non-hotpluggable core 0
+            Err(err) => Err(sysfs_error_to_io(err)),
         }
-        fs::write(path, if online { "1" } else { "0" })
     }
 
     pub fn read_scaling_cur_freq(&self) -> Option<u32> {
-        read_u32(&self.cpufreq_path.join("scaling_cur_freq"))
+        self.read_cpufreq_u32("scaling_cur_freq")
     }
 
     pub fn read_scaling_min_freq(&self) -> Option<u32> {
-        read_u32(&self.cpufreq_path.join("scaling_min_freq"))
+        self.read_cpufreq_u32("scaling_min_freq")
     }
 
     pub fn write_scaling_min_freq(&self, freq: u32) -> Result<(), std::io::Error> {
-        fs::write(self.cpufreq_path.join("scaling_min_freq"), freq.to_string())
+        self.write_cpufreq_node("scaling_min_freq", &freq.to_string())
     }
 
     pub fn read_scaling_max_freq(&self) -> Option<u32> {
-        read_u32(&self.cpufreq_path.join("scaling_max_freq"))
+        self.read_cpufreq_u32("scaling_max_freq")
     }
 
     pub fn write_scaling_max_freq(&self, freq: u32) -> Result<(), std::io::Error> {
-        fs::write(self.cpufreq_path.join("scaling_max_freq"), freq.to_string())
+        self.write_cpufreq_node("scaling_max_freq", &freq.to_string())
     }
 
     pub fn read_scaling_available_frequencies(&self) -> Option<Vec<u32>> {
-        let content =
-            fs::read_to_string(self.cpufreq_path.join("scaling_available_frequencies")).ok()?;
+        let content = self
+            .read_cpufreq_node("scaling_available_frequencies")
+            .ok()?;
         let freqs: Vec<u32> = content
             .split_whitespace()
             .filter_map(|w| w.parse::<u32>().ok())
@@ -111,17 +184,15 @@ impl LogicalCpu {
     }
 
     pub fn read_scaling_driver(&self) -> Option<String> {
-        fs::read_to_string(self.cpufreq_path.join("scaling_driver"))
+        self.read_cpufreq_node("scaling_driver")
             .map(|s| s.trim().to_string())
             .ok()
     }
 
     pub fn read_energy_performance_available_preferences(&self) -> Option<Vec<String>> {
-        let content = fs::read_to_string(
-            self.cpufreq_path
-                .join("energy_performance_available_preferences"),
-        )
-        .ok()?;
+        let content = self
+            .read_cpufreq_node("energy_performance_available_preferences")
+            .ok()?;
         let prefs: Vec<String> = content.split_whitespace().map(|s| s.to_string()).collect();
         if prefs.is_empty() {
             None
@@ -131,18 +202,17 @@ impl LogicalCpu {
     }
 
     pub fn read_energy_performance_preference(&self) -> Option<String> {
-        fs::read_to_string(self.cpufreq_path.join("energy_performance_preference"))
+        self.read_cpufreq_node("energy_performance_preference")
             .map(|s| s.trim().to_string())
             .ok()
     }
 
     pub fn write_energy_performance_preference(&self, epp: &str) -> Result<(), std::io::Error> {
-        fs::write(self.cpufreq_path.join("energy_performance_preference"), epp)
+        self.write_cpufreq_node("energy_performance_preference", epp)
     }
 
     pub fn read_scaling_available_governors(&self) -> Option<Vec<String>> {
-        let content =
-            fs::read_to_string(self.cpufreq_path.join("scaling_available_governors")).ok()?;
+        let content = self.read_cpufreq_node("scaling_available_governors").ok()?;
         let govs: Vec<String> = content.split_whitespace().map(|s| s.to_string()).collect();
         if govs.is_empty() {
             None
@@ -152,25 +222,25 @@ impl LogicalCpu {
     }
 
     pub fn read_scaling_governor(&self) -> Option<String> {
-        fs::read_to_string(self.cpufreq_path.join("scaling_governor"))
+        self.read_cpufreq_node("scaling_governor")
             .map(|s| s.trim().to_string())
             .ok()
     }
 
     pub fn write_scaling_governor(&self, gov: &str) -> Result<(), std::io::Error> {
-        fs::write(self.cpufreq_path.join("scaling_governor"), gov)
+        self.write_cpufreq_node("scaling_governor", gov)
     }
 
     pub fn read_cpuinfo_min_freq(&self) -> Option<u32> {
-        read_u32(&self.cpufreq_path.join("cpuinfo_min_freq"))
+        self.read_cpufreq_u32("cpuinfo_min_freq")
     }
 
     pub fn read_cpuinfo_max_freq(&self) -> Option<u32> {
-        read_u32(&self.cpufreq_path.join("cpuinfo_max_freq"))
+        self.read_cpufreq_u32("cpuinfo_max_freq")
     }
 
     pub fn read_base_frequency(&self) -> Option<u32> {
-        read_u32(&self.cpufreq_path.join("base_frequency"))
+        self.read_cpufreq_u32("base_frequency")
     }
 
     /// Get reduced available frequency (middle of available frequency list, or average of min and max).
@@ -213,10 +283,10 @@ impl CpuController {
     pub fn refresh_available_cores(&mut self) {
         self.cores.clear();
 
-        let possible = fs::read_to_string(self.root_path.join("possible"))
+        let possible = read_under(&self.root_path, "possible")
             .map(|s| parse_cpu_range_list(&s))
             .unwrap_or_default();
-        let present = fs::read_to_string(self.root_path.join("present"))
+        let present = read_under(&self.root_path, "present")
             .map(|s| parse_cpu_range_list(&s))
             .unwrap_or_default();
 
@@ -263,9 +333,10 @@ impl CpuController {
         Ok(())
     }
 
-    /// Set enabled cores using strict enable-before-disable scheduling.
+    /// Set enabled cores using strict enable-before-disable scheduling with per-core rollback.
     ///
-    /// If enabling any core fails, execution stops immediately without disabling any online cores.
+    /// If enabling or disabling any core fails, all previously mutated cores are restored
+    /// in reverse order.
     pub fn set_enabled_cores<W>(&self, selection: &[u32], mut writer: W) -> Result<(), String>
     where
         W: FnMut(&LogicalCpu, bool) -> bool,
@@ -273,6 +344,7 @@ impl CpuController {
         self.validate_enabled_cores(selection)?;
 
         let target_set: HashSet<u32> = selection.iter().copied().collect();
+        let mut applied: Vec<(&LogicalCpu, bool)> = Vec::new();
 
         // Pass 1: Bring all requested CPUs online first
         for core in &self.cores {
@@ -281,8 +353,14 @@ impl CpuController {
             }
             if target_set.contains(&core.core_index) {
                 let currently_online = core.read_online().unwrap_or(false);
-                if !currently_online && !writer(core, true) {
-                    return Err(format!("Cannot change CPU {}", core.core_index));
+                if !currently_online {
+                    if !writer(core, true) {
+                        for (prev_core, prev_online) in applied.into_iter().rev() {
+                            let _ = writer(prev_core, prev_online);
+                        }
+                        return Err(format!("Cannot change CPU {}", core.core_index));
+                    }
+                    applied.push((core, false));
                 }
             }
         }
@@ -294,8 +372,14 @@ impl CpuController {
             }
             if !target_set.contains(&core.core_index) {
                 let currently_online = core.read_online().unwrap_or(true);
-                if currently_online && !writer(core, false) {
-                    return Err(format!("Cannot change CPU {}", core.core_index));
+                if currently_online {
+                    if !writer(core, false) {
+                        for (prev_core, prev_online) in applied.into_iter().rev() {
+                            let _ = writer(prev_core, prev_online);
+                        }
+                        return Err(format!("Cannot change CPU {}", core.core_index));
+                    }
+                    applied.push((core, true));
                 }
             }
         }
@@ -345,14 +429,8 @@ impl CpuController {
         target_max: Option<i64>,
         acpi_fallback: bool,
     ) -> Option<u32> {
-        if !core.cpufreq_path.join("scaling_min_freq").exists()
-            || !core.cpufreq_path.join("scaling_max_freq").exists()
-            || !core.cpufreq_path.join("cpuinfo_min_freq").exists()
-            || !core.cpufreq_path.join("cpuinfo_max_freq").exists()
-        {
-            return None;
-        }
-
+        let _ = core.read_cpuinfo_min_freq()?;
+        let _ = core.read_scaling_max_freq()?;
         let core_max = self.effective_hardware_max_freq(core)?;
         let mut scaling_min = core.read_scaling_min_freq()?;
         scaling_min = scaling_min.min(core_max);
@@ -394,14 +472,7 @@ impl CpuController {
         core: &LogicalCpu,
         target_min: Option<i64>,
     ) -> Option<u32> {
-        if !core.cpufreq_path.join("scaling_min_freq").exists()
-            || !core.cpufreq_path.join("scaling_max_freq").exists()
-            || !core.cpufreq_path.join("cpuinfo_min_freq").exists()
-            || !core.cpufreq_path.join("cpuinfo_max_freq").exists()
-        {
-            return None;
-        }
-
+        let _ = core.read_scaling_min_freq()?;
         let core_min = core.read_cpuinfo_min_freq()?;
         let core_max = self.effective_hardware_max_freq(core)?;
         let mut scaling_max = core.read_scaling_max_freq()?;
@@ -433,24 +504,16 @@ impl CpuController {
         Some(freq)
     }
 
-    /// Set maximum scaling frequency for all online cores.
+    /// Set maximum scaling frequency for all online cores, rolling back prior cores on partial failure.
     pub fn set_governor_scaling_max_frequency(
         &self,
         set_max_frequency: Option<i64>,
     ) -> Result<(), std::io::Error> {
         let mut scaling_driver_str: Option<String> = None;
         let mut acpi_fallback = false;
-        let mut applied_count = 0;
+        let mut applied: Vec<(&LogicalCpu, Option<u32>)> = Vec::new();
 
         for core in &self.cores {
-            if !core.cpufreq_path.join("scaling_min_freq").exists()
-                || !core.cpufreq_path.join("scaling_max_freq").exists()
-                || !core.cpufreq_path.join("cpuinfo_min_freq").exists()
-                || !core.cpufreq_path.join("cpuinfo_max_freq").exists()
-            {
-                continue;
-            }
-
             if core.core_index != 0 && !core.read_online().unwrap_or(false) {
                 continue;
             }
@@ -464,12 +527,20 @@ impl CpuController {
             if let Some(effective) =
                 self.compute_effective_max_freq(core, set_max_frequency, acpi_fallback)
             {
-                core.write_scaling_max_freq(effective)?;
-                applied_count += 1;
+                let prev = core.read_scaling_max_freq();
+                if let Err(err) = core.write_scaling_max_freq(effective) {
+                    for (prev_core, prev_val) in applied.into_iter().rev() {
+                        if let Some(val) = prev_val {
+                            let _ = prev_core.write_scaling_max_freq(val);
+                        }
+                    }
+                    return Err(err);
+                }
+                applied.push((core, prev));
             }
         }
 
-        if set_max_frequency.is_some() && applied_count == 0 {
+        if set_max_frequency.is_some() && applied.is_empty() {
             return Err(std::io::Error::new(
                 std::io::ErrorKind::NotFound,
                 "No CPU cores have cpufreq frequency control nodes available",
@@ -496,32 +567,32 @@ impl CpuController {
         Ok(())
     }
 
-    /// Set minimum scaling frequency for all online cores.
+    /// Set minimum scaling frequency for all online cores, rolling back prior cores on partial failure.
     pub fn set_governor_scaling_min_frequency(
         &self,
         set_min_frequency: Option<i64>,
     ) -> Result<(), std::io::Error> {
-        let mut applied_count = 0;
+        let mut applied: Vec<(&LogicalCpu, Option<u32>)> = Vec::new();
         for core in &self.cores {
-            if !core.cpufreq_path.join("scaling_min_freq").exists()
-                || !core.cpufreq_path.join("scaling_max_freq").exists()
-                || !core.cpufreq_path.join("cpuinfo_min_freq").exists()
-                || !core.cpufreq_path.join("cpuinfo_max_freq").exists()
-            {
-                continue;
-            }
-
             if core.core_index != 0 && !core.read_online().unwrap_or(false) {
                 continue;
             }
 
             if let Some(effective) = self.compute_effective_min_freq(core, set_min_frequency) {
-                core.write_scaling_min_freq(effective)?;
-                applied_count += 1;
+                let prev = core.read_scaling_min_freq();
+                if let Err(err) = core.write_scaling_min_freq(effective) {
+                    for (prev_core, prev_val) in applied.into_iter().rev() {
+                        if let Some(val) = prev_val {
+                            let _ = prev_core.write_scaling_min_freq(val);
+                        }
+                    }
+                    return Err(err);
+                }
+                applied.push((core, prev));
             }
         }
 
-        if set_min_frequency.is_some() && applied_count == 0 {
+        if set_min_frequency.is_some() && applied.is_empty() {
             return Err(std::io::Error::new(
                 std::io::ErrorKind::NotFound,
                 "No CPU cores have cpufreq frequency control nodes available",
@@ -531,23 +602,33 @@ impl CpuController {
         Ok(())
     }
 
-    /// Set scaling governor on all online cores.
+    /// Set scaling governor on all online cores, rolling back prior cores on partial failure.
     pub fn set_governor(&self, governor: Option<&str>) -> Result<(), std::io::Error> {
         let Some(gov) = governor else { return Ok(()) };
+        let mut applied: Vec<(&LogicalCpu, Option<String>)> = Vec::new();
         for core in &self.cores {
             if core.core_index != 0 && !core.read_online().unwrap_or(false) {
                 continue;
             }
             if let Some(avail) = core.read_scaling_available_governors() {
                 if avail.iter().any(|g| g == gov) {
-                    core.write_scaling_governor(gov)?;
+                    let prev = core.read_scaling_governor();
+                    if let Err(err) = core.write_scaling_governor(gov) {
+                        for (prev_core, prev_gov) in applied.into_iter().rev() {
+                            if let Some(ref g) = prev_gov {
+                                let _ = prev_core.write_scaling_governor(g);
+                            }
+                        }
+                        return Err(err);
+                    }
+                    applied.push((core, prev));
                 }
             }
         }
         Ok(())
     }
 
-    /// Set energy performance preference on all online cores.
+    /// Set energy performance preference on all online cores, rolling back prior cores on partial failure.
     pub fn set_energy_performance_preference(
         &self,
         preference: Option<&str>,
@@ -555,13 +636,23 @@ impl CpuController {
         let Some(pref) = preference else {
             return Ok(());
         };
+        let mut applied: Vec<(&LogicalCpu, Option<String>)> = Vec::new();
         for core in &self.cores {
             if core.core_index != 0 && !core.read_online().unwrap_or(false) {
                 continue;
             }
             if let Some(avail) = core.read_energy_performance_available_preferences() {
                 if avail.iter().any(|p| p == pref) {
-                    core.write_energy_performance_preference(pref)?;
+                    let prev = core.read_energy_performance_preference();
+                    if let Err(err) = core.write_energy_performance_preference(pref) {
+                        for (prev_core, prev_epp) in applied.into_iter().rev() {
+                            if let Some(ref epp) = prev_epp {
+                                let _ = prev_core.write_energy_performance_preference(epp);
+                            }
+                        }
+                        return Err(err);
+                    }
+                    applied.push((core, prev));
                 }
             }
         }
@@ -569,8 +660,7 @@ impl CpuController {
     }
 
     pub fn read_intel_pstate_no_turbo(&self) -> Option<bool> {
-        let path = self.root_path.join("intel_pstate/no_turbo");
-        let content = fs::read_to_string(path).ok()?;
+        let content = read_under(&self.root_path, "intel_pstate/no_turbo").ok()?;
         match content.trim() {
             "1" | "true" => Some(true),
             "0" | "false" => Some(false),
@@ -579,15 +669,16 @@ impl CpuController {
     }
 
     pub fn write_intel_pstate_no_turbo(&self, val: bool) -> Result<(), std::io::Error> {
-        fs::write(
-            self.root_path.join("intel_pstate/no_turbo"),
+        write_under(
+            &self.root_path,
+            "intel_pstate/no_turbo",
             if val { "1" } else { "0" },
         )
+        .map_err(sysfs_error_to_io)
     }
 
     pub fn read_intel_hwp_dynamic_boost(&self) -> Option<bool> {
-        let path = self.root_path.join("intel_pstate/hwp_dynamic_boost");
-        let content = fs::read_to_string(path).ok()?;
+        let content = read_under(&self.root_path, "intel_pstate/hwp_dynamic_boost").ok()?;
         match content.trim() {
             "1" | "true" => Some(true),
             "0" | "false" => Some(false),
@@ -596,21 +687,28 @@ impl CpuController {
     }
 
     pub fn write_intel_hwp_dynamic_boost(&self, val: bool) -> Result<(), std::io::Error> {
-        fs::write(
-            self.root_path.join("intel_pstate/hwp_dynamic_boost"),
+        write_under(
+            &self.root_path,
+            "intel_pstate/hwp_dynamic_boost",
             if val { "1" } else { "0" },
         )
+        .map_err(sysfs_error_to_io)
     }
 
     pub fn has_boost(&self) -> bool {
-        self.root_path.join("cpufreq/boost").exists()
+        !matches!(
+            read_under(&self.root_path, "cpufreq/boost"),
+            Err(SysfsError::NotFound(_))
+        )
     }
 
     pub fn write_boost(&self, val: bool) -> Result<(), std::io::Error> {
-        fs::write(
-            self.root_path.join("cpufreq/boost"),
+        write_under(
+            &self.root_path,
+            "cpufreq/boost",
             if val { "1" } else { "0" },
         )
+        .map_err(sysfs_error_to_io)
     }
 }
 
@@ -629,8 +727,4 @@ pub fn find_closest_value(target: u32, values: &[u32]) -> u32 {
         }
     }
     closest
-}
-
-fn read_u32(path: &Path) -> Option<u32> {
-    fs::read_to_string(path).ok()?.trim().parse::<u32>().ok()
 }

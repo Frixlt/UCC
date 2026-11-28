@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+
 //! Per-key / multi-zone keyboard backlight controller (`M6.1`–`M6.2`).
 
 use crate::transport::{KeyboardCapabilities, LightingError, LightingTransport, RgbColor};
@@ -392,5 +394,18 @@ impl KeyboardBacklightController {
             .states
             .ok_or_else(|| LightingError::InvalidConfig("Missing keyboard states field".into()))?;
         self.apply_raw_states(raw)
+    }
+
+    /// Re-probes keyboard hardware after system resume and re-applies `current_states`.
+    pub fn on_resume(&mut self) -> Result<(), LightingError> {
+        self.capabilities = self.transport.detect_keyboard()?;
+        if self.current_states.is_empty() {
+            return Ok(());
+        }
+        if !self.is_available() {
+            return Err(LightingError::Unavailable);
+        }
+        let states = self.current_states.clone();
+        self.apply_states(&states)
     }
 }

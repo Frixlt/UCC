@@ -159,7 +159,7 @@ fn p0_11_hid_lightbar_addresses_all_zones_and_caps_600b_brightness_to_50() {
         "P0-11: ITE 048D:600B keyboard brightness byte must be capped/scaled to <= 50, got {brightness_byte}"
     );
 
-    // 2. Lightbar 0x7001 static mode (0x08 ... 0x01) reads 1-based slot 1; write_lightbar_color writes slots 0 and 1.
+    // 2. Lightbar 0x7001 Zone 2: power_on (0x1A 0x02), color (0x14 0x02 0x01), apply (0x08 0x22).
     transport
         .write_lightbar_color(RgbColor::new(10, 20, 30))
         .unwrap();
@@ -170,10 +170,13 @@ fn p0_11_hid_lightbar_addresses_all_zones_and_caps_600b_brightness_to_50() {
         .map(|(_, r)| r)
         .collect();
     assert_eq!(
-        lb_reports.len(),
-        2,
-        "P0-11: write_lightbar_color on 048D:7001 must write slots 0 and 1, sent {} report(s)",
-        lb_reports.len()
+        lb_reports,
+        vec![
+            vec![0x1A, 0x02, 0x01, 0x04, 0, 0, 0, 0x01],
+            vec![0x14, 0x02, 0x01, 10, 20, 30, 0, 0],
+            vec![0x08, 0x22, 0x01, 0x01, 100, 0x01, 0, 0],
+        ],
+        "P0-11: write_lightbar_color on 048D:7001 must emit Zone 2 power_on + 0x14 0x02 + 0x08 0x22"
     );
 }
 

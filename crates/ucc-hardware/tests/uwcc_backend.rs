@@ -1,19 +1,21 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 
 use std::mem::{align_of, size_of};
+use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
 use ucc_hardware::traits::{MockHardwareIo, MockSysfs};
-use ucc_hardware::uwcc::ramfan::{flags as ramfan_flags, reg as ramfan_reg};
+use ucc_hardware::uwcc::ramfan::{encode_fan_table, flags as ramfan_flags, reg as ramfan_reg};
 use ucc_hardware::uwcc::wmi_events::{linux_key, wmi_code};
 use ucc_hardware::{
     decode_tachometer_rpm, parse_backend_selection, translate_wmi_event, uwcc_ec_reg, DmiInfo,
     MockPlatformBackend, MockUinputEmitter, MockUwccTransport, PlatformBackend,
     PlatformBackendKind, PlatformBackendSelection, PlatformError, PlatformWrite, RamFanController,
     RamFanCurve, RamFanPoint, SmrwPowerLimits, TuxedoIoBackend, UinputEmitter, UwccBackend,
-    UwccEcReg, UwccHotkeyEvent, UwccInfo, UwccPwup, UwccSmrw, UwccTransportWrite, UwccWmiEvent,
-    CHASSIS_PROJECT_0X1A, RAMFAN_POINTS, SMRW_POWER_LIMITS_OFFSET, UWCC_IOC_EC_READ,
-    UWCC_IOC_EC_WRITE, UWCC_IOC_GET_INFO, UWCC_IOC_PWUP, UWCC_IOC_SMRW, UWCC_MAGIC,
-    UWCC_NR_EC_READ, UWCC_NR_EC_WRITE, UWCC_NR_GET_INFO, UWCC_NR_PWUP, UWCC_NR_SMRW,
+    UwccEcReg, UwccHotkeyEvent, UwccInfo, UwccPwup, UwccSmrw, UwccTransport, UwccTransportWrite,
+    UwccWmiEvent, CHASSIS_PROJECT_0X1A, RAMFAN_BASE, RAMFAN_END, RAMFAN_POINTS,
+    SMRW_POWER_LIMITS_OFFSET, UWCC_IOC_EC_READ, UWCC_IOC_EC_WRITE, UWCC_IOC_GET_INFO,
+    UWCC_IOC_PWUP, UWCC_IOC_SMRW, UWCC_MAGIC, UWCC_NR_EC_READ, UWCC_NR_EC_WRITE, UWCC_NR_GET_INFO,
+    UWCC_NR_PWUP, UWCC_NR_SMRW,
 };
 
 #[test]
@@ -72,10 +74,12 @@ fn uwcc_backend_chassis_0x1a_smrw_limits_and_tdp_bounds() {
         pl2_max_w: 120,
         pl4_min_w: 30,
         pl4_max_w: 150,
+        base_tgp_w: 60,
         ctgp_min_w: 60,
         ctgp_max_w: 140,
         dynamic_boost_min_w: 0,
         dynamic_boost_max_w: 25,
+        tcc_max_offset_c: 0,
     };
     transport.set_smrw_table(SMRW_POWER_LIMITS_OFFSET, custom_limits.encode());
 
@@ -107,17 +111,32 @@ fn uwcc_backend_chassis_0x1a_smrw_limits_and_tdp_bounds() {
         Err(PlatformError::InvalidArgument(_))
     ));
 
+    // cTGP writes offset (115 - 60 = 55) to 0x0744 and sets BIT(0)|BIT(2) on 0x0743.
     backend.set_ctgp(115).unwrap();
-    assert_eq!(transport.get_reg(uwcc_ec_reg::CTGP_WATTS), Some(115));
+    assert_eq!(transport.get_reg(uwcc_ec_reg::CTGP_WATTS), Some(55));
+    assert_eq!(
+        transport.get_reg(uwcc_ec_reg::CTGP_DB_CTRL),
+        Some(uwcc_ec_reg::CTGP_DB_GENERAL_ENABLE_BIT | uwcc_ec_reg::CTGP_DB_CTGP_ENABLE_BIT)
+    );
     assert!(matches!(
         backend.set_ctgp(175),
         Err(PlatformError::InvalidArgument(_))
     ));
 
+    // Dynamic Boost writes 0xFF to 0x0745, watts (15) to 0x0746, and sets BIT(1) on 0x0743.
     backend.set_dynamic_boost(15).unwrap();
+    assert_eq!(transport.get_reg(uwcc_ec_reg::DB_TPP_TARGET), Some(0xFF));
     assert_eq!(
         transport.get_reg(uwcc_ec_reg::DYNAMIC_BOOST_WATTS),
         Some(15)
+    );
+    assert_eq!(
+        transport.get_reg(uwcc_ec_reg::CTGP_DB_CTRL),
+        Some(
+            uwcc_ec_reg::CTGP_DB_GENERAL_ENABLE_BIT
+                | uwcc_ec_reg::CTGP_DB_DB_ENABLE_BIT
+                | uwcc_ec_reg::CTGP_DB_CTGP_ENABLE_BIT
+        )
     );
     assert!(matches!(
         backend.set_dynamic_boost(30),
@@ -164,34 +183,45 @@ fn uwcc_backend_reads_real_rpm_duty_and_ec_temperatures() {
 }
 
 #[test]
-fn uwcc_backend_tcc_offset_and_pwup() {
+fn uwcc_backend_tcc_offset_0x0786_0x0463_and_pwup() {
     let transport = Arc::new(MockUwccTransport::chassis_0x1a_default());
     let backend = UwccBackend::new(Arc::clone(&transport) as _, None, None);
 
-    // EC 0x0743 is EC_ADDR_CTGP_DB_CTRL (0x07 on live X6AR55xY); set_tcc_offset must NEVER clobber it
-    transport.set_reg(uwcc_ec_reg::TCC_OFFSET_C, 0x07);
+    // EC 0x0743 is CTGP_DB_CTRL (0x07 on live X6AR55xY); set_tcc_offset must NEVER clobber it.
+    transport.set_reg(uwcc_ec_reg::CTGP_DB_CTRL, 0x07);
+    backend.set_tcc_offset(15).unwrap();
+    assert_eq!(
+        transport.get_reg(uwcc_ec_reg::TCC_OFFSET_C),
+        Some(0x80 | 15)
+    );
+    assert_eq!(transport.get_reg(uwcc_ec_reg::CTGP_DB_CTRL), Some(0x07));
+
+    // read_tcc_offset reads 0x0463 & 0x7F.
+    transport.set_reg(uwcc_ec_reg::TCC_OFFSET_READ, 0x80 | 15);
+    assert_eq!(backend.read_tcc_offset().unwrap(), 15);
+
+    // Boundary 0 and 40 are accepted; 41 is rejected.
+    backend.set_tcc_offset(0).unwrap();
+    assert_eq!(transport.get_reg(uwcc_ec_reg::TCC_OFFSET_C), Some(0x80));
+    backend.set_tcc_offset(40).unwrap();
+    assert_eq!(
+        transport.get_reg(uwcc_ec_reg::TCC_OFFSET_C),
+        Some(0x80 | 40)
+    );
     assert!(matches!(
-        backend.set_tcc_offset(15),
-        Err(PlatformError::Unsupported(_))
-    ));
-    assert!(matches!(
-        backend.read_tcc_offset(),
-        Err(PlatformError::Unsupported(_))
-    ));
-    assert_eq!(transport.get_reg(uwcc_ec_reg::TCC_OFFSET_C), Some(0x07));
-    assert!(matches!(
-        backend.set_tcc_offset(64),
+        backend.set_tcc_offset(41),
         Err(PlatformError::InvalidArgument(_))
     ));
 
     backend.set_pwup(true, 2).unwrap();
+    backend.set_pwup(true, 5).unwrap();
     backend.set_pwup(false, 0).unwrap();
     assert!(matches!(
         backend.set_pwup(false, 1),
         Err(PlatformError::InvalidArgument(_))
     ));
     assert!(matches!(
-        backend.set_pwup(true, 4),
+        backend.set_pwup(true, 8),
         Err(PlatformError::InvalidArgument(_))
     ));
 
@@ -201,57 +231,111 @@ fn uwcc_backend_tcc_offset_and_pwup() {
         level: 2,
     }));
     assert!(journal.contains(&UwccTransportWrite::Pwup {
+        enable: true,
+        level: 5,
+    }));
+    assert!(journal.contains(&UwccTransportWrite::Pwup {
         enable: false,
         level: 0,
     }));
 }
 
 #[test]
-fn ramfan_15_encodes_16_point_curve_sets_cume_ufme_and_restores_on_drop() {
+fn ramfan_15_real_96byte_layout_protocol_and_drop_cleanup() {
+    assert_eq!(RAMFAN_BASE, 0x0F00);
+    assert_eq!(RAMFAN_END, 0x0F5F);
+    assert_eq!(ramfan_reg::CPU_UP_BASE, 0x0F00);
+    assert_eq!(ramfan_reg::CPU_DOWN_BASE, 0x0F10);
+    assert_eq!(ramfan_reg::CPU_DUTY_BASE, 0x0F20);
+    assert_eq!(ramfan_reg::GPU_UP_BASE, 0x0F30);
+    assert_eq!(ramfan_reg::GPU_DOWN_BASE, 0x0F40);
+    assert_eq!(ramfan_reg::GPU_DUTY_BASE, 0x0F50);
+
     let transport = Arc::new(MockUwccTransport::chassis_0x1a_default());
+    // Seed sentinel values in DownT[0] (0x0F10, 0x0F40) and unrelated bits in 0x07C6 (BIT(6) power button!),
+    // 0x07C5 (BIT(3)), and 0x0751 (UFME BIT(7)).
+    transport.set_reg(ramfan_reg::CPU_DOWN_BASE, 0xA5);
+    transport.set_reg(ramfan_reg::GPU_DOWN_BASE, 0x5A);
+    transport.set_reg(ramfan_reg::AP_OEM_6, 0x40); // BIT(6) must be preserved!
+    transport.set_reg(ramfan_reg::UNIVERSAL_FAN_CTRL, 0x08);
+    transport.set_reg(ramfan_reg::FAN_MANUAL_MODE, 0x80);
+
     let curve = RamFanCurve::balanced_default();
+    let expected_cpu = encode_fan_table(&curve.cpu);
+    let expected_gpu = encode_fan_table(&curve.gpu);
 
     {
         let controller = RamFanController::new(Arc::clone(&transport) as _);
         controller.apply_curve(&curve).unwrap();
         assert!(controller.is_custom_active());
 
+        // Verify 96-byte layout: UpT, DownT[1..16], Duty[0]=0 marker, Duty[1..16].
         for i in 0..RAMFAN_POINTS {
             let offset = i as u16;
             assert_eq!(
-                transport.get_reg(ramfan_reg::CPU_TEMP_BASE + offset),
-                Some(curve.cpu[i].temp_c)
+                transport.get_reg(ramfan_reg::CPU_UP_BASE + offset),
+                Some(expected_cpu.up[i])
             );
             assert_eq!(
                 transport.get_reg(ramfan_reg::CPU_DUTY_BASE + offset),
-                Some(curve.cpu[i].duty_percent * 2)
+                Some(expected_cpu.duty[i])
             );
             assert_eq!(
-                transport.get_reg(ramfan_reg::GPU_TEMP_BASE + offset),
-                Some(curve.gpu[i].temp_c)
+                transport.get_reg(ramfan_reg::GPU_UP_BASE + offset),
+                Some(expected_gpu.up[i])
             );
             assert_eq!(
                 transport.get_reg(ramfan_reg::GPU_DUTY_BASE + offset),
-                Some(curve.gpu[i].duty_percent * 2)
+                Some(expected_gpu.duty[i])
             );
+            if i > 0 {
+                assert_eq!(
+                    transport.get_reg(ramfan_reg::CPU_DOWN_BASE + offset),
+                    Some(expected_cpu.down[i])
+                );
+                assert_eq!(
+                    transport.get_reg(ramfan_reg::GPU_DOWN_BASE + offset),
+                    Some(expected_gpu.down[i])
+                );
+            }
         }
 
-        assert_eq!(
-            transport.get_reg(ramfan_reg::CTRL),
-            Some(ramfan_flags::CUME | ramfan_flags::UFME)
-        );
-        assert_eq!(transport.get_reg(ramfan_reg::COMMIT), Some(0x01));
+        // Duty[0] marker is strictly 0x00; DownT[0] was NEVER overwritten.
+        assert_eq!(transport.get_reg(ramfan_reg::CPU_DUTY_BASE), Some(0x00));
+        assert_eq!(transport.get_reg(ramfan_reg::GPU_DUTY_BASE), Some(0x00));
+        assert_eq!(transport.get_reg(ramfan_reg::CPU_DOWN_BASE), Some(0xA5));
+        assert_eq!(transport.get_reg(ramfan_reg::GPU_DOWN_BASE), Some(0x5A));
+        // UpT[15] is always 0xFF.
+        assert_eq!(transport.get_reg(ramfan_reg::CPU_UP_BASE + 15), Some(0xFF));
+        assert_eq!(transport.get_reg(ramfan_reg::GPU_UP_BASE + 15), Some(0xFF));
 
+        // 0x07C5 BIT(7) set while preserving 0x08; 0x07C6 BIT(2) set while preserving BIT(6)=0x40.
+        assert_eq!(
+            transport.get_reg(ramfan_reg::UNIVERSAL_FAN_CTRL),
+            Some(0x08 | ramfan_flags::SPLIT_TABLES)
+        );
+        assert_eq!(
+            transport.get_reg(ramfan_reg::AP_OEM_6),
+            Some(0x40 | ramfan_flags::ENABLE_UNIVERSAL_FAN_CTRL)
+        );
+
+        // Fan Boost uses RMW on 0x0751 BIT(6), preserving UFME (0x80) and NEVER touching 0x0F00/0x0F5C.
+        let prev_0f00 = transport.get_reg(0x0F00);
+        let prev_0f5c = transport.get_reg(0x0F5C);
         controller.set_fan_boost(true).unwrap();
         assert_eq!(
-            transport.get_reg(ramfan_reg::CTRL),
-            Some(ramfan_flags::CUME | ramfan_flags::UFME | ramfan_flags::FAN_BOOST)
+            transport.get_reg(ramfan_reg::FAN_MANUAL_MODE),
+            Some(0x80 | ramfan_flags::FAN_MODE_BOOST)
         );
-        // Dropping `controller` must automatically restore firmware auto mode!
+        assert_eq!(transport.get_reg(0x0F00), prev_0f00);
+        assert_eq!(transport.get_reg(0x0F5C), prev_0f5c);
+        // Dropping `controller` must clear 0x07C6 BIT(2) and 0x0751 BIT(6) without corrupting 0x0F00/0x0F5C!
     }
 
-    assert_eq!(transport.get_reg(ramfan_reg::CTRL), Some(0x00));
-    assert_eq!(transport.get_reg(ramfan_reg::COMMIT), Some(0x00));
+    assert_eq!(transport.get_reg(ramfan_reg::AP_OEM_6), Some(0x40));
+    assert_eq!(transport.get_reg(ramfan_reg::FAN_MANUAL_MODE), Some(0x80));
+    assert_eq!(transport.get_reg(0x0F00), Some(expected_cpu.up[0]));
+    assert_eq!(transport.get_reg(0x0F5C), Some(expected_gpu.duty[12]));
 
     // Non-monotonic curve must be rejected before writing EC RAM
     let mut bad_curve = RamFanCurve::balanced_default();
@@ -265,7 +349,7 @@ fn ramfan_15_encodes_16_point_curve_sets_cume_ufme_and_restores_on_drop() {
     let backend = UwccBackend::new(Arc::clone(&transport) as _, None, None);
     backend.apply_ramfan_curve(&curve).unwrap();
     backend.set_fans_auto().unwrap();
-    assert_eq!(transport.get_reg(ramfan_reg::CTRL), Some(0x00));
+    assert_eq!(transport.get_reg(ramfan_reg::AP_OEM_6), Some(0x40));
     assert_eq!(transport.get_reg(uwcc_ec_reg::FAN_MANUAL_MODE), Some(0x00));
 }
 
@@ -274,11 +358,28 @@ fn uwcc_backend_charge_thresholds_ec_switches_and_lightbar_power() {
     let transport = Arc::new(MockUwccTransport::chassis_0x1a_default());
     let backend = UwccBackend::new(Arc::clone(&transport) as _, None, None);
 
-    // Charge threshold (0x07B9 EC_ADDR_CHARGE_CTRL, bits 6..=0) preserves bit 7
-    transport.set_reg(uwcc_ec_reg::CHARGE_CTRL, 0x80);
+    // Charge thresholds: writes 0x07D0 = start and 0x07B9 = end & 0x7F (NEVER writing back BIT(7)!).
+    transport.set_reg(uwcc_ec_reg::CHARGE_CTRL, 0x80 | 90);
     backend.set_charge_thresholds(50, 80).unwrap();
-    assert_eq!(transport.get_reg(uwcc_ec_reg::CHARGE_CTRL), Some(0x80 | 80));
-    assert_eq!(backend.read_charge_thresholds().unwrap(), (75, 80));
+    assert_eq!(transport.get_reg(uwcc_ec_reg::CHARGE_LIMIT_DOWN), Some(50));
+    assert_eq!(
+        transport.get_reg(uwcc_ec_reg::CHARGE_CTRL),
+        Some(80),
+        "BIT(7) CHARGE_CTRL_REACHED must NEVER be written back to 0x07B9"
+    );
+    assert_eq!(backend.read_charge_thresholds().unwrap(), (50, 80));
+
+    // End = 100 encodes as 0x00 in 0x07B9 and reads back as 100%.
+    backend.set_charge_thresholds(60, 100).unwrap();
+    assert_eq!(transport.get_reg(uwcc_ec_reg::CHARGE_LIMIT_DOWN), Some(60));
+    assert_eq!(transport.get_reg(uwcc_ec_reg::CHARGE_CTRL), Some(0x00));
+    assert_eq!(backend.read_charge_thresholds().unwrap(), (60, 100));
+
+    // Readback masks out BIT(7) when EC sets CHARGE_CTRL_REACHED.
+    transport.set_reg(uwcc_ec_reg::CHARGE_CTRL, 0x80 | 85);
+    transport.set_reg(uwcc_ec_reg::CHARGE_LIMIT_DOWN, 70);
+    assert_eq!(backend.read_charge_thresholds().unwrap(), (70, 85));
+
     assert!(matches!(
         backend.set_charge_thresholds(80, 80),
         Err(PlatformError::InvalidArgument(_))
@@ -292,14 +393,19 @@ fn uwcc_backend_charge_thresholds_ec_switches_and_lightbar_power() {
         Err(PlatformError::InvalidArgument(_))
     ));
 
-    // Fn Lock: RMW on BIT(3) of 0x07A4 preserves unrelated bits
+    // Fn Lock: RMW on BIT(4) of 0x074E preserves unrelated bits (NOT 0x07A4!).
     transport.set_reg(uwcc_ec_reg::FN_LOCK, 0x05);
+    transport.set_reg(0x07A4, 0x80); // LC_SUPPORT must remain untouched
     backend.set_fn_lock(true).unwrap();
     assert!(backend.read_fn_lock().unwrap());
     assert_eq!(
         transport.get_reg(uwcc_ec_reg::FN_LOCK),
         Some(0x05 | uwcc_ec_reg::FN_LOCK_BIT)
     );
+    assert_eq!(transport.get_reg(0x07A4), Some(0x80));
+    backend.set_fn_lock(false).unwrap();
+    assert!(!backend.read_fn_lock().unwrap());
+    assert_eq!(transport.get_reg(uwcc_ec_reg::FN_LOCK), Some(0x05));
 
     // Win Lock: reads BIT(0) of 0x0768, toggles via BIT(0) of 0x0767
     transport.set_reg(uwcc_ec_reg::WIN_LOCK, 0x00);
@@ -312,12 +418,28 @@ fn uwcc_backend_charge_thresholds_ec_switches_and_lightbar_power() {
     transport.set_reg(uwcc_ec_reg::WIN_LOCK, uwcc_ec_reg::WIN_LOCK_BIT);
     assert!(backend.read_win_lock().unwrap());
 
+    // USB Sleep Charging: RMW on 0x0767 BIT(4) preserves unrelated bits (NOT 0x0762!).
+    transport.set_reg(uwcc_ec_reg::USB_SLEEP_CHARGING, 0x02);
+    transport.set_reg(0x0762, 0xAA);
     backend.set_usb_sleep_charging(true).unwrap();
     assert!(backend.read_usb_sleep_charging().unwrap());
-    assert_eq!(transport.get_reg(uwcc_ec_reg::USB_SLEEP_CHARGING), Some(1));
+    assert_eq!(
+        transport.get_reg(uwcc_ec_reg::USB_SLEEP_CHARGING),
+        Some(0x02 | uwcc_ec_reg::USB_SLEEP_CHARGING_BIT)
+    );
+    assert_eq!(transport.get_reg(0x0762), Some(0xAA));
+    backend.set_usb_sleep_charging(false).unwrap();
+    assert!(!backend.read_usb_sleep_charging().unwrap());
+    assert_eq!(
+        transport.get_reg(uwcc_ec_reg::USB_SLEEP_CHARGING),
+        Some(0x02)
+    );
 
-    // Lightbar AC control RMW on 0x0748 BIT(0) — MUST NEVER touch 0x0767/0x0768 (Super key lock!)
-    transport.set_reg(uwcc_ec_reg::LIGHTBAR_AC_CTRL, 0x80);
+    // Lightbar AC control RMW on 0x0748: keeps BIT(0) (LIGHTBAR_APP_EXISTS) set and toggles BIT(2) (S0_OFF).
+    transport.set_reg(
+        uwcc_ec_reg::LIGHTBAR_AC_CTRL,
+        0x80 | uwcc_ec_reg::LIGHTBAR_S0_OFF_BIT,
+    );
     transport.set_reg(uwcc_ec_reg::WIN_LOCK_TRIGGER, 0x00);
     backend.set_lightbar_power(true).unwrap();
     assert_eq!(
@@ -326,7 +448,10 @@ fn uwcc_backend_charge_thresholds_ec_switches_and_lightbar_power() {
     );
     assert_eq!(transport.get_reg(uwcc_ec_reg::WIN_LOCK_TRIGGER), Some(0x00));
     backend.set_lightbar_power(false).unwrap();
-    assert_eq!(transport.get_reg(uwcc_ec_reg::LIGHTBAR_AC_CTRL), Some(0x80));
+    assert_eq!(
+        transport.get_reg(uwcc_ec_reg::LIGHTBAR_AC_CTRL),
+        Some(0x80 | uwcc_ec_reg::LIGHTBAR_APP_EXISTS_BIT | uwcc_ec_reg::LIGHTBAR_S0_OFF_BIT)
+    );
 }
 
 #[test]
@@ -583,7 +708,7 @@ fn platform_backend_selection_parser_and_extended_mock_backend() {
 #[test]
 fn uwcc_backend_dispatches_npcf_pwbt_pwdb_for_175w_nvidia_unlock_and_mux_switch() {
     use ucc_hardware::{
-        MuxActiveGpu, MuxBootMode, UwccGpuPower, UwccMuxState, UwccTransport, UWCC_FLAG_HAS_EC,
+        MuxActiveGpu, MuxBootMode, UwccGpuPower, UwccMuxState, UWCC_FLAG_HAS_EC,
         UWCC_GPU_POWER_OP_BASE_TGP, UWCC_GPU_POWER_OP_DYNAMIC_BOOST, UWCC_MUX_ACTIVE_DGPU,
         UWCC_MUX_MODE_DGPU_ONLY,
     };
@@ -594,6 +719,8 @@ fn uwcc_backend_dispatches_npcf_pwbt_pwdb_for_175w_nvidia_unlock_and_mux_switch(
     // Configure an RTX 5080 Mobile 175W (150W Base TGP + 25W Dynamic Boost) SMRW table.
     let transport = Arc::new(MockUwccTransport::chassis_0x1a_default());
     let mut rtx5080_limits = SmrwPowerLimits::chassis_0x1a_default();
+    rtx5080_limits.base_tgp_w = 55;
+    rtx5080_limits.ctgp_min_w = 55;
     rtx5080_limits.ctgp_max_w = 150;
     rtx5080_limits.dynamic_boost_max_w = 25;
     transport.set_smrw_table(SMRW_POWER_LIMITS_OFFSET, rtx5080_limits.encode());
@@ -660,8 +787,12 @@ fn uwcc_backend_upstream_0x1a_register_map_rmw_and_250w_fallback() {
     assert_eq!(uwcc_ec_reg::PL1_WATTS, 0x0783);
     assert_eq!(uwcc_ec_reg::PL2_WATTS, 0x0784);
     assert_eq!(uwcc_ec_reg::PL4_WATTS, 0x0785);
-    assert_eq!(uwcc_ec_reg::FN_LOCK, 0x07A4);
+    assert_eq!(uwcc_ec_reg::TCC_OFFSET_C, 0x0786);
+    assert_eq!(uwcc_ec_reg::TCC_OFFSET_READ, 0x0463);
+    assert_eq!(uwcc_ec_reg::FN_LOCK, 0x074E);
+    assert_eq!(uwcc_ec_reg::USB_SLEEP_CHARGING, 0x0767);
     assert_eq!(uwcc_ec_reg::CHARGE_CTRL, 0x07B9);
+    assert_eq!(uwcc_ec_reg::CHARGE_LIMIT_DOWN, 0x07D0);
     assert_eq!(uwcc_ec_reg::LIGHTBAR_AC_CTRL, 0x0748);
 
     // Fallback chassis_0x1a_default() must accept MECHREVO X6AR55xY [210, 210, 250] W TDP
@@ -686,10 +817,10 @@ fn uwcc_backend_upstream_0x1a_register_map_rmw_and_250w_fallback() {
 }
 
 #[test]
-fn uwcc_backend_decodes_12byte_dsdt_bx90_smrw_and_merges_0x07a7_ceiling() {
+fn uwcc_backend_decodes_12byte_dsdt_bx90_smrw_and_merges_0x07a7_only_with_0x078e_bit6() {
     let transport = Arc::new(MockUwccTransport::chassis_0x1a_default());
     // Exact 12-byte BX90 table from MECHREVO YAOSHI X6AR55xY DSDT.dsl:
-    // PL1=205W, PL2=205W, PL4=250W, step=5, DB=0..25W, max_gpu_temp=87C, base_tgp=150W, tail=FF*4
+    // PL1=205W, PL2=205W, PL4=250W, tcc_offset=5, ctgp_offset=0, DB=25W, max_gpu_temp=87C, DefaultTGP=150W, tail=FF*4
     let mut bx90 = [0u8; 64];
     bx90[..12].copy_from_slice(&[
         0xCD, 0xCD, 0xFA, 0x05, 0x00, 0x19, 0x57, 0x96, 0xFF, 0xFF, 0xFF, 0xFF,
@@ -700,14 +831,31 @@ fn uwcc_backend_decodes_12byte_dsdt_bx90_smrw_and_merges_0x07a7_ceiling() {
     transport.set_reg(uwcc_ec_reg::TDP_FACTORY_PL2_MAX, 0xD2);
     transport.set_reg(uwcc_ec_reg::TDP_FACTORY_PL4_MAX, 0xD2);
 
+    // 1. Without 0x078E BIT(6), 0x07A7..=0x07A9 is Battery Saver and MUST NOT be merged!
+    transport.set_reg(uwcc_ec_reg::FAN_CTRL_CAPS, 0x00);
+    let backend_no_cap = UwccBackend::new(Arc::clone(&transport) as _, None, None);
+    assert_eq!(backend_no_cap.read_tdp_limits(0).unwrap(), (15, 205));
+    assert_eq!(backend_no_cap.read_tdp_limits(1).unwrap(), (20, 205));
+    assert_eq!(backend_no_cap.read_tdp_limits(2).unwrap(), (25, 250));
+    assert_eq!(backend_no_cap.smrw_limits().base_tgp_w, 150);
+    assert_eq!(backend_no_cap.read_ctgp_limits(), (150, 150));
+    assert_eq!(backend_no_cap.read_dynamic_boost_limits(), (0, 25));
+    assert_eq!(backend_no_cap.smrw_limits().tcc_max_offset_c, 5);
+
+    // 2. With 0x078E BIT(6) set (RamFan 1.5 capable), 0x07A7..=0x07A9 Turbo ceilings ARE merged.
+    transport.set_reg(
+        uwcc_ec_reg::FAN_CTRL_CAPS,
+        uwcc_ec_reg::FAN_CTRL_CAPS_RAMFAN15_BIT,
+    );
     let backend = UwccBackend::new(Arc::clone(&transport) as _, None, None);
     assert_eq!(backend.read_tdp_limits(0).unwrap(), (15, 210));
     assert_eq!(backend.read_tdp_limits(1).unwrap(), (20, 210));
     assert_eq!(backend.read_tdp_limits(2).unwrap(), (25, 250));
-    assert_eq!(backend.read_ctgp_limits(), (55, 175));
+    assert_eq!(backend.smrw_limits().base_tgp_w, 150);
+    assert_eq!(backend.read_ctgp_limits(), (150, 150));
     assert_eq!(backend.read_dynamic_boost_limits(), (0, 25));
 
-    // Profile frixit-ac [210, 210, 250] W applies cleanly without failing
+    // Profile [210, 210, 250] W applies cleanly
     backend.set_tdp(0, 210).unwrap();
     backend.set_tdp(1, 210).unwrap();
     backend.set_tdp(2, 250).unwrap();
@@ -749,7 +897,7 @@ fn uapi_gpu_power_and_mux_ioctl_abi_match_kernel_header() {
 
 #[test]
 fn uwcc_backend_smrw_fallback_on_corrupt_or_unavailable_table() {
-    use ucc_hardware::{UwccTransport, UWCC_SMRW_MAX_LEN};
+    use ucc_hardware::UWCC_SMRW_MAX_LEN;
 
     let expected = SmrwPowerLimits::chassis_0x1a_default();
 
@@ -810,8 +958,8 @@ fn uwcc_backend_smrw_fallback_on_corrupt_or_unavailable_table() {
 #[test]
 fn uwcc_backend_ctgp_and_db_respect_pwbt_pwdb_flags_and_fail_writes() {
     use ucc_hardware::{
-        UwccTransport, UWCC_FLAG_HAS_EC, UWCC_FLAG_HAS_PWBT, UWCC_FLAG_HAS_PWDB,
-        UWCC_GPU_POWER_OP_BASE_TGP, UWCC_GPU_POWER_OP_DYNAMIC_BOOST,
+        UWCC_FLAG_HAS_EC, UWCC_FLAG_HAS_PWBT, UWCC_FLAG_HAS_PWDB, UWCC_GPU_POWER_OP_BASE_TGP,
+        UWCC_GPU_POWER_OP_DYNAMIC_BOOST,
     };
 
     // Without UWCC_FLAG_HAS_PWBT / UWCC_FLAG_HAS_PWDB, only EC registers are written
@@ -823,13 +971,22 @@ fn uwcc_backend_ctgp_and_db_respect_pwbt_pwdb_flags_and_fail_writes() {
     let backend = UwccBackend::new(Arc::clone(&transport) as _, None, None);
     transport.clear_journal();
 
+    // base_tgp_w = 55 -> offset = 120 - 55 = 65
     backend.set_ctgp(120).unwrap();
     backend.set_dynamic_boost(20).unwrap();
-    assert_eq!(transport.get_reg(uwcc_ec_reg::CTGP_WATTS), Some(120));
+    assert_eq!(transport.get_reg(uwcc_ec_reg::CTGP_WATTS), Some(65));
+    assert_eq!(transport.get_reg(uwcc_ec_reg::DB_TPP_TARGET), Some(0xFF));
     assert_eq!(
         transport.get_reg(uwcc_ec_reg::DYNAMIC_BOOST_WATTS),
         Some(20)
     );
+    assert_eq!(transport.get_reg(uwcc_ec_reg::CTGP_DB_CTRL), Some(0x07));
+
+    // Disabling Dynamic Boost (0W) writes 0x00 to 0x0745, 0 to 0x0746, clears BIT(1) -> 0x05.
+    backend.set_dynamic_boost(0).unwrap();
+    assert_eq!(transport.get_reg(uwcc_ec_reg::DB_TPP_TARGET), Some(0x00));
+    assert_eq!(transport.get_reg(uwcc_ec_reg::DYNAMIC_BOOST_WATTS), Some(0));
+    assert_eq!(transport.get_reg(uwcc_ec_reg::CTGP_DB_CTRL), Some(0x05));
 
     let journal = transport.journal();
     assert!(!journal
@@ -972,6 +1129,7 @@ fn ramfan_validation_matrix_and_fan_boost_transitions() {
     use ucc_hardware::RAMFAN_MAX_TEMP_C;
 
     let transport = Arc::new(MockUwccTransport::chassis_0x1a_default());
+    transport.set_reg(ramfan_reg::FAN_MANUAL_MODE, 0x80);
     let controller = RamFanController::new(Arc::clone(&transport) as _);
     transport.clear_journal();
 
@@ -1023,22 +1181,21 @@ fn ramfan_validation_matrix_and_fan_boost_transitions() {
     assert!(transport.journal().is_empty());
     assert!(!controller.is_custom_active());
 
-    // 4. Fan boost transitions WITHOUT active custom curve
+    // 4. Fan boost transitions WITHOUT active custom curve use RMW on 0x0751 BIT(6).
     controller.set_fan_boost(true).unwrap();
     assert!(controller.is_fan_boost_enabled());
     assert!(!controller.is_custom_active());
     assert_eq!(
-        transport.get_reg(ramfan_reg::CTRL),
-        Some(ramfan_flags::FAN_BOOST)
+        transport.get_reg(ramfan_reg::FAN_MANUAL_MODE),
+        Some(0x80 | ramfan_flags::FAN_MODE_BOOST)
     );
-    assert_eq!(transport.get_reg(ramfan_reg::COMMIT), Some(0x01));
+    assert_eq!(transport.get_reg(ramfan_reg::AP_OEM_6), None);
 
     controller.set_fan_boost(false).unwrap();
     assert!(!controller.is_fan_boost_enabled());
-    assert_eq!(transport.get_reg(ramfan_reg::CTRL), Some(0x00));
-    assert_eq!(transport.get_reg(ramfan_reg::COMMIT), Some(0x00));
+    assert_eq!(transport.get_reg(ramfan_reg::FAN_MANUAL_MODE), Some(0x80));
 
-    // 5. Fan boost transitions WITH active custom curve
+    // 5. Fan boost transitions WITH active custom curve keep 0x07C6 BIT(2) latched.
     let valid_curve = RamFanCurve::balanced_default();
     controller.apply_curve(&valid_curve).unwrap();
     assert!(controller.is_custom_active());
@@ -1046,19 +1203,22 @@ fn ramfan_validation_matrix_and_fan_boost_transitions() {
     controller.set_fan_boost(true).unwrap();
     assert!(controller.is_fan_boost_enabled());
     assert_eq!(
-        transport.get_reg(ramfan_reg::CTRL),
-        Some(ramfan_flags::CUME | ramfan_flags::UFME | ramfan_flags::FAN_BOOST)
+        transport.get_reg(ramfan_reg::FAN_MANUAL_MODE),
+        Some(0x80 | ramfan_flags::FAN_MODE_BOOST)
     );
-    assert_eq!(transport.get_reg(ramfan_reg::COMMIT), Some(0x01));
+    assert_eq!(
+        transport.get_reg(ramfan_reg::AP_OEM_6),
+        Some(ramfan_flags::ENABLE_UNIVERSAL_FAN_CTRL)
+    );
 
     controller.set_fan_boost(false).unwrap();
     assert!(!controller.is_fan_boost_enabled());
     assert!(controller.is_custom_active());
+    assert_eq!(transport.get_reg(ramfan_reg::FAN_MANUAL_MODE), Some(0x80));
     assert_eq!(
-        transport.get_reg(ramfan_reg::CTRL),
-        Some(ramfan_flags::CUME | ramfan_flags::UFME)
+        transport.get_reg(ramfan_reg::AP_OEM_6),
+        Some(ramfan_flags::ENABLE_UNIVERSAL_FAN_CTRL)
     );
-    assert_eq!(transport.get_reg(ramfan_reg::COMMIT), Some(0x01));
 
     // Unavailable transport fails closed
     transport.set_available(false);
@@ -1241,6 +1401,10 @@ fn uwcc_backend_ignores_0xff_unpopulated_ec_tdp_ceiling_sentinel() {
         0xCD, 0xCD, 0xFA, 0x05, 0x00, 0x19, 0x57, 0x96, 0xFF, 0xFF, 0xFF, 0xFF,
     ]);
     transport.set_smrw_table(0, bx90);
+    transport.set_reg(
+        uwcc_ec_reg::FAN_CTRL_CAPS,
+        uwcc_ec_reg::FAN_CTRL_CAPS_RAMFAN15_BIT,
+    );
     // Simulate an SKU where EC 0x07A7..=0x07A9 are unprogrammed (0xFF sentinel).
     transport.set_reg(uwcc_ec_reg::TDP_FACTORY_PL1_MAX, 0xFF);
     transport.set_reg(uwcc_ec_reg::TDP_FACTORY_PL2_MAX, 0xFF);
@@ -1255,8 +1419,7 @@ fn uwcc_backend_ignores_0xff_unpopulated_ec_tdp_ceiling_sentinel() {
 
 #[test]
 fn uwcc_backend_decodes_12byte_dsdt_g2x9_smrw_without_fallback() {
-    use std::sync::atomic::{AtomicUsize, Ordering};
-    use ucc_hardware::{UwccTransport, UWCC_SMRW_MAX_LEN};
+    use ucc_hardware::UWCC_SMRW_MAX_LEN;
 
     struct CountingSmrwTransport {
         inner: MockUwccTransport,
@@ -1300,6 +1463,8 @@ fn uwcc_backend_decodes_12byte_dsdt_g2x9_smrw_without_fallback() {
     }
 
     let inner = MockUwccTransport::chassis_0x1a_default();
+    // data[3]=0x0A (10C TCC offset), data[4]=0x46 (70W cTGP offset), data[5]=0x19 (25W DB), data[7]=0x50 (80W base TGP)
+    // -> base_tgp_w=80, ctgp_min_w=80, ctgp_max_w=80+70=150 (DB 25W is NOT added to ctgp_max_w!).
     let mut g2x9 = [0u8; UWCC_SMRW_MAX_LEN];
     g2x9[..12].copy_from_slice(&[
         0xD2, 0xD2, 0xD2, 0x0A, 0x46, 0x19, 0x57, 0x50, 0xFF, 0xFF, 0xFF, 0xFF,
@@ -1317,47 +1482,50 @@ fn uwcc_backend_decodes_12byte_dsdt_g2x9_smrw_without_fallback() {
     assert_eq!(limits.pl1_max_w, 210);
     assert_eq!(limits.pl2_max_w, 210);
     assert_eq!(limits.pl4_max_w, 210);
-    assert_eq!(limits.ctgp_min_w, 70);
-    assert_eq!(limits.ctgp_max_w, 175);
+    assert_eq!(limits.tcc_max_offset_c, 10);
+    assert_eq!(limits.base_tgp_w, 80);
+    assert_eq!(limits.ctgp_min_w, 80);
+    assert_eq!(limits.ctgp_max_w, 150);
     assert_eq!(limits.dynamic_boost_min_w, 0);
     assert_eq!(limits.dynamic_boost_max_w, 25);
 }
 
 #[test]
 fn uwcc_12byte_smrw_rejects_excessive_base_tgp_and_ctgp_over_byte_ceiling() {
-    // base_tgp_max = data[4] (200) + data[7] (52) = 252 > 250, ctgp_max = 252 <= 255 -> rejected.
+    // base_tgp_w (data[7]) = 252 > 250 -> rejected.
     let over_base = [
-        0xD2, 0xD2, 0xD2, 0x0A, 200, 0, 0x57, 52, 0xFF, 0xFF, 0xFF, 0xFF,
+        0xD2, 0xD2, 0xD2, 0x0A, 0, 0, 0x57, 252, 0xFF, 0xFF, 0xFF, 0xFF,
     ];
     assert!(SmrwPowerLimits::decode_inou0000_12byte(&over_base).is_none());
 
-    // base_tgp_max = 220 <= 250, but ctgp_max = 220 + 50 = 270 > u8::MAX (255) -> rejected.
+    // base_tgp_w (data[7]) = 200 <= 250, ctgp_offset (data[4]) = 60 -> ctgp_max = 260 > 255 -> rejected.
     let over_ctgp = [
-        0xD2, 0xD2, 0xD2, 0x0A, 120, 50, 0x57, 100, 0xFF, 0xFF, 0xFF, 0xFF,
+        0xD2, 0xD2, 0xD2, 0x0A, 60, 25, 0x57, 200, 0xFF, 0xFF, 0xFF, 0xFF,
     ];
     assert!(SmrwPowerLimits::decode_inou0000_12byte(&over_ctgp).is_none());
 }
 
 #[test]
 fn uwcc_backend_charging_profile_rmw_ctgp_and_lid_logo_ec_sequence() {
-    use ucc_hardware::UwccTransport;
-
     let transport = Arc::new(MockUwccTransport::chassis_0x1a_default());
     transport.set_reg(0x0767, 0x01); // WIN_LOCK_TRIGGER must remain untouched
-    transport.set_reg(0x07A6, 0x89);
+    transport.set_reg(0x07A6, 0x89); // BIT(7)=1, BIT(3)=1 (touchpad LED!), BIT(0)=1, BITS(5:4)=00 (high_capacity)
     transport.set_reg(0x07AB, 0x05); // bit0=exists, bit2=preserved
-    transport.set_reg(0x07C5, 0x48);
+    transport.set_reg(0x07C5, 0x08); // Whisper Mode BIT(6) = 0 so BIT(5) can toggle safely
 
     let backend = UwccBackend::new(Arc::clone(&transport) as Arc<dyn UwccTransport>, None, None);
     let platform: &dyn PlatformBackend = &backend;
 
-    // Uninitialized EC 0x0744 == 0 returns Unavailable; valid write reads back cleanly.
+    // Offset 0 in 0x0788 is VALID and returns base_tgp_w (55W)!
     assert!(platform.read_ctgp_limits().is_some());
-    assert!(platform.read_ctgp_watts().is_err());
+    assert_eq!(platform.read_ctgp_watts().unwrap(), 55);
     platform.set_ctgp_watts(150).unwrap();
+    assert_eq!(transport.get_reg(uwcc_ec_reg::CTGP_WATTS), Some(95));
+    // Live 0x0788 readback returns base_tgp_w + EC[0x0788].
+    transport.set_reg(uwcc_ec_reg::CTGP_LIVE_OFFSET, 95);
     assert_eq!(platform.read_ctgp_watts().unwrap(), 150);
 
-    // Charging profile RMW preserves unrelated bits (0x81) and round-trips all 3 modes.
+    // Charging profile RMW uses mask 0x30 (0x00/0x10/0x20), strictly preserving BIT(3) touchpad LED (0x08)!
     assert_eq!(
         platform.charging_profiles_available(),
         vec!["high_capacity", "balanced", "stationary"]
@@ -1376,28 +1544,48 @@ fn uwcc_backend_charging_profile_rmw_ctgp_and_lid_logo_ec_sequence() {
     assert_eq!(transport.get_reg(0x07A6), Some(0x89));
     assert!(platform.set_charging_profile("invalid_mode").is_err());
 
-    // Unrecognized battery mode bits return Unavailable rather than misreporting high_capacity.
-    transport.set_reg(0x07A6, 0x38);
+    // Also works when BIT(3) touchpad LED is 0 (0x00 / 0x10 / 0x20).
+    transport.set_reg(0x07A6, 0x00);
+    assert_eq!(platform.read_charging_profile().unwrap(), "high_capacity");
+    platform.set_charging_profile("balanced").unwrap();
+    assert_eq!(transport.get_reg(0x07A6), Some(0x10));
+
+    // Unrecognized battery mode bits (0x30) return Unavailable.
+    transport.set_reg(0x07A6, 0x30);
     assert!(platform.read_charging_profile().is_err());
 
-    // Lid logo EC sequence preserves low bits in 0x07AB, skips 0x0767 clobber, and commits 0x078C.
+    // Lid logo EC sequence: 5 brightness levels (0x01/0x21/0x41/0x61/0x81), symmetrical 0x07C5 BIT(5), and readback.
     assert!(platform.has_lid_logo_ec());
-    platform.set_lid_logo_ec(true, 0, 255, 128, 80).unwrap();
+    platform.set_lid_logo_ec(true, 0, 255, 128, 50).unwrap();
     assert_eq!(transport.get_reg(0x07AB), Some(0x25));
-    platform.set_lid_logo_ec(true, 0, 255, 128, 128).unwrap();
+    platform.set_lid_logo_ec(true, 0, 255, 128, 100).unwrap();
     assert_eq!(transport.get_reg(0x07AB), Some(0x45));
+    platform.set_lid_logo_ec(true, 0, 255, 128, 160).unwrap();
+    assert_eq!(transport.get_reg(0x07AB), Some(0x65));
     platform.set_lid_logo_ec(true, 0, 255, 128, 255).unwrap();
     assert_eq!(transport.get_reg(0x0767), Some(0x01));
-    assert_eq!(transport.get_reg(0x07C5), Some(0x68));
+    assert_eq!(transport.get_reg(0x07C5), Some(0x28));
     assert_eq!(transport.get_reg(0x0769), Some(0));
     assert_eq!(transport.get_reg(0x076A), Some(50));
     assert_eq!(transport.get_reg(0x076B), Some(25));
     assert_eq!(transport.get_reg(0x07AB), Some(0x85));
     assert_eq!(transport.get_reg(0x078C), Some(0x10));
+    let (en, r, g, b, br) = backend.read_lid_logo_ec().unwrap();
+    assert!(en);
+    assert_eq!((r, g, b, br), (0, 255, 128, 255));
 
+    // Disable symmetrically clears 0x07C5 BIT(5) (0x28 -> 0x08).
     platform.set_lid_logo_ec(false, 0, 0, 0, 0).unwrap();
     assert_eq!(transport.get_reg(0x07AB), Some(0x05));
+    assert_eq!(transport.get_reg(0x07C5), Some(0x08));
     assert_eq!(transport.get_reg(0x078C), Some(0x10));
+
+    // When Whisper Mode BIT(6) is set in 0x07C5, lid logo MUST NOT clobber 0x07C5.
+    transport.set_reg(0x07C5, 0x48);
+    platform.set_lid_logo_ec(true, 255, 0, 0, 255).unwrap();
+    assert_eq!(transport.get_reg(0x07C5), Some(0x48));
+    platform.set_lid_logo_ec(false, 0, 0, 0, 0).unwrap();
+    assert_eq!(transport.get_reg(0x07C5), Some(0x48));
 
     // Hardware without LOGO_EXISTS_BIT rejects set_lid_logo_ec without forging bit 0.
     transport.set_reg(0x07AB, 0x00);
@@ -1409,7 +1597,7 @@ fn uwcc_backend_charging_profile_rmw_ctgp_and_lid_logo_ec_sequence() {
 #[test]
 fn uwcc_backend_api_version_and_capability_flags_enforcement() {
     use ucc_hardware::{
-        UwccTransport, UWCC_API_VERSION, UWCC_FLAG_HAS_EC, UWCC_FLAG_HAS_PWUP, UWCC_FLAG_HAS_SMRW,
+        UWCC_API_VERSION, UWCC_FLAG_HAS_EC, UWCC_FLAG_HAS_PWUP, UWCC_FLAG_HAS_SMRW,
         UWCC_FLAG_HAS_WMI_EVENTS,
     };
 
@@ -1472,10 +1660,8 @@ fn uwcc_backend_api_version_and_capability_flags_enforcement() {
 
 #[test]
 fn uwcc_set_fans_auto_clears_manual_mode_even_when_ramfan_restore_fails() {
-    use ucc_hardware::UwccTransport;
-
-    struct FailRamFanCtrlTransport(MockUwccTransport);
-    impl UwccTransport for FailRamFanCtrlTransport {
+    struct FailRamFanLatchTransport(MockUwccTransport);
+    impl UwccTransport for FailRamFanLatchTransport {
         fn is_available(&self) -> bool {
             self.0.is_available()
         }
@@ -1486,7 +1672,7 @@ fn uwcc_set_fans_auto_clears_manual_mode_even_when_ramfan_restore_fails() {
             self.0.ec_read(addr)
         }
         fn ec_write(&self, addr: u16, val: u8) -> Result<(), PlatformError> {
-            if addr == ramfan_reg::CTRL {
+            if addr == ramfan_reg::AP_OEM_6 {
                 return Err(PlatformError::Unavailable);
             }
             self.0.ec_write(addr, val)
@@ -1504,13 +1690,17 @@ fn uwcc_set_fans_auto_clears_manual_mode_even_when_ramfan_restore_fails() {
 
     let inner = MockUwccTransport::chassis_0x1a_default();
     inner.set_reg(
-        uwcc_ec_reg::FAN_MANUAL_MODE,
-        0x03 | uwcc_ec_reg::FAN_MODE_USER_BIT,
+        ramfan_reg::AP_OEM_6,
+        ramfan_flags::ENABLE_UNIVERSAL_FAN_CTRL,
     );
-    let transport = Arc::new(FailRamFanCtrlTransport(inner));
+    inner.set_reg(
+        uwcc_ec_reg::FAN_MANUAL_MODE,
+        0x03 | uwcc_ec_reg::FAN_MODE_USER_BIT | uwcc_ec_reg::FAN_MODE_BOOST_BIT,
+    );
+    let transport = Arc::new(FailRamFanLatchTransport(inner));
     let backend = UwccBackend::new(Arc::clone(&transport) as _, None, None);
 
-    // Must return Err because ramfan restore failed, YET still clear FAN_MODE_USER_BIT!
+    // Must return Err because ramfan 0x07C6 restore failed, YET still clear FAN_MODE_USER_BIT & BOOST!
     assert!(backend.set_fans_auto().is_err());
     assert_eq!(
         transport.0.get_reg(uwcc_ec_reg::FAN_MANUAL_MODE),
@@ -1524,36 +1714,38 @@ fn ramfan_diff_write_cache_skips_unchanged_and_invalidates_on_reset_or_error() {
     let ctrl = RamFanController::new(Arc::clone(&transport) as _);
     let mut curve = RamFanCurve::balanced_default();
 
-    // First apply writes all 64 curve registers + CTRL + COMMIT = 66 writes.
+    // First apply writes: 0x07C5 BIT(7) + 94 table bytes (skipping DownT[0] at 0x0F10 & 0x0F40) + 0x07C6 BIT(2) = 96 writes.
     transport.clear_journal();
     ctrl.apply_curve(&curve).unwrap();
-    assert_eq!(transport.journal().len(), 66);
+    assert_eq!(transport.journal().len(), 96);
 
     // Re-applying identical curve performs 0 EC writes.
     transport.clear_journal();
     ctrl.apply_curve(&curve).unwrap();
     assert_eq!(transport.journal().len(), 0);
 
-    // Modifying a single breakpoint duty writes only that 1 register + CTRL + COMMIT = 3 writes.
+    // Modifying a single breakpoint duty writes: 0x07C6 BIT(2)=0 + 1 duty byte + 0x07C6 BIT(2)=1 = 3 writes.
     curve.cpu[RAMFAN_POINTS - 1].duty_percent = 99;
     transport.clear_journal();
     ctrl.apply_curve(&curve).unwrap();
     assert_eq!(transport.journal().len(), 3);
 
-    // restore_firmware_auto invalidates cache so next apply writes all 66 registers again.
+    // restore_firmware_auto invalidates cache so next apply writes 94 table bytes + 0x07C6 BIT(2)=1 = 95 writes
+    // (0x07C5 BIT(7) is already 1 and 0x07C6 BIT(2) is already 0, so RMW skips no-op writes).
     ctrl.restore_firmware_auto().unwrap();
     transport.clear_journal();
     ctrl.apply_curve(&curve).unwrap();
-    assert_eq!(transport.journal().len(), 66);
+    assert_eq!(transport.journal().len(), 95);
 
-    // Write failure invalidates cache so subsequent apply writes all 66 registers again.
+    // Write failure invalidates cache so subsequent apply writes all 95 registers again.
     curve.gpu[RAMFAN_POINTS - 1].duty_percent = 98;
     transport.set_fail_writes(true);
     assert!(ctrl.apply_curve(&curve).is_err());
     transport.set_fail_writes(false);
     transport.clear_journal();
     ctrl.apply_curve(&curve).unwrap();
-    assert_eq!(transport.journal().len(), 66);
+    // 0x07C6 BIT(2) was still 1 from before failed write, so: clear 0x07C6 + 94 table bytes + set 0x07C6 = 96 writes.
+    assert_eq!(transport.journal().len(), 96);
 }
 
 #[test]
@@ -1625,7 +1817,7 @@ fn set_tdp_latches_ap_oem_manual_ctrl_preserving_upper_bits() {
 #[test]
 fn wmi_0x00b0_is_performance_mode_not_touchpad_toggle() {
     assert_eq!(wmi_code::PERF_MODE_CYCLE, 0x00B0);
-    assert_eq!(wmi_code::TOUCHPAD_TOGGLE, 0x002E);
+    assert_eq!(wmi_code::TOUCHPAD_TOGGLE, 0x0004);
     assert_eq!(
         translate_wmi_event(UwccWmiEvent {
             timestamp_ns: 1,
@@ -1641,7 +1833,7 @@ fn wmi_0x00b0_is_performance_mode_not_touchpad_toggle() {
     assert_eq!(
         translate_wmi_event(UwccWmiEvent {
             timestamp_ns: 2,
-            code: 0x002E,
+            code: 0x0004,
             payload: 0,
         }),
         UwccHotkeyEvent::TouchpadToggle
@@ -1649,7 +1841,7 @@ fn wmi_0x00b0_is_performance_mode_not_touchpad_toggle() {
     assert_eq!(
         translate_wmi_event(UwccWmiEvent {
             timestamp_ns: 3,
-            code: 0x002F,
+            code: 0x0005,
             payload: 0,
         }),
         UwccHotkeyEvent::TouchpadToggle
@@ -1666,7 +1858,7 @@ fn chassis_0x1a_custom_mode_tdp_profiles_mode_enable_and_drop_cleanup() {
     transport.set_reg(uwcc_ec_reg::CUSTOM_MODE_ENABLE, 0x80); // PL4D = 1
     transport.set_reg(
         uwcc_ec_reg::AP_OEM_6,
-        uwcc_ec_reg::AP_OEM_6_UNIVERSAL_FAN_BIT,
+        0x40 | uwcc_ec_reg::AP_OEM_6_UNIVERSAL_FAN_BIT,
     );
     transport.set_reg(uwcc_ec_reg::FAN_MANUAL_MODE, 0x10); // Turbo
     transport.set_reg(uwcc_ec_reg::MODE_ENABLE, 0x55);
@@ -1683,12 +1875,13 @@ fn chassis_0x1a_custom_mode_tdp_profiles_mode_enable_and_drop_cleanup() {
             Some(0xC0),
             "CUME BIT(6) must be set while strictly preserving PL4D BIT(7)"
         );
-        // Direct manual fan duty must clear 0x07C6 BIT(2) so EC obeys 0x1804/0x1809.
+        // Direct manual fan duty must clear 0x07C6 BIT(2) (preserving BIT(6)=0x40).
         backend.set_fan_speed_percent(0, 75).unwrap();
-        assert_eq!(transport.get_reg(uwcc_ec_reg::AP_OEM_6), Some(0x00));
+        assert_eq!(transport.get_reg(uwcc_ec_reg::AP_OEM_6), Some(0x40));
         assert_eq!(transport.get_reg(uwcc_ec_reg::FAN_MANUAL_MODE), Some(0x80));
         assert_eq!(transport.get_reg(uwcc_ec_reg::PL1_WATTS), Some(120));
         assert_eq!(backend.read_perf_profile().unwrap(), 3);
+        assert_eq!(backend.read_pmsc_mode().unwrap(), "custom");
 
         // 2. Switching to Office (1) and Gaming (2) clears CUME while keeping PL4D untouched.
         backend.set_perf_profile(1).unwrap();
@@ -1699,6 +1892,7 @@ fn chassis_0x1a_custom_mode_tdp_profiles_mode_enable_and_drop_cleanup() {
         assert_eq!(transport.get_reg(uwcc_ec_reg::CUSTOM_MODE_CTRL), Some(0x48));
         assert_eq!(transport.get_reg(uwcc_ec_reg::FAN_MANUAL_MODE), Some(0xA0));
         assert_eq!(backend.read_perf_profile().unwrap(), 1);
+        assert_eq!(backend.read_pmsc_mode().unwrap(), "office");
 
         backend.set_perf_profile(2).unwrap();
         assert_eq!(
@@ -1707,6 +1901,7 @@ fn chassis_0x1a_custom_mode_tdp_profiles_mode_enable_and_drop_cleanup() {
         );
         assert_eq!(transport.get_reg(uwcc_ec_reg::FAN_MANUAL_MODE), Some(0x00));
         assert_eq!(backend.read_perf_profile().unwrap(), 2);
+        assert_eq!(backend.read_pmsc_mode().unwrap(), "gaming");
 
         backend.set_perf_profile(3).unwrap();
         assert_eq!(
@@ -1722,10 +1917,59 @@ fn chassis_0x1a_custom_mode_tdp_profiles_mode_enable_and_drop_cleanup() {
         backend.set_mode_enable(true).unwrap();
         assert_eq!(transport.get_reg(uwcc_ec_reg::AP_OEM), Some(0x81));
         assert_eq!(transport.get_reg(uwcc_ec_reg::MODE_ENABLE), Some(0x55));
+
+        // Re-arm RamFan latch and Fan Boost to verify full Drop cleanup order.
+        transport.set_reg(
+            uwcc_ec_reg::AP_OEM_6,
+            0x40 | uwcc_ec_reg::AP_OEM_6_UNIVERSAL_FAN_BIT,
+        );
+        backend.set_fan_boost(true).unwrap();
+        transport.clear_journal();
     }
 
-    // 4. Dropping UwccBackend releases 0x0741 BIT(0) (preserving 0x80) so EC regains mode button.
+    // 4. Dropping UwccBackend clears 0x07C6 BIT(2), 0x0751 BIT(6), CUME/0x0726 BIT(7), then 0x0741 BIT(0).
+    assert_eq!(transport.get_reg(uwcc_ec_reg::AP_OEM_6), Some(0x40));
+    assert_eq!(
+        transport.get_reg(uwcc_ec_reg::FAN_MANUAL_MODE).unwrap() & uwcc_ec_reg::FAN_MODE_BOOST_BIT,
+        0
+    );
+    assert_eq!(
+        transport.get_reg(uwcc_ec_reg::CUSTOM_MODE_ENABLE),
+        Some(0x80),
+        "Drop must clear CUME BIT(6) while strictly preserving PL4D BIT(7)"
+    );
+    assert_eq!(transport.get_reg(uwcc_ec_reg::CUSTOM_MODE_CTRL), Some(0x48));
     assert_eq!(transport.get_reg(uwcc_ec_reg::AP_OEM), Some(0x80));
+
+    let ec_write_addrs: Vec<u16> = transport
+        .journal()
+        .into_iter()
+        .filter_map(|w| match w {
+            UwccTransportWrite::EcWrite { addr, .. } => Some(addr),
+            _ => None,
+        })
+        .collect();
+    let idx_c6 = ec_write_addrs
+        .iter()
+        .position(|&a| a == uwcc_ec_reg::AP_OEM_6)
+        .unwrap();
+    let idx_51 = ec_write_addrs
+        .iter()
+        .position(|&a| a == uwcc_ec_reg::FAN_MANUAL_MODE)
+        .unwrap();
+    let idx_27 = ec_write_addrs
+        .iter()
+        .position(|&a| a == uwcc_ec_reg::CUSTOM_MODE_ENABLE)
+        .unwrap();
+    let idx_26 = ec_write_addrs
+        .iter()
+        .position(|&a| a == uwcc_ec_reg::CUSTOM_MODE_CTRL)
+        .unwrap();
+    let idx_41 = ec_write_addrs
+        .iter()
+        .position(|&a| a == uwcc_ec_reg::AP_OEM)
+        .unwrap();
+    assert!(idx_c6 < idx_51 && idx_51 < idx_27 && idx_27 < idx_26 && idx_26 < idx_41);
 }
 
 #[test]
@@ -1739,7 +1983,7 @@ fn chassis_0x1a_fan_boost_hysteresis_and_custom_mode_0706() {
 
     let backend = UwccBackend::new(Arc::clone(&transport) as _, None, None);
 
-    // set_tdp latches 0x0706 BIT(0) (0x40 -> 0x41)
+    // set_tdp latches 0x0706 = 0x41
     backend.set_tdp(0, 150).unwrap();
     assert_eq!(transport.get_reg(uwcc_ec_reg::CUSTOM_MODE_0706), Some(0x41));
 
@@ -1775,4 +2019,315 @@ fn chassis_0x1a_fan_boost_hysteresis_and_custom_mode_0706() {
         transport.get_reg(uwcc_ec_reg::FAN_MANUAL_MODE),
         Some(uwcc_ec_reg::FAN_MODE_USER_BIT)
     );
+}
+
+#[test]
+fn regression_pl4_doubled_0x0727_bit7_scales_smrw_0x07a9_and_0x0785() {
+    let transport = Arc::new(MockUwccTransport::chassis_0x1a_default());
+    // Hardware indicates pl4_doubled (2 W/LSB) via RO 0x0727 BIT(7).
+    transport.set_reg(uwcc_ec_reg::CUSTOM_MODE_ENABLE, 0x80);
+    transport.set_reg(
+        uwcc_ec_reg::FAN_CTRL_CAPS,
+        uwcc_ec_reg::FAN_CTRL_CAPS_RAMFAN15_BIT,
+    );
+    // SMRW[2] = 200 raw -> 400W; EC 0x07A9 = 210 raw -> 420W.
+    let mut smrw = [0u8; 64];
+    smrw[..12].copy_from_slice(&[
+        0xCD, 0xCD, 200, 0x05, 55, 25, 0x57, 95, 0xFF, 0xFF, 0xFF, 0xFF,
+    ]);
+    transport.set_smrw_table(SMRW_POWER_LIMITS_OFFSET, smrw);
+    transport.set_reg(uwcc_ec_reg::TDP_FACTORY_PL1_MAX, 210);
+    transport.set_reg(uwcc_ec_reg::TDP_FACTORY_PL2_MAX, 210);
+    transport.set_reg(uwcc_ec_reg::TDP_FACTORY_PL4_MAX, 210);
+
+    let backend = UwccBackend::new(Arc::clone(&transport) as _, None, None);
+    assert!(backend.is_pl4_doubled());
+    assert_eq!(backend.read_tdp_limits(2).unwrap(), (25, 420));
+
+    // Writing 300W to PL4 encodes 150 (300 / 2) in 0x0785 and reads back 300W (150 * 2).
+    backend.set_tdp(2, 300).unwrap();
+    assert_eq!(transport.get_reg(uwcc_ec_reg::PL4_WATTS), Some(150));
+    assert_eq!(backend.read_tdp(2).unwrap(), 300);
+    // Odd watts floor-divide: 301 / 2 = 150 -> reads back 300W.
+    backend.set_tdp(2, 301).unwrap();
+    assert_eq!(transport.get_reg(uwcc_ec_reg::PL4_WATTS), Some(150));
+    // 0x0727 BIT(7) must NEVER be cleared.
+    assert_ne!(
+        transport.get_reg(uwcc_ec_reg::CUSTOM_MODE_ENABLE).unwrap() & 0x80,
+        0
+    );
+}
+
+#[test]
+fn regression_gpu_power_live_0x0788_0x07d5_and_fallbacks() {
+    struct SelectiveErrTransport {
+        inner: MockUwccTransport,
+        fail_0788: bool,
+        fail_07d5: bool,
+    }
+    impl UwccTransport for SelectiveErrTransport {
+        fn is_available(&self) -> bool {
+            self.inner.is_available()
+        }
+        fn get_info(&self) -> Result<UwccInfo, PlatformError> {
+            self.inner.get_info()
+        }
+        fn ec_read(&self, addr: u16) -> Result<u8, PlatformError> {
+            if self.fail_0788 && addr == uwcc_ec_reg::CTGP_LIVE_OFFSET {
+                return Err(PlatformError::Unavailable);
+            }
+            if self.fail_07d5 && addr == uwcc_ec_reg::DB_LIVE_WATTS {
+                return Err(PlatformError::Unavailable);
+            }
+            self.inner.ec_read(addr)
+        }
+        fn ec_write(&self, addr: u16, val: u8) -> Result<(), PlatformError> {
+            self.inner.ec_write(addr, val)
+        }
+        fn smrw(&self, req: UwccSmrw) -> Result<UwccSmrw, PlatformError> {
+            self.inner.smrw(req)
+        }
+        fn pwup(&self, enable: bool, level: u32) -> Result<(), PlatformError> {
+            self.inner.pwup(enable, level)
+        }
+        fn poll_event(&self) -> Result<Option<UwccWmiEvent>, PlatformError> {
+            self.inner.poll_event()
+        }
+    }
+
+    // 1. Live 0x0788 and 0x07D5 readback (including offset 0 = base_tgp_w).
+    let transport = Arc::new(MockUwccTransport::chassis_0x1a_default());
+    let mut smrw = [0u8; 64];
+    // base_tgp=95 (data[7]), ctgp_offset_max=55 (data[4]), db_max=25 (data[5])
+    smrw[..12].copy_from_slice(&[210, 210, 210, 10, 55, 25, 87, 95, 0xFF, 0xFF, 0xFF, 0xFF]);
+    transport.set_smrw_table(SMRW_POWER_LIMITS_OFFSET, smrw);
+    transport.set_reg(uwcc_ec_reg::CTGP_LIVE_OFFSET, 0);
+    transport.set_reg(uwcc_ec_reg::DB_LIVE_WATTS, 24);
+
+    let backend = UwccBackend::new(Arc::clone(&transport) as _, None, None);
+    let platform: &dyn PlatformBackend = &backend;
+    assert_eq!(platform.read_ctgp_watts().unwrap(), 95);
+    assert_eq!(platform.read_dynamic_boost_watts().unwrap(), 24);
+
+    platform.set_dynamic_boost_watts(20).unwrap();
+    assert_eq!(transport.get_reg(uwcc_ec_reg::DB_TPP_TARGET), Some(0xFF));
+    assert_eq!(
+        transport.get_reg(uwcc_ec_reg::DYNAMIC_BOOST_WATTS),
+        Some(20)
+    );
+
+    // 2. Fallback to 0x0744 / 0x0746 when 0x0788 / 0x07D5 return Err.
+    let inner = MockUwccTransport::chassis_0x1a_default();
+    inner.set_smrw_table(SMRW_POWER_LIMITS_OFFSET, smrw);
+    inner.set_reg(uwcc_ec_reg::CTGP_WATTS, 35); // 95 + 35 = 130W
+    inner.set_reg(uwcc_ec_reg::DYNAMIC_BOOST_WATTS, 15);
+    let fallback_transport = Arc::new(SelectiveErrTransport {
+        inner,
+        fail_0788: true,
+        fail_07d5: true,
+    });
+    let fb_backend = UwccBackend::new(fallback_transport, None, None);
+    assert_eq!(fb_backend.read_ctgp_watts().unwrap(), 130);
+    assert_eq!(fb_backend.read_dynamic_boost_watts().unwrap(), 15);
+}
+
+#[test]
+fn regression_read_pmsc_mode_priority_and_set_mode_rejected_on_0x1a() {
+    let transport = Arc::new(MockUwccTransport::chassis_0x1a_default());
+    let backend = UwccBackend::new(Arc::clone(&transport) as _, None, None);
+
+    // 1. CUME (0x0727 BIT(6)) takes highest priority over TBME and UFME.
+    transport.set_reg(uwcc_ec_reg::CUSTOM_MODE_ENABLE, 0xC0);
+    transport.set_reg(uwcc_ec_reg::FAN_MANUAL_MODE, 0x90); // TBME + UFME
+    assert_eq!(backend.read_pmsc_mode().unwrap(), "custom");
+
+    // 2. TBME (0x0751 BIT(4)) takes priority over UFME when CUME = 0.
+    transport.set_reg(uwcc_ec_reg::CUSTOM_MODE_ENABLE, 0x80);
+    transport.set_reg(uwcc_ec_reg::FAN_MANUAL_MODE, 0x90);
+    assert_eq!(backend.read_pmsc_mode().unwrap(), "turbo");
+
+    // 3. UFME (0x0751 BIT(7)) -> "office" when CUME = 0 and TBME = 0.
+    transport.set_reg(uwcc_ec_reg::FAN_MANUAL_MODE, 0xA0);
+    assert_eq!(backend.read_pmsc_mode().unwrap(), "office");
+
+    // 4. Else -> "gaming".
+    transport.set_reg(uwcc_ec_reg::FAN_MANUAL_MODE, 0x00);
+    assert_eq!(backend.read_pmsc_mode().unwrap(), "gaming");
+
+    // 5. set_mode() rejects raw 0x0752 writes on 0x1A without touching 0x0752.
+    transport.set_reg(uwcc_ec_reg::PERF_MODE, 0x22);
+    assert!(matches!(
+        backend.set_mode(1),
+        Err(PlatformError::Unsupported(_))
+    ));
+    assert_eq!(transport.get_reg(uwcc_ec_reg::PERF_MODE), Some(0x22));
+}
+
+#[test]
+fn regression_tear_free_rpm_retry_and_ramfan_10pt_padding_and_zero_verify() {
+    // 1. Tear-free RPM retries when hi1 != hi2, then succeeds on matching hi1 == hi2.
+    struct TearingRpmTransport {
+        inner: MockUwccTransport,
+        hi_reads: AtomicUsize,
+        always_tear: bool,
+    }
+    impl UwccTransport for TearingRpmTransport {
+        fn is_available(&self) -> bool {
+            self.inner.is_available()
+        }
+        fn get_info(&self) -> Result<UwccInfo, PlatformError> {
+            self.inner.get_info()
+        }
+        fn ec_read(&self, addr: u16) -> Result<u8, PlatformError> {
+            if addr == uwcc_ec_reg::CPU_FAN_RPM_HI {
+                let n = self.hi_reads.fetch_add(1, Ordering::SeqCst);
+                if self.always_tear {
+                    return Ok((n as u8) & 0x0F);
+                }
+                // First attempt: hi1 = 0x06, hi2 = 0x07 (tear!); second attempt: hi1 = 0x07, hi2 = 0x07.
+                return Ok(if n == 0 { 0x06 } else { 0x07 });
+            }
+            if addr == uwcc_ec_reg::CPU_FAN_RPM_LO {
+                return Ok(0x00);
+            }
+            self.inner.ec_read(addr)
+        }
+        fn ec_write(&self, addr: u16, val: u8) -> Result<(), PlatformError> {
+            self.inner.ec_write(addr, val)
+        }
+        fn smrw(&self, req: UwccSmrw) -> Result<UwccSmrw, PlatformError> {
+            self.inner.smrw(req)
+        }
+        fn pwup(&self, enable: bool, level: u32) -> Result<(), PlatformError> {
+            self.inner.pwup(enable, level)
+        }
+        fn poll_event(&self) -> Result<Option<UwccWmiEvent>, PlatformError> {
+            self.inner.poll_event()
+        }
+    }
+
+    let recover_tx = Arc::new(TearingRpmTransport {
+        inner: MockUwccTransport::chassis_0x1a_default(),
+        hi_reads: AtomicUsize::new(0),
+        always_tear: false,
+    });
+    let recover_backend = UwccBackend::new(recover_tx, None, None);
+    assert_eq!(recover_backend.read_fan_rpm(0).unwrap(), 0x0700);
+
+    let stuck_tx = Arc::new(TearingRpmTransport {
+        inner: MockUwccTransport::chassis_0x1a_default(),
+        hi_reads: AtomicUsize::new(0),
+        always_tear: true,
+    });
+    let stuck_backend = UwccBackend::new(stuck_tx, None, None);
+    assert!(matches!(
+        stuck_backend.read_fan_rpm(0),
+        Err(PlatformError::Unavailable)
+    ));
+
+    // 2. 10-point curve encodes hysteresis down[1..=10], pads unused up/down with 0xFF,
+    //    and pads unused duty[10..16] with last active duty.
+    let pts: Vec<RamFanPoint> = (0..10)
+        .map(|i| RamFanPoint::new(40 + i * 5, 20 + i * 8))
+        .collect();
+    let curve10 = RamFanCurve::from_points(&pts, &pts).unwrap();
+    let enc = encode_fan_table(&curve10.cpu);
+    assert_eq!(enc.active_points, 10);
+    assert_eq!(enc.duty[0], 0x00);
+    assert_eq!(enc.up[0], 40);
+    assert_eq!(enc.up[9], 85);
+    assert_eq!(enc.up[10], 0xFF);
+    assert_eq!(enc.up[15], 0xFF);
+    assert_eq!(enc.down[1], 36); // 40 - 4
+    assert_eq!(enc.down[9], 76); // 80 - 4
+    assert_eq!(enc.down[10], 80); // (80 - 4) + 4
+    assert_eq!(enc.down[11], 0xFF);
+    assert_eq!(enc.duty[9], 184); // 92% * 2
+    assert_eq!(enc.duty[10], 184); // padded with last duty
+    assert_eq!(enc.duty[15], 184);
+
+    // 3. Zeroed EC[0x0F00..=0x0F01] fails verification and refuses to latch 0x07C6 BIT(2).
+    let tx = Arc::new(MockUwccTransport::chassis_0x1a_default());
+    let zero_curve =
+        RamFanCurve::from_points(&[RamFanPoint::new(0, 50)], &[RamFanPoint::new(0, 50)]).unwrap();
+    // Override up[0]=0, up[1]=0 by crafting a 2-point curve with temp 0, 0
+    let zero_2pt = RamFanCurve::from_points(
+        &[RamFanPoint::new(0, 30), RamFanPoint::new(0, 50)],
+        &[RamFanPoint::new(0, 30), RamFanPoint::new(0, 50)],
+    )
+    .unwrap();
+    let ctrl = RamFanController::new(Arc::clone(&tx) as _);
+    assert!(ctrl.apply_curve(&zero_2pt).is_err());
+    assert_eq!(
+        tx.get_reg(ramfan_reg::AP_OEM_6).unwrap_or(0) & ramfan_flags::ENABLE_UNIVERSAL_FAN_CTRL,
+        0
+    );
+    let _ = zero_curve;
+}
+
+#[test]
+fn regression_set_fan_speed_percent_propagates_rmw_errors_and_non_0x1a_drop_clears_0x0741() {
+    // 1. set_fan_speed_percent propagates RMW failure on 0x0726/0x0727/0x07C6 (no swallowed `let _ =`).
+    struct FailCustomCtrlTransport(MockUwccTransport);
+    impl UwccTransport for FailCustomCtrlTransport {
+        fn is_available(&self) -> bool {
+            self.0.is_available()
+        }
+        fn get_info(&self) -> Result<UwccInfo, PlatformError> {
+            self.0.get_info()
+        }
+        fn ec_read(&self, addr: u16) -> Result<u8, PlatformError> {
+            self.0.ec_read(addr)
+        }
+        fn ec_write(&self, addr: u16, val: u8) -> Result<(), PlatformError> {
+            if addr == uwcc_ec_reg::CUSTOM_MODE_CTRL {
+                return Err(PlatformError::Unavailable);
+            }
+            self.0.ec_write(addr, val)
+        }
+        fn smrw(&self, req: UwccSmrw) -> Result<UwccSmrw, PlatformError> {
+            self.0.smrw(req)
+        }
+        fn pwup(&self, enable: bool, level: u32) -> Result<(), PlatformError> {
+            self.0.pwup(enable, level)
+        }
+        fn poll_event(&self) -> Result<Option<UwccWmiEvent>, PlatformError> {
+            self.0.poll_event()
+        }
+    }
+
+    let fail_tx = Arc::new(FailCustomCtrlTransport(
+        MockUwccTransport::chassis_0x1a_default(),
+    ));
+    let fail_backend = UwccBackend::new(fail_tx, None, None);
+    assert!(matches!(
+        fail_backend.set_fan_speed_percent(0, 50),
+        Err(PlatformError::Unavailable)
+    ));
+
+    // 2. Non-0x1A EC chassis also clears 0x07C6 BIT(2), 0x0751 BIT(6), and 0x0741 BIT(0) on Drop
+    //    without touching 0x0727/0x0726.
+    let non_1a = Arc::new(MockUwccTransport::chassis_0x1a_default());
+    let mut info = non_1a.get_info().unwrap();
+    info.project_id = 0x10; // Tsunami X629
+    non_1a.set_info(info);
+    non_1a.set_reg(uwcc_ec_reg::AP_OEM, 0x81);
+    non_1a.set_reg(
+        uwcc_ec_reg::AP_OEM_6,
+        uwcc_ec_reg::AP_OEM_6_UNIVERSAL_FAN_BIT,
+    );
+    non_1a.set_reg(
+        uwcc_ec_reg::FAN_MANUAL_MODE,
+        uwcc_ec_reg::FAN_MODE_BOOST_BIT,
+    );
+    non_1a.set_reg(uwcc_ec_reg::CUSTOM_MODE_ENABLE, 0xC0);
+
+    {
+        let _backend = UwccBackend::new(Arc::clone(&non_1a) as _, None, None);
+    }
+
+    assert_eq!(non_1a.get_reg(uwcc_ec_reg::AP_OEM_6), Some(0x00));
+    assert_eq!(non_1a.get_reg(uwcc_ec_reg::FAN_MANUAL_MODE), Some(0x00));
+    assert_eq!(non_1a.get_reg(uwcc_ec_reg::AP_OEM), Some(0x80));
+    assert_eq!(non_1a.get_reg(uwcc_ec_reg::CUSTOM_MODE_ENABLE), Some(0xC0));
 }
